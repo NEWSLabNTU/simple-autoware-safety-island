@@ -63,6 +63,10 @@
     Real Autoware 1.5.0 C++ nodes, near-verbatim, running the MRM chain
     on an RTOS — co-working with an unmodified Autoware stack.
   ]
+  #v(1.0em)
+  #text(size: 17pt)[Jerry Lin, Chi-Sheng Shih]
+  #v(0.2em)
+  #text(size: 14.5pt, fill: luma(90))[NEWSLab, National Taiwan University]
   #v(0.8em)
   #text(size: 14pt, fill: luma(110))[
     `github.com/NEWSLabNTU/simple-autoware-safety-island` #h(1em) · #h(1em)
