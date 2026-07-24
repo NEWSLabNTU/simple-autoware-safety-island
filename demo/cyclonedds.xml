@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!-- Bridge/Autoware cyclone config (pattern from the ASI fork's demo/).
+     Domain 1 = Autoware (multicast on the default interface).
+     Domain 2 = the island, EVERYTHING pinned to loopback: multicast SPDP on
+     lo reaches the NATIVE island; the unicast 127.0.0.1 peer scan reaches the
+     ZEPHYR island (native_sim bakes multicast-off unicast discovery —
+     porting-notes 19). -->
+<CycloneDDS xmlns="https://cdds.io/config">
+  <Domain id="1">
+    <General>
+      <AllowMulticast>spdp</AllowMulticast>
+      <Interfaces>
+        <NetworkInterface autodetermine="true" priority="default" multicast="default"/>
+      </Interfaces>
+    </General>
+  </Domain>
+  <Domain id="2">
+    <General>
+      <AllowMulticast>spdp</AllowMulticast>
+      <Interfaces>
+        <NetworkInterface name="lo" priority="default" multicast="true"/>
+      </Interfaces>
+    </General>
+    <Discovery>
+      <ParticipantIndex>auto</ParticipantIndex>
+      <MaxAutoParticipantIndex>30</MaxAutoParticipantIndex>
+      <Peers><Peer Address="127.0.0.1"/></Peers>
+    </Discovery>
+  </Domain>
+</CycloneDDS>

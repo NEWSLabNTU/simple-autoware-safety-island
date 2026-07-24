@@ -43,11 +43,8 @@ topics:
     type: autoware_adapi_v1_msgs/msg/MrmState
     from_domain: 2
     to_domain: 1
-  /planning/scenario_planning/max_velocity_candidates:
-    type: autoware_internal_planning_msgs/msg/VelocityLimit
-    from_domain: 2
-    to_domain: 1
-  /planning/scenario_planning/clear_velocity_limit:
-    type: autoware_internal_planning_msgs/msg/VelocityLimitClearCommand
-    from_domain: 2
-    to_domain: 1
+  # velocity-limit rows DROPPED: the demo image (universe-20250207 / 0.40)
+  # predates the tier4_planning_msgs -> autoware_internal_planning_msgs
+  # rename, so the 1.5.0-name typesupport is absent in-container. The
+  # comfortable-stop path still runs island-side; the emergency path is the
+  # bridged showcase.

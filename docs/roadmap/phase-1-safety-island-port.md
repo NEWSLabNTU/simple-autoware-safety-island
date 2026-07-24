@@ -1,6 +1,6 @@
 # Phase 1 — Autoware Safety Island example: port plan
 
-**Status (2026-07-24): P0-P4 DONE (P4 = native_sim; QEMU board = follow-up); P5 staged** — all three operators ported +
+**Status (2026-07-24): P0-P5 core DONE (P4 = native_sim; P5 = bridged co-sim live; QEMU board + full driving scenario = follow-ups)** — all three operators ported +
 validated e2e on native/cyclonedds/domain 2. P1: emergency stop (OperateMrm
 round-trip, decel ramp v=5→0 @ a=-2.5). P2: comfortable stop (latched
 VelocityLimit w/ constraints + sender, clear command, OPERATING transition)
@@ -14,7 +14,13 @@ native_sim image (cyclone, domain 2 baked, minimal libcpp) — identical e2e
 result; host tooling needs the `just host-env` unicast-discovery URI.
 nano-ros fixes: struct-member constants, FFI dedupe (#253), QoS(depth),
 descriptor-registry cap, zephyr placement-new + NO_FFI_CRATE parity.
-19 porting notes. Next: P5 co-sim run + zephyr QEMU board bring-up.
+P5 core: planning_simulator (stock MRM disabled via mounted
+system.launch.xml) + domain_bridge container + island on domain 2 —
+availability bridges 1→2, the island's mrm_state + emergency decel command
+bridge 2→1. Version-skew note: the 20250207 image predates the
+tier4→autoware_internal_planning_msgs rename, so the velocity-limit rows are
+dropped from the bridge set. 19 porting notes. Follow-ups: full driving
+scenario (pose/goal/engage choreography or noVNC), zephyr QEMU board.
 
 Port the Autoware 1.5.0 MRM node chain to nano-ros as a copy-out example
 workspace, preserving the upstream C++/CMake/launch shape, and demonstrate it as
