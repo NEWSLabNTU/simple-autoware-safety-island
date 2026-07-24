@@ -16,15 +16,15 @@ pkg = "autoware_mrm_emergency_stop_operator"
 class = "autoware_mrm_emergency_stop_operator::MrmEmergencyStopOperator"
 name = "mrm_emergency_stop_operator"
 
-# [[component]]
-# pkg = "autoware_mrm_comfortable_stop_operator"     # P2
-# class = "autoware_mrm_comfortable_stop_operator::MrmComfortableStopOperator"
-# name = "mrm_comfortable_stop_operator"
+[[component]]
+pkg = "autoware_mrm_comfortable_stop_operator"
+class = "autoware_mrm_comfortable_stop_operator::MrmComfortableStopOperator"
+name = "mrm_comfortable_stop_operator"
 
-# [[component]]
-# pkg = "autoware_stop_mode_operator"                # P2
-# class = "autoware_stop_mode_operator::StopModeOperator"
-# name = "stop_mode_operator"
+[[component]]
+pkg = "autoware_stop_mode_operator"
+class = "autoware_stop_mode_operator::StopModeOperator"
+name = "stop_mode_operator"
 
 # [[component]]
 # pkg = "autoware_mrm_handler"                       # P3

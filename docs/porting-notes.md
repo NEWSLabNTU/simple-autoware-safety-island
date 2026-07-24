@@ -70,12 +70,40 @@ Template:
   `response.code` over the wire. Port uses value-init `{}`. Candidate
   nano-ros fix: emit `= {}` member initializers.
 
-## Still-predicted gaps (P2/P3)
+## Confirmed entries (P2 — comfortable_stop + stop_mode, 2026-07-24)
 
-- `transient_local` latched publishers (comfortable_stop_operator).
+## 10 — `nros::QoS` lacked the rclcpp depth ctor  **[fixed in nano-ros]**
+- Upstream spells `rclcpp::QoS(5)` / `rclcpp::QoS{1}.transient_local()`.
+  Native `nros::QoS` had only the default ctor. Fixed: `explicit QoS(int
+  depth)` added; ported code keeps its spelling. `transient_local()` chain
+  already existed and works (latched VelocityLimit delivered to a
+  late-joining `ros2 topic echo`).
+
+## 11 — executor callback slots are a compile-time env knob
+- `NROS_EXECUTOR_MAX_CBS` (nros-node build.rs, default 4). The 3-node island
+  registers ~9 entries → boot died `create_timer (code=-6 Full)`. `just
+  build` exports 16. Follow-up filed for nano-ros: the entry codegen KNOWS
+  the model's entity counts — it should derive/validate the knob instead of
+  the user discovering it at boot.
+- Corollary: changing the knob resizes the executor arena — stale incremental
+  objects mixed old/new `NROS_EXECUTOR_SIZE` and segfaulted in shutdown.
+  Clean rebuild after changing it (the nano-ros fixture-treadmill rule).
+
+## 12 — one `nros_find_interfaces` closure per workspace (island_interfaces)
+- With per-call topo-last FFI crates (nano-ros #253 mitigation), node pkgs
+  with DIFFERENT msg-dep subsets would miss or duplicate symbols. The
+  `src/island_interfaces` shim pkg (first SUBDIR) resolves the UNION closure
+  once; all later interface calls no-op idempotently.
+
+## 13 — `std::optional` / C++17-isms
+- `ContinuousCondition` used `std::optional<rclcpp::Time>`; the nano-ros C++
+  surface targets C++14 → sentinel flags + double seconds. Mechanical.
+
+## Still-predicted gaps (P3)
+
 - Service *clients* + `autoware_utils::polling_subscriber` (mrm_handler).
 - `FixedString<N>` capacity for `ResponseStatus.message` etc. (works so far —
-  524-byte SERIALIZED_SIZE_MAX default).
+  524-byte SERIALIZED_SIZE_MAX default; `sender` string round-trips).
 
 ## Environment notes (native dev loop)
 

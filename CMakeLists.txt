@@ -28,10 +28,14 @@ endif()
 # <depend> closure via the NROS_INTERFACE_SEARCH_PATH auto-stubs; their
 # CMakeLists.txt exists only so they still build verbatim under colcon.
 set(_ws_subdirs
+    # FIRST: union interface closure (one superset FFI archive — see
+    # src/island_interfaces/package.xml + nano-ros issue 0253).
+    src/island_interfaces
+
     # Ported node packages
     src/autoware_mrm_emergency_stop_operator          # P1
-    # src/autoware_mrm_comfortable_stop_operator      # P2
-    # src/autoware_stop_mode_operator                 # P2
+    src/autoware_mrm_comfortable_stop_operator        # P2
+    src/autoware_stop_mode_operator                   # P2
     # src/autoware_mrm_handler                        # P3
 )
 

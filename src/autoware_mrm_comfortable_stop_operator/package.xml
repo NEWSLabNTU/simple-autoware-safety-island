@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>autoware_mrm_comfortable_stop_operator</name>
+  <version>0.48.0</version>
+  <description>The MRM comfortable stop operator package (nano-ros port of the Autoware 1.5.0 node)</description>
+  <maintainer email="jerry73204@gmail.com">Hsiang-Jui Lin</maintainer>
+  <license>Apache License 2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <!-- nano-ros port: trimmed like the emergency operator (porting-notes). -->
+  <depend>autoware_internal_planning_msgs</depend>
+  <depend>tier4_system_msgs</depend>
+
+  <export>
+    <build_type>cmake</build_type>
+  </export>
+</package>

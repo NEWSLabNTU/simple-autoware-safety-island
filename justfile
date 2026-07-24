@@ -25,8 +25,12 @@ doctor:
 
 # Resolve the declarative system into the baked model consumed by the entry.
 # Re-run after editing system.toml or any launch/*.xml.
+# NOTE: needs a play_launch with the `resolve` verb (>= phase 46); a stale
+# ~/.local/bin install shadows it — override with PLAY_LAUNCH=<path>.
+PLAY_LAUNCH := env("PLAY_LAUNCH", "play_launch")
+
 resolve-model:
-    play_launch resolve \
+    {{PLAY_LAUNCH}} resolve \
         src/{{BRINGUP}}/launch/safety_island.launch.xml \
         --system src/{{BRINGUP}}/system.toml \
         -o src/{{BRINGUP}}/config/system_model.yaml
@@ -35,9 +39,12 @@ resolve-model:
 setup: doctor resolve-model
 
 # Native build (fast dev loop).
+# NROS_EXECUTOR_MAX_CBS: compile-time executor callback-slot count (nros-node
+# build.rs env knob, default 4). The 3-node island registers ~9 entries
+# (subs + services + timers); 16 leaves headroom for the P3 mrm_handler.
 build:
-    cmake -S . -B {{BUILD_DIR}} -DNANO_ROS_ROOT={{NANO_ROS_ROOT}}
-    cmake --build {{BUILD_DIR}} -j
+    env NROS_EXECUTOR_MAX_CBS=16 cmake -S . -B {{BUILD_DIR}} -DNANO_ROS_ROOT={{NANO_ROS_ROOT}}
+    env NROS_EXECUTOR_MAX_CBS=16 cmake --build {{BUILD_DIR}} -j
 
 # Boot the island on the native board (domain 2, pinned cyclonedds — a
 # sourced ROS env otherwise shadows the SDK lib → SIGSEGV; porting-notes env).

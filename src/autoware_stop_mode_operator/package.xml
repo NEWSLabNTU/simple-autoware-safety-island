@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>autoware_stop_mode_operator</name>
+  <version>0.48.0</version>
+  <description>The stop mode operator package (nano-ros port of the Autoware 1.5.0 node)</description>
+  <maintainer email="jerry73204@gmail.com">Hsiang-Jui Lin</maintainer>
+  <license>Apache License 2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>autoware_control_msgs</depend>
+  <depend>autoware_planning_msgs</depend>
+  <depend>autoware_vehicle_msgs</depend>
+
+  <export>
+    <build_type>cmake</build_type>
+  </export>
+</package>

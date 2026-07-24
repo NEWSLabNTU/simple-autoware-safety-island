@@ -1,11 +1,14 @@
 # Phase 1 — Autoware Safety Island example: port plan
 
-**Status (2026-07-24): P0 scaffold DONE; P1 DONE** — emergency_stop_operator
-ported + validated e2e on native/cyclonedds/domain 2 (status AVAILABLE→
-OPERATING via OperateMrm, decel ramp v=5→0 @ a=-2.5 observed from host ROS 2
-tools; vendored msg pkgs proven to build verbatim under colcon). Two nano-ros
-fixes landed along the way (struct-member msg constants; multi-interface-pkg
-FFI dedupe) + 9 porting notes. Next: P2.
+**Status (2026-07-24): P0+P1+P2 DONE** — all three operators ported +
+validated e2e on native/cyclonedds/domain 2. P1: emergency stop (OperateMrm
+round-trip, decel ramp v=5→0 @ a=-2.5). P2: comfortable stop (latched
+VelocityLimit w/ constraints + sender, clear command, OPERATING transition)
+and stop_mode (continuous stop-hold a=-1.5, turn/hazard DISABLE, auto-parking
+PARK=22 after 1 s continuous standstill + route ARRIVED — ContinuousCondition
+port exercised). nano-ros fixes so far: struct-member msg constants,
+multi-interface-pkg FFI dedupe (#253), rclcpp-shape `QoS(depth)` ctor.
+13 porting notes. Next: P3 mrm_handler.
 
 Port the Autoware 1.5.0 MRM node chain to nano-ros as a copy-out example
 workspace, preserving the upstream C++/CMake/launch shape, and demonstrate it as
