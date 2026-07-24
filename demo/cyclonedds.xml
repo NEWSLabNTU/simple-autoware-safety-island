@@ -10,7 +10,9 @@
     <General>
       <AllowMulticast>spdp</AllowMulticast>
       <Interfaces>
-        <NetworkInterface autodetermine="true" priority="default" multicast="default"/>
+        <!-- The host Autoware 1.5.0 install pins lo (its config/cyclonedds.xml);
+             the bridge must sit on the same interface or data never flows. -->
+        <NetworkInterface name="lo" priority="default" multicast="default"/>
       </Interfaces>
     </General>
   </Domain>

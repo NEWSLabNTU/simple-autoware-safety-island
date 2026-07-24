@@ -85,9 +85,52 @@ zephyr-build:
 zephyr-run:
     ./build-zephyr/zephyr/zephyr.exe
 
-# ── Autoware co-sim demo (phase 5) ──────────────────────────────────────────
+# ── Autoware co-sim demo ─────────────────────────────────────────────────────
+# Phase-2 host path (Autoware 1.5.0 install). `ros2 launch` leaves ORPHANS on
+# a plain kill — every recipe runs the tree in its own PROCESS GROUP (setsid)
+# and the -down recipe kills the whole group.
 
-# Start Autoware planning_simulator + domain_bridge (stock MRM nodes disabled).
+# Host Autoware planning_simulator (domain 1, stock MRM shadowed out by
+# demo/host_ws). RViz shows on $DISPLAY (TurboVNC).
+demo-sim:
+    #!/usr/bin/env bash
+    set -e
+    source /opt/ros/humble/setup.bash
+    source /opt/autoware/1.5.0/setup.bash >/dev/null 2>&1
+    source demo/host_ws/install/setup.bash
+    export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp ROS_DOMAIN_ID=1
+    setsid nohup ros2 launch autoware_launch planning_simulator.launch.xml         map_path:=$PWD/demo/map/sample-map-planning vehicle_model:=sample_vehicle         sensor_model:=sample_sensor_kit rviz:=true > tmp_sim.log 2>&1 < /dev/null &
+    echo $! > demo/.sim.pgid
+    echo "sim started, pgid $(cat demo/.sim.pgid) (log tmp_sim.log)"
+
+demo-sim-down:
+    -kill -TERM -- -$(cat demo/.sim.pgid 2>/dev/null) 2>/dev/null; sleep 3;      kill -KILL -- -$(cat demo/.sim.pgid 2>/dev/null) 2>/dev/null; rm -f demo/.sim.pgid;      echo "sim group killed"
+
+# domain_bridge (host_ws build) with the split-domain cyclone config.
+demo-bridge:
+    #!/usr/bin/env bash
+    set -e
+    source /opt/ros/humble/setup.bash
+    source /opt/autoware/1.5.0/setup.bash >/dev/null 2>&1
+    source demo/host_ws/install/setup.bash
+    export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+    export CYCLONEDDS_URI=file://$PWD/demo/cyclonedds.xml
+    setsid nohup ros2 run domain_bridge domain_bridge --wait-for-publisher false         demo/bridge/bridge-config.yaml > tmp_bridge.log 2>&1 < /dev/null &
+    echo $! > demo/.bridge.pgid
+    echo "bridge started, pgid $(cat demo/.bridge.pgid)"
+
+demo-bridge-down:
+    -kill -TERM -- -$(cat demo/.bridge.pgid 2>/dev/null) 2>/dev/null; rm -f demo/.bridge.pgid
+
+# Build the host_ws overlay (domain_bridge + MRM-shadowed tier4_system_launch).
+demo-host-ws:
+    #!/usr/bin/env bash
+    set -e
+    source /opt/ros/humble/setup.bash
+    cd demo/host_ws && colcon build --symlink-install
+
+# ── Containerized alternative (Autoware 0.40 image; velocity-limit rows
+#    dropped there — see bridge-config comments) ────────────────────────────
 demo-up:
     cd demo && docker compose up -d
 

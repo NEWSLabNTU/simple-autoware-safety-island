@@ -5,3 +5,11 @@ tmp/
 .cache/
 __pycache__/
 .direnv/
+demo/host_ws/build/
+demo/host_ws/install/
+demo/host_ws/log/
+demo/host_ws/src/domain_bridge/
+demo/.sim.pgid
+demo/.bridge.pgid
+play_log/
+tmp_*.log
