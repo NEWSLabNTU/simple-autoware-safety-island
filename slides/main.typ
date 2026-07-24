@@ -541,6 +541,29 @@ just demo-kill-heartbeat
   ```]
 ]
 
+// ════════════════════════════════════════════════════════ 14b · Demo timeline
+#slide[
+  #stitle[The demo, second by second]
+  #set text(size: 13pt)
+  #table(
+    columns: (2.4cm, 1fr, 5.2cm),
+    stroke: 0.4pt + gray,
+    inset: 5pt,
+    table.header([*t*], [*step*], [*visible in RViz*]),
+    [0 s], [sim-stack readiness gate (ADAPI routing up)], [map],
+    [\~1 s], [`/initialpose` published], [vehicle appears],
+    [\~6 s], [goal published → route SET], [route ribbon],
+    [\~10 s], [`change_to_autonomous`], [mode AUTONOMOUS],
+    [T₀], [velocity > 0], [*vehicle drives (\~4 m/s)*],
+    [T₀+15 s], [bridge SIGSTOP — availability heartbeat cut], [—],
+    [*T₀+15.5 s*], [island 0.5 s timeout → `MRM_OPERATING / EMERGENCY_STOP`], [*hard decel starts*],
+    [T₀+\~18 s], [jerk-limited ramp (a = −2.5 m/s²) complete], [*stopped, hazards on*],
+  )
+  #v(0.5em)
+  - Validated result: *PASS — 3.90 → 0.00 m/s*. One-shot: `demo/scenario-drive-and-kill.sh` (`DRIVE_SECS` overridable).
+  - The 0.5 s reaction time is the ported handler's upstream `timeout_operation_mode_availability` default.
+]
+
 // ════════════════════════════════════════════════════════ 15 · Scorecard
 #slide[
   #stitle[Scorecard]

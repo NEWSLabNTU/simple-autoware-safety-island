@@ -68,7 +68,7 @@ docs/
 - ROS 2 Humble (for `.msg` parsing by the codegen and the host-side demo tools).
 - `just` (task runner). Docker + `ros2 domain_bridge` for the co-sim demo (phase 5).
 
-## Quick start (native)
+## Quick start (native island)
 
 ```sh
 export NANO_ROS_ROOT=~/repos/nano-ros     # or let direnv/justfile default it
@@ -77,8 +77,43 @@ just build        # cmake configure + build (native)
 just run          # boot the island against the native board
 ```
 
-See the [phase doc](docs/roadmap/phase-1-safety-island-port.md) for the current
-status and what each phase delivers.
+Zephyr variant: `just zephyr-build && just zephyr-run` (host tooling needs
+`just host-env`). Phase docs: [phase-1](docs/roadmap/phase-1-safety-island-port.md)
+(ports), [phase-2](docs/roadmap/phase-2-simple-demo-host-autoware.md) (the demo).
+
+## The demo (validated: PASS, 3.90 → 0.00 m/s)
+
+Host Autoware 1.5.0 (`/opt/autoware/1.5.0`) + the island; stock MRM nodes are
+shadowed out, so the island is the ONLY MRM path.
+
+```sh
+just demo-host-ws                 # once: build domain_bridge + the MRM-less
+                                  #       tier4_system_launch overlay
+DISPLAY=:2 just demo-sim          # planning_simulator + RViz (own process group)
+just demo-bridge                  # domain_bridge, domains 1 <-> 2 on loopback
+just run                          # the island (domain 2)
+bash demo/scenario-drive-and-kill.sh   # the full sequence below
+just demo-sim-down demo-bridge-down    # teardown (GROUP kill — ros2 launch
+                                       # orphans every leaf node otherwise)
+```
+
+### Demo sequence & timeline
+
+| t | step | visible in RViz |
+| --- | --- | --- |
+| 0 s | wait for the sim stack (ADAPI routing up) | map |
+| ~1 s | `/initialpose` published | vehicle appears |
+| ~6 s | goal published → route SET | route ribbon |
+| ~10 s | `change_to_autonomous` | mode AUTONOMOUS |
+| T₀ | velocity > 0 | **vehicle drives (~4 m/s)** |
+| T₀+15 s | bridge SIGSTOP — availability heartbeat cut | — |
+| **T₀+15.5 s** | island heartbeat timeout (0.5 s) → `MRM_OPERATING / EMERGENCY_STOP` | **hard decel starts** |
+| T₀+~18 s | jerk-limited ramp (a = −2.5 m/s²) done | **vehicle stopped, hazards on** |
+| +25 s | bridge resumed, `VERDICT: PASS/FAIL` printed | — |
+
+Drive longer before the fault: `DRIVE_SECS=30 bash demo/scenario-drive-and-kill.sh`.
+The 0.5 s reaction time is the ported handler's upstream
+`timeout_operation_mode_availability` default.
 
 ## Porting conventions
 
