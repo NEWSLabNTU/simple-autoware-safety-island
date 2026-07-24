@@ -43,10 +43,8 @@ name = "mrm_handler"
 # [tiers.telem]
 # spin_period_us = 100_000
 
-[deploy.native]
-kind = "self"
-target = "x86_64-unknown-linux-gnu"
-
-# [deploy.zephyr]                    # P4
-# kind = "zephyr"
-# board = "native_sim/native/64"
+# No [deploy.*] target blocks: nodes stay UNPLACED in the model, i.e.
+# board-agnostic (#236 semantics) — the SAME model bakes into the native
+# entry (fast dev loop) and the zephyr entry. An explicit
+# `target = "x86_64-unknown-linux-gnu"` would pin every node to linux and
+# empty the zephyr slice ("places no nodes on board zephyr").

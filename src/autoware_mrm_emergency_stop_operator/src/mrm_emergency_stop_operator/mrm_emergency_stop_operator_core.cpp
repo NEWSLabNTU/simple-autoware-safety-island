@@ -14,13 +14,15 @@
 
 #include "autoware/mrm_emergency_stop_operator/mrm_emergency_stop_operator_core.hpp"
 
-#include <algorithm>
 
 // nano-ros port: no rclcpp::Clock — stamps come from the platform monotonic
 // clock (nros_cpp_time_ns), and dt is computed from message stamps
-// (porting-notes 05).
+// (porting-notes 05). <algorithm>/<cmath> avoided — Zephyr minimal libcpp
+// has no std headers (porting-notes 18).
 namespace
 {
+double max_d(double a, double b) { return a > b ? a : b; }
+
 builtin_interfaces::msg::Time now_stamp()
 {
   const uint64_t ns = nros_cpp_time_ns();
@@ -154,11 +156,11 @@ Control MrmEmergencyStopOperator::calcTargetAcceleration(const Control & prev_co
 
   control_cmd.stamp = now_stamp();
   control_cmd.longitudinal.stamp = control_cmd.stamp;
-  control_cmd.longitudinal.velocity = static_cast<float>(std::max(
+  control_cmd.longitudinal.velocity = static_cast<float>(max_d(
     static_cast<double>(prev_control_cmd.longitudinal.velocity) +
       static_cast<double>(prev_control_cmd.longitudinal.acceleration) * dt,
     0.0));
-  control_cmd.longitudinal.acceleration = static_cast<float>(std::max(
+  control_cmd.longitudinal.acceleration = static_cast<float>(max_d(
     static_cast<double>(prev_control_cmd.longitudinal.acceleration) + params_.target_jerk * dt,
     params_.target_acceleration));
   if (

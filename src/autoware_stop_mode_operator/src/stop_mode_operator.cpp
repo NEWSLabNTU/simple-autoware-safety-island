@@ -14,11 +14,12 @@
 
 #include "stop_mode_operator.hpp"
 
-#include <cmath>
-
 // nano-ros port: platform monotonic clock in seconds (porting-notes 05).
+// <cmath> avoided — Zephyr minimal libcpp (porting-notes 18).
 namespace
 {
+double abs_d(double v) { return v < 0 ? -v : v; }
+
 double now_sec()
 {
   return static_cast<double>(nros_cpp_time_ns()) * 1e-9;
@@ -78,7 +79,7 @@ void StopModeOperator::on_steering(const SteeringReport & msg)
 
 void StopModeOperator::on_velocity(const VelocityReport & msg)
 {
-  vehicle_stop_check_.update(now_sec(), std::abs(msg.longitudinal_velocity) < 1e-3);
+  vehicle_stop_check_.update(now_sec(), abs_d(msg.longitudinal_velocity) < 1e-3);
 }
 
 void StopModeOperator::on_route_state(const RouteState & msg)

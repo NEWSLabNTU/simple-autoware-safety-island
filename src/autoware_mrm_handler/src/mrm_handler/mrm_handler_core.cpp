@@ -13,13 +13,15 @@
 
 #include "autoware/mrm_handler/mrm_handler_core.hpp"
 
-#include <cmath>
 #include <cstdio>
 
 // nano-ros port: platform monotonic stamps (porting-notes 05); RCLCPP_* logs →
-// printf (single global log sink, porting-notes 01).
+// printf (porting-notes 01). <cmath> avoided — Zephyr minimal libcpp
+// (porting-notes 18).
 namespace
 {
+double abs_d(double v) { return v < 0 ? -v : v; }
+
 double now_sec()
 {
   return static_cast<double>(nros_cpp_time_ns()) * 1e-9;
@@ -529,7 +531,7 @@ bool MrmHandler::isStopped()
 {
   if (!has_odom_) return false;
   constexpr auto th_stopped_velocity = 0.001;
-  return (std::abs(odom_.twist.twist.linear.x) < th_stopped_velocity);
+  return (abs_d(odom_.twist.twist.linear.x) < th_stopped_velocity);
 }
 
 bool MrmHandler::isEmergency()

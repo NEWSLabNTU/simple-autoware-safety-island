@@ -146,3 +146,24 @@ Template:
 - `ros2 topic pub` from an overlay built before a msg was added publishes
   nothing useful; the island callback never fires and it looks like an RMW
   bug. Rebuild `tmp/host_msgs_ws` after any vendored-msg change.
+
+## Confirmed entries (P4 — zephyr native_sim, 2026-07-24)
+
+## 18 — Zephyr minimal libcpp: no std headers, stub <new>  **[fixed in nano-ros]**
+- `<algorithm>`/`<cmath>` don't exist (ports now use local `max_d`/`abs_d`);
+  GLIBCXX full libcpp is NOT reachable on native_sim host-gcc
+  (`PICOLIBC_USE_MODULE depends on !GLIBCXX_LIBCPP`, host gcc has no
+  toolchain picolibc). The stub `<new>` also lacks placement new — every
+  `NROS_COMPONENT` factory failed to compile; fixed in nano-ros
+  (component_node.hpp declares the non-allocating forms when the Zephyr stub
+  guard is present). ASI's FVP build never hit this (full-libcpp toolchain).
+
+## 19 — 4-node cyclone image sizing + NSOS discovery gap  **[open]**
+- `CONFIG_MAX_PTHREAD_MUTEX_COUNT/COND_COUNT` 256 → 1024 (30+ DDS entities;
+  boot aborted in ddsrt_mutex_init — the documented pitfall, scaled).
+- Image builds, boots, constructs all 4 nodes, spins. BUT: only RTPS
+  unicast ports bound (7910/7911) — NO SPDP multicast socket under
+  CONFIG_NET_NATIVE_OFFLOADED_SOCKETS; host peers (multicast or unicast-peer
+  URI) never discover the island. nano-ros's zephyr-cyclone e2e cells claim
+  SPDP multicast green — reconcile with those cells' exact runtime setup, or
+  wire the zeth/TAP path instead of NSOS. NEXT ITEM for P4.
