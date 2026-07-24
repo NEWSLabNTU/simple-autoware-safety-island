@@ -84,16 +84,16 @@
   #v(0.5em)
   #align(center)[
     #stack(dir: ltr, spacing: 0.7cm,
-      nodebox(fill: accent, w: 5.6cm)[
+      nodebox(fill: accent, w: 6.2cm)[
         *Autoware* (host / docker)\
-        #text(size: 11pt)[planning_simulator · domain 1\ stock MRM nodes *disabled*]],
+        #text(size: 11pt)[domain 1 · planning_simulator\ stock MRM nodes *disabled*]],
       stack(spacing: 4pt,
         text(size: 11pt, fill: luma(110))[`ros2 domain_bridge`],
         text(size: 20pt)[⟵ ⟶],
         text(size: 11pt, fill: luma(110))[contract topics only]),
-      nodebox(fill: accent2, w: 5.6cm)[
+      nodebox(fill: accent2, w: 6.2cm)[
         *Safety island* (Zephyr / native)\
-        #text(size: 11pt)[mrm_handler + 3 stop operators\ domain 2 · one image]],
+        #text(size: 11pt)[domain 2 · mrm_handler\ + 3 stop operators · one image]],
     )
   ]
   #v(0.5em)
@@ -157,12 +157,11 @@
         #v(4pt)
         #nodebox(w: 100%)[mrm_handler]
         #v(3pt)
-        #grid(columns: (1fr, 1fr), column-gutter: 3pt, row-gutter: 3pt,
-          nodebox(w: 100%)[#text(size: 10.5pt)[emergency_stop_operator]],
-          nodebox(w: 100%)[#text(size: 10.5pt)[comfortable_stop_operator]],
-        )
+        #nodebox(w: 100%)[#text(size: 11pt)[mrm_emergency_stop_operator]]
         #v(3pt)
-        #nodebox(w: 100%)[stop_mode_operator]
+        #nodebox(w: 100%)[#text(size: 11pt)[mrm_comfortable_stop_operator]]
+        #v(3pt)
+        #nodebox(w: 100%)[#text(size: 11pt)[stop_mode_operator]]
       ],
     )
   ]
@@ -368,6 +367,53 @@ play_launch resolve safety_island.launch.xml
   --system system.toml -o system_model.yaml
       ```]
       #text(size: 13pt)[One resolved model bakes into *both* the native and the Zephyr entry.]
+    ]
+  )
+]
+
+// ════════════════════════════════════════════════════════ 9b · Real commands
+#slide[
+  #stitle[Under the hood — the real commands #h(0.4em) #text(size: 13pt, fill: luma(110))[`just` is only the front door]]
+  Everything below is plain CLI — trivially portable to your own Makefile / CI scripts.
+  #v(0.2em)
+  #grid(columns: (1fr, 1fr), column-gutter: 0.7cm, row-gutter: 0.45cm,
+    [
+      *0 — environment* #text(size: 12pt, fill: luma(110))[(once per shell)]
+      #code(size: 9.3pt)[```sh
+source $NANO_ROS_ROOT/activate.sh   # nros CLI + play_launch
+      ```]
+      *1 — resolve the system model* #text(size: 12pt, fill: luma(110))[(`just setup`)]
+      #code(size: 9.3pt)[```sh
+play_launch resolve \
+  src/safety_island_bringup/launch/safety_island.launch.xml \
+  --system src/safety_island_bringup/system.toml \
+  -o src/safety_island_bringup/config/system_model.yaml
+      ```]
+      *2 — native build* #text(size: 12pt, fill: luma(110))[(`just build`; plain CMake)]
+      #code(size: 9.3pt)[```sh
+NROS_EXECUTOR_MAX_CBS=32 \
+  cmake -S . -B build -DNANO_ROS_ROOT=$NANO_ROS_ROOT
+cmake --build build -j
+      ```]
+    ],
+    [
+      *3 — run the island* #text(size: 12pt, fill: luma(110))[(`just run`)]
+      #code(size: 9.3pt)[```sh
+ROS_DOMAIN_ID=2 \
+LD_LIBRARY_PATH=~/.nros/sdk/cyclonedds/0.10.5-nros1/lib \
+  ./build/src/native_entry/native_entry
+      ```]
+      *4 — Zephyr build + run* #text(size: 12pt, fill: luma(110))[(`just zephyr-build/-run`; plain west)]
+      #code(size: 9.3pt)[```sh
+source $NANO_ROS_ROOT/zephyr-workspace/env.sh
+NROS_EXECUTOR_MAX_CBS=32 NROS_INTERFACE_SEARCH_PATH=$PWD/src \
+  west build -b native_sim/native/64 -d build-zephyr \
+    src/zephyr_entry -- \
+    -DCONF_FILE="prj.conf;prj-cyclonedds.conf" \
+    -DCMAKE_PREFIX_PATH=$NANO_ROS_ROOT
+./build-zephyr/zephyr/zephyr.exe
+      ```]
+      #text(size: 12.5pt)[Gotchas the justfile encodes: pin `LD_LIBRARY_PATH` to the SDK cyclonedds (a sourced ROS env shadows it → SIGSEGV); clean-rebuild after changing the compile-time knobs.]
     ]
   )
 ]
