@@ -12,6 +12,22 @@ vehicle stopped (3.90 → 0.00 m/s). `demo/scenario-drive-and-kill.sh` is the
 one-shot reproduction (readiness-gated; init/goal poses baked from this run,
 overridable via env).
 
+**Zephyr-island variant:** verified PASS once (4.11 → 0.00 m/s) with the
+single-bridge fault. **Known caveat (nano-ros #267):** the island's `Control`
+msg corrupts through domain_bridge's serialized rebroadcast (direct typed
+echo clean; MrmState crosses fine) — until fixed, the demo faults BOTH bridge
+legs, the island's MRM decision is verified on domain 2, and the sim-side
+stop is the gate's staleness reaction. The split forward/reverse bridge
+recipes are already in place for the post-#267 airtight version.
+
+**Late-session environment degradation (unresolved):** after many hours of
+runs the domain-1 data plane stopped delivering to NEW participants
+(discovery matches, latched samples never arrive; `netstat -su` showed 2e8
+UDP receive-buffer errors; raw rclpy graph queries fine, ros2-CLI daemon
+repeatedly wedged with `!rclpy.ok()`). The pure-rclpy
+`demo/scenario_driver.py` replaces the CLI-based script to remove the daemon
+dependency; the delivery wedge itself needs a fresh-boot investigation.
+
 Operational notes learned the hard way: `ros2 launch` teardown MUST be
 process-group kill (`just demo-sim-down`) — a plain kill strands every leaf
 node and the duplicates flap availability + MRM; play_launch 0.5.1 replay

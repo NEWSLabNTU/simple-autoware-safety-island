@@ -115,12 +115,16 @@ demo-bridge:
     source demo/host_ws/install/setup.bash
     export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
     export CYCLONEDDS_URI=file://$PWD/demo/cyclonedds.xml
-    setsid nohup ros2 run domain_bridge domain_bridge --wait-for-publisher false         demo/bridge/bridge-config.yaml > tmp_bridge.log 2>&1 < /dev/null &
-    echo $! > demo/.bridge.pgid
-    echo "bridge started, pgid $(cat demo/.bridge.pgid)"
+    setsid nohup ros2 run domain_bridge domain_bridge --wait-for-publisher false demo/bridge/bridge-forward.yaml > tmp_bridge_fwd.log 2>&1 < /dev/null &
+    echo $! > demo/.bridge-fwd.pgid
+    setsid nohup ros2 run domain_bridge domain_bridge --wait-for-publisher false demo/bridge/bridge-reverse.yaml > tmp_bridge_rev.log 2>&1 < /dev/null &
+    echo $! > demo/.bridge-rev.pgid
+    echo "bridges: fwd pgid $(cat demo/.bridge-fwd.pgid) (heartbeat leg — the demo faults this), rev pgid $(cat demo/.bridge-rev.pgid) (island commands — stays alive)"
 
 demo-bridge-down:
-    -kill -TERM -- -$(cat demo/.bridge.pgid 2>/dev/null) 2>/dev/null; rm -f demo/.bridge.pgid
+    -kill -TERM -- -$(cat demo/.bridge-fwd.pgid 2>/dev/null) 2>/dev/null; rm -f demo/.bridge-fwd.pgid
+    -kill -TERM -- -$(cat demo/.bridge-rev.pgid 2>/dev/null) 2>/dev/null; rm -f demo/.bridge-rev.pgid
+
 
 # Build the host_ws overlay (domain_bridge + MRM-shadowed tier4_system_launch).
 demo-host-ws:

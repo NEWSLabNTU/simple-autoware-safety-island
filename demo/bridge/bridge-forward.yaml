@@ -1,0 +1,38 @@
+# AUTO-SPLIT from bridge-config.yaml — the demo faults ONLY the forward
+# (heartbeat) leg, so the island's 2->1 commands keep flowing and the stop is
+# attributable to the ISLAND, not to sim-side staleness reactions.
+name: si_bridge_forward
+topics:
+  /system/operation_mode/availability:
+    type: tier4_system_msgs/msg/OperationModeAvailability
+    from_domain: 1
+    to_domain: 2
+  /localization/kinematic_state:
+    type: nav_msgs/msg/Odometry
+    from_domain: 1
+    to_domain: 2
+  /vehicle/status/control_mode:
+    type: autoware_vehicle_msgs/msg/ControlModeReport
+    from_domain: 1
+    to_domain: 2
+  /api/operation_mode/state:
+    type: autoware_adapi_v1_msgs/msg/OperationModeState
+    from_domain: 1
+    to_domain: 2
+  /control/command/control_cmd:
+    type: autoware_control_msgs/msg/Control
+    from_domain: 1
+    to_domain: 2
+  /vehicle/status/steering_status:
+    type: autoware_vehicle_msgs/msg/SteeringReport
+    from_domain: 1
+    to_domain: 2
+  /vehicle/status/velocity_status:
+    type: autoware_vehicle_msgs/msg/VelocityReport
+    from_domain: 1
+    to_domain: 2
+  /planning/route_state:
+    type: autoware_adapi_v1_msgs/msg/RouteState
+    from_domain: 1
+    to_domain: 2
+  # Island -> Autoware (reversed direction)

@@ -1,27 +1,43 @@
 # ros2 domain_bridge config — the machine artifact of docs/topic-contract.md.
 # Keep the two in sync; the bridge forwards EXACTLY this set.
 # Draft names — finalized in P1/P3 against the upstream launch remaps.
+# NO global from/to_domain: with globals set, domain_bridge ignores the
+# per-topic overrides and the 2->1 rows silently bridge 1->2 (found live).
 name: safety_island_bridge
-from_domain: 1
-to_domain: 2
 topics:
   # Autoware -> island
   /system/operation_mode/availability:
     type: tier4_system_msgs/msg/OperationModeAvailability
+    from_domain: 1
+    to_domain: 2
   /localization/kinematic_state:
     type: nav_msgs/msg/Odometry
+    from_domain: 1
+    to_domain: 2
   /vehicle/status/control_mode:
     type: autoware_vehicle_msgs/msg/ControlModeReport
+    from_domain: 1
+    to_domain: 2
   /api/operation_mode/state:
     type: autoware_adapi_v1_msgs/msg/OperationModeState
+    from_domain: 1
+    to_domain: 2
   /control/command/control_cmd:
     type: autoware_control_msgs/msg/Control
+    from_domain: 1
+    to_domain: 2
   /vehicle/status/steering_status:
     type: autoware_vehicle_msgs/msg/SteeringReport
+    from_domain: 1
+    to_domain: 2
   /vehicle/status/velocity_status:
     type: autoware_vehicle_msgs/msg/VelocityReport
+    from_domain: 1
+    to_domain: 2
   /planning/route_state:
     type: autoware_adapi_v1_msgs/msg/RouteState
+    from_domain: 1
+    to_domain: 2
   # Island -> Autoware (reversed direction)
   /system/emergency/control_cmd:
     type: autoware_control_msgs/msg/Control

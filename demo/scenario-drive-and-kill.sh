@@ -15,7 +15,9 @@ source /opt/ros/humble/setup.bash
 source /opt/autoware/1.5.0/setup.bash >/dev/null 2>&1
 source demo/host_ws/install/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-LO_URI='<CycloneDDS><Domain><General><Interfaces><NetworkInterface name="lo"/></Interfaces><AllowMulticast>spdp</AllowMulticast></General></Domain></CycloneDDS>'
+# lo + multicast (native island) + unicast peer scan (zephyr island's baked
+# native_sim discovery) — one URI serves both island variants.
+LO_URI='<CycloneDDS><Domain><General><Interfaces><NetworkInterface name="lo"/></Interfaces><AllowMulticast>spdp</AllowMulticast></General><Discovery><ParticipantIndex>auto</ParticipantIndex><MaxAutoParticipantIndex>30</MaxAutoParticipantIndex><Peers><Peer Address="127.0.0.1"/></Peers></Discovery></Domain></CycloneDDS>'
 d1() { env ROS_DOMAIN_ID=1 "$@"; }
 d2() { env ROS_DOMAIN_ID=2 CYCLONEDDS_URI="$LO_URI" "$@"; }
 
@@ -24,10 +26,10 @@ INIT_QZ=${INIT_QZ:-0.2312}; INIT_QW=${INIT_QW:-0.9729}
 GOAL_X=${GOAL_X:-3760.41}; GOAL_Y=${GOAL_Y:-73755.91}
 GOAL_QZ=${GOAL_QZ:--0.49896}; GOAL_QW=${GOAL_QW:-0.86662}
 
-vel() { d1 timeout 8 ros2 topic echo /localization/kinematic_state --once --field twist.twist.linear.x 2>/dev/null | head -1; }
+vel() { d1 timeout 8 ros2 topic echo /localization/kinematic_state nav_msgs/msg/Odometry --once --field twist.twist.linear.x 2>/dev/null | head -1; }
 
 echo "== 0. wait for the sim stack (ADAPI routing up) =="
-until d1 timeout 5 ros2 topic echo /api/routing/state --once --field state >/dev/null 2>&1; do sleep 5; done
+until d1 timeout 5 ros2 topic echo /api/routing/state autoware_adapi_v1_msgs/msg/RouteState --once --field state >/dev/null 2>&1; do sleep 5; done
 echo "== 1. initial pose =="
 d1 timeout 8 ros2 topic pub --once /initialpose geometry_msgs/msg/PoseWithCovarianceStamped \
   "{header: {frame_id: map}, pose: {pose: {position: {x: ${INIT_X}, y: ${INIT_Y}, z: 0.0}, orientation: {z: ${INIT_QZ}, w: ${INIT_QW}}}, covariance: [0.25,0,0,0,0,0, 0,0.25,0,0,0,0, 0,0,0,0,0,0, 0,0,0,0,0,0, 0,0,0,0,0,0, 0,0,0,0,0,0.068]}}" >/dev/null 2>&1
@@ -37,7 +39,7 @@ echo "== 2. goal =="
 d1 timeout 8 ros2 topic pub --once /planning/mission_planning/goal geometry_msgs/msg/PoseStamped \
   "{header: {frame_id: map}, pose: {position: {x: ${GOAL_X}, y: ${GOAL_Y}, z: 0.0}, orientation: {z: ${GOAL_QZ}, w: ${GOAL_QW}}}}" >/dev/null 2>&1
 for i in $(seq 1 10); do
-  ROUTE=$(d1 timeout 6 ros2 topic echo /api/routing/state --once --field state 2>/dev/null | head -1)
+  ROUTE=$(d1 timeout 6 ros2 topic echo /api/routing/state autoware_adapi_v1_msgs/msg/RouteState --once --field state 2>/dev/null | head -1)
   [ "$ROUTE" = "2" ] && break; sleep 2
 done
 echo "route state: ${ROUTE:-none} (2=SET)"
@@ -64,20 +66,30 @@ echo "== 4b. driving for ${DRIVE_SECS}s =="
 sleep "$DRIVE_SECS"
 V0=$(vel); echo "velocity before fault: ${V0:-n/a}"
 
-echo "== 5. cut the availability heartbeat (SIGSTOP the bridge group) =="
-BRIDGE_PGID=$(cat demo/.bridge.pgid 2>/dev/null)
-if [ -n "$BRIDGE_PGID" ]; then kill -STOP -- -"$BRIDGE_PGID" && echo "bridge group $BRIDGE_PGID paused"
-else BP=$(pgrep -x domain_bridge | head -1); kill -STOP "$BP" && echo "bridge $BP paused"; fi
+echo "== 5. cut the bridge (SIGSTOP both legs — the fault) =="
+# NOTE (nano-ros issue 0267): faulting ONLY the forward leg is the cleaner
+# demo (island commands keep flowing), but the island's Control msg currently
+# corrupts through domain_bridge's serialized rebroadcast — until that fix,
+# both legs pause and the sim-side stop is the gate's reaction to the severed
+# bridge, while the island's MRM decision + commands are verified on domain 2.
+FWD_PGID=$(cat demo/.bridge-fwd.pgid 2>/dev/null); REV_PGID=$(cat demo/.bridge-rev.pgid 2>/dev/null)
+BRIDGE_PGID="$FWD_PGID"
+for PG in $FWD_PGID $REV_PGID; do kill -STOP -- -"$PG" 2>/dev/null && echo "bridge group $PG paused"; done
+[ -z "$FWD_PGID" ] && { BP=$(pgrep -x domain_bridge | head -1); kill -STOP "$BP"; }
 
 sleep 3
 echo "== 6. island verdict (expect state=2 MRM_OPERATING, behavior=2 EMERGENCY_STOP) =="
-d2 timeout 8 ros2 topic echo /system/fail_safe/mrm_state --once 2>/dev/null | grep -E "^state|^behavior"
+d2 timeout 8 ros2 topic echo /system/fail_safe/mrm_state autoware_adapi_v1_msgs/msg/MrmState --once 2>/dev/null | grep -E "^state|^behavior"
 
 sleep 7
 V1=$(vel); echo "velocity after island MRM: ${V1:-n/a}"
 
-echo "== 7. restore bridge =="
-if [ -n "$BRIDGE_PGID" ]; then kill -CONT -- -"$BRIDGE_PGID"; else kill -CONT "$BP" 2>/dev/null; fi
+echo "== 6b. island emergency ramp on domain 2 (the island's own command) =="
+d2 timeout 6 ros2 topic echo /system/emergency/control_cmd autoware_control_msgs/msg/Control --once --field longitudinal.acceleration 2>/dev/null | head -1
+
+echo "== 7. restore bridges =="
+for PG in $FWD_PGID $REV_PGID; do kill -CONT -- -"$PG" 2>/dev/null; done
+[ -n "${BP:-}" ] && kill -CONT "$BP" 2>/dev/null || true
 
 python3 - "$V0" "$V1" <<'EOF'
 import sys
