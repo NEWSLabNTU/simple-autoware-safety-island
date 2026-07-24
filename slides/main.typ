@@ -71,36 +71,6 @@
   #v(1.5fr)
 ]
 
-// ════════════════════════════════════════════════════════ 2 · Why
-#slide[
-  #stitle[Why a safety island?]
-  *When the main compute fails, something small and independent must stop the vehicle.*
-  #v(0.4em)
-  - Autoware's MRM (Minimum Risk Maneuver) chain normally runs *inside* the same
-    Linux/DDS stack it is supposed to survive.
-  - Move exactly that chain to a small RTOS image — a *safety island* — and keep
-    the rest of Autoware untouched.
-  - Two ROS 2 domains, one bridge, one contract:
-  #v(0.5em)
-  #align(center)[
-    #stack(dir: ltr, spacing: 0.7cm,
-      nodebox(fill: accent, w: 6.2cm)[
-        *Autoware* (host / docker)\
-        #text(size: 11pt)[domain 1 · planning_simulator\ stock MRM nodes *disabled*]],
-      stack(spacing: 4pt,
-        text(size: 11pt, fill: luma(110))[`ros2 domain_bridge`],
-        text(size: 20pt)[⟵ ⟶],
-        text(size: 11pt, fill: luma(110))[contract topics only]),
-      nodebox(fill: accent2, w: 6.2cm)[
-        *Safety island* (Zephyr / native)\
-        #text(size: 11pt)[domain 2 · mrm_handler\ + 3 stop operators · one image]],
-    )
-  ]
-  #v(0.5em)
-  Failure model: kill the availability heartbeat → the *island* — not Autoware —
-  brings the vehicle to a controlled stop.
-]
-
 // ════════════════════════════════════════════════════════ 3 · What was ported
 #slide[
   #stitle[What was ported #h(0.4em) #pill[Autoware 1.5.0 · verbatim-first]]
@@ -168,38 +138,6 @@
   #v(0.4em)
   #text(size: 13pt)[Nothing else crosses: `docs/topic-contract.md` is the SSoT,
   the bridge YAML is the machine artifact. Same island binary runs native (dev loop) and Zephyr.]
-]
-
-// ════════════════════════════════════════════════════════ 5 · MRM chain
-#slide[
-  #stitle[Inside the island — the MRM chain]
-  #v(0.2em)
-  #align(center)[
-    #stack(spacing: 8pt,
-      // inputs
-      stack(dir: ltr, spacing: 10pt,
-        nodebox(fill: accent, w: 5.4cm)[#text(size: 11pt)[`/system/operation_mode/availability`\ (the heartbeat)]],
-        nodebox(fill: accent, w: 4.2cm)[#text(size: 11pt)[odometry ·\ control/operation mode]],
-      ),
-      text(size: 16pt)[↓],
-      nodebox(w: 7cm)[*mrm_handler* — state machine\ #text(size: 11pt)[NORMAL → MRM_OPERATING → MRM_SUCCEEDED]],
-      stack(dir: ltr, spacing: 26pt,
-        stack(spacing: 4pt, text(size: 12pt)[`OperateMrm` srv ↓ #h(2pt) ↑ status msg],
-          nodebox(w: 5.2cm)[#text(size: 11pt)[*comfortable_stop_operator*\ latched `VelocityLimit`]]),
-        stack(spacing: 4pt, text(size: 12pt)[`OperateMrm` srv ↓ #h(2pt) ↑ status msg],
-          nodebox(w: 5.2cm)[#text(size: 11pt)[*emergency_stop_operator*\ decel ramp a = −2.5 m/s²]]),
-      ),
-      text(size: 16pt)[↓],
-      stack(dir: ltr, spacing: 8pt,
-        nodebox(fill: warn, w: 4.8cm)[#text(size: 11pt)[`/system/emergency/control_cmd`]],
-        nodebox(fill: warn, w: 3.4cm)[#text(size: 11pt)[gear · hazard lights]],
-        nodebox(fill: warn, w: 4.4cm)[#text(size: 11pt)[`/system/fail_safe/mrm_state`]],
-      ),
-    )
-  ]
-  #v(0.3em)
-  #text(size: 13pt)[Operators tick at 30 Hz (upstream `update_rate`). Handler escalates:
-  comfortable stop → cancel → emergency stop, exactly as in stock Autoware.]
 ]
 
 // ════════════════════════════════════════════════════════ 6 · Project structure
@@ -371,53 +309,6 @@ play_launch resolve safety_island.launch.xml
   )
 ]
 
-// ════════════════════════════════════════════════════════ 9b · Real commands
-#slide[
-  #stitle[Under the hood — the real commands #h(0.4em) #text(size: 13pt, fill: luma(110))[`just` is only the front door]]
-  Everything below is plain CLI — trivially portable to your own Makefile / CI scripts.
-  #v(0.2em)
-  #grid(columns: (1fr, 1fr), column-gutter: 0.7cm, row-gutter: 0.45cm,
-    [
-      *0 — environment* #text(size: 12pt, fill: luma(110))[(once per shell)]
-      #code(size: 9.3pt)[```sh
-source $NANO_ROS_ROOT/activate.sh   # nros CLI + play_launch
-      ```]
-      *1 — resolve the system model* #text(size: 12pt, fill: luma(110))[(`just setup`)]
-      #code(size: 9.3pt)[```sh
-play_launch resolve \
-  src/safety_island_bringup/launch/safety_island.launch.xml \
-  --system src/safety_island_bringup/system.toml \
-  -o src/safety_island_bringup/config/system_model.yaml
-      ```]
-      *2 — native build* #text(size: 12pt, fill: luma(110))[(`just build`; plain CMake)]
-      #code(size: 9.3pt)[```sh
-NROS_EXECUTOR_MAX_CBS=32 \
-  cmake -S . -B build -DNANO_ROS_ROOT=$NANO_ROS_ROOT
-cmake --build build -j
-      ```]
-    ],
-    [
-      *3 — run the island* #text(size: 12pt, fill: luma(110))[(`just run`)]
-      #code(size: 9.3pt)[```sh
-ROS_DOMAIN_ID=2 \
-LD_LIBRARY_PATH=~/.nros/sdk/cyclonedds/0.10.5-nros1/lib \
-  ./build/src/native_entry/native_entry
-      ```]
-      *4 — Zephyr build + run* #text(size: 12pt, fill: luma(110))[(`just zephyr-build/-run`; plain west)]
-      #code(size: 9.3pt)[```sh
-source $NANO_ROS_ROOT/zephyr-workspace/env.sh
-NROS_EXECUTOR_MAX_CBS=32 NROS_INTERFACE_SEARCH_PATH=$PWD/src \
-  west build -b native_sim/native/64 -d build-zephyr \
-    src/zephyr_entry -- \
-    -DCONF_FILE="prj.conf;prj-cyclonedds.conf" \
-    -DCMAKE_PREFIX_PATH=$NANO_ROS_ROOT
-./build-zephyr/zephyr/zephyr.exe
-      ```]
-      #text(size: 12.5pt)[Gotchas the justfile encodes: pin `LD_LIBRARY_PATH` to the SDK cyclonedds (a sourced ROS env shadows it → SIGSEGV); clean-rebuild after changing the compile-time knobs.]
-    ]
-  )
-]
-
 // ════════════════════════════════════════════════════════ 10 · Friction 1
 #slide[
   #stitle[What to expect — API surface #h(0.4em) #text(size: 13pt, fill: luma(110))[porting-notes 01–05, 13]]
@@ -512,33 +403,6 @@ just host-env   # prints CYCLONEDDS_URI:
       #text(size: 14pt)[With that: the *full e2e passes against `zephyr.exe` — identical result to native*.]
     ]
   )
-]
-
-// ════════════════════════════════════════════════════════ 14 · Demo
-#slide[
-  #stitle[The demo — heartbeat loss, island stops the car]
-  #align(center)[
-    #stack(dir: ltr, spacing: 0.55cm,
-      nodebox(fill: accent, w: 3.3cm)[#text(size: 11.5pt)[sim drives\ autonomously]],
-      text(size: 16pt)[→],
-      nodebox(fill: warn, w: 3.3cm)[#text(size: 11.5pt)[*kill the availability heartbeat*]],
-      text(size: 16pt)[→],
-      nodebox(w: 3.6cm)[#text(size: 11.5pt)[handler: cancel comfortable, call emergency (`OperateMrm`)]],
-      text(size: 16pt)[→],
-      nodebox(fill: warn, w: 3.4cm)[#text(size: 11.5pt)[decel ramp\ v → 0 \@ −2.5 m/s²\ + hazards on]],
-    )
-  ]
-  #v(0.6em)
-  - Verified end-to-end on *native* (P3) and on the *Zephyr image* (P4) — same
-    scenario, same transitions, `/system/fail_safe/mrm_state` → `MRM_OPERATING`.
-  - Co-sim (P5): host Autoware 1.5.0 `planning_simulator` + `domain_bridge`;
-    stock MRM nodes shadowed out of the launch — the island is the *only* MRM path.
-  #code(size: 10.5pt)[```sh
-just demo-sim          # planning_simulator, domain 1
-just demo-bridge       # domain_bridge with the contract yaml
-just run               # the island, domain 2
-just demo-kill-heartbeat
-  ```]
 ]
 
 // ════════════════════════════════════════════════════════ 14b · Demo timeline
