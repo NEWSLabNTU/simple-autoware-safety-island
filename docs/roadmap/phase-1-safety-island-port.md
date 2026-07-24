@@ -1,6 +1,6 @@
 # Phase 1 — Autoware Safety Island example: port plan
 
-**Status (2026-07-24): P0+P1+P2 DONE** — all three operators ported +
+**Status (2026-07-24): P0-P4 DONE (P4 = native_sim; QEMU board = follow-up); P5 staged** — all three operators ported +
 validated e2e on native/cyclonedds/domain 2. P1: emergency stop (OperateMrm
 round-trip, decel ramp v=5→0 @ a=-2.5). P2: comfortable stop (latched
 VelocityLimit w/ constraints + sender, clear command, OPERATING transition)
@@ -8,7 +8,13 @@ and stop_mode (continuous stop-hold a=-1.5, turn/hazard DISABLE, auto-parking
 PARK=22 after 1 s continuous standstill + route ARRIVED — ContinuousCondition
 port exercised). nano-ros fixes so far: struct-member msg constants,
 multi-interface-pkg FFI dedupe (#253), rclcpp-shape `QoS(depth)` ctor.
-13 porting notes. Next: P3 mrm_handler.
+P3: mrm_handler full chain (heartbeat loss → cancel comfortable → call
+emergency → ramp + hazards). P4: the same 4-node chain in ONE Zephyr
+native_sim image (cyclone, domain 2 baked, minimal libcpp) — identical e2e
+result; host tooling needs the `just host-env` unicast-discovery URI.
+nano-ros fixes: struct-member constants, FFI dedupe (#253), QoS(depth),
+descriptor-registry cap, zephyr placement-new + NO_FFI_CRATE parity.
+19 porting notes. Next: P5 co-sim run + zephyr QEMU board bring-up.
 
 Port the Autoware 1.5.0 MRM node chain to nano-ros as a copy-out example
 workspace, preserving the upstream C++/CMake/launch shape, and demonstrate it as

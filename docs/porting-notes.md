@@ -161,9 +161,14 @@ Template:
 ## 19 — 4-node cyclone image sizing + NSOS discovery gap  **[open]**
 - `CONFIG_MAX_PTHREAD_MUTEX_COUNT/COND_COUNT` 256 → 1024 (30+ DDS entities;
   boot aborted in ddsrt_mutex_init — the documented pitfall, scaled).
-- Image builds, boots, constructs all 4 nodes, spins. BUT: only RTPS
-  unicast ports bound (7910/7911) — NO SPDP multicast socket under
-  CONFIG_NET_NATIVE_OFFLOADED_SOCKETS; host peers (multicast or unicast-peer
-  URI) never discover the island. nano-ros's zephyr-cyclone e2e cells claim
-  SPDP multicast green — reconcile with those cells' exact runtime setup, or
-  wire the zeth/TAP path instead of NSOS. NEXT ITEM for P4.
+- RESOLVED: the native_sim baked cyclone profile is multicast-OFF +
+  unicast SPDP peer-scan of 127.0.0.1 (idx ≤ 20; session.cpp phase-180 —
+  NSOS multicast breaks the select waitset). nano-ros CI proves it
+  zephyr↔zephyr (symmetric). A HOST peer must run the mirror config AND
+  pin the `lo` interface — with the default NIC the host advertises its
+  eth locator and the pairing never completes:
+    CYCLONEDDS_URI = Interfaces lo + AllowMulticast false +
+    ParticipantIndex auto + MaxAutoParticipantIndex 20+ + Peer 127.0.0.1
+  (`just host-env` prints it). With that, the FULL P3 e2e passes against
+  zephyr.exe — heartbeat loss → cancel comfortable → call emergency →
+  ramp + hazards, all four nodes in one Zephyr image.

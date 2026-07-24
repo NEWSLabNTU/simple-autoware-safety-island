@@ -70,14 +70,20 @@ clean:
     rm -rf {{BUILD_DIR}}
 
 # ── Zephyr (phase 4) ────────────────────────────────────────────────────────
-# Placeholders — wired up when src/zephyr_entry lands. native_sim first,
-# then the QEMU board bring-up (see the phase doc, P4).
+# native_sim first; QEMU board bring-up is a follow-up item.
 
+# Build the island as a Zephyr native_sim image.
 zephyr-build:
-    @echo "phase 4 — not wired yet (see docs/roadmap/phase-1-safety-island-port.md)"; exit 1
+    #!/usr/bin/env bash
+    set -e
+    source {{NANO_ROS_ROOT}}/zephyr-workspace/env.sh > /dev/null
+    export NROS_EXECUTOR_MAX_CBS=32 NROS_INTERFACE_SEARCH_PATH=$PWD/src
+    west build -b native_sim/native/64 -d build-zephyr src/zephyr_entry -- \
+        -DCONF_FILE="prj.conf;prj-cyclonedds.conf" -DCMAKE_PREFIX_PATH=$NANO_ROS_ROOT
 
+# Run the Zephyr island (domain 2 baked; host side: `just host-env`).
 zephyr-run:
-    @echo "phase 4 — not wired yet"; exit 1
+    ./build-zephyr/zephyr/zephyr.exe
 
 # ── Autoware co-sim demo (phase 5) ──────────────────────────────────────────
 
@@ -91,3 +97,11 @@ demo-down:
 # Scenario: pause the domain bridge (heartbeat loss) → island engages MRM.
 demo-kill-heartbeat:
     bash demo/scenario-kill-heartbeat.sh
+
+# Print the host-side env needed to talk to the ZEPHYR island (native_sim
+# bakes multicast-off unicast-peer discovery — porting-notes 19).
+host-env:
+    @echo 'export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp ROS_DOMAIN_ID=2'
+    @echo 'export CYCLONEDDS_URI="<CycloneDDS><Domain><General><Interfaces><NetworkInterface name=\"lo\"/></Interfaces><AllowMulticast>false</AllowMulticast></General><Discovery><ParticipantIndex>auto</ParticipantIndex><MaxAutoParticipantIndex>30</MaxAutoParticipantIndex><Peers><Peer Address=\"127.0.0.1\"/></Peers></Discovery></Domain></CycloneDDS>"'
+
+
