@@ -313,63 +313,6 @@ play_launch resolve safety_island.launch.xml
   )
 ]
 
-// ════════════════════════════════════════════════════════ 10 · Friction 1
-#slide[
-  #stitle[What to expect — API surface #h(0.4em) #text(size: 13pt, fill: luma(110))[porting-notes 01–05, 13]]
-  #set text(size: 15pt)
-  #table(
-    columns: (auto, 1fr, 1fr, auto),
-    stroke: 0.5pt + luma(200), inset: 6.5pt,
-    fill: (x, y) => if y == 0 { accent.lighten(88%) },
-    table.header([\#], [*Upstream expects*], [*What you do*], [*Status*]),
-    [01], [`create_service`, params, `now()` on `rclcpp::Node` — compat header covers pub/sub/timer/QoS/log only],
-      [derive `nros::ComponentNode` (rclcpp shape); services via `nros::bind_service`], [#openp],
-    [04], [`Msg::ConstSharedPtr` callbacks], [`const Msg&` — no shared_ptr message ownership], [by design],
-    [05], [`rclcpp::Clock` / `Time` arithmetic], [`nros_cpp_time_ns()` + dt from message stamps (monotonic epoch)], [#openp],
-    [13], [C++17 (`std::optional`)], [C++14 surface — sentinel flag + value; mechanical], [by design],
-  )
-  #v(0.4em)
-  All of these are *local, mechanical* edits — the compiler finds every site for you.
-]
-
-// ════════════════════════════════════════════════════════ 11 · Friction 2
-#slide[
-  #stitle[What to expect — semantics #h(0.4em) #text(size: 13pt, fill: luma(110))[porting-notes 06, 07, 09, 14]]
-  #set text(size: 15pt)
-  #table(
-    columns: (auto, 1fr, 1fr, auto),
-    stroke: 0.5pt + luma(200), inset: 6.5pt,
-    fill: (x, y) => if y == 0 { accent.lighten(88%) },
-    table.header([\#], [*Upstream expects*], [*What you do*], [*Status*]),
-    [07], [`~/private` names + launch `<remap>` routing], [write resolved contract names in-source; launch XML keeps remaps as documentation], [#openp],
-    [06], [params injected from `*.param.yaml` at launch], [param-file values become in-code `declare_parameter` defaults (node-local)], [#openp],
-    [09], [rosidl C++ zero-initializes messages], [*value-init*: `Response r{};` — generated structs are PODs (garbage leaked on the wire otherwise)], [#openp — fix planned],
-    [14], [`polling_subscriber`, blocking service futures], [cache-latest member subs; send-and-poll service clients (no nested spin in a timer cb)], [#openp],
-  )
-  #v(0.3em)
-  \#09 is the one that *bites silently* — make `{}` a porting reflex.
-]
-
-// ════════════════════════════════════════════════════════ 12 · Friction 3
-#slide[
-  #stitle[What to expect — build & scale #h(0.4em) #pill(fill: accent2)[5 nano-ros fixes landed same-day]]
-  #set text(size: 15pt)
-  #table(
-    columns: (auto, 1fr, auto),
-    stroke: 0.5pt + luma(200), inset: 6.5pt,
-    fill: (x, y) => if y == 0 { accent.lighten(88%) },
-    table.header([\#], [*Friction → outcome*], [*Status*]),
-    [08], [two interface pkgs on one link line → duplicate FFI symbols → nano-ros now builds one topo-last superset crate; also: msg constants as struct members (`MrmBehaviorStatus::AVAILABLE`)], [#fixed],
-    [10], [`rclcpp::QoS(5)` / `.transient_local()` spelling → depth ctor added; ported code unchanged], [#fixed],
-    [16], [type-descriptor registry cap 64, overflow *silent* (island registers \~86 types) → cap 256 + override knob], [#fixed],
-    [18], [Zephyr minimal libcpp: stub `<new>` broke every component factory → placement-new forms declared], [#fixed],
-    [11], [executor callback slots = compile-time env knob (`NROS_EXECUTOR_MAX_CBS`); boot fails loud (`Full`) → export 16+; codegen-derived sizing filed], [#openp],
-    [12/15], [one msg-closure per workspace (`island_interfaces` shim); full-pkg deps drag srv IDL embedded idlc rejects → vendor msg-only subsets], [#openp],
-  )
-  #v(0.2em)
-  The protocol: every friction point → `porting-notes.md` entry → nano-ros issue → fix *upstream*, not a local fork.
-]
-
 // ════════════════════════════════════════════════════════ 13 · Zephyr
 #slide[
   #stitle[Zephyr: one image, four nodes]
@@ -487,3 +430,71 @@ just host-env   # prints CYCLONEDDS_URI:
     the `nros` CLI + `play_launch`
   ]
 ]
+
+// ════════════════════════════════════════════════════════ A0 · Appendix divider
+#slide[
+  #v(1fr)
+  #align(center)[
+    #text(size: 30pt, weight: "bold", fill: accent)[Appendix]
+    #v(0.4em)
+    #text(size: 17pt, fill: luma(100))[Migration notes — the full friction log\ (nano-ros-internal work items; full detail in `docs/porting-notes.md`)]
+  ]
+  #v(1fr)
+]
+// ════════════════════════════════════════════════════════ 10 · Friction 1
+#slide[
+  #stitle[What to expect — API surface #h(0.4em) #text(size: 13pt, fill: luma(110))[porting-notes 01–05, 13]]
+  #set text(size: 15pt)
+  #table(
+    columns: (auto, 1fr, 1fr, auto),
+    stroke: 0.5pt + luma(200), inset: 6.5pt,
+    fill: (x, y) => if y == 0 { accent.lighten(88%) },
+    table.header([\#], [*Upstream expects*], [*What you do*], [*Status*]),
+    [01], [`create_service`, params, `now()` on `rclcpp::Node` — compat header covers pub/sub/timer/QoS/log only],
+      [derive `nros::ComponentNode` (rclcpp shape); services via `nros::bind_service`], [#openp],
+    [04], [`Msg::ConstSharedPtr` callbacks], [`const Msg&` — no shared_ptr message ownership], [by design],
+    [05], [`rclcpp::Clock` / `Time` arithmetic], [`nros_cpp_time_ns()` + dt from message stamps (monotonic epoch)], [#openp],
+    [13], [C++17 (`std::optional`)], [C++14 surface — sentinel flag + value; mechanical], [by design],
+  )
+  #v(0.4em)
+  All of these are *local, mechanical* edits — the compiler finds every site for you.
+]
+
+// ════════════════════════════════════════════════════════ 11 · Friction 2
+#slide[
+  #stitle[What to expect — semantics #h(0.4em) #text(size: 13pt, fill: luma(110))[porting-notes 06, 07, 09, 14]]
+  #set text(size: 15pt)
+  #table(
+    columns: (auto, 1fr, 1fr, auto),
+    stroke: 0.5pt + luma(200), inset: 6.5pt,
+    fill: (x, y) => if y == 0 { accent.lighten(88%) },
+    table.header([\#], [*Upstream expects*], [*What you do*], [*Status*]),
+    [07], [`~/private` names + launch `<remap>` routing], [write resolved contract names in-source; launch XML keeps remaps as documentation], [#openp],
+    [06], [params injected from `*.param.yaml` at launch], [param-file values become in-code `declare_parameter` defaults (node-local)], [#openp],
+    [09], [rosidl C++ zero-initializes messages], [*value-init*: `Response r{};` — generated structs are PODs (garbage leaked on the wire otherwise)], [#openp — fix planned],
+    [14], [`polling_subscriber`, blocking service futures], [cache-latest member subs; send-and-poll service clients (no nested spin in a timer cb)], [#openp],
+  )
+  #v(0.3em)
+  \#09 is the one that *bites silently* — make `{}` a porting reflex.
+]
+
+// ════════════════════════════════════════════════════════ 12 · Friction 3
+#slide[
+  #stitle[What to expect — build & scale #h(0.4em) #pill(fill: accent2)[5 nano-ros fixes landed same-day]]
+  #set text(size: 15pt)
+  #table(
+    columns: (auto, 1fr, auto),
+    stroke: 0.5pt + luma(200), inset: 6.5pt,
+    fill: (x, y) => if y == 0 { accent.lighten(88%) },
+    table.header([\#], [*Friction → outcome*], [*Status*]),
+    [08], [two interface pkgs on one link line → duplicate FFI symbols → nano-ros now builds one topo-last superset crate; also: msg constants as struct members (`MrmBehaviorStatus::AVAILABLE`)], [#fixed],
+    [10], [`rclcpp::QoS(5)` / `.transient_local()` spelling → depth ctor added; ported code unchanged], [#fixed],
+    [16], [type-descriptor registry cap 64, overflow *silent* (island registers \~86 types) → cap 256 + override knob], [#fixed],
+    [18], [Zephyr minimal libcpp: stub `<new>` broke every component factory → placement-new forms declared], [#fixed],
+    [11], [executor callback slots = compile-time env knob (`NROS_EXECUTOR_MAX_CBS`); boot fails loud (`Full`) → export 16+; codegen-derived sizing filed], [#openp],
+    [12/15], [one msg-closure per workspace (`island_interfaces` shim); full-pkg deps drag srv IDL embedded idlc rejects → vendor msg-only subsets], [#openp],
+  )
+  #v(0.2em)
+  The protocol: every friction point → `porting-notes.md` entry → nano-ros issue → fix *upstream*, not a local fork.
+]
+
