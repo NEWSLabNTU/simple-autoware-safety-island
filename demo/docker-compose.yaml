@@ -1,0 +1,53 @@
+# P5 co-sim demo — Autoware planning_simulator (domain 1) + domain_bridge
+# (1↔2) + the island (runs on the HOST, domain 2, `just run`).
+# Pattern lifted from the ASI fork's demo/. Image tag = the ASI-proven one.
+#
+#   just demo-up          # sim + bridge (+ noVNC on :6080)
+#   just run              # the island (host, domain 2)
+#   just demo-kill-heartbeat
+#
+# NOTE (P5 bring-up): the stock MRM nodes must be disabled in domain 1 so the
+# island is the only MRM path — see autoware-overrides/README.md.
+services:
+  autoware:
+    image: ghcr.io/autowarefoundation/autoware:universe-20250207
+    network_mode: host
+    ipc: host
+    environment:
+      - ROS_DOMAIN_ID=1
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - DISPLAY=novnc:0.0
+    volumes:
+      - ./autoware-overrides:/autoware-overrides:ro
+      - autoware-map:/autoware-map
+    command: >
+      bash -c "source /opt/ros/humble/setup.bash &&
+               source /opt/autoware/setup.bash &&
+               ros2 launch autoware_launch planning_simulator.launch.xml
+                 map_path:=/autoware-map vehicle_model:=sample_vehicle
+                 sensor_model:=sample_sensor_kit
+                 $(cat /autoware-overrides/disable-mrm.args)"
+
+  bridge:
+    image: ghcr.io/autowarefoundation/autoware:universe-20250207
+    network_mode: host
+    ipc: host
+    environment:
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+    volumes:
+      - ./bridge:/bridge:ro
+    command: >
+      bash -c "source /opt/ros/humble/setup.bash &&
+               source /opt/autoware/setup.bash &&
+               ros2 run domain_bridge domain_bridge /bridge/bridge-config.yaml"
+
+  novnc:
+    image: theasp/novnc:latest
+    environment:
+      - DISPLAY_WIDTH=1600
+      - DISPLAY_HEIGHT=900
+    ports:
+      - "6080:8080"
+
+volumes:
+  autoware-map:

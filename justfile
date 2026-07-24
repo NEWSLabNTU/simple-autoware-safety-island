@@ -88,6 +88,6 @@ demo-up:
 demo-down:
     cd demo && docker compose down
 
-# Scenario: stop publishing the heartbeat and watch the island engage MRM.
+# Scenario: pause the domain bridge (heartbeat loss) → island engages MRM.
 demo-kill-heartbeat:
-    @echo "phase 5 — not wired yet"; exit 1
+    bash demo/scenario-kill-heartbeat.sh
