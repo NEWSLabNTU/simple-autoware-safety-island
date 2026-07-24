@@ -1,0 +1,53 @@
+# ros2 domain_bridge config — the machine artifact of docs/topic-contract.md.
+# Keep the two in sync; the bridge forwards EXACTLY this set.
+# Draft names — finalized in P1/P3 against the upstream launch remaps.
+name: safety_island_bridge
+from_domain: 1
+to_domain: 2
+topics:
+  # Autoware -> island
+  /system/operation_mode/availability:
+    type: tier4_system_msgs/msg/OperationModeAvailability
+  /localization/kinematic_state:
+    type: nav_msgs/msg/Odometry
+  /vehicle/status/control_mode:
+    type: autoware_vehicle_msgs/msg/ControlModeReport
+  /api/operation_mode/state:
+    type: autoware_adapi_v1_msgs/msg/OperationModeState
+  /control/command/control_cmd:
+    type: autoware_control_msgs/msg/Control
+  /vehicle/status/steering_status:
+    type: autoware_vehicle_msgs/msg/SteeringReport
+  /vehicle/status/velocity_status:
+    type: autoware_vehicle_msgs/msg/VelocityReport
+  /planning/route_state:
+    type: autoware_adapi_v1_msgs/msg/RouteState
+  # Island -> Autoware (reversed direction)
+  /system/emergency/control_cmd:
+    type: autoware_control_msgs/msg/Control
+    from_domain: 2
+    to_domain: 1
+  /system/emergency/gear_cmd:
+    type: autoware_vehicle_msgs/msg/GearCommand
+    from_domain: 2
+    to_domain: 1
+  /system/emergency/turn_indicators_cmd:
+    type: autoware_vehicle_msgs/msg/TurnIndicatorsCommand
+    from_domain: 2
+    to_domain: 1
+  /system/emergency/hazard_lights_cmd:
+    type: autoware_vehicle_msgs/msg/HazardLightsCommand
+    from_domain: 2
+    to_domain: 1
+  /system/fail_safe/mrm_state:
+    type: autoware_adapi_v1_msgs/msg/MrmState
+    from_domain: 2
+    to_domain: 1
+  /planning/scenario_planning/max_velocity_candidates:
+    type: autoware_internal_planning_msgs/msg/VelocityLimit
+    from_domain: 2
+    to_domain: 1
+  /planning/scenario_planning/clear_velocity_limit:
+    type: autoware_internal_planning_msgs/msg/VelocityLimitClearCommand
+    from_domain: 2
+    to_domain: 1

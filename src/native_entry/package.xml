@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>native_entry</name>
+  <version>0.1.0</version>
+  <description>Entry pkg — boots the safety-island topology on the native board (dev loop).</description>
+  <maintainer email="jerry73204@gmail.com">Hsiang-Jui Lin</maintainer>
+  <license>Apache-2.0</license>
+  <exec_depend>safety_island_bringup</exec_depend>
+  <export>
+    <build_type>cmake</build_type>
+  </export>
+</package>

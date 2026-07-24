@@ -1,0 +1,47 @@
+# Safety-island system descriptor (nano-ros bringup pkg, schema v0.1).
+# Resolve to the baked model with `just resolve-model`
+# (play_launch resolve --system this-file -o config/system_model.yaml).
+
+[system]
+name = "safety_island"
+rmw = "cyclonedds"
+domain_id = 2                       # island domain; Autoware is domain 1 (bridged)
+default_launch = "safety_island.launch.xml"
+# P4 flips on the E2E integrity layer (nano-ros RFC-0028):
+# features = ["safety"]
+
+# ── Components — uncommented as ports land ─────────────────────────────────
+[[component]]
+pkg = "autoware_mrm_emergency_stop_operator"
+class = "autoware_mrm_emergency_stop_operator::MrmEmergencyStopOperator"
+name = "mrm_emergency_stop_operator"
+
+# [[component]]
+# pkg = "autoware_mrm_comfortable_stop_operator"     # P2
+# class = "autoware_mrm_comfortable_stop_operator::MrmComfortableStopOperator"
+# name = "mrm_comfortable_stop_operator"
+
+# [[component]]
+# pkg = "autoware_stop_mode_operator"                # P2
+# class = "autoware_stop_mode_operator::StopModeOperator"
+# name = "stop_mode_operator"
+
+# [[component]]
+# pkg = "autoware_mrm_handler"                       # P3
+# class = "autoware_mrm_handler::MrmHandler"
+# name = "mrm_handler"
+# group_tiers = { control = "ctrl" }
+
+# ── Tiers (P4) — MRM control loop isolated from telemetry ──────────────────
+# [tiers.ctrl]
+# spin_period_us = 33_333            # 30 Hz, matches upstream update_rate
+# [tiers.telem]
+# spin_period_us = 100_000
+
+[deploy.native]
+kind = "self"
+target = "x86_64-unknown-linux-gnu"
+
+# [deploy.zephyr]                    # P4
+# kind = "zephyr"
+# board = "native_sim/native/64"

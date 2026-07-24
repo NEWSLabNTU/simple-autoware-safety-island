@@ -1,0 +1,7 @@
+build*/
+generated/
+tmp/
+*.log
+.cache/
+__pycache__/
+.direnv/

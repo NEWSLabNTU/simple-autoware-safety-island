@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<!-- ROS 2 launch schema, verbatim (nano-ros consumes it unchanged).
+     Remap names track docs/topic-contract.md; finalized per-phase against the
+     upstream 1.5.0 launch files (mrm_handler.launch.xml is the blueprint). -->
+<launch>
+  <!-- Topic names are resolved in-source for now: nano-ros parses <remap>
+       but does not route it (porting-notes 07); the names here document the
+       contract wiring. -->
+  <node pkg="autoware_mrm_emergency_stop_operator" exec="mrm_emergency_stop_operator" name="mrm_emergency_stop_operator"/>
+
+  <!-- P2: mrm_comfortable_stop_operator, stop_mode_operator -->
+  <!-- P3: mrm_handler -->
+</launch>

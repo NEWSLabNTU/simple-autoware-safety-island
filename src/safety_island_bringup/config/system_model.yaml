@@ -1,0 +1,30 @@
+meta:
+  version: 1
+  inputs:
+  - path: /home/aeon/repos/autoware-safety-island-example/src/safety_island_bringup/launch/safety_island.launch.xml
+    sha256: cdaf8dcb3856a60db0fd1eeda6f6049336d8bd60521a310a255620181626e358
+  - path: /home/aeon/repos/autoware-safety-island-example/src/safety_island_bringup/system.toml
+    sha256: 557ce41331b3b644ee7af7577513d269168ad8f49f17439ba828256c94eab3a2
+  resolver:
+    tool: play_launch
+    version: 0.8.2
+structure:
+  scopes:
+    safety_island.launch.xml:
+      file: safety_island.launch.xml
+  nodes:
+    /mrm_emergency_stop_operator:
+      scope: safety_island.launch.xml
+      pkg: autoware_mrm_emergency_stop_operator
+      exec: mrm_emergency_stop_operator
+      node_name: mrm_emergency_stop_operator
+execution:
+  deploy:
+    /mrm_emergency_stop_operator:
+      target: linux
+      domain: 2
+      rmw: cyclonedds
+      extra:
+        deploy_name: native
+        kind: self
+        target: x86_64-unknown-linux-gnu
