@@ -9,6 +9,5 @@
   <node pkg="autoware_mrm_emergency_stop_operator" exec="mrm_emergency_stop_operator" name="mrm_emergency_stop_operator"/>
   <node pkg="autoware_mrm_comfortable_stop_operator" exec="mrm_comfortable_stop_operator" name="mrm_comfortable_stop_operator"/>
   <node pkg="autoware_stop_mode_operator" exec="stop_mode_operator" name="stop_mode_operator"/>
-
-  <!-- P3: mrm_handler -->
+  <node pkg="autoware_mrm_handler" exec="mrm_handler" name="mrm_handler"/>
 </launch>

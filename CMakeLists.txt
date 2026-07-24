@@ -36,7 +36,7 @@ set(_ws_subdirs
     src/autoware_mrm_emergency_stop_operator          # P1
     src/autoware_mrm_comfortable_stop_operator        # P2
     src/autoware_stop_mode_operator                   # P2
-    # src/autoware_mrm_handler                        # P3
+    src/autoware_mrm_handler                          # P3
 )
 
 if(NANO_ROS_PLATFORM STREQUAL "posix")

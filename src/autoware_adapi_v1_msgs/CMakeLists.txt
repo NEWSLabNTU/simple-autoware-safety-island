@@ -1,17 +1,14 @@
 cmake_minimum_required(VERSION 3.20)
-project(tier4_system_msgs)
+project(autoware_adapi_v1_msgs)
 
 find_package(ament_cmake REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 find_package(builtin_interfaces REQUIRED)
-find_package(autoware_common_msgs REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
-    msg/EmergencyHoldingState.msg
-    msg/MrmBehaviorStatus.msg
-    msg/OperationModeAvailability.msg
-    srv/OperateMrm.srv
-    DEPENDENCIES builtin_interfaces autoware_common_msgs
+    msg/MrmState.msg
+    msg/OperationModeState.msg
+    DEPENDENCIES builtin_interfaces
 )
 
 ament_export_dependencies(rosidl_default_runtime)

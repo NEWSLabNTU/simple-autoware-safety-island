@@ -115,3 +115,34 @@ Template:
 - Host-side tooling: build `tmp/host_msgs_ws` colcon overlay from the vendored
   msg pkgs (they build verbatim — proven) to `ros2 topic echo`/`service call`
   the island.
+
+## Confirmed entries (P3 — mrm_handler, 2026-07-24)
+
+## 14 — polling subscribers + blocking service futures → cache + poll
+- `autoware_utils::InterProcessPollingSubscriber` → member-callback subs
+  caching latest + has_ flag. The 10 ms blocking `future.wait_for` in
+  `requestMrmBehavior` → send-and-poll (a blocking wait inside a timer
+  callback would need nested executor spin); replies drained next ticks,
+  "success" = request sent. Behavior weakening documented in-source.
+- Callback groups dropped (single executor); pull_over client dropped.
+
+## 15 — full-pkg interface closure drags srv IDL the embedded cyclone can't parse
+- Depending on AMENT `nav_msgs` pulled its srv files (GetMap/LoadMap/SetMap);
+  their generated IDL fails cyclone idlc (`syntax error`). Workaround: vendor
+  a workspace-shadowing `nav_msgs` subset (Odometry only) — shadowing is a
+  supported nano-ros pattern. nano-ros follow-up: scope generation to
+  msg-only or fix srv IDL lowering.
+
+## 16 — cyclone descriptor registry cap was 64, overflow SILENT  **[fixed in nano-ros]**
+- `kMaxRegisteredTypes = 64` (descriptors.cpp); the island registers ~86
+  types (std_msgs + geometry_msgs full sets alone ~60). Whichever ts archive
+  was link-order last (tier4) dropped silently → `create_publisher` failed
+  UNSUPPORTED(-5) surfaced as TransportError(-100) at boot. Fixed upstream:
+  cap 256, `#define NROS_CYCLONEDDS_MAX_DESCRIPTOR_TYPES` override. (The
+  `NROS_CYCLONEDDS_MAX_TYPES` env knob is a DIFFERENT registry — red
+  herring during diagnosis.)
+
+## 17 — stale host-tooling overlay masquerades as delivery failure
+- `ros2 topic pub` from an overlay built before a msg was added publishes
+  nothing useful; the island callback never fires and it looks like an RMW
+  bug. Rebuild `tmp/host_msgs_ws` after any vendored-msg change.

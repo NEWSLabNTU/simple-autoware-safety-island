@@ -26,6 +26,11 @@ pkg = "autoware_stop_mode_operator"
 class = "autoware_stop_mode_operator::StopModeOperator"
 name = "stop_mode_operator"
 
+[[component]]
+pkg = "autoware_mrm_handler"
+class = "autoware_mrm_handler::MrmHandler"
+name = "mrm_handler"
+
 # [[component]]
 # pkg = "autoware_mrm_handler"                       # P3
 # class = "autoware_mrm_handler::MrmHandler"
