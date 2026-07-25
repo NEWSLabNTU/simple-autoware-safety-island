@@ -13,3 +13,4 @@ demo/.sim.pgid
 demo/.bridge.pgid
 play_log/
 tmp_*.log
+demo/.*.pgid
