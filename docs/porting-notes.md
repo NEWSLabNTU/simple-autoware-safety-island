@@ -25,7 +25,7 @@ Template:
   instead; services via `nros::bind_service`.
 - **Resolved:** open — compat-surface extension is the nano-ros follow-up.
 
-## 02 — identity rule forces namespace rename
+## 02 — identity rule forces namespace rename  **[nano-ros #275]**
 - **Upstream:** `namespace autoware::mrm_emergency_stop_operator`.
 - **nano-ros:** class prefix must equal pkg name →
   `namespace autoware_mrm_emergency_stop_operator`. One-line diff; the ASI
@@ -43,7 +43,7 @@ Template:
 - Port stamps from `nros_cpp_time_ns()` (platform monotonic) and computes dt
   from message stamps. Note: monotonic epoch, not ROS time.
 
-## 06 — parameters are node-local; launch param file not projected
+## 06 — parameters are node-local; launch param file not projected  **[nano-ros #276]**
 - Upstream declares params with NO default (values injected from
   `config/*.param.yaml` via launch). nano-ros: `declare_parameter(name,
   default)` node-local; the upstream yaml values became in-code defaults.
@@ -72,7 +72,7 @@ Template:
 
 ## Confirmed entries (P2 — comfortable_stop + stop_mode, 2026-07-24)
 
-## 10 — `nros::QoS` lacked the rclcpp depth ctor  **[fixed in nano-ros]**
+## 10 — `nros::QoS` lacked the rclcpp depth ctor  **[fixed in nano-ros, #279]**
 - Upstream spells `rclcpp::QoS(5)` / `rclcpp::QoS{1}.transient_local()`.
   Native `nros::QoS` had only the default ctor. Fixed: `explicit QoS(int
   depth)` added; ported code keeps its spelling. `transient_local()` chain
@@ -89,7 +89,7 @@ Template:
   objects mixed old/new `NROS_EXECUTOR_SIZE` and segfaulted in shutdown.
   Clean rebuild after changing it (the nano-ros fixture-treadmill rule).
 
-## 12 — one `nros_find_interfaces` closure per workspace (island_interfaces)
+## 12 — one `nros_find_interfaces` closure per workspace (island_interfaces)  **[nano-ros #277]**
 - With per-call topo-last FFI crates (nano-ros #253 mitigation), node pkgs
   with DIFFERENT msg-dep subsets would miss or duplicate symbols. The
   `src/island_interfaces` shim pkg (first SUBDIR) resolves the UNION closure
@@ -118,7 +118,7 @@ Template:
 
 ## Confirmed entries (P3 — mrm_handler, 2026-07-24)
 
-## 14 — polling subscribers + blocking service futures → cache + poll
+## 14 — polling subscribers + blocking service futures → cache + poll  **[nano-ros #278]**
 - `autoware_utils::InterProcessPollingSubscriber` → member-callback subs
   caching latest + has_ flag. The 10 ms blocking `future.wait_for` in
   `requestMrmBehavior` → send-and-poll (a blocking wait inside a timer
@@ -133,7 +133,7 @@ Template:
   supported nano-ros pattern. nano-ros follow-up: scope generation to
   msg-only or fix srv IDL lowering.
 
-## 16 — cyclone descriptor registry cap was 64, overflow SILENT  **[fixed in nano-ros]**
+## 16 — cyclone descriptor registry cap was 64, overflow SILENT  **[fixed in nano-ros, #280]**
 - `kMaxRegisteredTypes = 64` (descriptors.cpp); the island registers ~86
   types (std_msgs + geometry_msgs full sets alone ~60). Whichever ts archive
   was link-order last (tier4) dropped silently → `create_publisher` failed
@@ -149,7 +149,7 @@ Template:
 
 ## Confirmed entries (P4 — zephyr native_sim, 2026-07-24)
 
-## 18 — Zephyr minimal libcpp: no std headers, stub <new>  **[fixed in nano-ros]**
+## 18 — Zephyr minimal libcpp: no std headers, stub <new>  **[fixed in nano-ros, #281]**
 - `<algorithm>`/`<cmath>` don't exist (ports now use local `max_d`/`abs_d`);
   GLIBCXX full libcpp is NOT reachable on native_sim host-gcc
   (`PICOLIBC_USE_MODULE depends on !GLIBCXX_LIBCPP`, host gcc has no
