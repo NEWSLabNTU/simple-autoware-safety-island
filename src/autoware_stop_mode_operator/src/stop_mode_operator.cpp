@@ -35,7 +35,7 @@ builtin_interfaces::msg::Time now_stamp()
 }
 }  // namespace
 
-namespace autoware_stop_mode_operator
+namespace autoware::stop_mode_operator
 {
 
 StopModeOperator::StopModeOperator(::nros::NodeHandle handle)
@@ -142,7 +142,7 @@ void StopModeOperator::publish_hazard_lights_command()
   pub_hazard_lights_.publish(hazard_lights);
 }
 
-}  // namespace autoware_stop_mode_operator
+}  // namespace autoware::stop_mode_operator
 
 // nano-ros port: RCLCPP_COMPONENTS_REGISTER_NODE → NROS_COMPONENT.
-NROS_COMPONENT(autoware_stop_mode_operator::StopModeOperator);
+NROS_COMPONENT(autoware::stop_mode_operator::StopModeOperator);

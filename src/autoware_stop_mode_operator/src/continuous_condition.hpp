@@ -19,8 +19,7 @@
 // clock (porting-notes 05); std::optional (C++17) → sentinel flags (the
 // nano-ros C++ surface targets C++14).
 
-// nano-ros port: namespace flattened (identity rule, porting-notes 02).
-namespace autoware_stop_mode_operator
+namespace autoware::stop_mode_operator
 {
 
 class ContinuousCondition
@@ -37,6 +36,6 @@ private:
   double start_stamp_{0.0};
 };
 
-}  // namespace autoware_stop_mode_operator
+}  // namespace autoware::stop_mode_operator
 
 #endif  // CONTINUOUS_CONDITION_HPP_

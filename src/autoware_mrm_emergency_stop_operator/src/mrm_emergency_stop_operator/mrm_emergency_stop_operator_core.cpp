@@ -40,7 +40,7 @@ double seconds_since(const builtin_interfaces::msg::Time & then)
 }
 }  // namespace
 
-namespace autoware_mrm_emergency_stop_operator
+namespace autoware::mrm_emergency_stop_operator
 {
 
 MrmEmergencyStopOperator::MrmEmergencyStopOperator(::nros::NodeHandle handle)
@@ -174,8 +174,8 @@ Control MrmEmergencyStopOperator::calcTargetAcceleration(const Control & prev_co
   return control_cmd;
 }
 
-}  // namespace autoware_mrm_emergency_stop_operator
+}  // namespace autoware::mrm_emergency_stop_operator
 
 // nano-ros port: RCLCPP_COMPONENTS_REGISTER_NODE → NROS_COMPONENT (the
 // C-ABI factory the generated entry constructs the node through).
-NROS_COMPONENT(autoware_mrm_emergency_stop_operator::MrmEmergencyStopOperator);
+NROS_COMPONENT(autoware::mrm_emergency_stop_operator::MrmEmergencyStopOperator);

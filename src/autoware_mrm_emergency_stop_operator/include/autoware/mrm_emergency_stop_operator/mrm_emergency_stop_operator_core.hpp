@@ -27,10 +27,7 @@
 #include <nros/component.hpp>
 #include <nros/component_node.hpp>
 
-// nano-ros port: namespace autoware::mrm_emergency_stop_operator →
-// autoware_mrm_emergency_stop_operator (nano-ros identity rule:
-// class prefix == pkg name; porting-notes 02).
-namespace autoware_mrm_emergency_stop_operator
+namespace autoware::mrm_emergency_stop_operator
 {
 using autoware_control_msgs::msg::Control;
 using tier4_system_msgs::msg::MrmBehaviorStatus;
@@ -85,6 +82,6 @@ private:
   Control calcTargetAcceleration(const Control & prev_control_cmd) const;
 };
 
-}  // namespace autoware_mrm_emergency_stop_operator
+}  // namespace autoware::mrm_emergency_stop_operator
 
 #endif  // AUTOWARE__MRM_EMERGENCY_STOP_OPERATOR__MRM_EMERGENCY_STOP_OPERATOR_CORE_HPP_

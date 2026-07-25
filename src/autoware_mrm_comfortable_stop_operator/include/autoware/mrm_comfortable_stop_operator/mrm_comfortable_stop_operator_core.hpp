@@ -26,9 +26,7 @@
 #include <nros/component.hpp>
 #include <nros/component_node.hpp>
 
-// nano-ros port: namespace flattened to the pkg name (identity rule,
-// porting-notes 02).
-namespace autoware_mrm_comfortable_stop_operator
+namespace autoware::mrm_comfortable_stop_operator
 {
 
 struct Parameters
@@ -73,6 +71,6 @@ private:
   tier4_system_msgs::msg::MrmBehaviorStatus status_;
 };
 
-}  // namespace autoware_mrm_comfortable_stop_operator
+}  // namespace autoware::mrm_comfortable_stop_operator
 
 #endif  // AUTOWARE__MRM_COMFORTABLE_STOP_OPERATOR__MRM_COMFORTABLE_STOP_OPERATOR_CORE_HPP_

@@ -29,8 +29,7 @@
 #include <autoware_vehicle_msgs/msg/turn_indicators_command.hpp>
 #include <autoware_vehicle_msgs/msg/velocity_report.hpp>
 
-// nano-ros port: namespace flattened (identity rule, porting-notes 02).
-namespace autoware_stop_mode_operator
+namespace autoware::stop_mode_operator
 {
 
 using autoware_control_msgs::msg::Control;
@@ -76,6 +75,6 @@ private:
   static constexpr double vehicle_stop_timeout_ = 1.0;
 };
 
-}  // namespace autoware_stop_mode_operator
+}  // namespace autoware::stop_mode_operator
 
 #endif  // STOP_MODE_OPERATOR_HPP_

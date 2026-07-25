@@ -29,7 +29,7 @@ builtin_interfaces::msg::Time now_stamp()
 }
 }  // namespace
 
-namespace autoware_mrm_comfortable_stop_operator
+namespace autoware::mrm_comfortable_stop_operator
 {
 
 MrmComfortableStopOperator::MrmComfortableStopOperator(::nros::NodeHandle handle)
@@ -126,7 +126,7 @@ void MrmComfortableStopOperator::onTimer()
   publishStatus();
 }
 
-}  // namespace autoware_mrm_comfortable_stop_operator
+}  // namespace autoware::mrm_comfortable_stop_operator
 
 // nano-ros port: RCLCPP_COMPONENTS_REGISTER_NODE → NROS_COMPONENT.
-NROS_COMPONENT(autoware_mrm_comfortable_stop_operator::MrmComfortableStopOperator);
+NROS_COMPONENT(autoware::mrm_comfortable_stop_operator::MrmComfortableStopOperator);

@@ -13,27 +13,27 @@ default_launch = "safety_island.launch.xml"
 # ── Components — uncommented as ports land ─────────────────────────────────
 [[component]]
 pkg = "autoware_mrm_emergency_stop_operator"
-class = "autoware_mrm_emergency_stop_operator::MrmEmergencyStopOperator"
+class = "autoware::mrm_emergency_stop_operator::MrmEmergencyStopOperator"
 name = "mrm_emergency_stop_operator"
 
 [[component]]
 pkg = "autoware_mrm_comfortable_stop_operator"
-class = "autoware_mrm_comfortable_stop_operator::MrmComfortableStopOperator"
+class = "autoware::mrm_comfortable_stop_operator::MrmComfortableStopOperator"
 name = "mrm_comfortable_stop_operator"
 
 [[component]]
 pkg = "autoware_stop_mode_operator"
-class = "autoware_stop_mode_operator::StopModeOperator"
+class = "autoware::stop_mode_operator::StopModeOperator"
 name = "stop_mode_operator"
 
 [[component]]
 pkg = "autoware_mrm_handler"
-class = "autoware_mrm_handler::MrmHandler"
+class = "autoware::mrm_handler::MrmHandler"
 name = "mrm_handler"
 
 # [[component]]
 # pkg = "autoware_mrm_handler"                       # P3
-# class = "autoware_mrm_handler::MrmHandler"
+# class = "autoware::mrm_handler::MrmHandler"
 # name = "mrm_handler"
 # group_tiers = { control = "ctrl" }
 

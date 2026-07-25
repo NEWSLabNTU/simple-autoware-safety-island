@@ -57,7 +57,7 @@ const char * state2string(const int state)
 }
 }  // namespace
 
-namespace autoware_mrm_handler
+namespace autoware::mrm_handler
 {
 
 MrmHandler::MrmHandler(::nros::NodeHandle handle) : ::nros::ComponentNode(handle, "mrm_handler")
@@ -599,7 +599,7 @@ uint8_t MrmHandler::getCurrentOperationMode()
   return operation_mode_state_.mode;
 }
 
-}  // namespace autoware_mrm_handler
+}  // namespace autoware::mrm_handler
 
 // nano-ros port: RCLCPP_COMPONENTS_REGISTER_NODE → NROS_COMPONENT.
-NROS_COMPONENT(autoware_mrm_handler::MrmHandler);
+NROS_COMPONENT(autoware::mrm_handler::MrmHandler);

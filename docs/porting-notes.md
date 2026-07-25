@@ -25,11 +25,14 @@ Template:
   instead; services via `nros::bind_service`.
 - **Resolved:** open — compat-surface extension is the nano-ros follow-up.
 
-## 02 — identity rule forces namespace rename  **[nano-ros #275]**
+## 02 — identity rule forces namespace rename  **[FIXED — nano-ros #275 / RFC-0057, phase-305]**
 - **Upstream:** `namespace autoware::mrm_emergency_stop_operator`.
-- **nano-ros:** class prefix must equal pkg name →
-  `namespace autoware_mrm_emergency_stop_operator`. One-line diff; the ASI
-  fork solved the same with a wrapper subclass.
+- **Was:** class prefix had to equal pkg name (212.L.4) → flattened
+  namespaces in every ported file.
+- **RESOLVED (RFC-0057):** L.4 retired — pkg is explicit metadata; all four
+  ported pkgs restored their verbatim upstream namespaces and register via
+  `nros_components_register_node(<lib> PLUGIN autoware::… EXECUTABLE …)`
+  (rclcpp_components keyword parity). Ports now C++17 like upstream.
 
 ## 03 — parameter update callback dropped
 - `add_on_set_parameters_callback` + `autoware_utils::update_param` have no
@@ -53,7 +56,7 @@ Template:
   expansion unsupported. Port hardcodes the resolved contract names
   (launch XML keeps them as documentation).
 
-## 08 — multi-interface-pkg link: duplicate FFI symbols  **[fixed in nano-ros]**
+## 08 — multi-interface-pkg link: duplicate FFI symbols  **[fixed in nano-ros; consumer boilerplate gone via RFC-0057 auto-wiring]**
 - Each interface pkg's generated FFI staticlib was a flat-module superset of
   every preceding pkg → two pkgs on one link line = `multiple definition of
   nros_cpp_*`. Fixed in nano-ros: `nros_find_interfaces` now builds only the
@@ -89,7 +92,7 @@ Template:
   objects mixed old/new `NROS_EXECUTOR_SIZE` and segfaulted in shutdown.
   Clean rebuild after changing it (the nano-ros fixture-treadmill rule).
 
-## 12 — one `nros_find_interfaces` closure per workspace (island_interfaces)  **[nano-ros #277]**
+## 12 — one `nros_find_interfaces` closure per workspace (island_interfaces)  **[nano-ros #277; manual topo-last consumer links gone via RFC-0057]**
 - With per-call topo-last FFI crates (nano-ros #253 mitigation), node pkgs
   with DIFFERENT msg-dep subsets would miss or duplicate symbols. The
   `src/island_interfaces` shim pkg (first SUBDIR) resolves the UNION closure

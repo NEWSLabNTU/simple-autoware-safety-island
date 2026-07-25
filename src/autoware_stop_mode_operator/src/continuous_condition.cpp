@@ -14,7 +14,7 @@
 
 #include "continuous_condition.hpp"
 
-namespace autoware_stop_mode_operator
+namespace autoware::stop_mode_operator
 {
 
 void ContinuousCondition::update(double stamp_sec, bool condition)
@@ -50,4 +50,4 @@ bool ContinuousCondition::check(double stamp_sec, double duration) const
   return duration <= (stamp_sec - start_stamp_);
 }
 
-}  // namespace autoware_stop_mode_operator
+}  // namespace autoware::stop_mode_operator

@@ -33,8 +33,7 @@
 #include <nros/component.hpp>
 #include <nros/component_node.hpp>
 
-// nano-ros port: namespace flattened (identity rule, porting-notes 02).
-namespace autoware_mrm_handler
+namespace autoware::mrm_handler
 {
 
 struct HazardLampPolicy
@@ -153,6 +152,6 @@ private:
   uint8_t getCurrentOperationMode();
 };
 
-}  // namespace autoware_mrm_handler
+}  // namespace autoware::mrm_handler
 
 #endif  // AUTOWARE__MRM_HANDLER__MRM_HANDLER_CORE_HPP_
