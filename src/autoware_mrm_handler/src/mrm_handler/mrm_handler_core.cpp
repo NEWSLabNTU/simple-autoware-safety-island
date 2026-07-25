@@ -95,9 +95,12 @@ MrmHandler::MrmHandler(::nros::NodeHandle handle) : ::nros::ComponentNode(handle
   NROS_SUBSCRIBE(
     tier4_system_msgs::msg::MrmBehaviorStatus, onEmergencyStopStatus,
     "/system/mrm/emergency_stop/status");
-  NROS_SUBSCRIBE(
-    autoware_adapi_v1_msgs::msg::OperationModeState, onOperationModeState,
-    "/api/operation_mode/state");
+  // transient_local: the topic is latched at source; a volatile sub misses
+  // the current mode on late join -> handler stuck "emergency" (deadlocks
+  // engage once mrm_state is honestly bridged back to Autoware).
+  create_subscription<autoware_adapi_v1_msgs::msg::OperationModeState, MrmHandler,
+                      &MrmHandler::onOperationModeState>(
+    "/api/operation_mode/state", ::nros::QoS(1).transient_local());
   NROS_SUBSCRIBE(autoware_vehicle_msgs::msg::GearCommand, onGearCmd, "/control/command/gear_cmd");
 
   // Publisher

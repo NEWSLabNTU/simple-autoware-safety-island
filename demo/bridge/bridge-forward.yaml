@@ -19,6 +19,12 @@ topics:
     type: autoware_adapi_v1_msgs/msg/OperationModeState
     from_domain: 1
     to_domain: 2
+    # latched at source; without TL here the bridge republish is volatile and
+    # a late-joining island never sees the current mode -> permanent-emergency
+    # deadlock (blocks engage via the bridged mrm_state).
+    qos:
+      durability: transient_local
+      depth: 1
   /control/command/control_cmd:
     type: autoware_control_msgs/msg/Control
     from_domain: 1

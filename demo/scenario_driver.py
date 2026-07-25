@@ -18,7 +18,8 @@ LO_URI = ('<CycloneDDS><Domain Id="any"><General>'
           '<MaxAutoParticipantIndex>60</MaxAutoParticipantIndex>'
           '<Peers><Peer Address="127.0.0.1"/></Peers></Discovery>'
           '</Domain></CycloneDDS>')
-os.environ.setdefault('CYCLONEDDS_URI', LO_URI)
+os.environ['CYCLONEDDS_URI'] = LO_URI  # FORCE: the sourced Autoware env's URI lacks
+# the unicast peer scan the ZEPHYR island's baked discovery needs (domain 2)
 os.environ['RMW_IMPLEMENTATION'] = 'rmw_cyclonedds_cpp'
 
 import rclpy
@@ -27,7 +28,10 @@ from rclpy.executors import SingleThreadedExecutor
 from rclpy.qos import QoSProfile, DurabilityPolicy
 from geometry_msgs.msg import PoseWithCovarianceStamped, PoseStamped
 from nav_msgs.msg import Odometry
-from autoware_adapi_v1_msgs.msg import RouteState, MrmState
+from autoware_adapi_v1_msgs.msg import MrmState
+from autoware_planning_msgs.msg import RouteState  # /planning/route_state — the
+# adapi /api/routing/state republish misses the latched sample under fast
+# startup (volatile-sub race, exposed by play_launch's 40s bring-up)
 from autoware_adapi_v1_msgs.srv import ChangeOperationMode
 
 DRIVE_SECS = float(os.environ.get('DRIVE_SECS', '15'))
@@ -66,7 +70,7 @@ def main():
                              field=lambda m: m.twist.twist.linear.x)
 
     print('== 0. wait for the sim stack (route state latched by ADAPI) ==', flush=True)
-    while latest(n1, ex1, RouteState, '/api/routing/state', 5, transient=True) is None:
+    while latest(n1, ex1, RouteState, '/planning/route_state', 5, transient=True) is None:
         time.sleep(2)
 
     print('== 1. initial pose ==', flush=True)
@@ -89,11 +93,11 @@ def main():
     route = None
     for _ in range(10):
         pub_goal.publish(g); time.sleep(2)
-        st = latest(n1, ex1, RouteState, '/api/routing/state', 4, transient=True)
+        st = latest(n1, ex1, RouteState, '/planning/route_state', 4, transient=True)
         route = st.state if st else None
-        if route == 2: break
-    print(f'route state: {route} (2=SET)', flush=True)
-    if route != 2:
+        if route == RouteState.SET: break
+    print(f"route state: {route} (SET={RouteState.SET})", flush=True)
+    if route != RouteState.SET:
         print('route not set — check goal placement'); sys.exit(2)
 
     print('== 3. engage autonomous ==', flush=True)

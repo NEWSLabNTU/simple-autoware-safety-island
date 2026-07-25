@@ -3,10 +3,10 @@
 # attributable to the ISLAND, not to sim-side staleness reactions.
 name: si_bridge_reverse
 topics:
-  /system/emergency/control_cmd:
-    type: autoware_control_msgs/msg/Control
-    from_domain: 2
-    to_domain: 1
+  # /system/emergency/control_cmd DROPPED until nano-ros #267: the island's
+  # Control corrupts through the serialized rebroadcast (observed 2.6e9 accel
+  # -> the sim gate accelerated to the 50 m/s cap). MrmState/gear/hazards
+  # cross clean; the sim-side stop is the gate's staleness reaction.
   /system/emergency/gear_cmd:
     type: autoware_vehicle_msgs/msg/GearCommand
     from_domain: 2

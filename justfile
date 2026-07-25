@@ -5,6 +5,7 @@
 # `nros` CLI + play_launch are on PATH (`just doctor` checks).
 
 NANO_ROS_ROOT := env("NANO_ROS_ROOT", justfile_directory() / "../nano-ros")
+PLAY_LAUNCH_REPO := env("PLAY_LAUNCH_REPO", justfile_directory() / "../play_launch")
 BUILD_DIR := "build"
 BRINGUP := "safety_island_bringup"
 
@@ -120,6 +121,29 @@ demo-bridge:
     setsid nohup ros2 run domain_bridge domain_bridge --wait-for-publisher false demo/bridge/bridge-reverse.yaml > tmp_bridge_rev.log 2>&1 < /dev/null &
     echo $! > demo/.bridge-rev.pgid
     echo "bridges: fwd pgid $(cat demo/.bridge-fwd.pgid) (heartbeat leg — the demo faults this), rev pgid $(cat demo/.bridge-rev.pgid) (island commands — stays alive)"
+
+# Typed relay for the island's emergency Control (d2 -> d1): stands in for
+# the dropped bridge row until nano-ros #267; ALSO the honest actuation path —
+# it survives the bridge fault, so the island's ramp reaches the vehicle.
+demo-relay:
+    #!/usr/bin/env bash
+    set -e
+    source /opt/ros/humble/setup.bash
+    source /opt/autoware/1.5.0/setup.bash >/dev/null 2>&1
+    setsid nohup python3 demo/control_relay.py > tmp_relay.log 2>&1 < /dev/null &
+    echo $! > demo/.relay.pgid
+    echo "control relay started, pgid $(cat demo/.relay.pgid)"
+
+demo-relay-down:
+    -kill -TERM -- -$(cat demo/.relay.pgid 2>/dev/null) 2>/dev/null; rm -f demo/.relay.pgid
+
+# The full driving sequence (pure rclpy — the ros2-CLI daemon is unreliable
+# under heavy graphs): init pose -> goal -> engage -> drive -> fault -> verdict.
+demo-scenario:
+    #!/usr/bin/env bash
+    source /opt/ros/humble/setup.bash
+    source /opt/autoware/1.5.0/setup.bash >/dev/null 2>&1
+    python3 demo/scenario_driver.py
 
 demo-bridge-down:
     -kill -TERM -- -$(cat demo/.bridge-fwd.pgid 2>/dev/null) 2>/dev/null; rm -f demo/.bridge-fwd.pgid

@@ -28,6 +28,28 @@ repeatedly wedged with `!rclpy.ok()`). The pure-rclpy
 `demo/scenario_driver.py` replaces the CLI-based script to remove the daemon
 dependency; the delivery wedge itself needs a fresh-boot investigation.
 
+**play_launch adoption (2026-07-25): DONE.** The sim now launches via the
+play_launch SOURCE build (`main`, v0.8.2): 40 s bring-up, 62/62 composables,
+clean process-group teardown. The stall we hit earlier was pip 0.5.1 — an
+old architecture (ListNodes-manager era) that gives up loading composables
+into busy single-threaded containers; upstream main has rewritten it. Action
+for play_launch: publish a fresh pip release (0.5.1 badly lags main).
+
+**Engage-deadlock findings (both fixed here):**
+- `/api/operation_mode/state` is transient_local at source, but the bridge
+  republished it volatile and the island subscribed volatile — a late-joining
+  island never learns the mode, stays "emergency", and (with the reverse
+  bridge honest) its bridged MRM state makes Autoware refuse
+  `change_to_autonomous`. Fixed: bridge-forward.yaml QoS override
+  (transient_local) + the handler's opmode subscription is transient_local.
+- Autoware's availability REQUIRES `/system/emergency/control_cmd` alive on
+  domain 1 (topic_state_monitor) — dropping the corrupted bridge row (#267)
+  blocked engage entirely. Fixed: `demo/control_relay.py`, a typed d2→d1
+  relay (typed decode of the island's Control is clean; only domain_bridge's
+  byte-level rebroadcast corrupts). The relay ALSO survives the bridge fault,
+  so the island's decel commands genuinely reach the vehicle during MRM —
+  the PASS is now attributable to the island's actuation, not gate staleness.
+
 Operational notes learned the hard way: `ros2 launch` teardown MUST be
 process-group kill (`just demo-sim-down`) — a plain kill strands every leaf
 node and the duplicates flap availability + MRM; play_launch 0.5.1 replay
