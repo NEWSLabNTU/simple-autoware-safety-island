@@ -60,8 +60,15 @@ stalls loading composables into single-threaded containers (map never loads)
 
 Autoware runs from the HOST install `/opt/autoware/1.5.0/setup.$shell`
 (335 pkgs, 1.5.0 — exact version parity with the ported nodes, so the
-velocity-limit topics return to the bridge set). The docker compose path
-stays in `demo/` as the containerized alternative.
+velocity-limit topics return to the bridge set). The docker compose
+alternative was REMOVED (2026-07-25) — unused, version-skewed (0.40
+image), and the host path is strictly better here.
+
+**The receipt:** `DISPLAY=:2 just demo-all` (or `demo-all native`) brings up
+sim + bridges + relay + island and runs the scenario to a VERDICT;
+`just demo-down-all` tears everything down. Validated cold: PASS
+(4.25 → 0.00 m/s), sim 62/62 composables after the play_launch
+verify-then-retry LoadNode fix (landed upstream in play_launch main).
 
 - Host tooling: source the env — the `tmp/host_msgs_ws` overlay is obsolete.
 - `domain_bridge` is NOT in the install → built in `demo/host_ws` (colcon,

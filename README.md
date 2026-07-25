@@ -87,15 +87,16 @@ Host Autoware 1.5.0 (`/opt/autoware/1.5.0`) + the island; stock MRM nodes are
 shadowed out, so the island is the ONLY MRM path.
 
 ```sh
-just demo-host-ws                 # once: build domain_bridge + the MRM-less
-                                  #       tier4_system_launch overlay
-DISPLAY=:2 just demo-sim          # planning_simulator + RViz (own process group)
-just demo-bridge                  # domain_bridge, domains 1 <-> 2 on loopback
-just run                          # the island (domain 2)
-bash demo/scenario-drive-and-kill.sh   # the full sequence below
-just demo-sim-down demo-bridge-down    # teardown (GROUP kill — ros2 launch
-                                       # orphans every leaf node otherwise)
+just demo-host-ws            # once: build domain_bridge + the MRM-shadowed
+                             #       tier4_system_launch overlay
+DISPLAY=:2 just demo-all     # THE RECEIPT: sim (play_launch) + bridges +
+                             # relay + zephyr island + scenario -> VERDICT
+just demo-down-all           # teardown (process-group kills throughout)
 ```
+
+Variants: `just demo-all native` (native island). Pieces individually:
+`demo-sim`, `demo-bridge`, `demo-relay`, `island-up`, `demo-scenario`.
+The sim runs via a play_launch SOURCE build (>= 0.8.2; pip 0.5.1 stalls).
 
 ### Demo sequence & timeline
 

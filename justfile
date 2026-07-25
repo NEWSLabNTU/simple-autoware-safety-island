@@ -86,6 +86,48 @@ zephyr-build:
 zephyr-run:
     ./build-zephyr/zephyr/zephyr.exe
 
+# Background island variants (own process groups, for the one-shot demo).
+island-up island="zephyr":
+    #!/usr/bin/env bash
+    set -e
+    if [ "{{island}}" = "zephyr" ]; then
+        setsid nohup ./build-zephyr/zephyr/zephyr.exe > tmp_island.log 2>&1 < /dev/null &
+    else
+        setsid nohup env LD_LIBRARY_PATH="$HOME/.nros/sdk/cyclonedds/0.10.5-nros1/lib" \
+            ROS_DOMAIN_ID=2 CYCLONEDDS_URI='<CycloneDDS><Domain><General><Interfaces><NetworkInterface name="lo"/></Interfaces><AllowMulticast>spdp</AllowMulticast></General></Domain></CycloneDDS>' \
+            ./build/src/native_entry/native_entry > tmp_island.log 2>&1 < /dev/null &
+    fi
+    echo $! > demo/.island.pgid
+    echo "{{island}} island started, pgid $(cat demo/.island.pgid)"
+
+island-down:
+    -kill -TERM -- -$(cat demo/.island.pgid 2>/dev/null) 2>/dev/null; rm -f demo/.island.pgid
+
+# ── THE RECEIPT: full demo, one command ─────────────────────────────────────
+# Brings up sim (play_launch) + bridges + relay + island, waits for readiness,
+# runs the driving scenario, prints VERDICT. Teardown: `just demo-down-all`.
+#   just demo-all              # zephyr island (default)
+#   just demo-all native       # native island
+demo-all island="zephyr":
+    #!/usr/bin/env bash
+    set -e
+    just demo-sim
+    echo "-- waiting for the sim (Startup complete)..."
+    until grep -qa "Startup complete" tmp_sim.log 2>/dev/null; do sleep 5; done
+    grep -a "Startup complete" tmp_sim.log | tail -1 | sed 's/\x1b\[[0-9;]*m//g' | grep -o "Startup complete.*"
+    just demo-bridge
+    just demo-relay
+    just island-up {{island}}
+    echo "-- letting the island settle (latched inputs)..."
+    sleep 10
+    just demo-scenario
+
+demo-down-all:
+    -just island-down
+    -just demo-relay-down
+    -just demo-bridge-down
+    -just demo-sim-down
+
 # ── Autoware co-sim demo ─────────────────────────────────────────────────────
 # Phase-2 host path (Autoware 1.5.0 install). `ros2 launch` leaves ORPHANS on
 # a plain kill — every recipe runs the tree in its own PROCESS GROUP (setsid)
@@ -100,7 +142,12 @@ demo-sim:
     source /opt/autoware/1.5.0/setup.bash >/dev/null 2>&1
     source demo/host_ws/install/setup.bash
     export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp ROS_DOMAIN_ID=1
-    setsid nohup ros2 launch autoware_launch planning_simulator.launch.xml         map_path:=$PWD/demo/map/sample-map-planning vehicle_model:=sample_vehicle         sensor_model:=sample_sensor_kit rviz:=true > tmp_sim.log 2>&1 < /dev/null &
+    # play_launch (source build >=0.8.2): 40s bring-up, 62/62 composables,
+    # clean teardown. pip 0.5.1 = old architecture, stalls on busy containers.
+    source {{PLAY_LAUNCH_REPO}}/install/setup.bash 2>/dev/null || true
+    PL={{PLAY_LAUNCH_REPO}}/target/release/play_launch
+    [ -x "$PL" ] || PL=play_launch
+    setsid nohup "$PL" launch autoware_launch planning_simulator.launch.xml map_path:=$PWD/demo/map/sample-map-planning vehicle_model:=sample_vehicle sensor_model:=sample_sensor_kit rviz:=true > tmp_sim.log 2>&1 < /dev/null &
     echo $! > demo/.sim.pgid
     echo "sim started, pgid $(cat demo/.sim.pgid) (log tmp_sim.log)"
 
@@ -157,17 +204,7 @@ demo-host-ws:
     source /opt/ros/humble/setup.bash
     cd demo/host_ws && colcon build --symlink-install
 
-# ── Containerized alternative (Autoware 0.40 image; velocity-limit rows
-#    dropped there — see bridge-config comments) ────────────────────────────
-demo-up:
-    cd demo && docker compose up -d
 
-demo-down:
-    cd demo && docker compose down
-
-# Scenario: pause the domain bridge (heartbeat loss) → island engages MRM.
-demo-kill-heartbeat:
-    bash demo/scenario-kill-heartbeat.sh
 
 # Print the host-side env needed to talk to the ZEPHYR island (native_sim
 # bakes multicast-off unicast-peer discovery — porting-notes 19).
