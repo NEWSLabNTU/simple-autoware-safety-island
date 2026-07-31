@@ -173,106 +173,48 @@ zephyr-build:
 zephyr-run:
     ./build-zephyr/zephyr/zephyr.exe
 
-# Island process only, in its own process group (`island-up` wraps this
-# together with the bridges + relay).
+# ══ THE DEMO — blocking recipes ═════════════════════════════════════════════
+# Three parts, one terminal each. Every recipe BLOCKS on its services and
+# tears its whole process tree down when it exits or is Ctrl-C'd — there are
+# no detached -up/-down pairs to leak orphans:
 #
-# Start just the island process.
-island-proc-up island="zephyr": (_not-running "demo/.island.pgid" "island")
-    #!/usr/bin/env bash
-    set -e
-    just _island-image-check {{island}}
-    setsid nohup just _svc-island {{island}} > /dev/null 2>&1 < /dev/null &
-    sleep 1
-    echo "{{island}} island started, pgid $(cat demo/.island.pgid) (log tmp_island.log)"
-
-# Refuse to double-start a service: a second copy orphans the first one's
-# process group (the pgid file is overwritten) and the port/participant
-# collision cyclone-aborts the island. Stale pgid files are cleaned up.
-[private]
-_not-running file label:
-    #!/usr/bin/env bash
-    pg=$(cat {{file}} 2>/dev/null) || exit 0
-    if kill -0 -- -"$pg" 2>/dev/null; then
-        echo "{{label}} already running (pgid $pg) — 'just demo-down' first"; exit 1
-    fi
-    rm -f {{file}}
-
-[private]
-_island-image-check island:
-    #!/usr/bin/env bash
-    if [ "{{island}}" = "zephyr" ]; then
-        [ -x ./build-zephyr/zephyr/zephyr.exe ] || { echo "no zephyr image — run: just zephyr-build"; exit 1; }
-    else
-        [ -x ./{{BUILD_DIR}}/src/native_entry/native_entry ] || { echo "no native image — run: just build"; exit 1; }
-    fi
-
-# Foreground island service (single source — island-proc-up detaches it,
-# demo-all supervises it). Records its process group for the -down recipes.
-[private]
-_svc-island island="zephyr":
-    #!/usr/bin/env bash
-    set -e
-    ps -o pgid= -p $$ | tr -d ' ' > demo/.island.pgid
-    if [ "{{island}}" = "zephyr" ]; then
-        exec ./build-zephyr/zephyr/zephyr.exe > tmp_island.log 2>&1
-    else
-        exec env LD_LIBRARY_PATH="{{CYCLONEDDS_HOME}}/lib" \
-            ROS_DOMAIN_ID=2 CYCLONEDDS_URI='<CycloneDDS><Domain><General><Interfaces><NetworkInterface name="lo"/></Interfaces><AllowMulticast>spdp</AllowMulticast></General><Discovery><ParticipantIndex>auto</ParticipantIndex><MaxAutoParticipantIndex>30</MaxAutoParticipantIndex><Peers><Peer Address="127.0.0.1"/></Peers></Discovery></Domain></CycloneDDS>' \
-            ./{{BUILD_DIR}}/src/native_entry/native_entry > tmp_island.log 2>&1
-    fi
-
-# Stop just the island process.
-island-proc-down: (_kill-group "demo/.island.pgid")
-
-# Kill a recorded process group: TERM, up to 3 s to exit, then KILL.
-# NOTE bash, not the default sh — dash's `kill -TERM -- -pgid` fails
-# silently, which is exactly how orphans piled up before.
-[private]
-_kill-group file:
-    #!/usr/bin/env bash
-    pg=$(cat {{file}} 2>/dev/null) || exit 0
-    kill -TERM -- -"$pg" 2>/dev/null
-    for _ in 1 2 3; do kill -0 -- -"$pg" 2>/dev/null || break; sleep 1; done
-    kill -KILL -- -"$pg" 2>/dev/null
-    rm -f {{file}}
-    echo "killed group $pg ({{file}})"
-
-# ══ THE DEMO ════════════════════════════════════════════════════════════════
-# Three parts, each runnable on its own (in this order):
-#
-#   1. just autoware-up      Autoware planning_simulator, domain 1, stock MRM
+#   1. just autoware         Autoware planning_simulator, domain 1, stock MRM
 #                            DISABLED (demo/host_ws shadows tier4_system_launch)
-#   2. just island-up        safety island on domain 2 + domain bridges + relay
-#   3. just demo-scenario    drive → fault the heartbeat → island MRM → VERDICT
+#   2. just island           safety island on domain 2 + domain bridges + relay
+#   3. just demo             drive → fault the heartbeat → island MRM stop →
+#                            heartbeat revives → vehicle resumes → VERDICT
 #
-# All three, one command:  just demo-all     Teardown: just demo-down
+# All three, one command:  just demo-all   (exits with the VERDICT)
+# Crash cleanup:           just demo-down  (kills recorded groups + sweeps)
 #
-# Host path (Autoware 1.5.0 install). `ros2 launch` / play_launch leave
-# ORPHANS on a plain kill — every service is a foreground `_svc-*` wrapper
-# that records its own PROCESS GROUP: the *-up recipes detach it (setsid),
-# each -down kills the group, and `demo-all` runs the same wrappers under a
-# GNU parallel supervisor (whole-group teardown when the scenario finishes).
+# Each service is a foreground `_svc-*` wrapper that records its own PROCESS
+# GROUP (the scenario SIGSTOPs the bridge groups to inject the heartbeat
+# fault; demo-down uses the files after a crash). The blocking recipes run
+# the wrappers under a GNU parallel supervisor: --termseq TERM→KILL on
+# exit or Ctrl-C, so nothing outlives its recipe.
+
+TERMSEQ := "TERM,5000,KILL,1000"
 
 # ── 1. Autoware (no MRM) ────────────────────────────────────────────────────
-# planning_simulator via play_launch >= {{PLAY_LAUNCH_MIN}} (40s bring-up, 62/62
-# composables, clean teardown; 0.5.x stalls on the busy composable containers).
-# RViz renders on the VNC display ({{VNC_DISPLAY}}).
+# planning_simulator via play_launch >= {{PLAY_LAUNCH_MIN}} (40s bring-up,
+# 0.5.x stalls on the busy composable containers). RViz renders on the VNC
+# display ({{VNC_DISPLAY}}). Blocks; prints readiness; Ctrl-C stops the
+# whole sim tree.
 #
-# 1. Start Autoware (planning_simulator, domain 1, stock MRM disabled).
-autoware-up: (_not-running "demo/.sim.pgid" "sim") _sim-prereq-check
+# 1. Autoware planning_simulator, stock MRM disabled (blocks; Ctrl-C stops).
+autoware: (_not-running "demo/.sim.pgid" "sim") _sim-prereq-check
     #!/usr/bin/env bash
-    set -e
-    setsid nohup just _svc-sim > /dev/null 2>&1 < /dev/null &
-    sleep 1
-    echo "sim started, pgid $(cat demo/.sim.pgid) (log tmp_sim.log) — 'just autoware-wait' blocks until ready"
+    exec parallel --lb --halt now,fail=1 --termseq {{TERMSEQ}} ::: \
+        "just _svc-sim" \
+        "just _wait-sim && echo '== autoware up (stock MRM off) — Ctrl-C stops it =='"
 
 [private]
 _sim-prereq-check:
     @[ -f demo/host_ws/install/setup.bash ] || { echo "demo/host_ws not built — run: just demo-host-ws"; exit 1; }
     @command -v {{PLAY_LAUNCH}} >/dev/null || { echo "no play_launch on PATH — run: just setup"; exit 1; }
 
-# Foreground sim service (single source — autoware-up detaches it, demo-all
-# supervises it).
+# Foreground sim service (single source — `autoware` supervises it,
+# demo-all reuses it).
 [private]
 _svc-sim:
     #!/usr/bin/env bash
@@ -288,7 +230,8 @@ _svc-sim:
     exec "$PL" launch autoware_launch planning_simulator.launch.xml map_path:=$PWD/demo/map/sample-map-planning vehicle_model:=sample_vehicle sensor_model:=sample_sensor_kit rviz:=true > tmp_sim.log 2>&1
 
 # Block until the simulator reports readiness (Startup complete).
-autoware-wait timeout="300":
+[private]
+_wait-sim timeout="300":
     #!/usr/bin/env bash
     set -e
     echo "-- waiting for the sim (Startup complete), up to {{timeout}}s..."
@@ -301,41 +244,58 @@ autoware-wait timeout="300":
     done
     echo "TIMEOUT: no 'Startup complete' in tmp_sim.log after {{timeout}}s"; exit 1
 
-# Stop Autoware (process-group kill).
-autoware-down: (_kill-group "demo/.sim.pgid")
-
 # ── 2. Safety island (island process + bridges + relay) ─────────────────────
-#   just island-up             # zephyr native_sim image (default)
-#   just island-up native      # native_entry build
+#   just island            # zephyr native_sim image (default)
+#   just island native     # native_entry build
 #
-# 2. Start the safety island: island process + domain bridges + control relay.
-island-up island="zephyr":
+# 2. Safety island + bridges + relay (blocks; Ctrl-C stops all four).
+island target="zephyr": (_not-running "demo/.bridge-fwd.pgid" "bridge-fwd") (_not-running "demo/.bridge-rev.pgid" "bridge-rev") (_not-running "demo/.relay.pgid" "relay") (_not-running "demo/.island.pgid" "island") (_island-image-check target)
+    #!/usr/bin/env bash
+    exec parallel --lb --halt now,fail=1 --termseq {{TERMSEQ}} ::: \
+        "just _svc-bridge forward fwd" \
+        "just _svc-bridge reverse rev" \
+        "just _svc-relay" \
+        "just _svc-island {{target}}" \
+        "sleep 10 && echo '== island side up ({{target}}) — Ctrl-C stops it =='"
+
+# Refuse to double-start a service: a second copy orphans the first one's
+# process group (the pgid file is overwritten) and the port/participant
+# collision cyclone-aborts the island. Stale pgid files are cleaned up.
+[private]
+_not-running file label:
+    #!/usr/bin/env bash
+    pg=$(cat {{file}} 2>/dev/null) || exit 0
+    if kill -0 -- -"$pg" 2>/dev/null; then
+        echo "{{label}} already running (pgid $pg) — 'just demo-down' first"; exit 1
+    fi
+    rm -f {{file}}
+
+[private]
+_island-image-check target:
+    #!/usr/bin/env bash
+    if [ "{{target}}" = "zephyr" ]; then
+        [ -x ./build-zephyr/zephyr/zephyr.exe ] || { echo "no zephyr image — run: just zephyr-build"; exit 1; }
+    else
+        [ -x ./{{BUILD_DIR}}/src/native_entry/native_entry ] || { echo "no native image — run: just build"; exit 1; }
+    fi
+
+# Foreground island service (single source — `island` supervises it,
+# demo-all reuses it). Records its process group.
+[private]
+_svc-island target="zephyr":
     #!/usr/bin/env bash
     set -e
-    just bridge-up
-    just relay-up
-    just island-proc-up {{island}}
-    echo "-- letting the island settle (latched inputs)..."
-    sleep 10
-    echo "island side up (island: {{island}})"
+    ps -o pgid= -p $$ | tr -d ' ' > demo/.island.pgid
+    if [ "{{target}}" = "zephyr" ]; then
+        exec ./build-zephyr/zephyr/zephyr.exe > tmp_island.log 2>&1
+    else
+        exec env LD_LIBRARY_PATH="{{CYCLONEDDS_HOME}}/lib" \
+            ROS_DOMAIN_ID=2 CYCLONEDDS_URI='<CycloneDDS><Domain><General><Interfaces><NetworkInterface name="lo"/></Interfaces><AllowMulticast>spdp</AllowMulticast></General><Discovery><ParticipantIndex>auto</ParticipantIndex><MaxAutoParticipantIndex>30</MaxAutoParticipantIndex><Peers><Peer Address="127.0.0.1"/></Peers></Discovery></Domain></CycloneDDS>' \
+            ./{{BUILD_DIR}}/src/native_entry/native_entry > tmp_island.log 2>&1
+    fi
 
-# Stop the island process, relay and bridges.
-island-down:
-    -just island-proc-down
-    -just relay-down
-    -just bridge-down
-
-# Start both domain_bridge legs (host_ws build, split-domain cyclone config).
-bridge-up: (_not-running "demo/.bridge-fwd.pgid" "bridge-fwd") (_not-running "demo/.bridge-rev.pgid" "bridge-rev")
-    #!/usr/bin/env bash
-    set -e
-    setsid nohup just _svc-bridge forward fwd > /dev/null 2>&1 < /dev/null &
-    setsid nohup just _svc-bridge reverse rev > /dev/null 2>&1 < /dev/null &
-    sleep 1
-    echo "bridges: fwd pgid $(cat demo/.bridge-fwd.pgid) (heartbeat leg — the demo faults this), rev pgid $(cat demo/.bridge-rev.pgid) (island commands — stays alive)"
-
-# Foreground bridge-leg service (single source — bridge-up detaches both,
-# demo-all supervises them). The scenario SIGSTOPs the recorded groups.
+# Foreground bridge-leg service (single source). The scenario SIGSTOPs the
+# recorded groups to fault the heartbeat.
 [private]
 _svc-bridge dir tag:
     #!/usr/bin/env bash
@@ -349,23 +309,9 @@ _svc-bridge dir tag:
     echo "bridge-{{tag}} starting (log tmp_bridge_{{tag}}.log)"
     exec ros2 run domain_bridge domain_bridge --wait-for-publisher false demo/bridge/bridge-{{dir}}.yaml > tmp_bridge_{{tag}}.log 2>&1
 
-# Stop both bridge legs.
-bridge-down: (_kill-group "demo/.bridge-fwd.pgid") (_kill-group "demo/.bridge-rev.pgid")
-
 # Typed relay for the island's emergency Control (d2 -> d1): stands in for
 # the dropped bridge row until nano-ros #267; ALSO the honest actuation path —
 # it survives the bridge fault, so the island's ramp reaches the vehicle.
-#
-# Start the d2 -> d1 control relay.
-relay-up: (_not-running "demo/.relay.pgid" "relay")
-    #!/usr/bin/env bash
-    set -e
-    setsid nohup just _svc-relay > /dev/null 2>&1 < /dev/null &
-    sleep 1
-    echo "control relay started, pgid $(cat demo/.relay.pgid)"
-
-# Foreground relay service (single source — relay-up detaches it, demo-all
-# supervises it).
 [private]
 _svc-relay:
     #!/usr/bin/env bash
@@ -376,57 +322,70 @@ _svc-relay:
     echo "control relay starting (log tmp_relay.log)"
     exec python3 demo/control_relay.py > tmp_relay.log 2>&1
 
-# Stop the control relay.
-relay-down: (_kill-group "demo/.relay.pgid")
-
 # ── 3. Demo sequence ────────────────────────────────────────────────────────
 # The full driving sequence (pure rclpy — the ros2-CLI daemon is unreliable
-# under heavy graphs): init pose -> goal -> engage -> drive -> fault -> verdict.
+# under heavy graphs): init pose -> goal -> engage -> drive -> fault ->
+# island MRM stop -> heartbeat revives -> resume -> VERDICT (exit 0 = PASS).
+# Waits for the sim + lets the island settle first, so it works standalone
+# against `just autoware` + `just island` in other terminals.
 #
-# 3. Run the demo sequence and print the VERDICT.
-demo-scenario:
+# 3. Run the demo sequence -> VERDICT (needs autoware + island running).
+demo:
+    #!/usr/bin/env bash
+    set -e
+    just _wait-sim
+    echo "-- letting the island settle (latched inputs)..."
+    sleep 10
+    exec just _scenario
+
+# The raw sequence, no readiness gating.
+[private]
+_scenario:
     #!/usr/bin/env bash
     source /opt/ros/humble/setup.bash
     source /opt/autoware/1.5.0/setup.bash >/dev/null 2>&1
-    python3 demo/scenario_driver.py
+    exec python3 demo/scenario_driver.py
 
 # ── All of it, one command ──────────────────────────────────────────────────
 #   just demo-all              # zephyr island (default)
 #   just demo-all native       # native island
 #
-# One GNU parallel supervisor runs every service (same _svc-* wrappers the
-# *-up recipes detach) plus the scenario as a finishing job: when the
-# scenario prints its VERDICT, parallel tears every service group down
-# (--termseq TERM→KILL) and exits with the scenario's status. Ctrl-C
-# mid-run tears everything down too — no orphans either way.
+# One GNU parallel supervisor runs every service plus the scenario as the
+# finishing job: when the scenario prints its VERDICT, parallel tears every
+# service group down and exits with the scenario's status. Ctrl-C mid-run
+# tears everything down too.
 #
 # Autoware + island + demo sequence, one command; exits with the VERDICT.
 demo-all island="zephyr": (_not-running "demo/.sim.pgid" "sim") (_not-running "demo/.bridge-fwd.pgid" "bridge-fwd") (_not-running "demo/.bridge-rev.pgid" "bridge-rev") (_not-running "demo/.relay.pgid" "relay") (_not-running "demo/.island.pgid" "island") _sim-prereq-check (_island-image-check island)
     #!/usr/bin/env bash
-    exec parallel --lb --halt now,done=1 --termseq TERM,5000,KILL,1000 ::: \
+    exec parallel --lb --halt now,done=1 --termseq {{TERMSEQ}} ::: \
         "just _svc-sim" \
         "just _svc-bridge forward fwd" \
         "just _svc-bridge reverse rev" \
         "just _svc-relay" \
         "just _svc-island {{island}}" \
-        "just _job-scenario"
+        "just demo"
 
-# The demo-all finishing job: readiness-gate, settle, then the sequence.
-[private]
-_job-scenario:
-    #!/usr/bin/env bash
-    set -e
-    just autoware-wait
-    echo "-- letting the island settle (latched inputs)..."
-    sleep 10
-    exec just demo-scenario
-
-# Tear the whole demo down: recorded groups first, then sweep any orphans
+# ── Crash cleanup ───────────────────────────────────────────────────────────
+# Normal teardown is just Ctrl-C / recipe exit. After a crashed or killed
+# supervisor: kill the recorded groups, then sweep pattern-matched orphans
 # whose pgid file was overwritten by a double-start.
-demo-down:
-    -just island-down
-    -just autoware-down
-    just _sweep-orphans
+#
+# Crash cleanup: kill recorded groups + sweep orphans.
+demo-down: (_kill-group "demo/.island.pgid") (_kill-group "demo/.relay.pgid") (_kill-group "demo/.bridge-fwd.pgid") (_kill-group "demo/.bridge-rev.pgid") (_kill-group "demo/.sim.pgid") _sweep-orphans
+
+# Kill a recorded process group: TERM, up to 3 s to exit, then KILL.
+# NOTE bash, not the default sh — dash's `kill -TERM -- -pgid` fails
+# silently, which is exactly how orphans piled up before.
+[private]
+_kill-group file:
+    #!/usr/bin/env bash
+    pg=$(cat {{file}} 2>/dev/null) || exit 0
+    kill -TERM -- -"$pg" 2>/dev/null
+    for _ in 1 2 3; do kill -0 -- -"$pg" 2>/dev/null || break; sleep 1; done
+    kill -KILL -- -"$pg" 2>/dev/null
+    rm -f {{file}}
+    echo "killed group $pg ({{file}})"
 
 # Pattern-kill demo processes that outlived their pgid file. Patterns are
 # demo-specific (bridge yaml paths, this repo's binaries) so unrelated ROS
@@ -455,17 +414,6 @@ demo-host-ws:
     source /opt/ros/humble/setup.bash
     cd demo/host_ws && colcon build --symlink-install
 
-# Back-compat names (the pre-phase-6 recipe set).
-alias demo-sim := autoware-up
-alias demo-sim-down := autoware-down
-alias demo-bridge := bridge-up
-alias demo-bridge-down := bridge-down
-alias demo-relay := relay-up
-alias demo-relay-down := relay-down
-alias demo-down-all := demo-down
-
-
-
 # Print the host-side env needed to talk to the ZEPHYR island (native_sim
 # bakes multicast-off unicast-peer discovery — porting-notes 19).
 #
@@ -473,5 +421,3 @@ alias demo-down-all := demo-down
 host-env:
     @echo 'export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp ROS_DOMAIN_ID=2'
     @echo 'export CYCLONEDDS_URI="<CycloneDDS><Domain><General><Interfaces><NetworkInterface name=\"lo\"/></Interfaces><AllowMulticast>false</AllowMulticast></General><Discovery><ParticipantIndex>auto</ParticipantIndex><MaxAutoParticipantIndex>30</MaxAutoParticipantIndex><Peers><Peer Address=\"127.0.0.1\"/></Peers></Discovery></Domain></CycloneDDS>"'
-
-

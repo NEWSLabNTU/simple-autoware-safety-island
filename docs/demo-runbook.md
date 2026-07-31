@@ -88,22 +88,28 @@ with the MRM operator and handler nodes commented out, so the island is the
 only MRM path. `demo/host_ws/src/domain_bridge` is gitignored — hence the
 clone step.
 
-### 4. The run itself — NOT YET RE-VALIDATED
+### 4. The run itself — validated 2026-07-31 (blocking recipes)
+
+Blocking recipes — one terminal each, Ctrl-C (or exit) tears the recipe's
+whole process tree down; `just demo-down` is crash cleanup only:
 
 ```sh
-just autoware-up     # 1. planning_simulator, domain 1, stock MRM off
-just autoware-wait   #    blocks until "Startup complete" (300s default)
-just island-up       # 2. island + both bridge legs + control relay
-just demo-scenario   # 3. drive -> heartbeat fault -> MRM -> VERDICT
-just demo-down       # teardown
+just autoware        # 1. planning_simulator, domain 1, stock MRM off
+                     #    (blocks; prints "Startup complete" when ready)
+just island          # 2. island + both bridge legs + control relay (blocks)
+just demo            # 3. waits for the sim, then drive -> heartbeat fault ->
+                     #    island MRM stop -> revive -> resume -> VERDICT
 
 just demo-all        # all three, one command (add `native` for the native island)
+just demo-down       # crash cleanup (recorded pgid groups + orphan sweep)
 ```
 
-Expected outcome, from the last validated run (2026-07-24, phase 2): the
-vehicle drives at ~3.9 m/s, the availability heartbeat is cut by SIGSTOPping
-the bridge groups, the island goes `MRM_OPERATING / EMERGENCY_STOP` within
-0.5 s, and the vehicle stops — `VERDICT: PASS`, 3.90 → 0.00 m/s.
+Expected outcome, from the validated run (2026-07-31): the vehicle drives
+at ~4.2 m/s, the availability heartbeat is cut by SIGSTOPping the bridge
+groups, the island goes `MRM_OPERATING / EMERGENCY_STOP` within 0.5 s and
+the vehicle stops (4.24 → 0.00 m/s); the bridges are then resumed, the
+island returns to `NORMAL`, and the vehicle resumes on its own —
+`VERDICT: PASS`.
 
 Re-run this end to end on the new machine and record the verdict. If it
 passes, the reorganized recipe set is proven; if not, the logs to read are

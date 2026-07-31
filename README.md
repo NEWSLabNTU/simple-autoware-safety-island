@@ -94,34 +94,36 @@ Zephyr variant: `just zephyr-build && just zephyr-run` (host tooling needs
 Host Autoware 1.5.0 (`/opt/autoware/1.5.0`) + the island; stock MRM nodes are
 shadowed out, so the island is the ONLY MRM path.
 
-Three parts, each runnable on its own — RViz renders on the VNC display
+Three parts, one terminal each — every recipe **blocks** on its services and
+tears its whole process tree down when it exits or is Ctrl-C'd (no detached
+-up/-down pairs, no orphans). RViz renders on the VNC display
 (`$VNC_DISPLAY`, default `:1`; start one with `vncserver :1`):
 
 ```sh
-just setup                   # once: install play_launch, build the demo
-                             #       overlay (domain_bridge + MRM-shadowed
-                             #       tier4_system_launch), resolve the model
-just autoware-up             # 1. Autoware planning_simulator, stock MRM OFF
-just autoware-wait           #    (blocks until "Startup complete")
-just island-up               # 2. island + domain bridges + control relay
-just demo-scenario           # 3. drive -> heartbeat fault -> MRM -> VERDICT
+just setup          # once: install play_launch, build the demo overlay
+                    #       (domain_bridge + MRM-shadowed tier4_system_launch),
+                    #       resolve the model
 
-just demo-all                # all three in one command -> VERDICT (exit 0 = PASS)
-just demo-down               # teardown of the piece recipes
+just autoware       # 1. Autoware planning_simulator, stock MRM OFF
+                    #    (blocks; prints "Startup complete" when ready)
+just island         # 2. island + domain bridges + control relay (blocks)
+just demo           # 3. waits for the sim, then drive -> heartbeat fault ->
+                    #    island MRM stop -> revive -> resume -> VERDICT
+
+just demo-all       # all three in one command -> VERDICT (exit 0 = PASS)
+just demo-down      # crash cleanup only (recorded groups + orphan sweep)
 ```
 
-`just demo-all` runs every service plus the scenario under one foreground
-**GNU parallel** supervisor: each service is its own process-group leader,
-and the scenario finishing (or Ctrl-C) tears the whole group down
-(`--termseq` TERM→KILL) — no orphaned launch trees. The piece recipes
-(`autoware-up`, `island-up`, …) detach the same service wrappers with
-`setsid`; `just demo-down` kills those groups.
+Every multi-process recipe is a foreground **GNU parallel** supervisor:
+each service is its own process-group leader, and recipe exit — the
+scenario finishing, a service dying, or Ctrl-C — tears the whole group
+down (`--termseq` TERM→KILL). Normal teardown is simply Ctrl-C;
+`just demo-down` exists for crashed supervisors.
 
-Variants: `just demo-all native` / `just island-up native` (native island
-instead of the Zephyr native_sim image). Sub-pieces: `bridge-up`, `relay-up`,
-`island-proc-up`. Autoware is launched with play_launch (>= 0.8.2 — older
-versions stall on the composable containers); `just doctor` checks the
-environment.
+Variants: `just demo-all native` / `just island native` (native island
+instead of the Zephyr native_sim image). Autoware is launched with
+play_launch (>= 0.8.2 — older versions stall on the composable
+containers); `just doctor` checks the environment.
 
 ### Demo sequence & timeline
 
