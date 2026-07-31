@@ -59,6 +59,7 @@ docs/
   roadmap/                  phase doc — plan + acceptance
   topic-contract.md         bridged-topic SSoT
   porting-notes.md          rclcpp→nano-ros friction log (deliverable!)
+  demo-runbook.md           fresh-machine bring-up + what is still open
 ```
 
 ## Prerequisites
