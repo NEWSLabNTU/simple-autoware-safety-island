@@ -63,16 +63,23 @@ docs/
 
 ## Prerequisites
 
-- A nano-ros checkout, activated (`source <nano-ros>/activate.sh`) — provides the
-  `nros` CLI and `play_launch`.
-- ROS 2 Humble (for `.msg` parsing by the codegen and the host-side demo tools).
-- `just` (task runner). Docker + `ros2 domain_bridge` for the co-sim demo (phase 5).
+- ROS 2 Humble (`.msg` parsing by the codegen, and the host-side demo tools).
+- Autoware 1.5.0 host install (`/opt/autoware/1.5.0`) for the demo.
+- A nano-ros checkout (`$NANO_ROS_ROOT`, default sibling `~/repos/nano-ros`) —
+  provides the `nros` CLI and the cmake package.
+- `just` (task runner), `direnv` (optional but assumed by `.envrc`).
+- play_launch — **installed by `just setup`**, not a manual prerequisite. It
+  runs Autoware for the demo; >= 0.8.2 is required. To install from a source
+  checkout instead of the package index: `PLAY_LAUNCH_REPO=<path> just setup`.
+
+`direnv allow` sources ROS 2, Autoware, the demo overlay and nano-ros, and
+reports anything missing; `just doctor` gives the same verdict on demand.
 
 ## Quick start (native island)
 
 ```sh
 export NANO_ROS_ROOT=~/repos/nano-ros     # or let direnv/justfile default it
-just setup        # resolve deps + generate interfaces + resolve the system model
+just setup        # install play_launch, demo overlay, resolve the system model
 just build        # cmake configure + build (native)
 just run          # boot the island against the native board
 ```
@@ -86,17 +93,27 @@ Zephyr variant: `just zephyr-build && just zephyr-run` (host tooling needs
 Host Autoware 1.5.0 (`/opt/autoware/1.5.0`) + the island; stock MRM nodes are
 shadowed out, so the island is the ONLY MRM path.
 
+Three parts, each runnable on its own — RViz renders on the VNC display
+(`$VNC_DISPLAY`, default `:1`; start one with `vncserver :1`):
+
 ```sh
-just demo-host-ws            # once: build domain_bridge + the MRM-shadowed
-                             #       tier4_system_launch overlay
-DISPLAY=:2 just demo-all     # THE RECEIPT: sim (play_launch) + bridges +
-                             # relay + zephyr island + scenario -> VERDICT
-just demo-down-all           # teardown (process-group kills throughout)
+just setup                   # once: install play_launch, build the demo
+                             #       overlay (domain_bridge + MRM-shadowed
+                             #       tier4_system_launch), resolve the model
+just autoware-up             # 1. Autoware planning_simulator, stock MRM OFF
+just autoware-wait           #    (blocks until "Startup complete")
+just island-up               # 2. island + domain bridges + control relay
+just demo-scenario           # 3. drive -> heartbeat fault -> MRM -> VERDICT
+
+just demo-all                # all three in one command
+just demo-down               # teardown (process-group kills throughout)
 ```
 
-Variants: `just demo-all native` (native island). Pieces individually:
-`demo-sim`, `demo-bridge`, `demo-relay`, `island-up`, `demo-scenario`.
-The sim runs via a play_launch SOURCE build (>= 0.8.2; pip 0.5.1 stalls).
+Variants: `just demo-all native` / `just island-up native` (native island
+instead of the Zephyr native_sim image). Sub-pieces: `bridge-up`, `relay-up`,
+`island-proc-up`. Autoware is launched with play_launch (>= 0.8.2 — older
+versions stall on the composable containers); `just doctor` checks the
+environment.
 
 ### Demo sequence & timeline
 
