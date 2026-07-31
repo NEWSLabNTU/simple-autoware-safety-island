@@ -1,13 +1,13 @@
 meta:
   version: 1
   inputs:
-  - path: /home/aeon/repos/autoware-safety-island-example/src/safety_island_bringup/launch/safety_island.launch.xml
+  - path: launch/safety_island.launch.xml
     sha256: aa6042937097a781a6d91b01782ac772f0540abb78ad2527a6b6dd2a785c87d4
-  - path: /home/aeon/repos/autoware-safety-island-example/src/safety_island_bringup/system.toml
-    sha256: 41ca19aea73f505ef40ea0843869ec43517a57c91301fa7b299c78d27b063e0a
+  - path: system.toml
+    sha256: f6c64466a73088f50065b68590062dc74c34de63493b562615293876fdef2b88
   resolver:
-    tool: play_launch
-    version: 0.8.2
+    tool: ros-launch-resolve
+    version: 0.1.0
 structure:
   scopes:
     safety_island.launch.xml:
