@@ -11,14 +11,18 @@ lo cyclone config is set inside (both domains) unless CYCLONEDDS_URI is set.
 """
 import os, sys, time, signal, subprocess, math
 
-LO_URI = ('<CycloneDDS><Domain Id="any"><General>'
+# Domain 2 ONLY: lo + unicast peer scan (reaches the zephyr island's baked
+# multicast-off discovery). Domain 1 stays on cyclone defaults — the sim runs
+# on the default interface, and a lo-pinned d1 participant is DEAF to it on
+# hosts where lo lacks the MULTICAST flag (cyclone disables multicast on lo).
+LO_URI = ('<CycloneDDS><Domain Id="2"><General>'
           '<Interfaces><NetworkInterface name="lo"/></Interfaces>'
           '<AllowMulticast>spdp</AllowMulticast></General>'
           '<Discovery><ParticipantIndex>auto</ParticipantIndex>'
           '<MaxAutoParticipantIndex>60</MaxAutoParticipantIndex>'
           '<Peers><Peer Address="127.0.0.1"/></Peers></Discovery>'
           '</Domain></CycloneDDS>')
-os.environ['CYCLONEDDS_URI'] = LO_URI  # FORCE: the sourced Autoware env's URI lacks
+os.environ['CYCLONEDDS_URI'] = LO_URI  # FORCE: the sourced Autoware env lacks
 # the unicast peer scan the ZEPHYR island's baked discovery needs (domain 2)
 os.environ['RMW_IMPLEMENTATION'] = 'rmw_cyclonedds_cpp'
 

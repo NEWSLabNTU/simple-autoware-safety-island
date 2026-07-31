@@ -28,6 +28,21 @@ repeatedly wedged with `!rclpy.ok()`). The pure-rclpy
 `demo/scenario_driver.py` replaces the CLI-based script to remove the daemon
 dependency; the delivery wedge itself needs a fresh-boot investigation.
 
+**lo-pin deafness (2026-07-31, fixed):** on a fresh boot the demo wedged at
+scenario step 0 — `lo` had lost its MULTICAST flag, cyclone printed
+"selected interface lo is not multicast-capable: disabling multicast", and
+every participant pinned to lo for domain 1 (scenario d1 node, both bridge
+d1 sides, the relay's d1 publisher) went deaf to the sim, which runs on the
+cyclone DEFAULT interface (the 1.5.0 install does NOT set CYCLONEDDS_URI —
+the old "install pins lo" comment was wrong). Fix (all 4 sites): domain 1 =
+cyclone defaults; domain 2 = lo + unicast 127.0.0.1 peer scan, never lo
+multicast (`demo/cyclonedds.xml`, `scenario_driver.py` + `control_relay.py`
+`Domain Id="2"`, justfile native-island URI + peers). Same day the demo
+orchestration moved from setsid/nohup + pgid files to foreground GNU
+parallel supervisors (`just autoware` / `just island` / `just demo` /
+`just demo-all`); wrappers still record pgids for the SIGSTOP fault
+injection. Validated: PASS (4.23 → 0.00 m/s), exit 0, zero orphans.
+
 **play_launch adoption (2026-07-25): DONE.** The sim now launches via the
 play_launch SOURCE build (`main`, v0.8.2): 40 s bring-up, 62/62 composables,
 clean process-group teardown. The stall we hit earlier was pip 0.5.1 — an

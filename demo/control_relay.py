@@ -8,7 +8,11 @@ deserialize -> reserialize, which regularizes the wire representation.
 Remove once #267 lands and restore the bridge row.
 """
 import os
-LO_URI = ('<CycloneDDS><Domain Id="any"><General>'
+# Domain 2 ONLY: lo + unicast peers (island side). Domain 1 (the publisher
+# into the sim) stays on cyclone defaults — the sim runs on the default
+# interface, and a lo-pinned d1 participant is deaf to it on hosts where lo
+# lacks the MULTICAST flag.
+LO_URI = ('<CycloneDDS><Domain Id="2"><General>'
           '<Interfaces><NetworkInterface name="lo"/></Interfaces>'
           '<AllowMulticast>spdp</AllowMulticast></General>'
           '<Discovery><ParticipantIndex>auto</ParticipantIndex>'
