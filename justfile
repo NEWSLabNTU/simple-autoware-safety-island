@@ -414,10 +414,29 @@ demo-host-ws:
     source /opt/ros/humble/setup.bash
     cd demo/host_ws && colcon build --symlink-install
 
-# Print the host-side env needed to talk to the ZEPHYR island (native_sim
-# bakes multicast-off unicast-peer discovery — porting-notes 19).
-#
-# Print the host-side env needed to talk to the Zephyr island.
+# Host-side cyclone config matching the island's discovery (lo, multicast
+# off, unicast 127.0.0.1 peer scan — porting-notes 19).
+ISLAND_HOST_URI := '<CycloneDDS><Domain><General><Interfaces><NetworkInterface name="lo"/></Interfaces><AllowMulticast>false</AllowMulticast></General><Discovery><ParticipantIndex>auto</ParticipantIndex><MaxAutoParticipantIndex>30</MaxAutoParticipantIndex><Peers><Peer Address="127.0.0.1"/></Peers></Discovery></Domain></CycloneDDS>'
+
+# Print the host-side env needed to talk to the island (eval "$(just host-env)").
 host-env:
     @echo 'export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp ROS_DOMAIN_ID=2'
-    @echo 'export CYCLONEDDS_URI="<CycloneDDS><Domain><General><Interfaces><NetworkInterface name=\"lo\"/></Interfaces><AllowMulticast>false</AllowMulticast></General><Discovery><ParticipantIndex>auto</ParticipantIndex><MaxAutoParticipantIndex>30</MaxAutoParticipantIndex><Peers><Peer Address=\"127.0.0.1\"/></Peers></Discovery></Domain></CycloneDDS>"'
+    @echo "export CYCLONEDDS_URI='{{ISLAND_HOST_URI}}'"
+
+# Inspect the island's domain-2 graph while `just island` runs in another
+# terminal. Wraps the env every time (a plain `ros2 topic list` sees the
+# wrong domain + discovery config and an empty cached daemon graph).
+#
+# List the island's nodes and topics (needs `just island` running).
+topics:
+    #!/usr/bin/env bash
+    set -e
+    source /opt/ros/humble/setup.bash
+    source /opt/autoware/1.5.0/setup.bash >/dev/null 2>&1
+    export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp ROS_DOMAIN_ID=2
+    export CYCLONEDDS_URI='{{ISLAND_HOST_URI}}'
+    ros2 daemon stop >/dev/null 2>&1 || true
+    echo "== nodes (domain 2) =="
+    timeout 30 ros2 node list
+    echo "== topics (domain 2) =="
+    timeout 30 ros2 topic list
