@@ -1,0 +1,3 @@
+[submodule "third-party/nano-ros"]
+	url = https://github.com/NEWSLabNTU/nano-ros.git
+	path = third-party/nano-ros

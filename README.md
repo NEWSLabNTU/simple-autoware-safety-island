@@ -73,8 +73,11 @@ docs/
 
 - ROS 2 Humble (`.msg` parsing by the codegen, and the host-side demo tools).
 - Autoware 1.5.0 host install (`/opt/autoware/1.5.0`) for the demo.
-- A nano-ros checkout (`$NANO_ROS_ROOT`, default sibling `~/repos/nano-ros`) —
-  provides the `nros` CLI and the cmake package.
+- nano-ros — pinned as the `third-party/nano-ros` submodule
+  (`git submodule update --init third-party/nano-ros`, then `nros setup`
+  inside it). A sibling `../nano-ros` developer checkout, or an explicit
+  `$NANO_ROS_ROOT`, takes precedence over the pin (resolution order in
+  `.envrc`). Provides the `nros` CLI and the cmake package.
 - `just` (task runner), `direnv` (optional but assumed by `.envrc`).
 - play_launch — **installed by `just setup`**, not a manual prerequisite. It
   runs Autoware for the demo; >= 0.8.2 is required. To install from a source
