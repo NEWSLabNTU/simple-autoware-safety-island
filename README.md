@@ -135,9 +135,17 @@ environment.
 | T₀+15 s | bridge SIGSTOP — availability heartbeat cut | — |
 | **T₀+15.5 s** | island heartbeat timeout (0.5 s) → `MRM_OPERATING / EMERGENCY_STOP` | **hard decel starts** |
 | T₀+~18 s | jerk-limited ramp (a = −2.5 m/s²) done | **vehicle stopped, hazards on** |
-| +25 s | bridge resumed, `VERDICT: PASS/FAIL` printed | — |
+| T₀+25 s | bridges resumed — heartbeat revives | — |
+| T₀+~27 s | island MRM back to `NORMAL` | MRM State Inactive |
+| T₀+~35 s | trajectory follower resumes on its own | **vehicle drives again** |
+| +~40 s | `VERDICT: PASS/FAIL` printed | — |
 
-Drive longer before the fault: `DRIVE_SECS=30 bash demo/scenario-drive-and-kill.sh`.
+The recovery leg is part of the verdict: PASS requires the MRM stop, the
+island returning to `NORMAL` after the heartbeat revives, AND the vehicle
+moving again. `ARRIVE_SECS=300 just demo-all` additionally waits for the
+route to reach `ARRIVED` (off by default — the sample route's intersection
+stop lines can hold the planner for minutes, which is Autoware behavior,
+not the island's). Drive longer before the fault: `DRIVE_SECS=30`.
 The 0.5 s reaction time is the ported handler's upstream
 `timeout_operation_mode_availability` default.
 

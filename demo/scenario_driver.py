@@ -3,7 +3,11 @@
 
 Sequence: init pose -> goal -> engage -> drive DRIVE_SECS -> SIGSTOP the
 bridge group(s) (heartbeat fault) -> verify island MRM on domain 2 ->
-verify vehicle stops -> resume bridges -> print VERDICT (exit 0 = PASS).
+verify vehicle stops -> resume bridges -> verify MRM recovers to NORMAL ->
+verify the vehicle moves again -> print VERDICT (exit 0 = PASS).
+Set ARRIVE_SECS=300 to additionally wait for route ARRIVED (off by default:
+the sample route's intersection stop lines can hold the planner for a long
+time, which is Autoware behavior, not the island's).
 
 Env: DRIVE_SECS (15), INIT_X/Y/QZ/QW, GOAL_X/Y/QZ/QW.
 Run under an env with ROS 2 Humble + the Autoware msgs sourced; the split
@@ -149,15 +153,67 @@ def main():
     v1 = vel(8)
     print(f'velocity after island MRM: {v1}', flush=True)
 
-    print('== 7. restore bridges ==', flush=True)
+    print('== 7. restore bridges (heartbeat revives) ==', flush=True)
     for pg in pgids:
         try: os.killpg(pg, signal.SIGCONT)
         except ProcessLookupError: pass
 
     ok_mrm = st is not None and st.state == 2 and st.behavior == 2
-    if v0 > 0.5 and v1 is not None and abs(v1) < 0.3 and ok_mrm:
-        print(f'VERDICT: PASS — island stopped the vehicle ({v0:.2f} -> {v1:.2f} m/s)'); sys.exit(0)
-    print(f'VERDICT: FAIL (v {v0} -> {v1}, mrm={st.state if st else None}/{st.behavior if st else None})'); sys.exit(1)
+    ok_stop = v0 > 0.5 and v1 is not None and abs(v1) < 0.3
+
+    print('== 8. wait for MRM recovery (island back to NORMAL) ==', flush=True)
+    st2 = None
+    t0 = time.time()
+    while time.time() - t0 < 40:
+        st2 = latest(n2, ex2, MrmState, '/system/fail_safe/mrm_state', 5)
+        if st2 and st2.state == MrmState.NORMAL:
+            break
+    print(f'mrm after restore: state={st2.state if st2 else None} '
+          f'behavior={st2.behavior if st2 else None} (NORMAL={MrmState.NORMAL})', flush=True)
+    ok_recover = st2 is not None and st2.state == MrmState.NORMAL
+
+    print('== 9. resume driving ==', flush=True)
+    v2 = 0.0
+    for i in range(30):
+        v = vel(4)
+        if v and v > 0.3:
+            v2 = v; break
+        if i == 7:  # ~30 s without motion — operation mode may have dropped; re-engage
+            print('re-engaging autonomous...', flush=True)
+            if cli.wait_for_service(timeout_sec=5):
+                fut = cli.call_async(ChangeOperationMode.Request())
+                t1 = time.time()
+                while not fut.done() and time.time() - t1 < 10:
+                    ex1.spin_once(timeout_sec=0.2)
+                print(f're-engage: {fut.done() and fut.result() and fut.result().status.success}', flush=True)
+        time.sleep(2)
+    print(f'velocity after recovery: {v2}', flush=True)
+
+    # The demo verdict ends at the resume — the island's whole story (fault ->
+    # MRM stop -> heartbeat revives -> MRM clears -> vehicle moves again) is
+    # proven. Full drive to the goal is opt-in (ARRIVE_SECS=300): the sample
+    # route has intersection stop lines where the planner can hold for a long
+    # time, which is Autoware behavior, not the island's.
+    arrived = None
+    arrive_secs = float(os.environ.get('ARRIVE_SECS', '0'))
+    if arrive_secs > 0:
+        print('== 10. drive to the goal (route ARRIVED) ==', flush=True)
+        arrived = False
+        t0 = time.time()
+        while time.time() - t0 < arrive_secs:
+            rs = latest(n1, ex1, RouteState, '/planning/route_state', 5, transient=True)
+            if rs and rs.state == RouteState.ARRIVED:
+                arrived = True; break
+            time.sleep(2)
+        print(f'route arrived: {arrived} (ARRIVED={RouteState.ARRIVED})', flush=True)
+
+    if ok_stop and ok_mrm and ok_recover and v2 > 0.3 and arrived is not False:
+        tail = ' and reached the goal' if arrived else ''
+        print(f'VERDICT: PASS — island stopped the vehicle ({v0:.2f} -> {v1:.2f} m/s), '
+              f'MRM recovered, vehicle resumed ({v2:.2f} m/s){tail}'); sys.exit(0)
+    print(f'VERDICT: FAIL (stop={ok_stop} v {v0} -> {v1}, '
+          f'mrm={st.state if st else None}/{st.behavior if st else None}, '
+          f'recover={ok_recover}, resume_v={v2}, arrived={arrived})'); sys.exit(1)
 
 if __name__ == '__main__':
     os.chdir(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
