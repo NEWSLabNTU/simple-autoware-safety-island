@@ -1,30 +1,35 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<!-- Bridge/Autoware cyclone config (pattern from the ASI fork's demo/).
-     Domain 1 = Autoware: cyclone DEFAULT interface + multicast. The 1.5.0
-     install does NOT set CYCLONEDDS_URI, so the sim sits on the default
-     interface — a lo-pinned participant is DEAF to it on hosts where lo
-     lacks the MULTICAST flag (cyclone: "selected interface lo is not
-     multicast-capable: disabling multicast").
-     Domain 2 = the island, pinned to loopback with UNICAST peer discovery:
-     the 127.0.0.1 peer scan reaches both the NATIVE island and the ZEPHYR
-     island (native_sim bakes multicast-off unicast discovery —
-     porting-notes 19); lo multicast is never relied on. -->
+<!-- Shared domain-1 cyclone config for EVERY host-side participant (the sim
+     tree, the scenario driver, ros2 CLI via `just topics`).
+
+     The island (Zephyr native_sim) runs multicast-OFF unicast-peer
+     discovery (NSOS breaks cyclone's multicast waitset — nano-ros phase
+     180): it finds host participants by pinging the SPDP unicast ports for
+     participant indices 0..MaxAutoParticipantIndex at 127.0.0.1. That only
+     works if every host participant HAS a predictable index — cyclone's
+     default MaxAutoParticipantIndex (9) overflows on Autoware's ~40
+     processes and overflowed participants fall back to a RANDOM port,
+     invisible to the island forever. Hence: auto index, range 120, on
+     every d1 process. Multicast stays on host-side (host<->host discovery
+     keeps working the stock way). -->
+<!-- Everything is PINNED TO LOOPBACK: the island's NSOS sockets are
+     lo-bound, so it can only reach participants that advertise 127.0.0.1
+     locators — a participant on the default (eth) interface receives the
+     island's SPDP but never gets its SEDP/data back. The unicast Peers
+     scan keeps host<->host discovery alive even where lo lacks the
+     MULTICAST flag (cyclone then disables multicast on lo); with
+     `ip link set lo multicast on`, spdp multicast works as a bonus. -->
 <CycloneDDS xmlns="https://cdds.io/config">
-  <Domain id="1">
+  <Domain id="any">
     <General>
-      <AllowMulticast>spdp</AllowMulticast>
-    </General>
-  </Domain>
-  <Domain id="2">
-    <General>
-      <AllowMulticast>spdp</AllowMulticast>
       <Interfaces>
-        <NetworkInterface name="lo" priority="default" multicast="true"/>
+        <NetworkInterface name="lo" priority="default" multicast="default"/>
       </Interfaces>
+      <AllowMulticast>spdp</AllowMulticast>
     </General>
     <Discovery>
       <ParticipantIndex>auto</ParticipantIndex>
-      <MaxAutoParticipantIndex>30</MaxAutoParticipantIndex>
+      <MaxAutoParticipantIndex>120</MaxAutoParticipantIndex>
       <Peers><Peer Address="127.0.0.1"/></Peers>
     </Discovery>
   </Domain>

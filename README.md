@@ -29,16 +29,23 @@ nano-ros consumes stock `rosidl_generate_interfaces()` + `package.xml` unchanged
 ## Topology
 
 ```
-┌───────────────────────────────┐     ┌──────────────────────────────────┐
-│ Autoware (docker,             │     │ Safety island (Zephyr / native)  │
-│ planning_simulator, domain 1, │◄───►│ domain 2: mrm_handler +          │
-│ stock MRM nodes DISABLED)     │bridge│ 3 stop operators                 │
-└───────────────────────────────┘     └──────────────────────────────────┘
-        ros2 domain_bridge forwards exactly the contract topic set
+┌───────────────────────────────┐      ┌──────────────────────────────────┐
+│ Autoware (host install,       │      │ Safety island (Zephyr / native)  │
+│ planning_simulator, domain 1, │◄────►│ domain 1: mrm_handler +          │
+│ stock MRM nodes DISABLED)     │direct│ 3 stop operators                 │
+└───────────────────────────────┘ DDS  └──────────────────────────────────┘
+   one shared domain — the island's mrm_state / emergency commands reach
+   the gate (and RViz) with no domain_bridge or relay in the middle
 ```
 
-- Topic contract: [docs/topic-contract.md](docs/topic-contract.md) (SSoT) +
-  [demo/bridge/bridge-config.yaml](demo/bridge/bridge-config.yaml) (machine artifact).
+The island joins Autoware's own DDS domain directly. Discovery contract:
+the native_sim island is multicast-less (NSOS), so every host participant
+runs the shared `demo/cyclonedds.xml` (lo-pinned, auto participant index,
+range 120) that the island's unicast peer scan can find; the island's own
+profile is compile-time (`CONFIG_NROS_CYCLONE_CONFIG_XML`, nano-ros issue
+0367).
+
+- Topic contract: [docs/topic-contract.md](docs/topic-contract.md) (SSoT).
 - Safety contracts: nano-ros `[safety]` feature (E2E CRC-32 + sequence, EN 50159
   black-channel model, nano-ros RFC-0028) + execution tiers for the control loop.
 - Demo scenario: kill the Autoware heartbeat → island detects loss → MRM engages →
@@ -54,10 +61,10 @@ src/
   safety_island_bringup/    system.toml + launch XML + params + resolved model
   native_entry/             native demo entry (fast dev loop)
   zephyr_entry/             Zephyr entry (added in phase 4)
-demo/                       Autoware planning_simulator + domain_bridge compose
+demo/                       Autoware planning_simulator recipes + shared cyclone config
 docs/
   roadmap/                  phase doc — plan + acceptance
-  topic-contract.md         bridged-topic SSoT
+  topic-contract.md         island⇄Autoware topic contract (SSoT)
   porting-notes.md          rclcpp→nano-ros friction log (deliverable!)
   demo-runbook.md           fresh-machine bring-up + what is still open
 ```
@@ -101,12 +108,11 @@ tears its whole process tree down when it exits or is Ctrl-C'd (no detached
 
 ```sh
 just setup          # once: install play_launch, build the demo overlay
-                    #       (domain_bridge + MRM-shadowed tier4_system_launch),
-                    #       resolve the model
+                    #       (MRM-shadowed tier4_system_launch), resolve the model
 
 just autoware       # 1. Autoware planning_simulator, stock MRM OFF
                     #    (blocks; prints "Startup complete" when ready)
-just island         # 2. island + domain bridges + control relay (blocks)
+just island         # 2. the island, directly on domain 1 (blocks)
 just demo           # 3. waits for the sim, then drive -> heartbeat fault ->
                     #    island MRM stop -> revive -> resume -> VERDICT
 
@@ -134,10 +140,10 @@ containers); `just doctor` checks the environment.
 | ~6 s | goal published → route SET | route ribbon |
 | ~10 s | `change_to_autonomous` | mode AUTONOMOUS |
 | T₀ | velocity > 0 | **vehicle drives (~4 m/s)** |
-| T₀+15 s | bridge SIGSTOP — availability heartbeat cut | — |
-| **T₀+15.5 s** | island heartbeat timeout (0.5 s) → `MRM_OPERATING / EMERGENCY_STOP` | **hard decel starts** |
+| T₀+15 s | availability publisher SIGSTOPped — heartbeat cut | — |
+| **T₀+15.5 s** | island heartbeat timeout (0.5 s) → `MRM_OPERATING / EMERGENCY_STOP` | **hard decel starts; MRM State panel goes red (live — direct domain)** |
 | T₀+~18 s | jerk-limited ramp (a = −2.5 m/s²) done | **vehicle stopped, hazards on** |
-| T₀+25 s | bridges resumed — heartbeat revives | — |
+| T₀+25 s | publisher SIGCONTed — heartbeat revives | — |
 | T₀+~27 s | island MRM back to `NORMAL` | MRM State Inactive |
 | T₀+~35 s | trajectory follower resumes on its own | **vehicle drives again** |
 | +~40 s | `VERDICT: PASS/FAIL` printed | — |

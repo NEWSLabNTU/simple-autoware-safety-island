@@ -180,7 +180,7 @@ zephyr-run:
 #
 #   1. just autoware         Autoware planning_simulator, domain 1, stock MRM
 #                            DISABLED (demo/host_ws shadows tier4_system_launch)
-#   2. just island           safety island on domain 2 + domain bridges + relay
+#   2. just island           safety island, directly on Autoware's domain 1
 #   3. just demo             drive → fault the heartbeat → island MRM stop →
 #                            heartbeat revives → vehicle resumes → VERDICT
 #
@@ -204,6 +204,7 @@ TERMSEQ := "TERM,5000,KILL,1000"
 # 1. Autoware planning_simulator, stock MRM disabled (blocks; Ctrl-C stops).
 autoware: (_not-running "demo/.sim.pgid" "sim") _sim-prereq-check
     #!/usr/bin/env bash
+    rm -f tmp_sim.log
     exec parallel --lb --halt now,fail=1 --termseq {{TERMSEQ}} ::: \
         "just _svc-sim" \
         "just _wait-sim && echo '== autoware up (stock MRM off) — Ctrl-C stops it =='"
@@ -214,16 +215,13 @@ _sim-prereq-check:
     @command -v {{PLAY_LAUNCH}} >/dev/null || { echo "no play_launch on PATH — run: just setup"; exit 1; }
 
 # Foreground sim service (single source — `autoware` supervises it,
-# demo-all reuses it).
+# demo-all reuses it). Env (ROS + Autoware + overlay + domain/rmw/cyclone
+# config) comes from .envrc — `direnv allow` once.
 [private]
 _svc-sim:
     #!/usr/bin/env bash
     set -e
     PL="$(command -v {{PLAY_LAUNCH}})"
-    source /opt/ros/humble/setup.bash
-    source /opt/autoware/1.5.0/setup.bash >/dev/null 2>&1
-    source demo/host_ws/install/setup.bash
-    export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp ROS_DOMAIN_ID=1
     export DISPLAY="${DISPLAY:-{{VNC_DISPLAY}}}"
     ps -o pgid= -p $$ | tr -d ' ' > demo/.sim.pgid
     echo "launching Autoware with $PL ($("$PL" --version 2>/dev/null)) on DISPLAY=$DISPLAY (log tmp_sim.log)"
@@ -244,19 +242,22 @@ _wait-sim timeout="300":
     done
     echo "TIMEOUT: no 'Startup complete' in tmp_sim.log after {{timeout}}s"; exit 1
 
-# ── 2. Safety island (island process + bridges + relay) ─────────────────────
+# ── 2. Safety island — DIRECT connection ────────────────────────────────────
+# The island sits on Autoware's own domain 1; no domain bridges, no relay.
+# Discovery: the native_sim island is multicast-OFF (NSOS breaks cyclone's
+# multicast waitset — nano-ros phase 180) and peer-scans 127.0.0.1 for
+# participant indices 0..120; every host-side participant runs with
+# demo/cyclonedds.xml (auto index, range 120) so the scan finds them.
 #   just island            # zephyr native_sim image (default)
 #   just island native     # native_entry build
 #
-# 2. Safety island + bridges + relay (blocks; Ctrl-C stops all four).
-island target="zephyr": (_not-running "demo/.bridge-fwd.pgid" "bridge-fwd") (_not-running "demo/.bridge-rev.pgid" "bridge-rev") (_not-running "demo/.relay.pgid" "relay") (_not-running "demo/.island.pgid" "island") (_island-image-check target)
+# 2. Safety island, directly on domain 1 (blocks; Ctrl-C stops it).
+island target="zephyr": (_not-running "demo/.island.pgid" "island") (_island-image-check target)
     #!/usr/bin/env bash
+    rm -f tmp_island.log
     exec parallel --lb --halt now,fail=1 --termseq {{TERMSEQ}} ::: \
-        "just _svc-bridge forward fwd" \
-        "just _svc-bridge reverse rev" \
-        "just _svc-relay" \
         "just _svc-island {{target}}" \
-        "sleep 10 && echo '== island side up ({{target}}) — Ctrl-C stops it =='"
+        "sleep 10 && echo '== island up ({{target}}, domain 1, direct) — Ctrl-C stops it =='"
 
 # Refuse to double-start a service: a second copy orphans the first one's
 # process group (the pgid file is overwritten) and the port/participant
@@ -290,37 +291,13 @@ _svc-island target="zephyr":
         exec ./build-zephyr/zephyr/zephyr.exe > tmp_island.log 2>&1
     else
         exec env LD_LIBRARY_PATH="{{CYCLONEDDS_HOME}}/lib" \
-            ROS_DOMAIN_ID=2 CYCLONEDDS_URI='<CycloneDDS><Domain><General><Interfaces><NetworkInterface name="lo"/></Interfaces><AllowMulticast>spdp</AllowMulticast></General><Discovery><ParticipantIndex>auto</ParticipantIndex><MaxAutoParticipantIndex>30</MaxAutoParticipantIndex><Peers><Peer Address="127.0.0.1"/></Peers></Discovery></Domain></CycloneDDS>' \
             ./{{BUILD_DIR}}/src/native_entry/native_entry > tmp_island.log 2>&1
     fi
 
-# Foreground bridge-leg service (single source). The scenario SIGSTOPs the
-# recorded groups to fault the heartbeat.
-[private]
-_svc-bridge dir tag:
-    #!/usr/bin/env bash
-    set -e
-    source /opt/ros/humble/setup.bash
-    source /opt/autoware/1.5.0/setup.bash >/dev/null 2>&1
-    source demo/host_ws/install/setup.bash
-    export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-    export CYCLONEDDS_URI=file://$PWD/demo/cyclonedds.xml
-    ps -o pgid= -p $$ | tr -d ' ' > demo/.bridge-{{tag}}.pgid
-    echo "bridge-{{tag}} starting (log tmp_bridge_{{tag}}.log)"
-    exec ros2 run domain_bridge domain_bridge --wait-for-publisher false demo/bridge/bridge-{{dir}}.yaml > tmp_bridge_{{tag}}.log 2>&1
-
-# Typed relay for the island's emergency Control (d2 -> d1): stands in for
-# the dropped bridge row until nano-ros #267; ALSO the honest actuation path —
-# it survives the bridge fault, so the island's ramp reaches the vehicle.
-[private]
-_svc-relay:
-    #!/usr/bin/env bash
-    set -e
-    source /opt/ros/humble/setup.bash
-    source /opt/autoware/1.5.0/setup.bash >/dev/null 2>&1
-    ps -o pgid= -p $$ | tr -d ' ' > demo/.relay.pgid
-    echo "control relay starting (log tmp_relay.log)"
-    exec python3 demo/control_relay.py > tmp_relay.log 2>&1
+# The zephyr island's cyclone profile is COMPILE-TIME: env CYCLONEDDS_URI
+# never reaches zephyr.exe (native_sim getenv sees no host environment —
+# nano-ros issue 0367). It is baked via CONFIG_NROS_CYCLONE_CONFIG_XML in
+# src/zephyr_entry/prj-cyclonedds.conf; edit there + `just zephyr-build`.
 
 # ── 3. Demo sequence ────────────────────────────────────────────────────────
 # The full driving sequence (pure rclpy — the ros2-CLI daemon is unreliable
@@ -338,12 +315,9 @@ demo:
     sleep 10
     exec just _scenario
 
-# The raw sequence, no readiness gating.
+# The raw sequence, no readiness gating (env from .envrc).
 [private]
 _scenario:
-    #!/usr/bin/env bash
-    source /opt/ros/humble/setup.bash
-    source /opt/autoware/1.5.0/setup.bash >/dev/null 2>&1
     exec python3 demo/scenario_driver.py
 
 # ── All of it, one command ──────────────────────────────────────────────────
@@ -356,15 +330,22 @@ _scenario:
 # tears everything down too.
 #
 # Autoware + island + demo sequence, one command; exits with the VERDICT.
-demo-all island="zephyr": (_not-running "demo/.sim.pgid" "sim") (_not-running "demo/.bridge-fwd.pgid" "bridge-fwd") (_not-running "demo/.bridge-rev.pgid" "bridge-rev") (_not-running "demo/.relay.pgid" "relay") (_not-running "demo/.island.pgid" "island") _sim-prereq-check (_island-image-check island)
+demo-all island="zephyr": (_not-running "demo/.sim.pgid" "sim") (_not-running "demo/.island.pgid" "island") _sim-prereq-check (_island-image-check island)
     #!/usr/bin/env bash
+    rm -f tmp_sim.log tmp_island.log
     exec parallel --lb --halt now,done=1 --termseq {{TERMSEQ}} ::: \
         "just _svc-sim" \
-        "just _svc-bridge forward fwd" \
-        "just _svc-bridge reverse rev" \
-        "just _svc-relay" \
-        "just _svc-island {{island}}" \
+        "just _job-island {{island}}" \
         "just demo"
+
+# demo-all's island job: boot AFTER the sim is up — an island booting into
+# ~40 sim participants binding lo ports simultaneously cyclone-aborts.
+[private]
+_job-island island:
+    #!/usr/bin/env bash
+    set -e
+    just _wait-sim > /dev/null
+    exec just _svc-island {{island}}
 
 # ── Crash cleanup ───────────────────────────────────────────────────────────
 # Normal teardown is just Ctrl-C / recipe exit. After a crashed or killed
@@ -372,7 +353,7 @@ demo-all island="zephyr": (_not-running "demo/.sim.pgid" "sim") (_not-running "d
 # whose pgid file was overwritten by a double-start.
 #
 # Crash cleanup: kill recorded groups + sweep orphans.
-demo-down: (_kill-group "demo/.island.pgid") (_kill-group "demo/.relay.pgid") (_kill-group "demo/.bridge-fwd.pgid") (_kill-group "demo/.bridge-rev.pgid") (_kill-group "demo/.sim.pgid") _sweep-orphans
+demo-down: (_kill-group "demo/.island.pgid") (_kill-group "demo/.sim.pgid") _sweep-orphans
 
 # Kill a recorded process group: TERM, up to 3 s to exit, then KILL.
 # NOTE bash, not the default sh — dash's `kill -TERM -- -pgid` fails
@@ -401,42 +382,27 @@ _sweep-orphans:
     rm -f demo/.*.pgid
     echo "orphan sweep done"
 
-# Fetch + build the host_ws overlay: ros2/domain_bridge (upstream checkout,
-# not vendored) and the MRM-shadowed tier4_system_launch that disables
-# Autoware's stock MRM nodes.
+# Build the host_ws overlay: the MRM-shadowed tier4_system_launch that
+# disables Autoware's stock MRM nodes (the domain_bridge checkout is gone —
+# direct connection needs no bridge).
 #
-# Fetch + build the demo overlay (domain_bridge + MRM-shadowed launch).
+# Build the demo overlay (MRM-shadowed tier4_system_launch).
 demo-host-ws:
     #!/usr/bin/env bash
     set -e
-    [ -d demo/host_ws/src/domain_bridge ] || \
-        git clone -b humble --depth 1 https://github.com/ros2/domain_bridge.git demo/host_ws/src/domain_bridge
     source /opt/ros/humble/setup.bash
     cd demo/host_ws && colcon build --symlink-install
 
-# Host-side cyclone config matching the island's discovery (lo, multicast
-# off, unicast 127.0.0.1 peer scan — porting-notes 19).
-ISLAND_HOST_URI := '<CycloneDDS><Domain><General><Interfaces><NetworkInterface name="lo"/></Interfaces><AllowMulticast>false</AllowMulticast></General><Discovery><ParticipantIndex>auto</ParticipantIndex><MaxAutoParticipantIndex>30</MaxAutoParticipantIndex><Peers><Peer Address="127.0.0.1"/></Peers></Discovery></Domain></CycloneDDS>'
-
-# Print the host-side env needed to talk to the island (eval "$(just host-env)").
-host-env:
-    @echo 'export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp ROS_DOMAIN_ID=2'
-    @echo "export CYCLONEDDS_URI='{{ISLAND_HOST_URI}}'"
-
-# Inspect the island's domain-2 graph while `just island` runs in another
-# terminal. Wraps the env every time (a plain `ros2 topic list` sees the
-# wrong domain + discovery config and an empty cached daemon graph).
+# Inspect the demo graph while `just island` (and/or `just autoware`) runs
+# in another terminal. Env from .envrc; the daemon restart drops the cached
+# (possibly wrong-config) graph.
 #
-# List the island's nodes and topics (needs `just island` running).
+# List the demo's nodes and topics (needs island and/or autoware running).
 topics:
     #!/usr/bin/env bash
     set -e
-    source /opt/ros/humble/setup.bash
-    source /opt/autoware/1.5.0/setup.bash >/dev/null 2>&1
-    export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp ROS_DOMAIN_ID=2
-    export CYCLONEDDS_URI='{{ISLAND_HOST_URI}}'
     ros2 daemon stop >/dev/null 2>&1 || true
-    echo "== nodes (domain 2) =="
+    echo "== nodes (domain $ROS_DOMAIN_ID) =="
     timeout 30 ros2 node list
-    echo "== topics (domain 2) =="
+    echo "== topics (domain $ROS_DOMAIN_ID) =="
     timeout 30 ros2 topic list

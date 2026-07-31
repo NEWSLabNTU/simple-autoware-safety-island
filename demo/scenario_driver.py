@@ -1,34 +1,27 @@
 #!/usr/bin/env python3
-"""Phase-2 demo driver — pure rclpy (no ros2-CLI daemon dependency).
+"""Demo driver — pure rclpy (no ros2-CLI daemon dependency).
 
-Sequence: init pose -> goal -> engage -> drive DRIVE_SECS -> SIGSTOP the
-bridge group(s) (heartbeat fault) -> verify island MRM on domain 2 ->
-verify vehicle stops -> resume bridges -> verify MRM recovers to NORMAL ->
-verify the vehicle moves again -> print VERDICT (exit 0 = PASS).
-Set ARRIVE_SECS=300 to additionally wait for route ARRIVED (off by default:
-the sample route's intersection stop lines can hold the planner for a long
-time, which is Autoware behavior, not the island's).
+Direct-connection structure: the island sits on Autoware's domain 1 (no
+domain bridges, no relay). Sequence: init pose -> goal -> engage -> drive
+DRIVE_SECS -> SIGSTOP the process publishing the availability heartbeat
+(the fault) -> island MRM stops the vehicle -> SIGCONT it (heartbeat
+revives) -> island back to NORMAL -> vehicle resumes -> VERDICT (exit 0 =
+PASS). Set ARRIVE_SECS=300 to additionally wait for route ARRIVED (off by
+default: the sample route's intersection stop lines can hold the planner
+for a long time, which is Autoware behavior, not the island's).
 
 Env: DRIVE_SECS (15), INIT_X/Y/QZ/QW, GOAL_X/Y/QZ/QW.
-Run under an env with ROS 2 Humble + the Autoware msgs sourced; the split
-lo cyclone config is set inside (both domains) unless CYCLONEDDS_URI is set.
+Run under an env with ROS 2 Humble + the Autoware msgs sourced. The shared
+demo/cyclonedds.xml (auto participant index, range 120 — what makes this
+participant visible to the multicast-less island) is applied unless
+CYCLONEDDS_URI is already set.
 """
-import os, sys, time, signal, subprocess, math
+import os, sys, time, signal, subprocess
 
-# Domain 2 ONLY: lo + unicast peer scan (reaches the zephyr island's baked
-# multicast-off discovery). Domain 1 stays on cyclone defaults — the sim runs
-# on the default interface, and a lo-pinned d1 participant is DEAF to it on
-# hosts where lo lacks the MULTICAST flag (cyclone disables multicast on lo).
-LO_URI = ('<CycloneDDS><Domain Id="2"><General>'
-          '<Interfaces><NetworkInterface name="lo"/></Interfaces>'
-          '<AllowMulticast>spdp</AllowMulticast></General>'
-          '<Discovery><ParticipantIndex>auto</ParticipantIndex>'
-          '<MaxAutoParticipantIndex>60</MaxAutoParticipantIndex>'
-          '<Peers><Peer Address="127.0.0.1"/></Peers></Discovery>'
-          '</Domain></CycloneDDS>')
-os.environ['CYCLONEDDS_URI'] = LO_URI  # FORCE: the sourced Autoware env lacks
-# the unicast peer scan the ZEPHYR island's baked discovery needs (domain 2)
+_REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+os.environ.setdefault('CYCLONEDDS_URI', 'file://' + os.path.join(_REPO, 'demo', 'cyclonedds.xml'))
 os.environ['RMW_IMPLEMENTATION'] = 'rmw_cyclonedds_cpp'
+os.environ.setdefault('ROS_DOMAIN_ID', '1')
 
 import rclpy
 from rclpy.context import Context
@@ -71,9 +64,33 @@ def latest(node, ex, msg_type, topic, secs, transient=False, field=None):
     m = got[-1]
     return field(m) if field else m
 
+FAULT_TOPIC = '/system/operation_mode/availability'
+
+def fault_pids(node):
+    """PIDs of the process(es) publishing the availability heartbeat.
+
+    Resolved from the live graph (publisher node names) -> `pgrep -f
+    __node:=<name>` (works for standalone nodes; a composable would live in
+    a container whose cmdline lacks the node name — then the container PID
+    must be found by its container remap instead)."""
+    pids = set()
+    for info in node.get_publishers_info_by_topic(FAULT_TOPIC):
+        name = info.node_name
+        found = []
+        # a node launched without an explicit name= has no __node:= remap in
+        # its cmdline (e.g. the aggregator's converter_node) — fall back to
+        # the ros2 executable naming convention <name>_node
+        for pat in (f'__node:={name}', f'/{name}_node'):
+            out = subprocess.run(['pgrep', '-f', pat], capture_output=True, text=True)
+            found = [int(l) for l in out.stdout.split()]
+            if found:
+                break
+        print(f'publisher {info.node_namespace}/{name}: pids {found}', flush=True)
+        pids.update(found)
+    return sorted(pids)
+
 def main():
-    ctx1, n1, ex1 = ctx_node(1, 'si_demo_driver_d1')
-    ctx2, n2, ex2 = ctx_node(2, 'si_demo_driver_d2')
+    ctx1, n1, ex1 = ctx_node(int(os.environ.get('ROS_DOMAIN_ID', '1')), 'si_demo_driver')
     vel = lambda t=8: latest(n1, ex1, Odometry, '/localization/kinematic_state', t,
                              field=lambda m: m.twist.twist.linear.x)
 
@@ -135,27 +152,26 @@ def main():
     v0 = v if v is not None else v0
     print(f'velocity before fault: {v0}', flush=True)
 
-    print('== 5. cut the bridge (SIGSTOP both legs — nano-ros #267 caveat) ==', flush=True)
-    pgids = []
-    for f in ('demo/.bridge-fwd.pgid', 'demo/.bridge-rev.pgid', 'demo/.bridge.pgid'):
-        try: pgids.append(int(open(f).read().strip()))
-        except Exception: pass
-    for pg in pgids:
-        try: os.killpg(pg, signal.SIGSTOP); print(f'bridge group {pg} paused', flush=True)
+    print(f'== 5. cut the heartbeat (SIGSTOP the {FAULT_TOPIC} publisher) ==', flush=True)
+    pids = fault_pids(n1)
+    if not pids:
+        print(f'FATAL: no process found publishing {FAULT_TOPIC}'); sys.exit(2)
+    for p in pids:
+        try: os.kill(p, signal.SIGSTOP); print(f'pid {p} paused', flush=True)
         except ProcessLookupError: pass
 
     time.sleep(3)
     print('== 6. island verdict (expect state=2, behavior=2) ==', flush=True)
-    st = latest(n2, ex2, MrmState, '/system/fail_safe/mrm_state', 8)
+    st = latest(n1, ex1, MrmState, '/system/fail_safe/mrm_state', 8)
     print(f'state: {st.state if st else None}\nbehavior: {st.behavior if st else None}', flush=True)
 
     time.sleep(7)
     v1 = vel(8)
     print(f'velocity after island MRM: {v1}', flush=True)
 
-    print('== 7. restore bridges (heartbeat revives) ==', flush=True)
-    for pg in pgids:
-        try: os.killpg(pg, signal.SIGCONT)
+    print('== 7. revive the heartbeat (SIGCONT) ==', flush=True)
+    for p in pids:
+        try: os.kill(p, signal.SIGCONT)
         except ProcessLookupError: pass
 
     ok_mrm = st is not None and st.state == 2 and st.behavior == 2
@@ -165,7 +181,7 @@ def main():
     st2 = None
     t0 = time.time()
     while time.time() - t0 < 40:
-        st2 = latest(n2, ex2, MrmState, '/system/fail_safe/mrm_state', 5)
+        st2 = latest(n1, ex1, MrmState, '/system/fail_safe/mrm_state', 5)
         if st2 and st2.state == MrmState.NORMAL:
             break
     print(f'mrm after restore: state={st2.state if st2 else None} '

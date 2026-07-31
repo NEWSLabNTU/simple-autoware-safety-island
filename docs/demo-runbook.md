@@ -78,25 +78,27 @@ finish.
 ### 3. Demo overlay
 
 ```sh
-just demo-host-ws   # clones ros2/domain_bridge (humble) if absent, colcon builds
-                    # it + the MRM-shadowed tier4_system_launch
+just demo-host-ws   # colcon-builds the MRM-shadowed tier4_system_launch
 ```
 
 This overlay is what disables Autoware's stock MRM: `demo/host_ws/src/
 tier4_system_launch/launch/system.launch.xml` keeps the upstream file shape
 with the MRM operator and handler nodes commented out, so the island is the
-only MRM path. `demo/host_ws/src/domain_bridge` is gitignored — hence the
-clone step.
+only MRM path. (The domain_bridge checkout is gone — the direct-connection
+restructure removed the bridges and the relay entirely.)
 
-### 4. The run itself — validated 2026-07-31 (blocking recipes)
+### 4. The run itself — validated 2026-07-31 (direct connection)
 
-Blocking recipes — one terminal each, Ctrl-C (or exit) tears the recipe's
-whole process tree down; `just demo-down` is crash cleanup only:
+The island sits directly on Autoware's domain 1: no bridges, no relay. Its
+`mrm_state` and emergency commands reach `vehicle_cmd_gate` (and the RViz
+AutowareStatePanel — the MRM row goes red live) natively. Blocking recipes
+— one terminal each, Ctrl-C (or exit) tears the recipe's whole process
+tree down; `just demo-down` is crash cleanup only:
 
 ```sh
 just autoware        # 1. planning_simulator, domain 1, stock MRM off
                      #    (blocks; prints "Startup complete" when ready)
-just island          # 2. island + both bridge legs + control relay (blocks)
+just island          # 2. the island, domain 1 direct (blocks)
 just demo            # 3. waits for the sim, then drive -> heartbeat fault ->
                      #    island MRM stop -> revive -> resume -> VERDICT
 
@@ -104,17 +106,27 @@ just demo-all        # all three, one command (add `native` for the native islan
 just demo-down       # crash cleanup (recorded pgid groups + orphan sweep)
 ```
 
-Expected outcome, from the validated run (2026-07-31): the vehicle drives
-at ~4.2 m/s, the availability heartbeat is cut by SIGSTOPping the bridge
-groups, the island goes `MRM_OPERATING / EMERGENCY_STOP` within 0.5 s and
-the vehicle stops (4.24 → 0.00 m/s); the bridges are then resumed, the
-island returns to `NORMAL`, and the vehicle resumes on its own —
-`VERDICT: PASS`.
+Expected outcome, from the validated runs (2026-07-31, twice): the vehicle
+drives at ~4.3 m/s, the availability heartbeat is cut by SIGSTOPping the
+`converter_node` process (the `/system/operation_mode/availability`
+publisher — resolved from the live graph by the scenario), the island goes
+`MRM_OPERATING / EMERGENCY_STOP` within 0.5 s and the vehicle stops
+(4.26 → 0.00 m/s); the process is then SIGCONTed, the island returns to
+`NORMAL`, and the vehicle resumes on its own — `VERDICT: PASS`.
 
-Re-run this end to end on the new machine and record the verdict. If it
-passes, the reorganized recipe set is proven; if not, the logs to read are
-`tmp_sim.log`, `tmp_island.log`, `tmp_bridge_fwd.log`, `tmp_bridge_rev.log`,
-`tmp_relay.log` (all in the repo root, gitignored).
+If it fails, the logs to read are `tmp_sim.log` and `tmp_island.log`
+(repo root, gitignored).
+
+Discovery contract (the part that bit repeatedly): the native_sim island is
+multicast-less (NSOS breaks cyclone's multicast waitset) and its sockets
+only reach loopback-advertised locators, so EVERY host participant must run
+the shared `demo/cyclonedds.xml` (lo-pinned, `ParticipantIndex auto`,
+`MaxAutoParticipantIndex 120`) — `.envrc` exports it. The island's own
+profile is compile-time: `CONFIG_NROS_CYCLONE_CONFIG_XML` in
+`src/zephyr_entry/prj-cyclonedds.conf` (nano-ros issue 0367 wired the
+knob), plus 16384-entry pthread mutex/cond pools and a 256 MiB malloc
+arena — joining the full ~40-participant Autoware graph exhausts the old
+sizes and cyclone abort()s at t=0.
 
 ### 5. Open items not on the critical path
 
@@ -122,9 +134,12 @@ passes, the reorganized recipe set is proven; if not, the logs to read are
   play_launch was reinstalled — it needs the `resolve` verb, which only the
   >= 0.8.x line has. `src/safety_island_bringup/config/system_model.yaml` is
   committed, so the demo does not depend on re-running it.
-* nano-ros #267: the island's `Control` message corrupts through
-  domain_bridge's serialized rebroadcast, which is why `demo/control_relay.py`
-  carries the emergency control d2 → d1 instead. Unchanged by this work.
+* Clock domains: the ported operators integrate `dt` from message stamps;
+  host Autoware stamps are wall-clock while the island clock boots at ~0.
+  The emergency stop operator carries a clamp (its unguarded first MRM tick
+  computed `jerk × 1.8e9` and accelerated the vehicle to the sim cap);
+  the deeper fix (epoch-synced island clock on native_sim) is a nano-ros
+  question.
 * The VNC session on `:1` had died and was restarted by hand; nothing
   automates that. `just doctor` prints the display it will use but does not
   check that an X server is actually listening on it.
