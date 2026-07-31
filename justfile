@@ -222,8 +222,20 @@ _svc-island island="zephyr":
     fi
 
 # Stop just the island process.
-island-proc-down:
-    -kill -TERM -- -$(cat demo/.island.pgid 2>/dev/null) 2>/dev/null; rm -f demo/.island.pgid
+island-proc-down: (_kill-group "demo/.island.pgid")
+
+# Kill a recorded process group: TERM, up to 3 s to exit, then KILL.
+# NOTE bash, not the default sh — dash's `kill -TERM -- -pgid` fails
+# silently, which is exactly how orphans piled up before.
+[private]
+_kill-group file:
+    #!/usr/bin/env bash
+    pg=$(cat {{file}} 2>/dev/null) || exit 0
+    kill -TERM -- -"$pg" 2>/dev/null
+    for _ in 1 2 3; do kill -0 -- -"$pg" 2>/dev/null || break; sleep 1; done
+    kill -KILL -- -"$pg" 2>/dev/null
+    rm -f {{file}}
+    echo "killed group $pg ({{file}})"
 
 # ══ THE DEMO ════════════════════════════════════════════════════════════════
 # Three parts, each runnable on its own (in this order):
@@ -290,8 +302,7 @@ autoware-wait timeout="300":
     echo "TIMEOUT: no 'Startup complete' in tmp_sim.log after {{timeout}}s"; exit 1
 
 # Stop Autoware (process-group kill).
-autoware-down:
-    -kill -TERM -- -$(cat demo/.sim.pgid 2>/dev/null) 2>/dev/null; sleep 3;      kill -KILL -- -$(cat demo/.sim.pgid 2>/dev/null) 2>/dev/null; rm -f demo/.sim.pgid;      echo "sim group killed"
+autoware-down: (_kill-group "demo/.sim.pgid")
 
 # ── 2. Safety island (island process + bridges + relay) ─────────────────────
 #   just island-up             # zephyr native_sim image (default)
@@ -339,9 +350,7 @@ _svc-bridge dir tag:
     exec ros2 run domain_bridge domain_bridge --wait-for-publisher false demo/bridge/bridge-{{dir}}.yaml > tmp_bridge_{{tag}}.log 2>&1
 
 # Stop both bridge legs.
-bridge-down:
-    -kill -TERM -- -$(cat demo/.bridge-fwd.pgid 2>/dev/null) 2>/dev/null; rm -f demo/.bridge-fwd.pgid
-    -kill -TERM -- -$(cat demo/.bridge-rev.pgid 2>/dev/null) 2>/dev/null; rm -f demo/.bridge-rev.pgid
+bridge-down: (_kill-group "demo/.bridge-fwd.pgid") (_kill-group "demo/.bridge-rev.pgid")
 
 # Typed relay for the island's emergency Control (d2 -> d1): stands in for
 # the dropped bridge row until nano-ros #267; ALSO the honest actuation path —
@@ -368,8 +377,7 @@ _svc-relay:
     exec python3 demo/control_relay.py > tmp_relay.log 2>&1
 
 # Stop the control relay.
-relay-down:
-    -kill -TERM -- -$(cat demo/.relay.pgid 2>/dev/null) 2>/dev/null; rm -f demo/.relay.pgid
+relay-down: (_kill-group "demo/.relay.pgid")
 
 # ── 3. Demo sequence ────────────────────────────────────────────────────────
 # The full driving sequence (pure rclpy — the ros2-CLI daemon is unreliable
@@ -413,10 +421,26 @@ _job-scenario:
     sleep 10
     exec just demo-scenario
 
-# Tear the whole demo down.
+# Tear the whole demo down: recorded groups first, then sweep any orphans
+# whose pgid file was overwritten by a double-start.
 demo-down:
     -just island-down
     -just autoware-down
+    just _sweep-orphans
+
+# Pattern-kill demo processes that outlived their pgid file. Patterns are
+# demo-specific (bridge yaml paths, this repo's binaries) so unrelated ROS
+# processes are untouched.
+[private]
+_sweep-orphans:
+    #!/usr/bin/env bash
+    pkill -KILL -f 'domain_bridge --wait-for-publisher' 2>/dev/null
+    pkill -KILL -f 'demo/control_relay.py' 2>/dev/null
+    pkill -KILL -f 'build-zephyr/zephyr/zephyr.exe' 2>/dev/null
+    pkill -KILL -f 'native_entry/native_entry' 2>/dev/null
+    pkill -KILL -f 'launch autoware_launch planning_simulator' 2>/dev/null
+    rm -f demo/.*.pgid
+    echo "orphan sweep done"
 
 # Fetch + build the host_ws overlay: ros2/domain_bridge (upstream checkout,
 # not vendored) and the MRM-shadowed tier4_system_launch that disables
