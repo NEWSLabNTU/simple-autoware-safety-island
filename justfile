@@ -177,13 +177,25 @@ zephyr-run:
 # together with the bridges + relay).
 #
 # Start just the island process.
-island-proc-up island="zephyr":
+island-proc-up island="zephyr": (_not-running "demo/.island.pgid" "island")
     #!/usr/bin/env bash
     set -e
     just _island-image-check {{island}}
     setsid nohup just _svc-island {{island}} > /dev/null 2>&1 < /dev/null &
     sleep 1
     echo "{{island}} island started, pgid $(cat demo/.island.pgid) (log tmp_island.log)"
+
+# Refuse to double-start a service: a second copy orphans the first one's
+# process group (the pgid file is overwritten) and the port/participant
+# collision cyclone-aborts the island. Stale pgid files are cleaned up.
+[private]
+_not-running file label:
+    #!/usr/bin/env bash
+    pg=$(cat {{file}} 2>/dev/null) || exit 0
+    if kill -0 -- -"$pg" 2>/dev/null; then
+        echo "{{label}} already running (pgid $pg) — 'just demo-down' first"; exit 1
+    fi
+    rm -f {{file}}
 
 [private]
 _island-image-check island:
@@ -235,7 +247,7 @@ island-proc-down:
 # RViz renders on the VNC display ({{VNC_DISPLAY}}).
 #
 # 1. Start Autoware (planning_simulator, domain 1, stock MRM disabled).
-autoware-up: _sim-prereq-check
+autoware-up: (_not-running "demo/.sim.pgid" "sim") _sim-prereq-check
     #!/usr/bin/env bash
     set -e
     setsid nohup just _svc-sim > /dev/null 2>&1 < /dev/null &
@@ -303,7 +315,7 @@ island-down:
     -just bridge-down
 
 # Start both domain_bridge legs (host_ws build, split-domain cyclone config).
-bridge-up:
+bridge-up: (_not-running "demo/.bridge-fwd.pgid" "bridge-fwd") (_not-running "demo/.bridge-rev.pgid" "bridge-rev")
     #!/usr/bin/env bash
     set -e
     setsid nohup just _svc-bridge forward fwd > /dev/null 2>&1 < /dev/null &
@@ -336,7 +348,7 @@ bridge-down:
 # it survives the bridge fault, so the island's ramp reaches the vehicle.
 #
 # Start the d2 -> d1 control relay.
-relay-up:
+relay-up: (_not-running "demo/.relay.pgid" "relay")
     #!/usr/bin/env bash
     set -e
     setsid nohup just _svc-relay > /dev/null 2>&1 < /dev/null &
@@ -381,7 +393,7 @@ demo-scenario:
 # mid-run tears everything down too — no orphans either way.
 #
 # Autoware + island + demo sequence, one command; exits with the VERDICT.
-demo-all island="zephyr": _sim-prereq-check (_island-image-check island)
+demo-all island="zephyr": (_not-running "demo/.sim.pgid" "sim") (_not-running "demo/.bridge-fwd.pgid" "bridge-fwd") (_not-running "demo/.bridge-rev.pgid" "bridge-rev") (_not-running "demo/.relay.pgid" "relay") (_not-running "demo/.island.pgid" "island") _sim-prereq-check (_island-image-check island)
     #!/usr/bin/env bash
     exec parallel --lb --halt now,done=1 --termseq TERM,5000,KILL,1000 ::: \
         "just _svc-sim" \
