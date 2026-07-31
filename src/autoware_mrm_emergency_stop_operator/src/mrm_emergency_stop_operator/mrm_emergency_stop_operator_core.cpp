@@ -152,7 +152,15 @@ Control MrmEmergencyStopOperator::calcTargetAcceleration(const Control & prev_co
 
   control_cmd = prev_control_cmd;
   // nano-ros port: (this->now() - prev.stamp).seconds() → stamp helper.
-  const auto dt = seconds_since(prev_control_cmd.stamp);
+  // CLOCK-DOMAIN GUARD: the seed command comes from the HOST Autoware stack
+  // (wall-clock stamps, ~1.8e9 s) while the island clock is platform
+  // monotonic (boots near 0). A cross-clock dt is meaningless — the first
+  // MRM tick computed dt ≈ -1.8e9 s and the "deceleration ramp" integrated
+  // to +2.7e9 m/s², accelerating the vehicle to the sim cap. Clamp dt to
+  // the timer-period scale: exact for steady-state ticks (same clock,
+  // 1/update_rate), inert for the one cross-clock seed tick.
+  const double raw_dt = seconds_since(prev_control_cmd.stamp);
+  const double dt = raw_dt < 0.0 ? 0.0 : (raw_dt > 0.1 ? 0.1 : raw_dt);
 
   control_cmd.stamp = now_stamp();
   control_cmd.longitudinal.stamp = control_cmd.stamp;
