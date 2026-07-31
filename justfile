@@ -39,6 +39,7 @@ doctor:
     ok=1
     command -v nros >/dev/null || { echo "MISSING: nros CLI — source $NANO_ROS_ROOT/activate.sh"; ok=0; }
     command -v cmake >/dev/null || { echo "MISSING: cmake"; ok=0; }
+    command -v parallel >/dev/null || { echo "MISSING: GNU parallel (apt install parallel) — supervises demo-all"; ok=0; }
     [ -d "{{NANO_ROS_ROOT}}/cmake" ] || { echo "MISSING: NANO_ROS_ROOT ({{NANO_ROS_ROOT}}) is not a nano-ros checkout"; ok=0; }
     [ -f /opt/ros/humble/setup.bash ] || { echo "MISSING: /opt/ros/humble"; ok=0; }
     [ -f /opt/autoware/1.5.0/setup.bash ] || { echo "MISSING: /opt/autoware/1.5.0 (needed by the demo recipes)"; ok=0; }
@@ -179,17 +180,34 @@ zephyr-run:
 island-proc-up island="zephyr":
     #!/usr/bin/env bash
     set -e
+    just _island-image-check {{island}}
+    setsid nohup just _svc-island {{island}} > /dev/null 2>&1 < /dev/null &
+    sleep 1
+    echo "{{island}} island started, pgid $(cat demo/.island.pgid) (log tmp_island.log)"
+
+[private]
+_island-image-check island:
+    #!/usr/bin/env bash
     if [ "{{island}}" = "zephyr" ]; then
         [ -x ./build-zephyr/zephyr/zephyr.exe ] || { echo "no zephyr image — run: just zephyr-build"; exit 1; }
-        setsid nohup ./build-zephyr/zephyr/zephyr.exe > tmp_island.log 2>&1 < /dev/null &
     else
         [ -x ./{{BUILD_DIR}}/src/native_entry/native_entry ] || { echo "no native image — run: just build"; exit 1; }
-        setsid nohup env LD_LIBRARY_PATH="{{CYCLONEDDS_HOME}}/lib" \
-            ROS_DOMAIN_ID=2 CYCLONEDDS_URI='<CycloneDDS><Domain><General><Interfaces><NetworkInterface name="lo"/></Interfaces><AllowMulticast>spdp</AllowMulticast></General></Domain></CycloneDDS>' \
-            ./{{BUILD_DIR}}/src/native_entry/native_entry > tmp_island.log 2>&1 < /dev/null &
     fi
-    echo $! > demo/.island.pgid
-    echo "{{island}} island started, pgid $(cat demo/.island.pgid) (log tmp_island.log)"
+
+# Foreground island service (single source — island-proc-up detaches it,
+# demo-all supervises it). Records its process group for the -down recipes.
+[private]
+_svc-island island="zephyr":
+    #!/usr/bin/env bash
+    set -e
+    ps -o pgid= -p $$ | tr -d ' ' > demo/.island.pgid
+    if [ "{{island}}" = "zephyr" ]; then
+        exec ./build-zephyr/zephyr/zephyr.exe > tmp_island.log 2>&1
+    else
+        exec env LD_LIBRARY_PATH="{{CYCLONEDDS_HOME}}/lib" \
+            ROS_DOMAIN_ID=2 CYCLONEDDS_URI='<CycloneDDS><Domain><General><Interfaces><NetworkInterface name="lo"/></Interfaces><AllowMulticast>spdp</AllowMulticast></General><Discovery><ParticipantIndex>auto</ParticipantIndex><MaxAutoParticipantIndex>30</MaxAutoParticipantIndex><Peers><Peer Address="127.0.0.1"/></Peers></Discovery></Domain></CycloneDDS>' \
+            ./{{BUILD_DIR}}/src/native_entry/native_entry > tmp_island.log 2>&1
+    fi
 
 # Stop just the island process.
 island-proc-down:
@@ -206,8 +224,10 @@ island-proc-down:
 # All three, one command:  just demo-all     Teardown: just demo-down
 #
 # Host path (Autoware 1.5.0 install). `ros2 launch` / play_launch leave
-# ORPHANS on a plain kill — every recipe runs its tree in its own PROCESS
-# GROUP (setsid), and each -down kills the whole group.
+# ORPHANS on a plain kill — every service is a foreground `_svc-*` wrapper
+# that records its own PROCESS GROUP: the *-up recipes detach it (setsid),
+# each -down kills the group, and `demo-all` runs the same wrappers under a
+# GNU parallel supervisor (whole-group teardown when the scenario finishes).
 
 # ── 1. Autoware (no MRM) ────────────────────────────────────────────────────
 # planning_simulator via play_launch >= {{PLAY_LAUNCH_MIN}} (40s bring-up, 62/62
@@ -215,21 +235,33 @@ island-proc-down:
 # RViz renders on the VNC display ({{VNC_DISPLAY}}).
 #
 # 1. Start Autoware (planning_simulator, domain 1, stock MRM disabled).
-autoware-up:
+autoware-up: _sim-prereq-check
     #!/usr/bin/env bash
     set -e
-    [ -f demo/host_ws/install/setup.bash ] || { echo "demo/host_ws not built — run: just demo-host-ws"; exit 1; }
-    command -v {{PLAY_LAUNCH}} >/dev/null || { echo "no play_launch on PATH — run: just setup"; exit 1; }
+    setsid nohup just _svc-sim > /dev/null 2>&1 < /dev/null &
+    sleep 1
+    echo "sim started, pgid $(cat demo/.sim.pgid) (log tmp_sim.log) — 'just autoware-wait' blocks until ready"
+
+[private]
+_sim-prereq-check:
+    @[ -f demo/host_ws/install/setup.bash ] || { echo "demo/host_ws not built — run: just demo-host-ws"; exit 1; }
+    @command -v {{PLAY_LAUNCH}} >/dev/null || { echo "no play_launch on PATH — run: just setup"; exit 1; }
+
+# Foreground sim service (single source — autoware-up detaches it, demo-all
+# supervises it).
+[private]
+_svc-sim:
+    #!/usr/bin/env bash
+    set -e
     PL="$(command -v {{PLAY_LAUNCH}})"
     source /opt/ros/humble/setup.bash
     source /opt/autoware/1.5.0/setup.bash >/dev/null 2>&1
     source demo/host_ws/install/setup.bash
     export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp ROS_DOMAIN_ID=1
     export DISPLAY="${DISPLAY:-{{VNC_DISPLAY}}}"
-    echo "launching Autoware with $PL ($("$PL" --version 2>/dev/null)) on DISPLAY=$DISPLAY"
-    setsid nohup "$PL" launch autoware_launch planning_simulator.launch.xml map_path:=$PWD/demo/map/sample-map-planning vehicle_model:=sample_vehicle sensor_model:=sample_sensor_kit rviz:=true > tmp_sim.log 2>&1 < /dev/null &
-    echo $! > demo/.sim.pgid
-    echo "sim started, pgid $(cat demo/.sim.pgid) (log tmp_sim.log) — 'just autoware-wait' blocks until ready"
+    ps -o pgid= -p $$ | tr -d ' ' > demo/.sim.pgid
+    echo "launching Autoware with $PL ($("$PL" --version 2>/dev/null)) on DISPLAY=$DISPLAY (log tmp_sim.log)"
+    exec "$PL" launch autoware_launch planning_simulator.launch.xml map_path:=$PWD/demo/map/sample-map-planning vehicle_model:=sample_vehicle sensor_model:=sample_sensor_kit rviz:=true > tmp_sim.log 2>&1
 
 # Block until the simulator reports readiness (Startup complete).
 autoware-wait timeout="300":
@@ -274,16 +306,25 @@ island-down:
 bridge-up:
     #!/usr/bin/env bash
     set -e
+    setsid nohup just _svc-bridge forward fwd > /dev/null 2>&1 < /dev/null &
+    setsid nohup just _svc-bridge reverse rev > /dev/null 2>&1 < /dev/null &
+    sleep 1
+    echo "bridges: fwd pgid $(cat demo/.bridge-fwd.pgid) (heartbeat leg — the demo faults this), rev pgid $(cat demo/.bridge-rev.pgid) (island commands — stays alive)"
+
+# Foreground bridge-leg service (single source — bridge-up detaches both,
+# demo-all supervises them). The scenario SIGSTOPs the recorded groups.
+[private]
+_svc-bridge dir tag:
+    #!/usr/bin/env bash
+    set -e
     source /opt/ros/humble/setup.bash
     source /opt/autoware/1.5.0/setup.bash >/dev/null 2>&1
     source demo/host_ws/install/setup.bash
     export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
     export CYCLONEDDS_URI=file://$PWD/demo/cyclonedds.xml
-    setsid nohup ros2 run domain_bridge domain_bridge --wait-for-publisher false demo/bridge/bridge-forward.yaml > tmp_bridge_fwd.log 2>&1 < /dev/null &
-    echo $! > demo/.bridge-fwd.pgid
-    setsid nohup ros2 run domain_bridge domain_bridge --wait-for-publisher false demo/bridge/bridge-reverse.yaml > tmp_bridge_rev.log 2>&1 < /dev/null &
-    echo $! > demo/.bridge-rev.pgid
-    echo "bridges: fwd pgid $(cat demo/.bridge-fwd.pgid) (heartbeat leg — the demo faults this), rev pgid $(cat demo/.bridge-rev.pgid) (island commands — stays alive)"
+    ps -o pgid= -p $$ | tr -d ' ' > demo/.bridge-{{tag}}.pgid
+    echo "bridge-{{tag}} starting (log tmp_bridge_{{tag}}.log)"
+    exec ros2 run domain_bridge domain_bridge --wait-for-publisher false demo/bridge/bridge-{{dir}}.yaml > tmp_bridge_{{tag}}.log 2>&1
 
 # Stop both bridge legs.
 bridge-down:
@@ -298,11 +339,21 @@ bridge-down:
 relay-up:
     #!/usr/bin/env bash
     set -e
+    setsid nohup just _svc-relay > /dev/null 2>&1 < /dev/null &
+    sleep 1
+    echo "control relay started, pgid $(cat demo/.relay.pgid)"
+
+# Foreground relay service (single source — relay-up detaches it, demo-all
+# supervises it).
+[private]
+_svc-relay:
+    #!/usr/bin/env bash
+    set -e
     source /opt/ros/humble/setup.bash
     source /opt/autoware/1.5.0/setup.bash >/dev/null 2>&1
-    setsid nohup python3 demo/control_relay.py > tmp_relay.log 2>&1 < /dev/null &
-    echo $! > demo/.relay.pgid
-    echo "control relay started, pgid $(cat demo/.relay.pgid)"
+    ps -o pgid= -p $$ | tr -d ' ' > demo/.relay.pgid
+    echo "control relay starting (log tmp_relay.log)"
+    exec python3 demo/control_relay.py > tmp_relay.log 2>&1
 
 # Stop the control relay.
 relay-down:
@@ -323,14 +374,32 @@ demo-scenario:
 #   just demo-all              # zephyr island (default)
 #   just demo-all native       # native island
 #
-# Autoware + island + demo sequence, one command.
-demo-all island="zephyr":
+# One GNU parallel supervisor runs every service (same _svc-* wrappers the
+# *-up recipes detach) plus the scenario as a finishing job: when the
+# scenario prints its VERDICT, parallel tears every service group down
+# (--termseq TERM→KILL) and exits with the scenario's status. Ctrl-C
+# mid-run tears everything down too — no orphans either way.
+#
+# Autoware + island + demo sequence, one command; exits with the VERDICT.
+demo-all island="zephyr": _sim-prereq-check (_island-image-check island)
+    #!/usr/bin/env bash
+    exec parallel --lb --halt now,done=1 --termseq TERM,5000,KILL,1000 ::: \
+        "just _svc-sim" \
+        "just _svc-bridge forward fwd" \
+        "just _svc-bridge reverse rev" \
+        "just _svc-relay" \
+        "just _svc-island {{island}}" \
+        "just _job-scenario"
+
+# The demo-all finishing job: readiness-gate, settle, then the sequence.
+[private]
+_job-scenario:
     #!/usr/bin/env bash
     set -e
-    just autoware-up
     just autoware-wait
-    just island-up {{island}}
-    just demo-scenario
+    echo "-- letting the island settle (latched inputs)..."
+    sleep 10
+    exec just demo-scenario
 
 # Tear the whole demo down.
 demo-down:

@@ -106,9 +106,16 @@ just autoware-wait           #    (blocks until "Startup complete")
 just island-up               # 2. island + domain bridges + control relay
 just demo-scenario           # 3. drive -> heartbeat fault -> MRM -> VERDICT
 
-just demo-all                # all three in one command
-just demo-down               # teardown (process-group kills throughout)
+just demo-all                # all three in one command -> VERDICT (exit 0 = PASS)
+just demo-down               # teardown of the piece recipes
 ```
+
+`just demo-all` runs every service plus the scenario under one foreground
+**GNU parallel** supervisor: each service is its own process-group leader,
+and the scenario finishing (or Ctrl-C) tears the whole group down
+(`--termseq` TERM→KILL) — no orphaned launch trees. The piece recipes
+(`autoware-up`, `island-up`, …) detach the same service wrappers with
+`setsid`; `just demo-down` kills those groups.
 
 Variants: `just demo-all native` / `just island-up native` (native island
 instead of the Zephyr native_sim image). Sub-pieces: `bridge-up`, `relay-up`,
