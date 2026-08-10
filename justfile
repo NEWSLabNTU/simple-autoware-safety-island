@@ -368,17 +368,66 @@ _kill-group file:
     rm -f {{file}}
     echo "killed group $pg ({{file}})"
 
-# Pattern-kill demo processes that outlived their pgid file. Patterns are
-# demo-specific (bridge yaml paths, this repo's binaries) so unrelated ROS
-# processes are untouched.
+# Kill demo processes that outlived their pgid file.
+#
+# The discriminator is CYCLONEDDS_URI in /proc/<pid>/environ, not the command
+# name. Name patterns cannot do this job: play_launch spawns each Autoware node
+# under its own binary, so a live sim is ~110 processes across ~35 distinct
+# names (68 `component_node`, plus `converter_node`, `relay`,
+# `shape_estimation`, `autoware_*` ...). The old pattern list matched only the
+# top-level `play_launch` invocation, so every node it had spawned survived —
+# 220 of them accumulated over one afternoon's runs, and the pileup then made
+# the next `just autoware` half-start (20/33 nodes, 0/13 containers), which
+# reads as a regression in whatever you changed last (nano-ros issue 0371).
+#
+# CYCLONEDDS_URI is the right key because .envrc points it at an ABSOLUTE path
+# inside this checkout and every demo participant inherits it, so the sweep is
+# scoped to this repo's demo: a second checkout, another play_launch project,
+# and any unrelated ROS process on the box are all untouched. Prefer the value
+# this recipe itself inherited (that is literally what the children got);
+# fall back to computing it for a bare shell with no direnv.
 [private]
 _sweep-orphans:
     #!/usr/bin/env bash
-    pkill -KILL -f 'domain_bridge --wait-for-publisher' 2>/dev/null
+    uri="CYCLONEDDS_URI=${CYCLONEDDS_URI:-file://{{justfile_directory()}}/demo/cyclonedds.xml}"
+
+    # demo-down runs inside that same env, so never kill self or an ancestor.
+    keep=" $$ "
+    p=$$
+    while :; do
+        p=$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' ')
+        [ -n "$p" ] && [ "$p" != 0 ] && [ "$p" != 1 ] || break
+        keep="$keep$p "
+    done
+
+    victims=()
+    for d in /proc/[0-9]*; do
+        pid=${d#/proc/}
+        case "$keep" in *" $pid "*) continue;; esac
+        # -z: NUL-separated records; -x: match a whole record, not a prefix
+        grep -qxzF "$uri" "$d/environ" 2>/dev/null && victims+=("$pid")
+    done
+
+    if [ ${#victims[@]} -eq 0 ]; then
+        echo "orphan sweep: nothing left over"
+    else
+        echo "orphan sweep: ${#victims[@]} process(es) still holding this demo's CYCLONEDDS_URI"
+        ps -o pid=,comm= -p "$(IFS=,; echo "${victims[*]}")" 2>/dev/null \
+            | awk '{c[$2]++} END {for (n in c) printf "  %4d x %s\n", c[n], n}' | sort -rn
+        kill -TERM "${victims[@]}" 2>/dev/null
+        for _ in 1 2 3; do
+            sleep 1
+            alive=(); for pid in "${victims[@]}"; do kill -0 "$pid" 2>/dev/null && alive+=("$pid"); done
+            [ ${#alive[@]} -eq 0 ] && break
+        done
+        [ ${#alive[@]} -gt 0 ] && kill -KILL "${alive[@]}" 2>/dev/null
+    fi
+
+    # Belt and braces: these carry no CYCLONEDDS_URI when started from a shell
+    # with no direnv, and the island ignores the variable even when it has it.
     pkill -KILL -f 'demo/control_relay.py' 2>/dev/null
     pkill -KILL -f 'build-zephyr/zephyr/zephyr.exe' 2>/dev/null
     pkill -KILL -f 'native_entry/native_entry' 2>/dev/null
-    pkill -KILL -f 'launch autoware_launch planning_simulator' 2>/dev/null
     rm -f demo/.*.pgid
     echo "orphan sweep done"
 
