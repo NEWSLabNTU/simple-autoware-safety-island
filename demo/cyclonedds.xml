@@ -11,7 +11,16 @@
      processes and overflowed participants fall back to a RANDOM port,
      invisible to the island forever. Hence: auto index, range 120, on
      every d1 process. Multicast stays on host-side (host<->host discovery
-     keeps working the stock way). -->
+     keeps working the stock way).
+
+     Do NOT raise this to "match" the island's own range: with <Peers> set,
+     cyclone expands each peer into ONE SPDP LOCATOR PER INDEX
+     (add_addresses_to_addrset_1 loops to MaxAutoParticipantIndex), so this
+     number multiplies discovery state on every one of the ~100+ host
+     participants. The island scanning a wider range than hosts occupy is the
+     intended asymmetry, not a mismatch to fix: the island finds hosts by
+     scanning, and hosts learn the island from the SPDP it unicasts to them, so
+     they never need to scan up to its index. -->
 <!-- Everything is PINNED TO LOOPBACK: the island's NSOS sockets are
      lo-bound, so it can only reach participants that advertise 127.0.0.1
      locators — a participant on the default (eth) interface receives the
@@ -29,7 +38,7 @@
     </General>
     <Discovery>
       <ParticipantIndex>auto</ParticipantIndex>
-      <MaxAutoParticipantIndex>250</MaxAutoParticipantIndex>
+      <MaxAutoParticipantIndex>120</MaxAutoParticipantIndex>
       <Peers><Peer Address="127.0.0.1"/></Peers>
     </Discovery>
   </Domain>
