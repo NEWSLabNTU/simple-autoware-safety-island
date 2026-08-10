@@ -131,13 +131,13 @@ build:
         -DCycloneDDS_DIR={{CYCLONEDDS_HOME}}/lib/cmake/CycloneDDS
     env NROS_EXECUTOR_MAX_CBS=32 cmake --build {{BUILD_DIR}} -j
 
-# Boot the island on the native board (domain 2, pinned cyclonedds — a
+# Boot the island on the native board (demo domain, pinned cyclonedds — a
 # sourced ROS env otherwise shadows the SDK lib → SIGSEGV; porting-notes env).
 #
 # Build and boot the island on the native board (foreground).
 run: build
     env LD_LIBRARY_PATH="{{CYCLONEDDS_HOME}}/lib" \
-        ROS_DOMAIN_ID=2 \
+        ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-10}" \
         ./{{BUILD_DIR}}/src/native_entry/native_entry
 
 # Build the vendored msg pkgs as a host colcon overlay so ros2 CLI tools can
@@ -151,7 +151,7 @@ host-msgs:
     mkdir -p tmp/host_msgs_ws/src && cd tmp/host_msgs_ws/src
     ln -sfn ../../../src/autoware_common_msgs ../../../src/autoware_control_msgs ../../../src/tier4_system_msgs .
     cd .. && colcon build --symlink-install
-    echo "source tmp/host_msgs_ws/install/setup.bash + RMW_IMPLEMENTATION=rmw_cyclonedds_cpp ROS_DOMAIN_ID=2"
+    echo "source tmp/host_msgs_ws/install/setup.bash + RMW_IMPLEMENTATION=rmw_cyclonedds_cpp ROS_DOMAIN_ID=$ROS_DOMAIN_ID"
 
 # Remove the native build tree.
 clean:
@@ -178,9 +178,9 @@ zephyr-run:
 # tears its whole process tree down when it exits or is Ctrl-C'd — there are
 # no detached -up/-down pairs to leak orphans:
 #
-#   1. just autoware         Autoware planning_simulator, domain 1, stock MRM
+#   1. just autoware         Autoware planning_simulator, demo domain, stock MRM
 #                            DISABLED (demo/host_ws shadows tier4_system_launch)
-#   2. just island           safety island, directly on Autoware's domain 1
+#   2. just island           safety island, directly on Autoware's domain
 #   3. just demo             drive → fault the heartbeat → island MRM stop →
 #                            heartbeat revives → vehicle resumes → VERDICT
 #
@@ -243,7 +243,7 @@ _wait-sim timeout="300":
     echo "TIMEOUT: no 'Startup complete' in tmp_sim.log after {{timeout}}s"; exit 1
 
 # ── 2. Safety island — DIRECT connection ────────────────────────────────────
-# The island sits on Autoware's own domain 1; no domain bridges, no relay.
+# The island sits on Autoware's own domain (10; see .envrc); no bridges, no relay.
 # Discovery: the native_sim island is multicast-OFF (NSOS breaks cyclone's
 # multicast waitset — nano-ros phase 180) and peer-scans 127.0.0.1 for
 # participant indices 0..120; every host-side participant runs with
@@ -251,13 +251,13 @@ _wait-sim timeout="300":
 #   just island            # zephyr native_sim image (default)
 #   just island native     # native_entry build
 #
-# 2. Safety island, directly on domain 1 (blocks; Ctrl-C stops it).
+# 2. Safety island, directly on the demo domain (blocks; Ctrl-C stops it).
 island target="zephyr": (_not-running "demo/.island.pgid" "island") (_island-image-check target)
     #!/usr/bin/env bash
     rm -f tmp_island.log
     exec parallel --lb --halt now,fail=1 --termseq {{TERMSEQ}} ::: \
         "just _svc-island {{target}}" \
-        "sleep 10 && echo '== island up ({{target}}, domain 1, direct) — Ctrl-C stops it =='"
+        "sleep 10 && echo '== island up ({{target}}, demo domain, direct) — Ctrl-C stops it =='"
 
 # Refuse to double-start a service: a second copy orphans the first one's
 # process group (the pgid file is overwritten) and the port/participant

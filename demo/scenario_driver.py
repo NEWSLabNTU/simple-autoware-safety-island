@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Demo driver — pure rclpy (no ros2-CLI daemon dependency).
 
-Direct-connection structure: the island sits on Autoware's domain 1 (no
+Direct-connection structure: the island sits on Autoware's domain (no
 domain bridges, no relay). Sequence: init pose -> goal -> engage -> drive
 DRIVE_SECS -> SIGSTOP the process publishing the availability heartbeat
 (the fault) -> island MRM stops the vehicle -> SIGCONT it (heartbeat

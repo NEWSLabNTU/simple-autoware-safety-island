@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<!-- Shared domain-1 cyclone config for EVERY host-side participant (the sim
+<!-- Shared cyclone config for EVERY host-side participant on the demo domain
+     (ROS_DOMAIN_ID in .envrc; 10, because another project owns 1-3 here) (the sim
      tree, the scenario driver, ros2 CLI via `just topics`).
 
      The island (Zephyr native_sim) runs multicast-OFF unicast-peer
@@ -10,7 +11,7 @@
      default MaxAutoParticipantIndex (9) overflows on Autoware's ~40
      processes and overflowed participants fall back to a RANDOM port,
      invisible to the island forever. Hence: auto index, range 120, on
-     every d1 process. Multicast stays on host-side (host<->host discovery
+     every demo-domain process. Multicast stays on host-side (host<->host discovery
      keeps working the stock way).
 
      Do NOT raise this to "match" the island's own range: with <Peers> set,
