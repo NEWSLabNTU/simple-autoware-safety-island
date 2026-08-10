@@ -124,9 +124,17 @@ the shared `demo/cyclonedds.xml` (lo-pinned, `ParticipantIndex auto`,
 `MaxAutoParticipantIndex 120`) — `.envrc` exports it. The island's own
 profile is compile-time: `CONFIG_NROS_CYCLONE_CONFIG_XML` in
 `src/zephyr_entry/prj-cyclonedds.conf` (nano-ros issue 0367 wired the
-knob), plus 16384-entry pthread mutex/cond pools and a 256 MiB malloc
-arena — joining the full ~40-participant Autoware graph exhausts the old
-sizes and cyclone abort()s at t=0.
+knob), plus a 256 MiB malloc arena.
+
+The pthread mutex/cond pools used to be part of that sizing story and no
+longer are. Cyclone took a pool mutex per DDS entity and per addrset, so
+joining the full ~40-participant graph exhausted 16384 slots ~19 s in and
+died as an anonymous `abort()` (nano-ros issue 0371); the pools had been
+walked 256 -> 16384 -> 131072 chasing graph size. Cyclone on Zephyr now
+uses a native ddsrt sync backend (embedded `k_mutex`/`k_condvar`, nano-ros
+issue 0496), takes no pool slots at all, and the knobs are back at the 256
+default. If you ever see the pool named in an abort again, that backend is
+not in the build.
 
 ### 5. Open items not on the critical path
 
@@ -143,3 +151,37 @@ sizes and cyclone abort()s at t=0.
 * The VNC session on `:1` had died and was restarted by hand; nothing
   automates that. `just doctor` prints the display it will use but does not
   check that an X server is actually listening on it.
+* **This build host is shared, and a DDS domain is a shared namespace.** The
+  demo runs on domain **10** (`ROS_DOMAIN_ID` in `.envrc` +
+  `CONFIG_NROS_CYCLONE_DOMAIN_ID` in the island's Kconfig fragment, which must
+  stay in step because the island bakes its domain at compile time). Another
+  project's Autoware has occupied domains 1-3. Two stacks on one domain
+  contend for participant indices and see each other's topics, and the symptom
+  is not obvious: no cyclone participant can be created on the domain at all,
+  so every host node dies with `rcl node's rmw handle is invalid` and the sim
+  half-starts (18/33 nodes, 0/13 containers) — which reads as a bug in
+  whatever you changed last. To confirm it is the domain and not your change:
+  a plain `rclpy` node on that domain fails for ANY config including no
+  config, while the same node on an unused domain, or on fastrtps, succeeds.
+* **`just demo-down` is scoped to this checkout; ad-hoc `pkill` is not.** The
+  sweep discriminates on this checkout's `CYCLONEDDS_URI`, so it cleans our
+  ~110 processes and leaves other projects' Autoware alone. A name-based
+  `pkill -f play_launch` hits every project on the box — one killed this
+  demo's sim mid-scenario (SIGTERM at "driving for 15s"), and conversely
+  another agent's cleanup can kill ours. Prefer `just demo-down`.
+* Two scenario flakes under load, both timing rather than island behaviour.
+  Neither has been chased down; both are worth knowing before reading a FAIL
+  as a regression:
+  - The initial `ChangeOperationMode` (`== 3. engage autonomous ==`) can
+    return `success=False` for all 8 attempts, then engage on attempt 1 the
+    very next run. Observed once; MRM operated and recovered correctly in the
+    same run, so the island was healthy throughout.
+  - `VERDICT: FAIL` on the velocity check when the vehicle is still
+    accelerating at fault-injection time — e.g. `stop=True v 0.57 -> 0.0`
+    where the check wants a drop from ~4 m/s. The MRM cycle itself
+    (`NORMAL -> MRM_OPERATING -> MRM_SUCCEEDED -> NORMAL`) completes. Read the
+    verdict's own fields before blaming the island: `stop`, `mrm`, `recover`
+    and `resume_v` tell you whether the safety path worked.
+  A fix for the second would be to gate `== 5. cut the heartbeat ==` on the
+  vehicle actually reaching a threshold speed rather than on `DRIVE_SECS`
+  elapsing.
