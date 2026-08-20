@@ -1,0 +1,64 @@
+diff --git a/scripts/build/gen_relocate_app.py b/scripts/build/gen_relocate_app.py
+index e547af3449a..0be700313e4 100755
+--- a/scripts/build/gen_relocate_app.py
++++ b/scripts/build/gen_relocate_app.py
+@@ -564,12 +564,53 @@ def gen_all_obj_files(searchpath):
+ 
+ # return the absolute path for the object file.
+ def get_obj_filename(all_obj_files, filename):
+-    # get the object file name which is almost always pended with .obj
+-    obj_filename = filename.split("/")[-1] + ".obj"
+-
+-    for obj_file in all_obj_files:
+-        if obj_file.name == obj_filename and filename.split("/")[-2] in obj_file.parent.name:
+-            return str(obj_file)
++    # CMake names the object after the whole source file name plus the
++    # toolchain's object suffix. gen_all_obj_files() collects both .o and .obj,
++    # so match either -- hardcoding .obj silently skipped every .o toolchain.
++    source = Path(filename)
++    candidates = [
++        obj for obj in all_obj_files
++        if obj.name in (source.name + ".obj", source.name + ".o")
++    ]
++
++    if not candidates:
++        warnings.warn(
++            f"Relocation source {filename} has no matching object file; "
++            "nothing from it will be relocated.",
++            stacklevel=2,
++        )
++        return None
++
++    if len(candidates) == 1:
++        return str(candidates[0])
++
++    # Several objects share this basename (several main.c, say). Prefer the one
++    # whose directory path shares the longest trailing run of components with
++    # the source, which is how CMake mirrors a source tree into the build tree.
++    #
++    # This only DISAMBIGUATES between candidates; unlike the previous
++    # `filename.split("/")[-2] in obj_file.parent.name` test it never rejects an
++    # otherwise-unique match. That test assumed the object tree always mirrors
++    # the source tree, so it silently matched nothing for sources generated into
++    # the build root (comparing e.g. "build" to "app.dir") and for targets whose
++    # objects CMake flattens (comparing "zephyr" to "mylib.dir").
++    def trailing_match(obj):
++        src_parts = source.parent.parts
++        obj_parts = obj.parent.parts
++        n = 0
++        while (n < min(len(src_parts), len(obj_parts))
++               and src_parts[-1 - n] == obj_parts[-1 - n]):
++            n += 1
++        return n
++
++    ranked = sorted(candidates, key=trailing_match, reverse=True)
++    if trailing_match(ranked[0]) == trailing_match(ranked[1]):
++        warnings.warn(
++            f"Relocation source {filename} matches multiple object files "
++            f"({', '.join(str(c) for c in ranked)}); using {ranked[0]}.",
++            stacklevel=2,
++        )
++    return str(ranked[0])
+ 
+ 
+ # Extracts all possible components for the input string:

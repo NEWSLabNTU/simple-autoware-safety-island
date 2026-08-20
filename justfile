@@ -277,9 +277,72 @@ board-build:
     # deliberately no ~/.nros/bin copy — a stale one there shadows the in-tree
     # CLI, which packages/cli/CLAUDE.md forbids), and the SDK via env.sh.
     export PATH="{{ZEPHYR44_VENV_BIN}}:{{NANO_ROS_ROOT}}/packages/cli/target/release:$PATH"
-    export NROS_EXECUTOR_MAX_CBS="${NROS_EXECUTOR_MAX_CBS:-32}" NROS_INTERFACE_SEARCH_PATH=$PWD/src
+    # ── Executor sizing ─────────────────────────────────────────────────────
+    # 13 callbacks measured across the four nodes (11 subs + 2 service servers;
+    # service clients are poll-model). 14 slots leaves one spare. The arena is
+    # derived in nros-node/build.rs at ACTION-CLIENT size per slot (~18 KiB);
+    # this island instantiates no action entity, so use the pub/sub-only figure
+    # build.rs documents: max_cbs * (3 * rx_buf + 512) + 2048.
+    export NROS_EXECUTOR_MAX_CBS="${NROS_EXECUTOR_MAX_CBS:-14}"
+    export NROS_EXECUTOR_ARENA_SIZE="${NROS_EXECUTOR_ARENA_SIZE:-52224}"
+    export NROS_INTERFACE_SEARCH_PATH=$PWD/src
+
+    # ── zenoh subscriber payload classes ────────────────────────────────────
+    # SUBSCRIBER_RING_DEPTH is the receive queue depth and multiplies BOTH
+    # classes: SMALL = MAX_SUBS x DEPTH x 1024, LARGE = MAX_LARGE x DEPTH x
+    # LARGE_SIZE. Left at the nano-ros default of 4 -- an earlier revision cut
+    # it to 2 to fit 320 KiB, and moving the executor storage into DTCM (see the
+    # entry CMakeLists) freed enough SRAM to give the queue depth back.
+    #
+    # LARGE defaults to 2 x 4 x 16384 = 128 KiB, provisioned for image-scale
+    # messages. The island's largest subscribed type is nav_msgs/Odometry
+    # (~800 B serialized), so one slot at the 2048 size-threshold covers it.
+    export ZPICO_SUBSCRIBER_RING_DEPTH="${ZPICO_SUBSCRIBER_RING_DEPTH:-4}"
+    export ZPICO_MAX_LARGE_SUBSCRIBERS="${ZPICO_MAX_LARGE_SUBSCRIBERS:-1}"
+    export ZPICO_SUBSCRIBER_LARGE_SIZE="${ZPICO_SUBSCRIBER_LARGE_SIZE:-2048}"
+
+    # ── Post-snippet Kconfig overrides ──────────────────────────────────────
+    # MAIN_STACK_SIZE, HEAP_MEM_POOL_SIZE and the four NET_PKT/NET_BUF counts
+    # CANNOT be set from boards/mr_canhubk3_s32k344.conf: the nros-zenoh snippet
+    # sets them all and rides in EXTRA_CONF_FILE, which Zephyr merges AFTER
+    # CONF_FILE. A `-DCONFIG_*` on the CMake command line lands in
+    # misc/generated/extra_kconfig_options.conf, the one hook that merges after
+    # EXTRA_CONF_FILE (zephyr/cmake/modules/kconfig.cmake:306-315). Values set
+    # in the board file instead are silently ignored.
+    #
+    # MAIN_STACK_SIZE is charged twice on this platform: once for the main
+    # thread, and again as NROS_ZEPHYR_STACK_SIZE x NROS_ZEPHYR_MAX_THREADS for
+    # the pthread stack pool (nros_platform_zephyr_shims.c:293-301). The entry
+    # CMakeLists pins MAX_THREADS to 4, so the pool costs 4 x 8192 there.
+    #
+    # Entity limits are measured, not guessed: 11 subscriptions, 14 publishers,
+    # 2 queryables (the two bind_service calls; the six-per-node ROS parameter
+    # services would also be queryables, but nothing in this image calls
+    # nros_cpp_register_parameter_services, so they are never registered). The
+    # stock 8/8 would have failed at runtime past the eighth publisher.
+    #
+    # Net stack: the image ships exactly ONE TCP/IP stack, the kernel's
+    # (subsys/net/ip) -- nothing vendors lwIP/uIP/picoTCP, and zenoh-pico runs
+    # over BSD sockets on top of it. The defaults are host-scale
+    # (tcp_conns_slab = NET_MAX_CONN(8) x 2720, contexts = 32 x 172); zenoh
+    # opens a single TCP link, so 4 conns / 8 contexts is still generous.
+    #
+    # UNVALIDATED AT RUNTIME: the zenoh snippet chose 16384/65536 deliberately.
+    # A stack overflow or k_malloc failure under zenoh is the expected symptom
+    # if these are too small. Re-raise them here first when triaging one.
     west build -b {{BOARD}} -S {{BOARD_RMW}} -d {{BOARD_BUILD_DIR}} $PWD/src/zephyr_entry -- \
-        -DCMAKE_PREFIX_PATH={{NANO_ROS_ROOT}}
+        -DCMAKE_PREFIX_PATH={{NANO_ROS_ROOT}} \
+        -DCONFIG_MAIN_STACK_SIZE="${CONFIG_MAIN_STACK_SIZE:-8192}" \
+        -DCONFIG_HEAP_MEM_POOL_SIZE="${CONFIG_HEAP_MEM_POOL_SIZE:-16384}" \
+        -DCONFIG_NROS_MAX_SUBSCRIBERS="${CONFIG_NROS_MAX_SUBSCRIBERS:-12}" \
+        -DCONFIG_NROS_MAX_PUBLISHERS="${CONFIG_NROS_MAX_PUBLISHERS:-16}" \
+        -DCONFIG_NROS_MAX_QUERYABLES="${CONFIG_NROS_MAX_QUERYABLES:-4}" \
+        -DCONFIG_NET_MAX_CONN="${CONFIG_NET_MAX_CONN:-4}" \
+        -DCONFIG_NET_MAX_CONTEXTS="${CONFIG_NET_MAX_CONTEXTS:-8}" \
+        -DCONFIG_NET_PKT_RX_COUNT="${CONFIG_NET_PKT_RX_COUNT:-16}" \
+        -DCONFIG_NET_PKT_TX_COUNT="${CONFIG_NET_PKT_TX_COUNT:-16}" \
+        -DCONFIG_NET_BUF_RX_COUNT="${CONFIG_NET_BUF_RX_COUNT:-32}" \
+        -DCONFIG_NET_BUF_TX_COUNT="${CONFIG_NET_BUF_TX_COUNT:-32}"
     just board-size
 
 # Flash the island. pyocd via MCU-Link; the runner comes from the board itself.
