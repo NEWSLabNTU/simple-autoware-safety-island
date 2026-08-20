@@ -97,7 +97,9 @@ just run          # boot the island against the native board
 
 Zephyr variant: `just zephyr-build && just zephyr-run` (host tooling needs
 `just host-env`). Phase docs: [phase-1](docs/roadmap/phase-1-safety-island-port.md)
-(ports), [phase-2](docs/roadmap/phase-2-simple-demo-host-autoware.md) (the demo).
+(ports), [phase-2](docs/roadmap/phase-2-simple-demo-host-autoware.md) (the demo),
+[phase-3](docs/roadmap/phase-3-canhubk344-real-silicon.md) (NXP MR-CANHUBK344 —
+S32K344 + FreeRTOS, planned).
 
 ## The demo (validated: PASS, 3.90 → 0.00 m/s)
 

@@ -23,6 +23,18 @@ BRINGUP := "safety_island_bringup"
 VNC_DISPLAY := env("VNC_DISPLAY", ":1")
 # The nano-ros SDK CycloneDDS the island builds and runs against (NOT the ROS one).
 CYCLONEDDS_HOME := env("NROS_CYCLONEDDS_HOME", env("HOME") / ".nros/sdk/cyclonedds/0.10.5-nros1")
+# ── Phase 3: the MR-CANHUBK344 board, on Zephyr 4.4 ─────────────────────────
+# 4.4 (rolling), NOT the 3.7 LTS native_sim runs on: 4.5 is expected to become
+# the next LTS. nano-ros keeps the two lines in separate west workspaces so
+# both work at once — see docs/roadmap/phase-3-canhubk344-real-silicon.md.
+BOARD := env("NROS_BOARD", "mr_canhubk3/s32k344")
+BOARD_RMW := env("NROS_BOARD_RMW", "nros-zenoh")
+BOARD_BUILD_DIR := "build-board"
+# 4.4's sibling workspace (the 3.7 LTS one is nano-ros's in-tree zephyr-workspace/).
+ZEPHYR44_WS := env("NROS_ZEPHYR_WORKSPACE", NANO_ROS_ROOT / "../nano-ros-workspace-4.4")
+# 4.4 needs Python >= 3.12 for find_package(Python3); this host is 22.04 (3.10),
+# so nano-ros provisions a venv in the workspace. `west` MUST resolve there.
+ZEPHYR44_VENV_BIN := ZEPHYR44_WS / ".venv312/bin"
 # play_launch comes from PATH (installed by `just setup`); override with
 # PLAY_LAUNCH=<path> to point at a specific binary. The demo needs >= 0.8.2 —
 # 0.5.x stalls on Autoware's busy composable containers and has no `resolve`.
@@ -165,13 +177,146 @@ zephyr-build:
     #!/usr/bin/env bash
     set -e
     source {{NANO_ROS_ROOT}}/zephyr-workspace/env.sh > /dev/null
-    export NROS_EXECUTOR_MAX_CBS=32 NROS_INTERFACE_SEARCH_PATH=$PWD/src
+    export NROS_EXECUTOR_MAX_CBS="${NROS_EXECUTOR_MAX_CBS:-32}" NROS_INTERFACE_SEARCH_PATH=$PWD/src
     west build -b native_sim/native/64 -d build-zephyr src/zephyr_entry -- \
         -DCONF_FILE="prj.conf;prj-cyclonedds.conf" -DCMAKE_PREFIX_PATH=$NANO_ROS_ROOT
 
 # Run the Zephyr island (domain 2 baked; host side: `just host-env`).
 zephyr-run:
     ./build-zephyr/zephyr/zephyr.exe
+
+# ── The board: NXP MR-CANHUBK344 (S32K344) on Zephyr 4.4 ────────────────────
+# Separate recipes rather than parameters on zephyr-build, because all three of
+# its LTS-isms differ: the workspace, the board, and the RMW-selection form.
+# native_sim uses -DCONF_FILE=, which SUPPRESSES boards/<board>.conf; the board
+# uses a 4.x snippet (-S), which leaves the board file in play. Mixing them
+# would silently drop the hardware config.
+
+
+# Skips the Micro XRCE-DDS Agent (a Fast-DDS superbuild) — that is only needed
+# for XRCE *runtime* tests and the island uses zenoh/cyclone. Builds nano-ros's
+# CLI first: `nros setup --source` runs inside the zephyr setup and resolves the
+# binary from $NROS_CLI / PATH / ~/.nros, none of which are guaranteed here.
+#
+# One-time: install the Zephyr 4.4 workspace + its Python 3.12 venv (large).
+board-setup:
+    #!/usr/bin/env bash
+    set -e
+    cd {{NANO_ROS_ROOT}}
+    if [ ! -x packages/cli/target/release/nros ]; then
+        echo "[board-setup] building the nros CLI first..."
+        just setup-cli
+    fi
+    export NROS_CLI="$PWD/packages/cli/target/release/nros"
+    export PATH="$PWD/packages/cli/target/release:$PATH"
+    NROS_ZEPHYR_VERSION=4.4 NROS_ZEPHYR_SKIP_XRCE_AGENT=1 just zephyr setup
+    echo "workspace: {{ZEPHYR44_WS}}"
+
+# Report whether the board toolchain is ready. Read-only.
+board-doctor:
+    #!/usr/bin/env bash
+    set +e
+    fail=0
+    if [ -d "{{ZEPHYR44_WS}}/zephyr" ]; then
+        echo "  [OK]      zephyr 4.4 workspace: {{ZEPHYR44_WS}}"
+    else
+        echo "  [MISSING] zephyr 4.4 workspace (run: just board-setup)"; fail=1
+    fi
+    if [ -x "{{ZEPHYR44_VENV_BIN}}/west" ]; then
+        echo "  [OK]      west (py3.12 venv): $({{ZEPHYR44_VENV_BIN}}/python --version)"
+    else
+        echo "  [MISSING] {{ZEPHYR44_VENV_BIN}}/west — 4.4 needs python >= 3.12"; fail=1
+    fi
+    if [ -d "{{ZEPHYR44_WS}}/zephyr/boards/nxp/mr_canhubk3" ]; then
+        echo "  [OK]      board mr_canhubk3 present upstream"
+    else
+        echo "  [MISSING] boards/nxp/mr_canhubk3 in the workspace"; fail=1
+    fi
+    if command -v pyocd >/dev/null; then
+        echo "  [OK]      pyocd $(pyocd --version 2>/dev/null)"
+        pyocd list 2>/dev/null | grep -qiE 'cmsis|mcu-link' \
+            && echo "  [OK]      a CMSIS-DAP probe is connected" \
+            || echo "  [note]    no probe connected (MCU-Link needed to flash)"
+    else
+        echo "  [MISSING] pyocd"; fail=1
+    fi
+    [ -f src/zephyr_entry/boards/mr_canhubk3_s32k344.conf ] \
+        && echo "  [OK]      board conf present" \
+        || { echo "  [MISSING] src/zephyr_entry/boards/mr_canhubk3_s32k344.conf"; fail=1; }
+    exit $fail
+
+# Exercises the IVT header, the FS26 watchdog and the flash chain, so a failure
+# here is unambiguously board-or-probe rather than ours.
+#
+# Z0 — stock Zephyr hello_world on the board. NO nano-ros. Run this FIRST.
+board-hello:
+    #!/usr/bin/env bash
+    set -e
+    export PATH="{{ZEPHYR44_VENV_BIN}}:$PATH"
+    cd {{ZEPHYR44_WS}}
+    west build -b {{BOARD}} -d build-hello zephyr/samples/hello_world --pristine=auto
+    # -r pyocd explicitly: the board lists jlink FIRST in board.cmake, so west
+    # picks it by default and dies on `JLinkExe not found`. We flash with an
+    # MCU-Link (CMSIS-DAP), which is pyocd's job.
+    west flash -d build-hello -r pyocd
+    echo "Now attach the console: just board-console"
+
+# RMW via a 4.x snippet (-S), which keeps boards/<board>.conf in play — do NOT
+# switch this to -DCONF_FILE, that suppresses the board file.
+#
+# Build the island for the board.
+board-build:
+    #!/usr/bin/env bash
+    set -e
+    # `west build` must run INSIDE a west workspace or it reports
+    # `unknown command "build"`. env.sh supplies ZEPHYR_BASE + the SDK dir; the
+    # venv supplies west itself (4.4 needs python >= 3.12). Both are required.
+    source {{ZEPHYR44_WS}}/env.sh > /dev/null
+    # Three things must be on PATH and they come from three places: west from
+    # the py3.12 venv, the codegen `nros` from the nano-ros checkout (there is
+    # deliberately no ~/.nros/bin copy — a stale one there shadows the in-tree
+    # CLI, which packages/cli/CLAUDE.md forbids), and the SDK via env.sh.
+    export PATH="{{ZEPHYR44_VENV_BIN}}:{{NANO_ROS_ROOT}}/packages/cli/target/release:$PATH"
+    export NROS_EXECUTOR_MAX_CBS="${NROS_EXECUTOR_MAX_CBS:-32}" NROS_INTERFACE_SEARCH_PATH=$PWD/src
+    west build -b {{BOARD}} -S {{BOARD_RMW}} -d {{BOARD_BUILD_DIR}} $PWD/src/zephyr_entry -- \
+        -DCMAKE_PREFIX_PATH={{NANO_ROS_ROOT}}
+    just board-size
+
+# Flash the island. pyocd via MCU-Link; the runner comes from the board itself.
+#
+# WARNING: never `pyocd erase --chip` on this part. pyocd's pflash region spans
+# 0x00400000-0x007FFFFF, which INCLUDES the 176 KB reserved for sBAF and HSE
+# firmware. `west flash` sector-erases only what it writes, which is safe.
+#
+# Flash the island to the board (MCU-Link + pyocd).
+board-flash:
+    #!/usr/bin/env bash
+    set -e
+    source {{ZEPHYR44_WS}}/env.sh > /dev/null
+    export PATH="{{ZEPHYR44_VENV_BIN}}:$PATH"
+    west flash -d {{BOARD_BUILD_DIR}} -r pyocd
+
+# 320 KiB SRAM total for .data + .bss + heap + every stack.
+#
+# RAM/flash footprint — the number that decides whether this fits at all.
+board-size:
+    #!/usr/bin/env bash
+    set -e
+    source {{ZEPHYR44_WS}}/env.sh > /dev/null
+    export PATH="{{ZEPHYR44_VENV_BIN}}:$PATH"
+    west build -d {{BOARD_BUILD_DIR}} -t rom_report | tail -20
+    echo "── RAM ──"
+    west build -d {{BOARD_BUILD_DIR}} -t ram_report | tail -20
+
+# Board DTS puts zephyr,console on lpuart2. Ctrl-A k to quit screen.
+#
+# Console over the DCD-LZ adapter's FTDI header.
+board-console port="/dev/ttyUSB0" baud="115200":
+    screen {{port}} {{baud}}
+
+# Wipe the board build tree.
+board-clean:
+    rm -rf {{BOARD_BUILD_DIR}}
 
 # ══ THE DEMO — blocking recipes ═════════════════════════════════════════════
 # Three parts, one terminal each. Every recipe BLOCKS on its services and
