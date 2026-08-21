@@ -99,7 +99,9 @@ Zephyr variant: `just zephyr-build && just zephyr-run` (host tooling needs
 `just host-env`). Phase docs: [phase-1](docs/roadmap/phase-1-safety-island-port.md)
 (ports), [phase-2](docs/roadmap/phase-2-simple-demo-host-autoware.md) (the demo),
 [phase-3](docs/roadmap/phase-3-canhubk344-real-silicon.md) (NXP MR-CANHUBK344 —
-S32K344 + FreeRTOS, planned).
+S32K344 under Zephyr; the image builds and links, no hardware run yet),
+[phase-4](docs/roadmap/phase-4-link-security.md) (what protects the island's
+link — open question, gates any non-bench deployment).
 
 ## The demo (validated: PASS, 3.90 → 0.00 m/s)
 
