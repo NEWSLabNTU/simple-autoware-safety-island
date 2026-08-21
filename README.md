@@ -67,6 +67,7 @@ docs/
   topic-contract.md         island⇄Autoware topic contract (SSoT)
   porting-notes.md          rclcpp→nano-ros friction log (deliverable!)
   demo-runbook.md           fresh-machine bring-up + what is still open
+  board-bringup-triage.md   MR-CANHUBK344 first-boot triage: symptom → knob
 ```
 
 ## Prerequisites
