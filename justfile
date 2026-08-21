@@ -321,6 +321,18 @@ board-build:
     # LARGE defaults to 2 x 4 x 16384 = 128 KiB, provisioned for image-scale
     # messages. The island's largest subscribed type is nav_msgs/Odometry
     # (~800 B serialized), so one slot at the 2048 size-threshold covers it.
+    # WARNING -- these exports are NOT baked into build.ninja. Only knobs with a
+    # `_nros_resolve_knob` row (nros_cargo_build.cmake) ride the cargo command;
+    # the rest reach build.rs only by being in the environment of whatever shell
+    # runs ninja. So `cd build-board && ninja`, or `west build -d build-board`
+    # from a plain shell, rebuilds these five at CRATE DEFAULTS.
+    #
+    # Most of that fails loudly (the arena and the zenoh payload classes revert
+    # and RAM overflows), but NROS_RMW_SUBSCRIBER_SLOTS silently drops 12 -> 8
+    # and re-breaks the 9th subscription. Build through `just board-build`.
+    # The durable fix is upstream resolve rows for these, matching what #749
+    # did for the nros-node class.
+    #
     # nros-rmw-cffi keeps subscription handles in a STATIC slot pool on no_std
     # targets (rust_adapter.rs:99 — `SLOTS = NROS_RMW_SUBSCRIBER_SLOTS * 1024`).
     # Default 8 against this island's 11 subscriptions: the 9th
