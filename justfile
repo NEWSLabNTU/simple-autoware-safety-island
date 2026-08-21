@@ -321,6 +321,13 @@ board-build:
     # LARGE defaults to 2 x 4 x 16384 = 128 KiB, provisioned for image-scale
     # messages. The island's largest subscribed type is nav_msgs/Odometry
     # (~800 B serialized), so one slot at the 2048 size-threshold covers it.
+    # nros-rmw-cffi keeps subscription handles in a STATIC slot pool on no_std
+    # targets (rust_adapter.rs:99 — `SLOTS = NROS_RMW_SUBSCRIBER_SLOTS * 1024`).
+    # Default 8 against this island's 11 subscriptions: the 9th
+    # create_subscription returns BAD_ALLOC and surfaces as an opaque
+    # SubscriberCreationFailed. The same pool already caused that once at a
+    # hardcoded 4 (issue 0269). Keep in step with MAX_SUBSCRIBERS below.
+    export NROS_RMW_SUBSCRIBER_SLOTS="${NROS_RMW_SUBSCRIBER_SLOTS:-12}"
     export ZPICO_SUBSCRIBER_RING_DEPTH="${ZPICO_SUBSCRIBER_RING_DEPTH:-4}"
     export ZPICO_MAX_LARGE_SUBSCRIBERS="${ZPICO_MAX_LARGE_SUBSCRIBERS:-1}"
     export ZPICO_SUBSCRIBER_LARGE_SIZE="${ZPICO_SUBSCRIBER_LARGE_SIZE:-2048}"
@@ -338,6 +345,14 @@ board-build:
     # thread, and again as NROS_ZEPHYR_STACK_SIZE x NROS_ZEPHYR_MAX_THREADS for
     # the pthread stack pool (nros_platform_zephyr_shims.c:293-301). The entry
     # CMakeLists pins MAX_THREADS to 4, so the pool costs 4 x 8192 there.
+    #
+    # Liveliness is declared PER NODE, PER PUBLISHER and PER SUBSCRIBER
+    # (shim/session.rs:507,559,591) -- 4 + 14 + 11 = 29 tokens against a default
+    # cap of 16. Exhaustion is SILENT: zpico_declare_liveliness returns
+    # ZPICO_ERR_FULL and the shim discards it with `.ok()`, so the entity works
+    # for data and simply never appears in `ros2 node list` / `ros2 topic list`.
+    # Issue 0283 turned liveliness on everywhere precisely so an integrator can
+    # see a safety MCU in the graph; 13 invisible entities defeats that.
     #
     # Entity limits are measured, not guessed: 11 subscriptions, 14 publishers,
     # 2 queryables (the two bind_service calls; the six-per-node ROS parameter
@@ -361,6 +376,7 @@ board-build:
         -DCONFIG_NROS_MAX_SUBSCRIBERS="${CONFIG_NROS_MAX_SUBSCRIBERS:-12}" \
         -DCONFIG_NROS_MAX_PUBLISHERS="${CONFIG_NROS_MAX_PUBLISHERS:-16}" \
         -DCONFIG_NROS_MAX_QUERYABLES="${CONFIG_NROS_MAX_QUERYABLES:-4}" \
+        -DCONFIG_NROS_MAX_LIVELINESS="${CONFIG_NROS_MAX_LIVELINESS:-32}" \
         -DCONFIG_NET_MAX_CONN="${CONFIG_NET_MAX_CONN:-4}" \
         -DCONFIG_NET_MAX_CONTEXTS="${CONFIG_NET_MAX_CONTEXTS:-8}" \
         -DCONFIG_NET_PKT_RX_COUNT="${CONFIG_NET_PKT_RX_COUNT:-16}" \
