@@ -9,7 +9,7 @@ silicon. When the board misbehaves, the cause is far more likely to be one of
 these values than a logic bug in a node that already ran green on native and
 native_sim.
 
-**Second thing:** four of the failure modes below are **silent**. They do not
+**Second thing:** three of the failure modes below are **silent**. They do not
 crash, log, or return an error you will see. Section 3 lists them; read it before
 you conclude something "works".
 
@@ -55,7 +55,7 @@ a node.
 | suspect | current | where | note |
 | --- | ---: | --- | --- |
 | `CONFIG_MAIN_STACK_SIZE` | 8192 | `justfile` `board-build` | the nros-zenoh snippet asks 16384. **Raise this first.** |
-| `CONFIG_SYSTEM_WORKQUEUE_STACK_SIZE` | 4096 | board conf | |
+| `CONFIG_SYSTEM_WORKQUEUE_STACK_SIZE` | 4096 | `justfile` `board-build` | |
 | `NROS_ZEPHYR_TIER_STACK_SIZE` | 4096 | entry `CMakeLists.txt` | only if something spawns a tier; nothing should |
 
 The watchdog is enabled (`CONFIG_WATCHDOG=y`, FS26 SBC). A reset loop with no
@@ -92,14 +92,14 @@ fails first.
 `CONFIG_NET_CONFIG_INIT_TIMEOUT=30`. Check the PHY link first (`net iface` in the
 shell — see §4), then the media converter, then:
 
-| | current | snippet default |
-| --- | ---: | ---: |
-| `CONFIG_NET_MAX_CONN` | 4 | 8 |
-| `CONFIG_NET_MAX_CONTEXTS` | 8 | 32 |
-| `CONFIG_NET_PKT_{RX,TX}_COUNT` | 16 / 16 | 32 / 32 |
-| `CONFIG_NET_BUF_{RX,TX}_COUNT` | 32 / 32 | 64 / 64 |
+| | current | stock | where |
+| --- | ---: | ---: | --- |
+| `CONFIG_NET_MAX_CONN` | 4 | 8 | board conf |
+| `CONFIG_NET_MAX_CONTEXTS` | 8 | 32 | board conf |
+| `CONFIG_NET_PKT_{RX,TX}_COUNT` | 16 / 16 | 32 / 32 | `justfile` — snippet-contested |
+| `CONFIG_NET_BUF_{RX,TX}_COUNT` | 32 / 32 | 64 / 64 | `justfile` — snippet-contested |
 
-All in `justfile` `board-build` — **not** the board conf, see §5.
+The split is not arbitrary; see §5.
 
 ---
 
@@ -128,22 +128,22 @@ publishes and subscribes perfectly and is invisible to every ROS 2 tool.
 
 If the graph looks short but data flows, this is why — not a discovery problem.
 
-**3. A rebuild that quietly changes the image.**
-Only knobs with a `_nros_resolve_knob` row are baked into `build.ninja`. These
-five are **not**, and reach `build.rs` only from the environment of the shell
-running ninja:
+**3. A rebuild that quietly changed the image — fixed, but check your submodule.**
+Knobs reach `build.rs` only if they have a `_nros_resolve_knob` row; without one
+they came from the environment of whatever shell ran ninja, so `cd build-board &&
+ninja` rebuilt at crate defaults — and `NROS_RMW_SUBSCRIBER_SLOTS` reverted 12 → 8
+silently, re-breaking the 9th subscription.
 
+Fixed upstream in nano-ros **#0752** (`61684d09`), which gave the last five knobs
+Kconfig rows. All sizing now lives in the board conf and bakes into
+`build.ninja`. To confirm on any tree:
+
+```sh
+grep -o 'NROS_RMW_SUBSCRIBER_SLOTS=[0-9]*' build-board/build.ninja
 ```
-NROS_EXECUTOR_ARENA_SIZE   NROS_RMW_SUBSCRIBER_SLOTS
-ZPICO_SUBSCRIBER_RING_DEPTH   ZPICO_MAX_LARGE_SUBSCRIBERS   ZPICO_SUBSCRIBER_LARGE_SIZE
-```
 
-`cd build-board && ninja`, or `west build -d build-board` from a plain shell,
-rebuilds them at crate defaults. Most of that overflows RAM and fails loudly —
-but `NROS_RMW_SUBSCRIBER_SLOTS` drops 12 → 8 silently and re-breaks the 9th
-subscription.
-
-**Always build with `just board-build`.**
+Empty means you are on a nano-ros older than #0752 — build only through
+`just board-build` until you bump.
 
 **4. A relocation that relocated nothing.**
 If `patches/zephyr/0001` is missing (a `west update` resets the Zephyr tree),
@@ -179,8 +179,8 @@ silently ignored.
 
 | file | holds |
 | --- | --- |
-| `justfile`, `board-build` | anything the **nros-zenoh snippet also sets**, and every `ZPICO_*` / `NROS_EXECUTOR_*` env knob |
-| `src/zephyr_entry/boards/mr_canhubk3_s32k344.conf` | board-only Kconfig the snippet does not touch |
+| `justfile`, `board-build` | **only** what the nros-zenoh snippet also sets: `MAIN_STACK_SIZE`, `HEAP_MEM_POOL_SIZE`, `SYSTEM_WORKQUEUE_STACK_SIZE`, and the four `NET_PKT`/`NET_BUF` counts |
+| `src/zephyr_entry/boards/mr_canhubk3_s32k344.conf` | everything else — entity limits, executor and zenoh pools, net conn/context caps, the subscription buffer |
 | `src/zephyr_entry/CMakeLists.txt` | compile definitions (`NROS_COMPONENT_*`, `NROS_ZEPHYR_*`) and the DTCM relocation |
 
 **Why:** Zephyr merges `CONF_FILE` (prj.conf, board conf) *before*
@@ -189,6 +189,10 @@ silently ignored.
 written into the board conf are **overwritten without warning**. They are passed
 as `-DCONFIG_*` from the recipe, which lands in
 `misc/generated/extra_kconfig_options.conf` — the one hook that merges last.
+
+Everything the snippet does *not* set belongs in the board conf, which is where
+board sizing belongs. That became possible for the whole sizing class only with
+nano-ros #0749 and #0752.
 
 If a Kconfig change appears to do nothing, check the resolved value first:
 
