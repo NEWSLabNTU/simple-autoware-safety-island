@@ -4,9 +4,12 @@
 native_sim, running on an S32K344 on real hardware, joining Autoware's DDS
 domain over 100BASE-T1 — and stopping the vehicle when the heartbeat dies.
 
-**Status (2026-08-16): planning done, first code being written.** W0
-(verification, no code) is complete. The host RTOS decision has been made twice
-and the second answer overturned the first — see [Appendix A](#appendix-a--why-not-freertos--s32ds).
+**Status (2026-08-21): the image builds, links and fits. No hardware has run
+it.** The 320 KiB question of section 4 is answered — measured, not estimated —
+and section 4b records how. What remains is Z0: nothing here has executed a
+single instruction on silicon, because the MCU-Link probe has not arrived. The
+host RTOS decision was made twice and the second answer overturned the first —
+see [Appendix A](#appendix-a--why-not-freertos--s32ds).
 
 **Platform:** Zephyr **v4.4.0**, the rolling line (`NROS_ZEPHYR_VERSION=4.4`,
 `west-4.4.yml`), board `mr_canhubk3/s32k344`. Not the 3.7 LTS: 4.5 is expected
@@ -143,14 +146,55 @@ not an assumption. Bring up on zenoh; revisit Cyclone with measurements.
 Also unchanged from the earlier plan: 100BASE-T1 needs a media converter
 (RDDRONE-T1ADAPT or similar) for host interop. Not in the kit.
 
+## 4b. It fits (2026-08-21)
+
+zenoh was the right call. The first link attempt overflowed RAM by **651,448
+bytes**; the image now sits inside the part with room to spare:
+
+```
+FLASH:  600,036 / 4,144,896   14.48%
+RAM:    268,336 /   320 KB    81.89%
+DTCM:    98,264 /   128 KB    74.97%
+ITCM:         0 /    64 KB     0.00%
+```
+
+Every figure below came from `zephyr_pre0.map` and `nm` against built objects.
+The dominant cost was not what this section predicted:
+
+| | reclaimed | what it was |
+| --- | ---: | --- |
+| `NROS_COMPONENT_MAX_PARAMS` 256 → 16 | 206 KiB | `ComponentNode` embeds `ParameterServer<256,…>` BY VALUE — 55,328 B of `.bss` per node, against 11 declared parameters on the busiest one |
+| DTCM relocation | 98 KiB | executor storage + the four component buffers moved off SRAM |
+| `MAIN_STACK_SIZE` / `HEAP_MEM_POOL` | 123 KiB | `MAIN_STACK_SIZE` is charged twice — main thread, and again as the 8-slot pthread pool |
+| zenoh payload classes | 105 KiB | `LARGE_PAYLOADS` defaulted to 2 × 4 × 16 KiB for image-scale messages; the largest subscribed type is `nav_msgs/Odometry` at ~800 B |
+| net stack right-sizing | 34 KiB | host-scale defaults: 8 TCP connections, 32 socket contexts, for the one link zenoh opens |
+
+Three findings worth carrying forward:
+
+1. **A snippet beats the board file.** `CONFIG_MAIN_STACK_SIZE`,
+   `CONFIG_HEAP_MEM_POOL_SIZE` and the four `NET_PKT`/`NET_BUF` counts are set by
+   `snippets/nros-zenoh/zenoh.conf`, which rides in `EXTRA_CONF_FILE` and merges
+   *after* `CONF_FILE`. Values written into `boards/mr_canhubk3_s32k344.conf`
+   were silently ignored. They are passed as `-DCONFIG_*` from `board-build`
+   now, which is the one hook that merges later.
+2. **The entity limits were wrong, not just large.** `CONFIG_NROS_MAX_SUBSCRIBERS`
+   and `_MAX_PUBLISHERS` were both 8 against a measured 11 and 14. That would
+   have failed at runtime past the eighth publisher, independent of memory.
+3. **DTCM needed a Zephyr fix.** `zephyr_code_relocate()` could not resolve the
+   generated entry TU to its object, and on no match it writes an empty fragment
+   and exits 0 — relocating nothing, silently. See `patches/zephyr/0001`.
+
+Cyclone DDS on this part remains unproven and untried; zenoh fits, so the
+question is deferred rather than answered.
+
 ## 5. Waves
 
 | | What | State |
 | --- | --- | --- |
 | **Z0** | Stock Zephyr `hello_world` on the board: `west build -b mr_canhubk3/s32k344`, flash with MCU-Link + pyocd, see console. **Zero nano-ros.** Exercises IVT, FS26 and the flash chain so a failure is unambiguously board-or-probe | next |
-| **Z1** | Board conf + networking. Get an IP up and ping across the T1 link | conf drafted |
-| **Z2** | Entry: point `src/zephyr_entry` at the board. **No CMakeLists change needed to build** — checked 2026-08-16: `nano_ros_entry` accepts both `MODEL` and `BRINGUP` and emits no deprecation, so the board build works with the entry as-is. The `MODEL` → `BRINGUP` migration is hygiene (models are build artifacts upstream; `check-no-tracked-models` gates nano-ros's own tree, not a consumer's) and is separable from the bring-up | |
-| **Z3** | RMW + sizing. zenoh first; measure; decide about Cyclone | |
+| **Z1** | Board conf + networking. Get an IP up and ping across the T1 link | conf written; static IPv4 + GMAC/TJA1103 configured, unexercised without hardware |
+| **Z2** | Entry: point `src/zephyr_entry` at the board. **No CMakeLists change needed to build** — checked 2026-08-16: `nano_ros_entry` accepts both `MODEL` and `BRINGUP` and emits no deprecation, so the board build works with the entry as-is. The `MODEL` → `BRINGUP` migration is hygiene (models are build artifacts upstream; `check-no-tracked-models` gates nano-ros's own tree, not a consumer's) and is separable from the bring-up | done — the entry builds for the board |
+| **Z3** | RMW + sizing. zenoh first; measure; decide about Cyclone | done for zenoh — see 4b. Cyclone deferred, not evaluated |
 | **Z4** | The demo on hardware — phase-2's verdict reproduced with the island on real silicon | |
 
 Z0 needs no decisions and no nano-ros. Do it first.

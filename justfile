@@ -9,11 +9,16 @@
 #   just build     build the island (native)
 #   just demo-all  Autoware (no MRM) + island + demo sequence, one command
 #
-# Prerequisites NOT installed here: ROS 2 Humble, Autoware 1.5.0, and a
-# nano-ros checkout ($NANO_ROS_ROOT, default sibling ~/repos/nano-ros).
+# Prerequisites NOT installed here: ROS 2 Humble and Autoware 1.5.0.
 # play_launch IS installed by `just setup` (onto PATH). `just doctor` verifies.
-
-NANO_ROS_ROOT := env("NANO_ROS_ROOT", justfile_directory() / "../nano-ros")
+#
+# nano-ros resolves to the PINNED SUBMODULE, not a sibling checkout. That is the
+# tree this repo commits a specific revision of, and the one whose sources the
+# west module compiles -- a sibling default let the codegen CLI and the CMake
+# package come from one tree while the module sources came from another, which
+# is precisely the stale-CLI drift packages/cli/CLAUDE.md warns about.
+# Override with NANO_ROS_ROOT=<path> for a working checkout.
+NANO_ROS_ROOT := env("NANO_ROS_ROOT", justfile_directory() / "third-party/nano-ros")
 # Optional: a play_launch SOURCE checkout to build+install from. Unset (the
 # default) means `just setup` installs the published package instead.
 PLAY_LAUNCH_REPO := env("PLAY_LAUNCH_REPO", "")
@@ -30,8 +35,10 @@ CYCLONEDDS_HOME := env("NROS_CYCLONEDDS_HOME", env("HOME") / ".nros/sdk/cycloned
 BOARD := env("NROS_BOARD", "mr_canhubk3/s32k344")
 BOARD_RMW := env("NROS_BOARD_RMW", "nros-zenoh")
 BOARD_BUILD_DIR := "build-board"
-# 4.4's sibling workspace (the 3.7 LTS one is nano-ros's in-tree zephyr-workspace/).
-ZEPHYR44_WS := env("NROS_ZEPHYR_WORKSPACE", NANO_ROS_ROOT / "../nano-ros-workspace-4.4")
+# 4.4's workspace (the 3.7 LTS one is nano-ros's in-tree zephyr-workspace/).
+# Anchored to THIS repo, not to NANO_ROS_ROOT: the workspace is a sibling of the
+# project, so deriving it from a submodule path would point inside third-party/.
+ZEPHYR44_WS := env("NROS_ZEPHYR_WORKSPACE", justfile_directory() / "../nano-ros-workspace-4.4")
 # 4.4 needs Python >= 3.12 for find_package(Python3); this host is 22.04 (3.10),
 # so nano-ros provisions a venv in the workspace. `west` MUST resolve there.
 ZEPHYR44_VENV_BIN := ZEPHYR44_WS / ".venv312/bin"
@@ -176,6 +183,10 @@ clean:
 zephyr-build:
     #!/usr/bin/env bash
     set -e
+    # The 3.7 LTS workspace lives INSIDE the nano-ros checkout. NANO_ROS_ROOT now
+    # defaults to the submodule, so this needs `just zephyr setup` to have been
+    # run there once; a sibling checkout that already has one can be used with
+    # NANO_ROS_ROOT=<path>.
     source {{NANO_ROS_ROOT}}/zephyr-workspace/env.sh > /dev/null
     export NROS_EXECUTOR_MAX_CBS="${NROS_EXECUTOR_MAX_CBS:-32}" NROS_INTERFACE_SEARCH_PATH=$PWD/src
     west build -b native_sim/native/64 -d build-zephyr src/zephyr_entry -- \
@@ -243,6 +254,19 @@ board-doctor:
     [ -f src/zephyr_entry/boards/mr_canhubk3_s32k344.conf ] \
         && echo "  [OK]      board conf present" \
         || { echo "  [MISSING] src/zephyr_entry/boards/mr_canhubk3_s32k344.conf"; fail=1; }
+    # patches/zephyr/0001 must be applied for the entry's .bss to reach DTCM.
+    # `west update` resets the Zephyr tree and silently drops it. Without it
+    # zephyr_code_relocate() emits an empty fragment, prints nothing, exits 0 --
+    # and the build then fails with "region RAM overflowed by ~39000 bytes",
+    # which does not name the real cause. Check for the fix, not the patch file.
+    if grep -q 'trailing_match' "{{ZEPHYR44_WS}}/zephyr/scripts/build/gen_relocate_app.py" 2>/dev/null; then
+        echo "  [OK]      zephyr patch 0001 (gen_relocate_app) applied"
+    else
+        echo "  [MISSING] zephyr patch 0001 — DTCM relocation will silently no-op"
+        echo "            and the build will overflow RAM. Re-apply:"
+        echo "            cd {{ZEPHYR44_WS}}/zephyr && git apply {{justfile_directory()}}/patches/zephyr/*.patch"
+        fail=1
+    fi
     exit $fail
 
 # Exercises the IVT header, the FS26 watchdog and the flash chain, so a failure
