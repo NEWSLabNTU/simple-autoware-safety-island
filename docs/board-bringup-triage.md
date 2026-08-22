@@ -61,6 +61,22 @@ a node.
 The watchdog is enabled (`CONFIG_WATCHDOG=y`, FS26 SBC). A reset loop with no
 fault message may be the watchdog, not a crash.
 
+### Boots, then HANGS with no fault and no further output
+
+Distinct from a hard-fault: no panic, no message, output simply stops. nano-ros
+**#0756** records this exact shape on the Zephyr FVP lane — an image built with
+`NROS_MAX_PARAMETERS=256` hangs right after `dds_create_participant`, and 32
+boots clean. The suspicion there is a large parameter-store temporary
+constructed on a thread stack.
+
+We build `NROS_MAX_PARAMETERS=32`, the safe value, so that specific trigger does
+not apply. But the *shape* does, and it matters here more than upstream: this
+image runs `CONFIG_MAIN_STACK_SIZE=8192`, half what the snippet asks. A silent
+hang on the boot path is stack exhaustion until proven otherwise.
+
+Order: raise `MAIN_STACK_SIZE` to 16384 in the recipe, reflash. If it boots, get
+the real number from `kernel thread stacks` (§4) rather than leaving it doubled.
+
 ### `pthread_create` fails / a thread never starts
 
 `NROS_ZEPHYR_MAX_THREADS=4` (entry `CMakeLists.txt`). Covers zenoh's read and
@@ -116,6 +132,13 @@ Measured: `nav_msgs/Odometry` is the largest subscribed type at **~718 B** on th
 wire with Autoware's `map` / `base_link` frame ids. A 255-char frame id would
 cost 1208 B and break it. If one topic is dead while others work, check the
 publisher's frame ids first.
+
+**Do not trust the outside probes here.** nano-ros **#0757** (open) tracks this
+drop site: the transport completes and ACKs the sample before the dispatch path
+discards it, so the subscription looks matched and healthy from `ros2 topic info
+-v` and from tshark ACKNACK analysis while the app waits forever. Upstream
+attribution for the same bug took a consumer-side tshark session. A dead
+callback with a green `topic info` is this until proven otherwise.
 
 Raising it also means recomputing `NROS_EXECUTOR_ARENA_SIZE`:
 `max_cbs * (3 * rx_buf + 512) + 2048`. The two move together.
