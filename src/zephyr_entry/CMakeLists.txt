@@ -83,6 +83,49 @@ add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../autoware_mrm_handler" autoware_
 # Verify by the DTCM line of the region report, never by the build succeeding.
 zephyr_code_relocate(LIBRARY app LOCATION DTCM_BSS)
 
+# ---------------------------------------------------------------------------
+# ITCM: the safety application's own code.
+#
+# WHAT THIS BUYS. The I-cache is already on (CONFIG_ICACHE=y), so this is NOT a
+# throughput win -- a hot loop already runs near zero-wait out of cache. What
+# ITCM changes is DETERMINISM and cache pressure. The M7's I-cache is small
+# against 421 KiB of text, so the MRM decision path competes for lines with the
+# net stack, the shell and the Rust executor, and a decision that follows an
+# idle period pays flash wait states on every miss. Code in ITCM is
+# zero-wait-state ALWAYS, with no miss to jitter the response, and it stops
+# occupying cache lines the rest of the image can then use. For a safety island
+# the worst case is the number that matters, not the average.
+#
+# WHAT GOES HERE. The four MRM node bodies: 12,816 B measured, 19.6% of the
+# region. NOT the Rust executor and NOT the net stack -- the net stack's buffers
+# must stay DMA-reachable (see above; the same DMA constraint applies to ITCM).
+#
+# Be accurate about the granularity: LIBRARY moves the WHOLE library, so each
+# node's constructor rides along even though it runs exactly once. That is a few
+# KiB of one-shot code holding ITCM for the life of the image. It is accepted
+# rather than filtered: 51 KiB of the region is still free, and the FILTER
+# argument takes a regex over MANGLED C++ names, which stops matching on any
+# rename and then relocates nothing while still linking green -- the same silent
+# failure documented for the DTCM line above. A brittle filter is worse than a
+# few KiB here.
+#
+# ORDER MATTERS: _TEXT is a COPY. The section is loaded in flash and copied to
+# ITCM by z_data_copy() before main(), so it costs FLASH as well as ITCM, and
+# nothing in it may run before that copy.
+#
+# Verify by the ITCM line of the region report, never by the build succeeding --
+# the same silent-empty-fragment failure mode as the DTCM line above.
+#
+# NOT YET RUN ON SILICON. This links, places and reports correctly (ITCM 12,816 B,
+# .itcm_text_reloc VMA 0x0 / LMA 0x004007fc), but no MR-CANHUBK344 has executed
+# it -- the board is still blocked on the MCU-Link probe. The boot-time copy and
+# the ECC prerequisite in boards/mr_canhubk3_s32k344.overlay are exactly the
+# things a linker cannot check.
+zephyr_code_relocate(LIBRARY mrm_handler_lib                   LOCATION ITCM_TEXT)
+zephyr_code_relocate(LIBRARY stop_mode_operator_lib            LOCATION ITCM_TEXT)
+zephyr_code_relocate(LIBRARY mrm_emergency_stop_operator_lib   LOCATION ITCM_TEXT)
+zephyr_code_relocate(LIBRARY mrm_comfortable_stop_operator_lib LOCATION ITCM_TEXT)
+
 nano_ros_add_executable(zephyr_entry
     BOARD   zephyr
     MODEL   "${CMAKE_CURRENT_SOURCE_DIR}/../safety_island_bringup/config/system_model.yaml"

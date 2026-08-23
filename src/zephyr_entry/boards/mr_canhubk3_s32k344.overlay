@@ -1,0 +1,21 @@
+/*
+ * TCM chosen nodes.
+ *
+ * S32K3 TCM is ECC-protected, and the reference manual requires the whole
+ * region be written by a 64-bit master after a destructive reset before any
+ * 32-bit master reads or writes it. Zephyr's `soc_early_reset_hook`
+ * (soc/nxp/s32/s32k3/s32k3xx_startup.S) does exactly that with a `stm {r0,r3}`
+ * loop — but the ITCM and DTCM loops are compiled out unless these chosen
+ * nodes exist. The board defines the memory regions and does NOT choose them,
+ * so on a stock mr_canhubk3 both TCMs stay ECC-uninitialised.
+ *
+ * That matters as soon as anything is relocated there. Zeroing relocated .bss
+ * from C is a 32-bit store, which is the access the manual says must come
+ * AFTER the 64-bit initialisation, not instead of it.
+ */
+/ {
+	chosen {
+		zephyr,itcm = &itcm;
+		zephyr,dtcm = &dtcm;
+	};
+};
