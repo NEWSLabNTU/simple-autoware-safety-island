@@ -9,9 +9,10 @@ silicon. When the board misbehaves, the cause is far more likely to be one of
 these values than a logic bug in a node that already ran green on native and
 native_sim.
 
-**Second thing:** three of the failure modes below are **silent**. They do not
-crash, log, or return an error you will see. Section 3 lists them; read it before
-you conclude something "works".
+**Second thing:** one failure mode below is still **silent** — it does not crash,
+log, or return an error you will see. Two others used to be and are now fixed
+upstream, but only if your submodule is new enough. Section 3 has all three;
+read it before you conclude something "works".
 
 ---
 
@@ -64,15 +65,16 @@ fault message may be the watchdog, not a crash.
 ### Boots, then HANGS with no fault and no further output
 
 Distinct from a hard-fault: no panic, no message, output simply stops. nano-ros
-**#0756** records this exact shape on the Zephyr FVP lane — an image built with
-`NROS_MAX_PARAMETERS=256` hangs right after `dds_create_participant`, and 32
-boots clean. The suspicion there is a large parameter-store temporary
-constructed on a thread stack.
+**#0756** was exactly this — `Box::new(ParamState{..})` has no placement-new, so
+the parameter store was built on the caller's stack: 2,244,628 B measured on
+thumbv7em at `NROS_MAX_PARAMETERS=256`, against a 512 KiB main stack. Fixed
+(`dd79d3125`); the temporary is now 68 B.
 
-We build `NROS_MAX_PARAMETERS=32`, the safe value, so that specific trigger does
-not apply. But the *shape* does, and it matters here more than upstream: this
-image runs `CONFIG_MAIN_STACK_SIZE=8192`, half what the snippet asks. A silent
-hang on the boot path is stack exhaustion until proven otherwise.
+So that specific cause is gone. The *shape* still matters here, and more than
+upstream: this image runs `CONFIG_MAIN_STACK_SIZE=8192`, half what the snippet
+asks. A silent hang on the boot path is stack exhaustion until proven
+otherwise — it walks off the end of a stack with no guard below it, which is
+why it hangs instead of faulting.
 
 Order: raise `MAIN_STACK_SIZE` to 16384 in the recipe, reflash. If it boots, get
 the real number from `kernel thread stacks` (§4) rather than leaving it doubled.
@@ -98,10 +100,31 @@ Both were cut to fit. There is 53 KiB of SRAM free — raising either is cheap.
 | --- | --- | ---: | ---: |
 | `SubscriberCreationFailed`, opaque | `NROS_RMW_SUBSCRIBER_SLOTS` | 12 | 11 |
 | `declare_parameter` → `ErrorCode::Full (-5)` | `NROS_COMPONENT_MAX_PARAMS` | 16 | 11 |
-| 5th node will not attach | `NROS_EXECUTOR_MAX_NODES` | 4 | **4 — no headroom** |
+| 7th node will not attach | `NROS_EXECUTOR_MAX_NODES` | 6 | 4 |
 
-`MAX_NODES` is the one limit sized to exact need. If a node is ever added, this
-fails first.
+`MAX_NODES` was the one limit sized to exact need (4 against 4 nodes). Now 6.
+The two spare slots cost 2,416 B of **DTCM** and zero SRAM, because the executor
+storage was already relocated there — see §5.
+
+### A callback never fires / one topic looks dead
+
+Since nano-ros **#0757** this reports itself. Look for this on the console —
+first occurrence, then every 64th:
+
+```
+subscription take DROPPED (...); buffer is N bytes. The sample was received and
+ACKed, then discarded — raise the subscription buffer knob if this is
+BufferTooSmall. Dropped N so far (issue 0757)
+```
+
+It also increments `subscription_errors` in the executor's spin result, so the
+count stops lying.
+
+If it says `BufferTooSmall`, raise `CONFIG_NROS_SUBSCRIPTION_BUFFER_SIZE` (board
+conf) — and recompute `CONFIG_NROS_EXECUTOR_ARENA_SIZE` with it, the two move
+together (`max_cbs * (3 * rx_buf + 512) + 2048`). On zenoh the relevant knob may
+instead be `CONFIG_NROS_SUBSCRIBER_BUFFER_SIZE` or
+`CONFIG_NROS_SUBSCRIBER_LARGE_SIZE`.
 
 ### Networking never comes up
 
@@ -119,39 +142,18 @@ The split is not arbitrary; see §5.
 
 ---
 
-## 3. The silent failures — read this before declaring success
+## 3. Failures that do not announce themselves
 
-These produce no error. Everything looks like it is working.
-
-**1. A subscription that never fires.**
-`CONFIG_NROS_SUBSCRIPTION_BUFFER_SIZE=1024` (board conf). A serialized sample
-larger than this is dropped at `try_recv` with `BUFFER_TOO_SMALL`, and the C++
-arena dispatch path swallows the drop. The callback simply never runs.
-
-Measured: `nav_msgs/Odometry` is the largest subscribed type at **~718 B** on the
-wire with Autoware's `map` / `base_link` frame ids. A 255-char frame id would
-cost 1208 B and break it. If one topic is dead while others work, check the
-publisher's frame ids first.
-
-**Do not trust the outside probes here.** nano-ros **#0757** (open) tracks this
-drop site: the transport completes and ACKs the sample before the dispatch path
-discards it, so the subscription looks matched and healthy from `ros2 topic info
--v` and from tshark ACKNACK analysis while the app waits forever. Upstream
-attribution for the same bug took a consumer-side tshark session. A dead
-callback with a green `topic info` is this until proven otherwise.
-
-Raising it also means recomputing `NROS_EXECUTOR_ARENA_SIZE`:
-`max_cbs * (3 * rx_buf + 512) + 2048`. The two move together.
-
-**2. Entities missing from `ros2 node list`.**
+**1. Entities missing from `ros2 node list`. STILL SILENT.**
 `CONFIG_NROS_MAX_LIVELINESS=32` against 29 tokens — one per node, per publisher
 *and* per subscriber (4 + 14 + 11). On exhaustion `zpico_declare_liveliness`
 returns `ZPICO_ERR_FULL` and the shim discards it with `.ok()`. The entity
 publishes and subscribes perfectly and is invisible to every ROS 2 tool.
 
 If the graph looks short but data flows, this is why — not a discovery problem.
+It is the one failure in this document that gives you nothing to grep for.
 
-**3. A rebuild that quietly changed the image — fixed, but check your submodule.**
+**2. A rebuild that quietly changed the image — FIXED, but check your submodule.**
 Knobs reach `build.rs` only if they have a `_nros_resolve_knob` row; without one
 they came from the environment of whatever shell ran ninja, so `cd build-board &&
 ninja` rebuilt at crate defaults — and `NROS_RMW_SUBSCRIBER_SLOTS` reverted 12 → 8
@@ -168,7 +170,7 @@ grep -o 'NROS_RMW_SUBSCRIBER_SLOTS=[0-9]*' build-board/build.ninja
 Empty means you are on a nano-ros older than #0752 — build only through
 `just board-build` until you bump.
 
-**4. A relocation that relocated nothing.**
+**3. A relocation that relocated nothing — loud here, silent by design.**
 If `patches/zephyr/0001` is missing (a `west update` resets the Zephyr tree),
 `zephyr_code_relocate()` writes an empty fragment, prints nothing, and exits 0.
 Here that overflows RAM by ~39 KiB so it fails loudly — but *verify DTCM in the
@@ -228,9 +230,9 @@ grep '^CONFIG_<NAME>' build-board/zephyr/.config
 ## 6. Current footprint
 
 ```
-FLASH:  600,236 / 4,144,896   14.48%
+FLASH:  603,388 / 4,144,896   14.56%
 RAM:    273,072 /   320 KB    83.33%     53 KiB free
-DTCM:    98,264 /   128 KB    74.97%
+DTCM:   100,680 /   128 KB    76.81%
 ITCM:         0 /    64 KB     0.00%     idle, available
 ```
 
