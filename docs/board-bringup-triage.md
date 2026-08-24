@@ -62,6 +62,21 @@ a node.
 The watchdog is enabled (`CONFIG_WATCHDOG=y`, FS26 SBC). A reset loop with no
 fault message may be the watchdog, not a crash.
 
+**If the fault is at the very first instructions, suspect TCM ECC.** The image
+relocates `.bss` to DTCM and the MRM node code to ITCM, and S32K3 TCM must be
+written by a 64-bit master after a *destructive* reset before anything else
+touches it. Zephyr does that in `soc_early_reset_hook`, but only for TCMs named
+in `chosen` — which the stock board does not do. Our overlay adds them; confirm
+it survived:
+
+```
+arm-none-eabi-objdump -d zephyr.elf --disassemble=soc_early_reset_hook | grep -c ITCM_LOOP
+```
+
+`0` means the overlay is not applied and both TCMs are ECC-uninitialised. Tell
+a destructive reset from a functional one at `MC_RGM_DES` — a functional reset
+retains SRAM in hardware and will not show this. → [tcm-relocation.md](tcm-relocation.md)
+
 ### Boots, then HANGS with no fault and no further output
 
 Distinct from a hard-fault: no panic, no message, output simply stops. nano-ros
