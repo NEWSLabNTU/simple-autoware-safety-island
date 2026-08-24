@@ -190,7 +190,8 @@ zephyr-build:
     source {{NANO_ROS_ROOT}}/zephyr-workspace/env.sh > /dev/null
     export NROS_EXECUTOR_MAX_CBS="${NROS_EXECUTOR_MAX_CBS:-32}" NROS_INTERFACE_SEARCH_PATH=$PWD/src
     west build -b native_sim/native/64 -d build-zephyr src/zephyr_entry -- \
-        -DCONF_FILE="prj.conf;prj-cyclonedds.conf" -DCMAKE_PREFIX_PATH=$NANO_ROS_ROOT
+        -DCONF_FILE="prj.conf;prj-cyclonedds.conf" \
+        -Dnano_ros_ROOT=$NANO_ROS_ROOT -DCMAKE_PREFIX_PATH=$NANO_ROS_ROOT
 
 # Run the Zephyr island (domain 2 baked; host side: `just host-env`).
 zephyr-run:
@@ -332,6 +333,20 @@ board-build:
     #
     # These env vars remain as a TRIAGE lever: set one to override the conf for
     # a single build without editing a tracked file. Unset ones are not passed.
+    # `find_package(nano_ros)` resolves via CMake's `<pkg>_ROOT`, and the
+    # precedence is  -Dnano_ros_ROOT  >  $nano_ros_ROOT  >  CMAKE_PREFIX_PATH
+    # (measured, not assumed). nano-ros's activate.sh EXPORTS nano_ros_ROOT, so a
+    # shell that sourced some other checkout silently outranked the
+    # -DCMAKE_PREFIX_PATH this recipe used to pass alone, and the build resolved
+    # to a tree nobody named on the command line. We now pass -Dnano_ros_ROOT,
+    # which wins; say so when the env disagrees, because the symptom otherwise is
+    # an error citing a path you did not choose.
+    if [ -n "${nano_ros_ROOT:-}" ] && \
+       [ "$(readlink -f "$nano_ros_ROOT")" != "$(readlink -f "{{NANO_ROS_ROOT}}")" ]; then
+        echo "board-build: NOTE \$nano_ros_ROOT=$nano_ros_ROOT is being overridden"
+        echo "board-build:       building against {{NANO_ROS_ROOT}}"
+    fi
+
     EXTRA=()
     for k in CONFIG_MAIN_STACK_SIZE CONFIG_HEAP_MEM_POOL_SIZE \
              CONFIG_SYSTEM_WORKQUEUE_STACK_SIZE \
@@ -342,6 +357,7 @@ board-build:
     done
     [ ${#EXTRA[@]} -gt 0 ] && echo "board-build: env overrides -> ${EXTRA[*]}"
     west build -b {{BOARD}} -S {{BOARD_RMW}} -d {{BOARD_BUILD_DIR}} $PWD/src/zephyr_entry -- \
+        -Dnano_ros_ROOT={{NANO_ROS_ROOT}} \
         -DCMAKE_PREFIX_PATH={{NANO_ROS_ROOT}} "${EXTRA[@]}"
     just board-size
 
