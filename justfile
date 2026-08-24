@@ -324,15 +324,25 @@ board-build:
     # UNVALIDATED AT RUNTIME: the snippet chose 16384/65536 deliberately. A
     # stack overflow or k_malloc failure under zenoh is the expected symptom if
     # these are too small. Re-raise them here first when triaging one.
+    # Sizing moved to boards/mr_canhubk3_s32k344.conf. It could not live there
+    # while an RMW snippet -- EXTRA_CONF_FILE, merged after the board file --
+    # set the same symbols outright; nano-ros now supplies snippet sizing as
+    # `configdefault`, so the board conf wins and the values sit next to their
+    # reasoning instead of in a build recipe.
+    #
+    # These env vars remain as a TRIAGE lever: set one to override the conf for
+    # a single build without editing a tracked file. Unset ones are not passed.
+    EXTRA=()
+    for k in CONFIG_MAIN_STACK_SIZE CONFIG_HEAP_MEM_POOL_SIZE \
+             CONFIG_SYSTEM_WORKQUEUE_STACK_SIZE \
+             CONFIG_NET_PKT_RX_COUNT CONFIG_NET_PKT_TX_COUNT \
+             CONFIG_NET_BUF_RX_COUNT CONFIG_NET_BUF_TX_COUNT \
+             CONFIG_COMMON_LIBC_MALLOC_ARENA_SIZE; do
+        [ -n "${!k:-}" ] && EXTRA+=("-D${k}=${!k}")
+    done
+    [ ${#EXTRA[@]} -gt 0 ] && echo "board-build: env overrides -> ${EXTRA[*]}"
     west build -b {{BOARD}} -S {{BOARD_RMW}} -d {{BOARD_BUILD_DIR}} $PWD/src/zephyr_entry -- \
-        -DCMAKE_PREFIX_PATH={{NANO_ROS_ROOT}} \
-        -DCONFIG_MAIN_STACK_SIZE="${CONFIG_MAIN_STACK_SIZE:-8192}" \
-        -DCONFIG_HEAP_MEM_POOL_SIZE="${CONFIG_HEAP_MEM_POOL_SIZE:-16384}" \
-        -DCONFIG_SYSTEM_WORKQUEUE_STACK_SIZE="${CONFIG_SYSTEM_WORKQUEUE_STACK_SIZE:-4096}" \
-        -DCONFIG_NET_PKT_RX_COUNT="${CONFIG_NET_PKT_RX_COUNT:-16}" \
-        -DCONFIG_NET_PKT_TX_COUNT="${CONFIG_NET_PKT_TX_COUNT:-16}" \
-        -DCONFIG_NET_BUF_RX_COUNT="${CONFIG_NET_BUF_RX_COUNT:-32}" \
-        -DCONFIG_NET_BUF_TX_COUNT="${CONFIG_NET_BUF_TX_COUNT:-32}"
+        -DCMAKE_PREFIX_PATH={{NANO_ROS_ROOT}} "${EXTRA[@]}"
     just board-size
 
 # Flash the island. pyocd via MCU-Link; the runner comes from the board itself.
