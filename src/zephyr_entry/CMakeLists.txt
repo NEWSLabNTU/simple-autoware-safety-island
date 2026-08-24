@@ -118,9 +118,13 @@ zephyr_code_relocate(LIBRARY app LOCATION DTCM_BSS)
 #
 # NOT YET RUN ON SILICON. This links, places and reports correctly (ITCM 12,816 B,
 # .itcm_text_reloc VMA 0x0 / LMA 0x004007fc), but no MR-CANHUBK344 has executed
-# it -- the board is still blocked on the MCU-Link probe. The boot-time copy and
-# the ECC prerequisite in boards/mr_canhubk3_s32k344.overlay are exactly the
-# things a linker cannot check.
+# it -- the board is still blocked on the MCU-Link probe. The boot-time copy is
+# exactly the thing a linker cannot check.
+#
+# TCM ECC needs no action from us: mr_canhubk3_common.dtsi already chooses both
+# TCMs, so the 64-bit ECC init loops in soc_early_reset_hook are compiled in.
+# See docs/tcm-relocation.md -- reading only mr_canhubk3.dts suggests otherwise
+# and is wrong.
 zephyr_code_relocate(LIBRARY mrm_handler_lib                   LOCATION ITCM_TEXT)
 zephyr_code_relocate(LIBRARY stop_mode_operator_lib            LOCATION ITCM_TEXT)
 zephyr_code_relocate(LIBRARY mrm_emergency_stop_operator_lib   LOCATION ITCM_TEXT)
