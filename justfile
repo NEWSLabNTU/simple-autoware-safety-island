@@ -359,7 +359,13 @@ board-build:
     west build -b {{BOARD}} -S {{BOARD_RMW}} -d {{BOARD_BUILD_DIR}} $PWD/src/zephyr_entry -- \
         -Dnano_ros_ROOT={{NANO_ROS_ROOT}} \
         -DCMAKE_PREFIX_PATH={{NANO_ROS_ROOT}} "${EXTRA[@]}"
-    just board-size
+    # Pass the build dir through: a nested `just` starts a FRESH invocation and
+    # does NOT inherit a `BOARD_BUILD_DIR=` override from the outer one, so a
+    # bare `just board-size` here reported on `build-board` no matter which
+    # directory was actually built. With `BOARD_BUILD_DIR=build-cyclone` and no
+    # build-board present that surfaced as `ninja: error: unknown target
+    # 'rom_report'` -- an error about the report, from a directory nobody built.
+    just BOARD_BUILD_DIR={{BOARD_BUILD_DIR}} board-size
 
 # Flash the island. pyocd via MCU-Link; the runner comes from the board itself.
 #
@@ -383,6 +389,14 @@ board-size:
     set -e
     source {{ZEPHYR44_WS}}/env.sh > /dev/null
     export PATH="{{ZEPHYR44_VENV_BIN}}:$PATH"
+    # A missing or unconfigured build dir makes ninja complain that `rom_report`
+    # is an unknown target, which reads as "this build cannot produce a report"
+    # rather than "there is no build here". Say the true thing.
+    if [ ! -f "{{BOARD_BUILD_DIR}}/build.ninja" ]; then
+        echo "board-size: no configured build at {{BOARD_BUILD_DIR}}" >&2
+        echo "board-size: run 'just board-build' first (or pass BOARD_BUILD_DIR=<dir>)" >&2
+        exit 1
+    fi
     west build -d {{BOARD_BUILD_DIR}} -t rom_report | tail -20
     echo "── RAM ──"
     west build -d {{BOARD_BUILD_DIR}} -t ram_report | tail -20
