@@ -78,6 +78,62 @@ arm-none-eabi-objdump -d zephyr.elf --disassemble=soc_early_reset_hook \
 A functional reset retains SRAM in hardware and will not show this; only a
 destructive one will (`MC_RGM_DES`). → [tcm-relocation.md](tcm-relocation.md)
 
+### Faults with a garbage PC — suspect the STACK, not the pointer
+
+A `USAGE FAULT` reporting **"Illegal use of the EPSR"** with `pc = 0x00000000`
+(or any address in RAM) is almost always a stack overflow, not a corrupt
+function pointer. The overflow wrecks the exception frame, so the CPU unstacks
+garbage and the fault it reports is a consequence rather than the cause. Chasing
+the apparent NULL call wastes hours — this cost several rounds during the serial
+bring-up.
+
+Turn the guard on and it names itself:
+
+```
+CONFIG_MPU_STACK_GUARD=y
+```
+```
+***** MPU FAULT *****  Stacking error
+>>> ZEPHYR FATAL ERROR 2: Stack overflow on CPU 0
+```
+
+Use it as a diagnostic and switch it back off — its per-stack reservation is
+substantial and may not fit. Fix the size instead. `CONFIG_MAIN_STACK_SIZE=4096`
+overflows in zenoh's declare path (`_z_declare_resource` alone reserves 340 B);
+8192 is the smallest that has held.
+
+### Reading a board whose only UART is taken
+
+When a transport owns the wired UART, the console has nowhere to go. Move it to
+an unwired LPUART in an overlay so its bytes cannot corrupt the transport's
+framing, and read the log over RTT on the existing SWD link:
+
+```
+pyocd rtt -t s32k344 -a $(arm-none-eabi-nm zephyr.elf | awk '$3=="_SEGGER_RTT"{print "0x"$1}')
+```
+
+Four things this needs, none of which any error message mentions:
+
+| | |
+| --- | --- |
+| the SEGGER module is not in this workspace | clone `zephyrproject-rtos/segger` into `modules/debug/segger` |
+| west will not register it | `-DZEPHYR_EXTRA_MODULES=<path>` |
+| `pyocd rtt` needs a TTY | run it under `script -qec "..." /dev/null` |
+| it will not find the control block | pass `-a <addr of _SEGGER_RTT>` |
+
+The default 1 KiB up-buffer also wraps before a post-hoc reader attaches, so a
+failing run reads back empty: `CONFIG_SEGGER_RTT_BUFFER_SIZE_UP=16384`.
+
+### zenoh-pico is sized by the KERNEL heap, not the libc arena
+
+`z_malloc` on Zephyr is `k_malloc` (zenoh-pico `src/system/zephyr/system.c`), so
+every zenoh buffer comes from `CONFIG_HEAP_MEM_POOL_SIZE`.
+`CONFIG_COMMON_LIBC_MALLOC_ARENA_SIZE` — which sizes the Rust/picolibc allocator
+— has no effect on it. Serial send and receive each take 1507+1516 B and can be
+live at once, so a serial image needs ~8 KiB of kernel heap before it does
+anything. Enlarging the arena while shrinking the kernel heap makes every send
+fail from boot, which reads as a transport bug.
+
 ### Boots, then HANGS with no fault and no further output
 
 Distinct from a hard-fault: no panic, no message, output simply stops. nano-ros
