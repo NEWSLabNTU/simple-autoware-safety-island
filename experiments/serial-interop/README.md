@@ -111,3 +111,32 @@ which reads as "the board never connected".
     diagnose, but its per-stack reservation does not fit this image, so leave it
     off and size the stack instead. 8192 works.
   - NROS_MAX_LARGE_SUBSCRIBERS=0 is worth ~60 KiB on a talker.
+
+## Open bug: CONFIG_NROS_DOMAIN_ID is applied inconsistently
+
+The listener example, built with `CONFIG_NROS_DOMAIN_ID=10` (confirmed present in
+the build's `autoconf.h`), registers its entities across TWO domains:
+
+    @ros2_lv/10/d1cd18cb.../0/0/NN/%/%/node                    <- domain 10
+    Allocating sub decl for (0/chatter/std_msgs::msg::dds_::String_/*)   <- domain 0
+    @ros2_lv/0/d1cd18cb.../0/0/NN/%/%/listener                 <- domain 0
+    @ros2_lv/0/d1cd18cb.../0/3/MS/%/%/listener/%chatter/...    <- domain 0
+
+Counted over the whole trace: 1x `@ros2_lv/10`, 2x `@ros2_lv/0`, subscription key
+on `0/`. The talker in the same configuration is consistent -- 3x `@ros2_lv/10`
+and its interest on `10/` -- and the talker is the one that produced a working
+`ros2 topic echo`.
+
+So the domain reaches one code path and not the others. Since the domain is the
+first element of every key rmw_zenoh matches on, a split like this cannot be seen
+at the transport layer: the session opens, entities register, nothing errors, and
+discovery simply never matches.
+
+This is the strongest candidate for the E2E flakiness recorded above -- a run
+matches only when the entities that matter happen to land on the same domain.
+Worth filing against nano-ros and fixing before any further entity-kind bring-up;
+testing services on top of a broken domain plumbing would only produce more
+unexplained flakiness.
+
+Reproduce: build either example with `-DNROS_ZENOH_DEBUG=3`, read RTT, and
+`grep -oE '@ros2_lv/[0-9]+' | sort | uniq -c`.
