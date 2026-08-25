@@ -52,14 +52,50 @@ and the router accepts the link:
     zenoh_transport::unicast::manager: New transport opened between ...
     zenoh_transport::unicast::establishment::accept: New transport link accepted
 
+## E2E ACHIEVED — once, with real data, not yet reliably
+
+Standard ROS 2 tooling on the host, over UART, against nano-ros on the S32K344:
+
+    $ ros2 node list
+    /talker
+
+    $ ros2 topic info /chatter
+    Type: std_msgs/msg/String
+    Publisher count: 1
+    Subscription count: 0
+
+    $ ros2 topic echo /chatter --qos-reliability best_effort --once
+    data: 'Hello World: 74'
+    ---
+
+**The last blocker was a domain mismatch, and it is invisible at the transport
+layer.** The board defaulted to `CONFIG_NROS_DOMAIN_ID=0` while this project runs
+on 10. The domain is the FIRST element of every key rmw_zenoh builds --
+`@ros2_lv/<domain>/...` and `<domain>/chatter/...` -- so with a mismatch the
+session opens, the board publishes, the router forwards, and `ros2 topic list`
+simply never matches. Nothing anywhere reports an error. Both sides must agree;
+the conf now pins 10.
+
+## Still flaky — the open item
+
+That result has not reproduced: 0/5 subsequent runs showed the node, while the
+board side is provably healthy every time. RTT shows the full handshake
+(Z_INIT/Z_OPEN both ways), liveliness tokens registered on the right domain
+(`@ros2_lv/10/...`), and continuous publishing; the router logs
+`New transport opened` and never logs a close or a lease expiry.
+
+So transport and both endpoints are fine and DISCOVERY is what does not
+propagate. That is the next thing to chase, and it is a different layer from
+everything solved so far.
+
+One measurement trap to avoid repeating: `grep -c "transport opened"` on the
+router log is meaningless unless `RUST_LOG=zenoh_transport=debug` is set --
+without it the router logs nothing at that level and the count is always 0,
+which reads as "the board never connected".
+
 ## What does not
 
-`ros2 topic list` never shows /chatter. The board publishes and the router
-accepts links, but the two are not reliably in the same run: a run that shows
-"New transport opened" is not the same run in which the board publishes, and
-`grep -c 'transport opened'` is 0 in every run where the topic list is queried.
-Next step is to establish whether the session survives long enough for discovery
-to propagate, with both the router trace and RTT captured in ONE run.
+(superseded -- see above.)
 
 ## Sizing, all of it measured the hard way
 
