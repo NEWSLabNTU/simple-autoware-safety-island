@@ -248,6 +248,79 @@ pools must stay in SRAM; only CPU-only data may be relocated.
 
 ---
 
+## Image memory layout
+
+Measured from the ELF of the zenoh-over-serial talker example
+(`examples/zephyr/c/talker`), which is the smallest thing here that does real
+ROS 2 work. Addresses are where sections actually land:
+
+```
+FLASH  0x00400000 ─────────────────────────────────────────
+       0x00400100  rom_start              1,788 B   IVT + vector table
+       0x00400800  text                 277,300 B   77% of the flash image
+       0x00444428  initlevel/device/isr  ~2,700 B
+       0x00444fb0  rodata                76,996 B
+       0x00457c74  (LMA of .datas)                  copied to RAM at boot
+
+SRAM   0x20400000 ─────────────────────────────────────────
+       0x20400000  _RTT_SECTION_NAME     16,568 B   debug only
+       0x204040e0  datas                  3,368 B   LMA 0x00457c74
+       0x20404eb0  bss                  132,020 B
+       0x20425268  noinit               121,240 B
+                                        ─────────
+                              total RAM  273,360 B   83% of 320 KiB
+```
+
+`.datas` is the **only** section with a split VMA/LMA — loaded from flash, run
+from RAM. Everything else runs where it loads. (An image using
+`zephyr_code_relocate` adds `.dtcm_bss_reloc` and `.itcm_text_reloc`; the ITCM
+one is also a copy, flash LMA to ITCM VMA. See
+[tcm-relocation.md](tcm-relocation.md).)
+
+### Where the RAM actually goes
+
+Largest objects, from the symbol table:
+
+| bytes | object |
+| ---: | --- |
+| 65,536 | `nros_rmw_zenoh::shim::subscriber::LARGE_PAYLOADS` |
+| 65,536 | `nros_thread_stacks` |
+| 32,852 | `kheap__system_heap` |
+| 16,384 | `…subscriber::SMALL_PAYLOADS` |
+| 16,384 | `_acUpBuffer` (RTT) |
+| 8,856 | `…service::SERVICE_BUFFERS` |
+| 8,192 | `z_main_stack`, `static_subscriber_storage::SLOTS`, `malloc_arena` |
+| 4,736 | `posix_thread_pool` |
+
+Three things worth reading off that table:
+
+- **Two objects are half the RAM.** `LARGE_PAYLOADS` at 64 KiB is the
+  subscriber's large-message pool; `CONFIG_NROS_MAX_LARGE_SUBSCRIBERS=0` removes
+  it, which is where the ~60 KiB saving quoted earlier comes from. A talker with
+  one publisher does not need it at all.
+- **`kheap__system_heap` (32,852 B) versus `malloc_arena` (8,192 B)** — the
+  kernel heap is what `z_malloc`/`k_malloc` draws on and the libc arena is what
+  zenoh never touches. The sizing trap described above is visible right here in
+  the symbol table, which is the cheapest way to check you sized the right one.
+- **`_acUpBuffer` + `_RTT_SECTION_NAME` ≈ 33 KiB is debug-only** and comes
+  straight back out of a production build.
+
+### The example is not smaller than the island
+
+```
+              text      data       bss
+talker     359,528     3,536   269,876
+island     597,928     6,768   367,566
+```
+
+The island carries ~66% more text (four MRM nodes, 14 publishers, 11
+subscriptions, 2 service servers) and 36% more `.bss`, and still lands at the
+**same 83% of SRAM** — because it relocates `.bss` into DTCM and MRM code into
+ITCM, which the example does not. Neither has meaningful headroom; they are
+differently placed, not differently sized.
+
+---
+
 ## What is proven on this board, and what is not
 
 **Proven:** flashing and boot; console; the ECC init path executes; ROS 2 interop
