@@ -18,8 +18,28 @@ because the T1 Ethernet link needs a media converter we do not have.
 
 Host side — the router LISTENS on the serial line and bridges to TCP:
 
+    ZENOH_ROUTER_CONFIG_URI=$PWD/experiments/serial-interop/router-serial.json5 \
     ZENOH_CONFIG_OVERRIDE='listen/endpoints=["serial//dev/ttyUSB0#baudrate=115200","tcp/[::]:7447"]' \
       ros2 run rmw_zenoh_cpp rmw_zenohd
+
+`router-serial.json5` is required, not optional -- see its header. The stock
+rmw_zenoh config keepalives every 30 s (`lease: 60000, keep_alive: 2`) while
+zenoh-pico drops a peer after 20 s of silence, so a board that publishes and
+receives nothing back is closed with `_Z_CLOSE_EXPIRED` every 20 s.
+
+Two host-environment traps, both of which cost a session here:
+
+* `libzenohc.so` must be resolvable or `rmw_zenohd` exits immediately with a
+  `dlopen` error and no router runs at all. `zenoh_cpp_vendor` ships the hook
+  that adds it, and a shell that sources ROS 2 fresh gets it -- but an
+  environment INHERITED from before 2026-08-18 (when
+  `ros-humble-zenoh-cpp-vendor` was installed) predates the package and will
+  not have it. Check with
+  `echo $LD_LIBRARY_PATH | tr : '\n' | grep zenoh_cpp_vendor`; if empty,
+  re-source ROS 2 in a fresh shell rather than exporting by hand.
+* `pyocd cmd -c "reset halt" -c "go"` leaves this board `Sleeping` with no boot
+  output. Only `west flash` produces a real boot, so a reset-based test loop
+  measures a dead board and reports it as a link failure.
 
 ## Reading the board
 
