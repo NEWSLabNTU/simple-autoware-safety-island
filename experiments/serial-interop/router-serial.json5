@@ -40,7 +40,21 @@
 //
 //   23:47:36.098 -> :46.107 -> :56.107 -> 23:48:06.113 -> :16.130 -> :26.133
 //
-// 10.0 s apart; session held; `ros2 topic echo /chatter` streams.
+// 10.0 s apart; `ros2 topic echo /chatter` streams.
+//
+// WHAT THIS DOES NOT FIX
+//
+// It does NOT make the link survivable. The board still takes a USAGE FAULT
+// with pc=0 at exactly 2 x Z_TRANSPORT_LEASE -- nano-ros issue 0821, in
+// zenoh-pico's auto-reconnect teardown, which frees the running lease task's
+// own handle and drops the transport mutexes underneath itself before calling
+// _z_reopen. This config was PREDICTED to prevent that by preventing the
+// expiry, and it did not: the board faulted at 20 s anyway. Either the config
+// is not reaching the session under test, or a received keepalive does not
+// reset `_received` the way the lease task assumes. Unresolved.
+//
+// So: what is measured here is the keepalive CADENCE, on the wire. Treat the
+// rest as unproven until 0821 is settled.
 //
 // The board-side alternative is nano-ros's CONFIG_NROS_ZENOH_LEASE_MS, which
 // raises the board's tolerance instead. Prefer this one: a longer board lease
