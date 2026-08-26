@@ -16,6 +16,9 @@ read it before you conclude something "works".
 
 ---
 
+> Hardware reference — memory map, CPU features, connectors, sizing traps:
+> [board-facts.md](board-facts.md).
+
 ## 0. Before power
 
 | | |
