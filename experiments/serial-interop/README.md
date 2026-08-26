@@ -174,7 +174,35 @@ Ruled out along the way:
     (still exactly 9) and made node discovery worse, so it was reverted rather
     than kept on a plausible story.
 
-Next: instrument the READ rather than the retry -- count bytes received per
-attempt and whether `_z_serial_msg_deserialize` fails or the wait simply expires
-with nothing arriving. Those are different bugs (corruption vs. never delivered)
-and the retry counter cannot tell them apart.
+### Read path instrumented: it is NOT corruption
+
+Counting outcomes inside `_z_read_serial_internal`:
+
+    calls 32 | timeout-empty 28 | timeout-partial 1 | deser-fail 0 | ok 3
+
+`deser-fail` is **zero in every run**. No frame has ever arrived and failed to
+decode, so COBS framing, the CRC and the 4-byte FIFO are all exonerated. Most of
+the empty timeouts are just the steady-state read task polling an idle link,
+which is normal and was masking the signal.
+
+### Separating connect reads from idle polling gives the real shape
+
+Counting only the reads issued from `_z_connect_serial`:
+
+    run 1 (node appears):  connect_reads 11, empty  9, transports 4
+    run 2 (node absent):   connect_reads 30, empty 27, transports 0
+
+In a failing run the board sends ~30 INITs across ~30 s and the router opens
+**zero** transports -- it never receives a single one. So the failure is not
+"the reply is lost" and not "the first frame is lost": the link is dead in BOTH
+directions for the entire window, and the retry machinery cannot rescue it
+because nothing gets through at all.
+
+A passing run connects almost immediately by comparison.
+
+That points away from framing and timing and towards the link itself being in a
+bad state at session start -- the router holds `/dev/ttyUSB0` open exclusively
+across the board's reset, so the suspect is what that reset does to the FTDI
+end, not what the firmware sends. Testing it means driving the board reset
+WITHOUT the router holding the port (or reopening the port after reset) and
+seeing whether the failure disappears.
