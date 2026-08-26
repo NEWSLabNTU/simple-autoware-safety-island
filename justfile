@@ -17,8 +17,28 @@
 # west module compiles -- a sibling default let the codegen CLI and the CMake
 # package come from one tree while the module sources came from another, which
 # is precisely the stale-CLI drift packages/cli/CLAUDE.md warns about.
-# Override with NANO_ROS_ROOT=<path> for a working checkout.
-NANO_ROS_ROOT := env("NANO_ROS_ROOT", justfile_directory() / "third-party/nano-ros")
+# Override with NANO_ROS_ALLOW_EXTERNAL_ROOT=1 NANO_ROS_ROOT=<path>.
+#
+# 2026-08-26: the plain `env("NANO_ROS_ROOT", <submodule>)` form let an
+# INHERITED value win, and a value inherited from the shell that launched a
+# tool is indistinguishable from one typed on purpose. This repo spent a
+# session with NANO_ROS_ROOT (and cmake's nano_ros_ROOT) both silently naming
+# the SIBLING checkout while every recipe printed
+# `scripts/build/cargo.sh: /home/aeon/repos/nano-ros/...: No such file or
+# directory` and carried on. .envrc guards the interactive path; this guards
+# the ones that never source it -- CI, an agent's tool shell, a bare `just`.
+# An override now has to name itself, which cannot happen by inheritance.
+NANO_ROS_ROOT := if env("NANO_ROS_ALLOW_EXTERNAL_ROOT", "") == "1" {
+    env("NANO_ROS_ROOT", justfile_directory() / "third-party/nano-ros")
+} else if path_exists(justfile_directory() / "third-party/nano-ros/activate.sh") == "true" {
+    justfile_directory() / "third-party/nano-ros"
+} else {
+    env("NANO_ROS_ROOT", justfile_directory() / "third-party/nano-ros")
+}
+# cmake's find_package(nano_ros) hint. Honoured OVER CMAKE_PREFIX_PATH, so a
+# stale value resolves the cmake package to a different tree than the CLI --
+# the two halves of one build disagreeing with no diagnostic. Pin it to match.
+export nano_ros_ROOT := NANO_ROS_ROOT
 # Optional: a play_launch SOURCE checkout to build+install from. Unset (the
 # default) means `just setup` installs the published package instead.
 PLAY_LAUNCH_REPO := env("PLAY_LAUNCH_REPO", "")
