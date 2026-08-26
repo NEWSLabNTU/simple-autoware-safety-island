@@ -222,3 +222,32 @@ listener while a failing run happens (needs a second USB-serial adapter, or
 `socat` teeing the port); or drive several board resets against ONE long-lived
 router process and see whether the first reset after router start behaves
 differently from later ones.
+
+## Service server: registers on the board, not yet exercised
+
+`examples/zephyr/c/service-server` (AddTwoInts on `/add_two_ints`) builds and
+runs: FLASH 342,892, RAM 272,288 (83.10%), and the board reaches
+
+    *** Booting Zephyr OS build v4.4.0 ***
+    Waiting for service requests
+
+so service registration itself works on hardware -- the third entity kind after
+publisher and subscriber.
+
+It has NOT been exercised. `ros2 service call` never reached it because the
+transport did not open in 5/5 attempts, against 1/2 for the talker in the same
+session immediately afterwards. Small samples, but 0/5 vs 1/2 is enough to
+suspect the service build is worse rather than merely unlucky, and worth
+re-measuring once the flake is fixed.
+
+Also seen on the service build: a USAGE FAULT at ~22 s with an ALL-ZERO
+exception frame (every register, xpsr and FPU reg 0, pc 0) in the idle thread,
+after "Waiting for service requests" has printed. Per the triage note a garbage
+pc means the stack, but an entirely zeroed frame in idle is a different shape
+from the declare-path overflow -- it appears only in runs where the session
+never opened, so it may be a consequence of the failed connect rather than an
+independent bug. Not chased.
+
+Order of work this implies: fix the transport flake first. Two entity kinds are
+proven (publish, receive) and the third registers; none of that can be extended
+while two runs in three have no link at all.
