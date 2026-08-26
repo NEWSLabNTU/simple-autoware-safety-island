@@ -200,9 +200,25 @@ because nothing gets through at all.
 
 A passing run connects almost immediately by comparison.
 
-That points away from framing and timing and towards the link itself being in a
-bad state at session start -- the router holds `/dev/ttyUSB0` open exclusively
-across the board's reset, so the suspect is what that reset does to the FTDI
-end, not what the firmware sends. Testing it means driving the board reset
-WITHOUT the router holding the port (or reopening the port after reset) and
-seeing whether the failure disappears.
+That looked like the link being in a bad state at session start, with the
+router holding `/dev/ttyUSB0` across the board's reset as the suspect.
+
+**Tested and eliminated.** Resetting the board with the port FREE and starting
+the router two seconds later gives 0 transports in 3/3 runs -- strictly worse
+than the normal order. The board dials once at boot and gives up after ~11 s of
+retries, so the router MUST already be listening when it dials. The existing
+order (router first, then reset) is correct and the FTDI-across-reset theory is
+wrong.
+
+So the remaining shape is: with the router listening throughout, the board's
+INITs reach it in some runs and in others not one of ~30 arrives, with no
+corruption anywhere. Both endpoints are individually healthy in both cases.
+Nothing in the firmware distinguishes the two runs, which is what makes this
+worth suspecting below the firmware -- FTDI latency-timer behaviour, or the
+router's exclusive open racing the board's first frames.
+
+Next candidate measurements, cheapest first: watch the line with a passive
+listener while a failing run happens (needs a second USB-serial adapter, or
+`socat` teeing the port); or drive several board resets against ONE long-lived
+router process and see whether the first reset after router start behaves
+differently from later ones.
