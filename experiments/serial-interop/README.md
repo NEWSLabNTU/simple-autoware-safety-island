@@ -140,3 +140,41 @@ unexplained flakiness.
 
 Reproduce: build either example with `-DNROS_ZENOH_DEBUG=3`, read RTT, and
 `grep -oE '@ros2_lv/[0-9]+' | sort | uniq -c`.
+
+## E2E flakiness: measured, NOT fixed (2026-08-26)
+
+Issue 0801 (entities on the wrong ROS domain) was a real cause and is fixed --
+the listener now receives from the host, which had never worked. It was not the
+only cause: the talker still shows the node in roughly 1 run in 3.
+
+What instrumentation established, by counting connect attempts in a static read
+over SWD:
+
+    g_dbg_connect_calls   = 1     (connect entered once)
+    g_dbg_connect_retries = 9     (EVERY run, deterministically)
+
+Nine of ten allowed attempts fail before the handshake completes, so a connect
+that should take ~25 ms takes ~11 s. Each failed attempt sends a fresh INIT, the
+router accepts a new link, and 1-2 transports open per boot with the earlier one
+expiring 10 s later -- churn that discovery lands on the wrong side of.
+
+The asymmetry is the useful part: the router logs `New transport opened` every
+run, so board -> router works. The board times out waiting for the reply nine
+times, so router -> board is what fails. Reads DO eventually work (the traces
+show `Received Z_INIT(Ack)` and a completed handshake), so it is not a dead path
+-- it is unreliable.
+
+Ruled out along the way:
+
+  - RX FIFO disabled. It is enabled: LPUART2 FIFO reads 0x00c00099 (RXFE and
+    TXFE set), WATER 0. The FIFO is only 4 bytes deep though, against a ~9-byte
+    frame.
+  - `k_yield()` inside the byte loop overrunning that 4-byte FIFO mid-frame.
+    Restricting the yield to between frames changed the retry count not at all
+    (still exactly 9) and made node discovery worse, so it was reverted rather
+    than kept on a plausible story.
+
+Next: instrument the READ rather than the retry -- count bytes received per
+attempt and whether `_z_serial_msg_deserialize` fails or the wait simply expires
+with nothing arriving. Those are different bugs (corruption vs. never delivered)
+and the retry counter cannot tell them apart.
