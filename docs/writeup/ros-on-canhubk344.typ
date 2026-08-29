@@ -253,11 +253,15 @@ account for --- or forbid --- every byte.
     table.header([*Region*], [*Used*], [*Of*]),
     [Flash (`text` + `data`)], [342 488 B], [4 144 896 B (8.3 %)],
     [SRAM (`data` + `bss`)],   [298 656 B], [327 680 B (91.1 %)],
+    [SRAM, with the action image's real capacities + diagnostics], [323 528 B], [327 680 B (*98.7 %*)],
     [DTCM],                    [0 B],       [131 072 B],
   ),
-  caption: [Footprint of the action-server image, from a CLEAN build. An incremental
-    build under-reported SRAM by ~15 KiB, carrying stale smaller artifacts; only
-    `rm -rf` on the west build directory gives a trustworthy figure.],
+  caption: [Footprint from CLEAN builds. An incremental build under-reported SRAM by
+    ~15 KiB, carrying stale artifacts; only `rm -rf` on the west build directory
+    gives a trustworthy figure. The last row is the honest one for the action
+    image: with the entity capacities it actually needs plus RTT and a stack
+    sentinel it does not leave enough heap to run, which is why the issue-0852
+    stack hunt is currently blocked.],
 )
 
 One finding is worth repeating because it generalises past this board: an
