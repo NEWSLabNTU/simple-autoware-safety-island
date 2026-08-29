@@ -102,7 +102,7 @@ report that buries them is not usable by anyone deciding whether to adopt this.
     align: (left, left),
     table.header([*Constraint*], [*Consequence*]),
     [320 KiB SRAM, 128 KiB DTCM],
-      [Every buffer is a design decision. The final image sits at 86.6 % SRAM.],
+      [Every buffer is a design decision. The final image sits at 91.1 % SRAM.],
     [No MMU],
       [No process isolation and no demand paging: a stack overrun corrupts a neighbour rather than faulting cleanly.],
     [One UART, shared with nothing],
@@ -251,11 +251,13 @@ account for --- or forbid --- every byte.
     columns: (1fr, auto, auto),
     align: (left, right, right),
     table.header([*Region*], [*Used*], [*Of*]),
-    [Flash (`text` + `data`)], [344 504 B], [4 144 896 B (8.3 %)],
-    [SRAM (`data` + `bss`)],   [283 696 B], [327 680 B (86.6 %)],
+    [Flash (`text` + `data`)], [342 488 B], [4 144 896 B (8.3 %)],
+    [SRAM (`data` + `bss`)],   [298 656 B], [327 680 B (91.1 %)],
     [DTCM],                    [0 B],       [131 072 B],
   ),
-  caption: [Footprint of the action-server image. The SRAM figure is the binding constraint.],
+  caption: [Footprint of the action-server image, from a CLEAN build. An incremental
+    build under-reported SRAM by ~15 KiB, carrying stale smaller artifacts; only
+    `rm -rf` on the west build directory gives a trustworthy figure.],
 )
 
 One finding is worth repeating because it generalises past this board: an
