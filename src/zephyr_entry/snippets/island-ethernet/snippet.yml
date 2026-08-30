@@ -1,0 +1,11 @@
+# Transport: zenoh over TCP on the 100BASE-T1 link (the phase-3 Z1 target).
+#
+#   west build -b mr_canhubk3/s32k344 -S nros-zenoh -S island-ethernet src/zephyr_entry
+#
+# Needs a media converter for T1 <-> 100BASE-TX before it can reach a host, so
+# this is the target configuration rather than the one that runs on the bench
+# today. No devicetree overlay: the board DTS already has emac0, mdio0 and
+# ethernet-phy@12 enabled, and the drivers are `default y` behind those nodes.
+name: island-ethernet
+append:
+  EXTRA_CONF_FILE: ethernet.conf

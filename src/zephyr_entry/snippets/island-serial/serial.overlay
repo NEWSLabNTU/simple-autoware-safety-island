@@ -1,0 +1,12 @@
+/* Console off the wired UART. Required by serial.conf — see its header. */
+/* Console moves to lpuart0, which has no cable on this board, so log output
+ * goes nowhere instead of corrupting zenoh's COBS frames. lpuart2 (DCD-LZ P6,
+ * /dev/ttyUSB0) is the one wired UART and belongs to zenoh. */
+/ {
+	chosen {
+		zephyr,console = &lpuart0;
+		zephyr,shell-uart = &lpuart0;
+	};
+};
+&lpuart0 { current-speed = <115200>; status = "okay"; };
+&lpuart2 { current-speed = <115200>; status = "okay"; };

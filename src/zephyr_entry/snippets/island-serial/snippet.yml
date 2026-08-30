@@ -1,0 +1,14 @@
+# Transport: zenoh over the DCD-LZ UART, with no IP stack at all.
+#
+#   west build -b mr_canhubk3/s32k344 -S nros-zenoh -S island-serial src/zephyr_entry
+#
+# A snippet, not a bare EXTRA_CONF_FILE, because this transport needs a Kconfig
+# fragment AND a devicetree overlay together: serial.conf hands lpuart2 to zenoh,
+# and serial.overlay moves the console off it. Applying the conf without the
+# overlay leaves console bytes interleaved with zenoh's COBS frames on the same
+# wire, which corrupts them. Bundling both under one name makes that
+# unforgettable.
+name: island-serial
+append:
+  EXTRA_CONF_FILE: serial.conf
+  EXTRA_DTC_OVERLAY_FILE: serial.overlay
