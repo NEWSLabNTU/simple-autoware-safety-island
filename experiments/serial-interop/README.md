@@ -37,6 +37,16 @@ Two host-environment traps, both of which cost a session here:
   not have it. Check with
   `echo $LD_LIBRARY_PATH | tr : '\n' | grep zenoh_cpp_vendor`; if empty,
   re-source ROS 2 in a fresh shell rather than exporting by hand.
+* The ROS 2 CLI must be told to use zenoh. `RMW_IMPLEMENTATION=rmw_zenoh_cpp`
+  is NOT implied by sourcing ROS 2 or by the router running -- without it the
+  CLI falls back to the Humble default (Fast-DDS) and talks over UDP multicast
+  instead of the router. Nothing errors. `ros2 topic list` simply returns the
+  host's own topics and never the board's, which reads exactly like a dead
+  board or a broken link. The tell is the router log: under
+  `RUST_LOG=zenoh=debug` it shows the board's face registering
+  `@ros2_lv/<domain>/.../talker` while no CLI face ever appears. Two CLI
+  processes will happily discover EACH OTHER over DDS the whole time, which
+  makes the setup look healthy.
 * `pyocd cmd -c "reset halt" -c "go"` leaves this board `Sleeping` with no boot
   output. Only `west flash` produces a real boot, so a reset-based test loop
   measures a dead board and reports it as a link failure.
