@@ -11,6 +11,14 @@ cmake_minimum_required(VERSION 3.20.0)
 # search path must be visible before nano_ros's stub machinery loads.
 set(NROS_INTERFACE_SEARCH_PATH "${CMAKE_CURRENT_SOURCE_DIR}/..")
 
+# Transport snippets live in this directory (snippets/island-serial,
+# snippets/island-ethernet). Zephyr resolves SNIPPET_ROOT relative to the
+# application but does NOT seed it with the application itself, so without this
+# line `-S island-serial` fails with "unknown snippet" and the caller has to
+# remember -DSNIPPET_ROOT on every build. Must precede find_package(Zephyr):
+# snippets are processed during its boilerplate.
+list(APPEND SNIPPET_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
+
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(safety_island_zephyr_entry)
 
