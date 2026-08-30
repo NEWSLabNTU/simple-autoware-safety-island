@@ -187,17 +187,81 @@ Three findings worth carrying forward:
 Cyclone DDS on this part remains unproven and untried; zenoh fits, so the
 question is deferred rather than answered.
 
+## 4c. The link is serial, not Ethernet (2026-08-31)
+
+T1 was the plan and it is not available: 100BASE-T1 needs a media converter to
+reach anything with an RJ45, and we have none. Rather than block, the island
+runs zenoh-pico over the DCD-LZ serial adapter on `lpuart2` at 115200, framed
+by z-serial (COBS + crc32). That is the same console UART the board already
+exposes, so it costs no extra hardware.
+
+What this bought, beyond unblocking:
+
+* **The IP stack comes out entirely.** `CONFIG_NETWORKING` is off, and with it
+  the GMAC driver, TCP, and the socket layer. Measured against the Ethernet
+  build: **49 KB of RAM and 136 KB of flash** reclaimed. On a part where the
+  first link attempt overflowed by 651 KB, that is not a rounding error.
+* **A zenoh-pico bug, found and fixed.** `_z_serial_rx_bind` returned early for
+  an already-bound device and so skipped `uart_irq_rx_enable`, while
+  `_z_open_serial_from_dev` calls `uart_configure()` before it on every open --
+  which clears exactly that enable. Second and later opens came up deaf. The fix
+  re-arms on every open and resets the ring buffer and semaphore. Upstream as
+  zenoh-pico PR #1301; carried in our pin meanwhile.
+* **Polled RX beats interrupt RX here.** Measured on the same harness, ten goal
+  attempts per row:
+
+  | pin | RX | goals | router errors |
+  | --- | --- | ---: | ---: |
+  | 1.7.2 (ships) | polled | 8/10 | 0 |
+  | 1.7.2 | ISR + rebind fix | 6/10 | 0 |
+  | 1.10 | polled | 8/10 | 0 |
+  | 1.10 | ISR + rebind fix | 0/7 | 3 |
+  | 1.10 | ISR, no fix | 0/10 | 80 |
+
+  The ISR does not earn its place, so it stays off. The 0/x rows appear only on
+  1.10, which isolates a second defect to that branch rather than to the ISR
+  itself -- recorded, not chased, since the pin stays at 1.7.2.
+
+Ethernet is not abandoned. The static IPv4 and GMAC/TJA1103 configuration stays
+in the tree, and `snippets/island-ethernet` selects it, so a converter arriving
+is a rebuild rather than a port.
+
+### The heap gate earns its keep (2026-08-31)
+
+Rebuilding the entry against a newer nano-ros failed to configure, and the
+failure was worth more than the build:
+
+```
+nros: the executor arena cannot fit in the platform heap.
+  NROS_EXECUTOR_ARENA_SIZE = 52224
+  NROS_ZEPHYR_HEAP_SIZE    = 65536
+  needed (arena + ~24576 overhead) = 76800
+```
+
+The board file set the arena and never the heap, so the heap sat at its 65536
+default, 11264 B short. The arena is one allocation out of that heap, so the
+image would have linked clean, flashed clean, and then stopped mid-boot on a
+NULL with no fault and no log. The board file now sets
+`CONFIG_NROS_ZEPHYR_HEAP_SIZE=81920`.
+
+Worth stating plainly: **this was latent in the image before the check existed.**
+Every earlier sizing pass in this document measured what the image consumed, and
+none of them would have caught a heap too small for a single allocation out of
+it. The check is upstream's, and it found our bug.
+
 ## 5. Waves
 
 | | What | State |
 | --- | --- | --- |
-| **Z0** | Stock Zephyr `hello_world` on the board: `west build -b mr_canhubk3/s32k344`, flash with MCU-Link + pyocd, see console. **Zero nano-ros.** Exercises IVT, FS26 and the flash chain so a failure is unambiguously board-or-probe | next |
-| **Z1** | Board conf + networking. Get an IP up and ping across the T1 link | conf written; static IPv4 + GMAC/TJA1103 configured, unexercised without hardware |
+| **Z0** | Stock Zephyr `hello_world` on the board: `west build -b mr_canhubk3/s32k344`, flash with MCU-Link + pyocd, see console. **Zero nano-ros.** Exercises IVT, FS26 and the flash chain so a failure is unambiguously board-or-probe | done (2026-08-27), by a stronger test than the one planned: the nano-ros talker itself runs on the board, over the same IVT / FS26 / pyocd path. `hello_world` was never needed |
+| **Z1** | Board conf + networking. Get an IP up and ping across the T1 link | superseded, not done. T1 needs a 100BASE-T1 to 100BASE-TX media converter we do not have, so nothing can sit at the other end of the link. The transport is serial instead (4c); `CONFIG_NETWORKING` is off in the board conf. The static IPv4 + GMAC/TJA1103 config stays in tree, unexercised, against a converter arriving |
 | **Z2** | Entry: point `src/zephyr_entry` at the board. **No CMakeLists change needed to build** — checked 2026-08-16: `nano_ros_entry` accepts both `MODEL` and `BRINGUP` and emits no deprecation, so the board build works with the entry as-is. The `MODEL` → `BRINGUP` migration is hygiene (models are build artifacts upstream; `check-no-tracked-models` gates nano-ros's own tree, not a consumer's) and is separable from the bring-up | done — the entry builds for the board |
 | **Z3** | RMW + sizing. zenoh first; measure; decide about Cyclone | done for zenoh — see 4b. Cyclone deferred, not evaluated |
-| **Z4** | The demo on hardware — phase-2's verdict reproduced with the island on real silicon | |
+| **Z4** | The demo on hardware — phase-2's verdict reproduced with the island on real silicon | in progress (2026-08-31). The entry builds for the board over serial and the transport is proven by the talker, but the four MRM nodes have never executed on silicon. The entity counts in the board conf are derived, not measured |
 
-Z0 needs no decisions and no nano-ros. Do it first.
+Z0 needed no decisions and no nano-ros, but it was overtaken: bringing the
+talker up on the board proved the same chain and more, so Z0 is closed by
+evidence rather than by running the sample.
 
 ## 6. Hardware notes that are easy to get wrong
 
@@ -388,6 +452,10 @@ Open, not guessed at. The next step is to diff how the zenoh staticlib is
 configured for `mps2_an385` against `mr_canhubk3`, rather than adding an
 allocator and hoping.
 
+**Resolved (2026-08-27).** The entry builds and runs on the board. The gap was
+in the wiring, as suspected, not in the target mapping; the record above stays
+because the diagnosis path is the reusable part.
+
 ## 8. Open questions
 
 * Does Cyclone fit in 320 KB at all, or is zenoh-pico the only viable RMW here?
@@ -395,8 +463,10 @@ allocator and hoping.
 * nano-ros's `board-support.toml` caveats that Zephyr is tier 1 but *"only ever
   built for native_sim/native/64 — no real Zephyr hardware board is built by
   anything."* phase-346 landed Rust on a real Zephyr board (`mps2_an385`), so
-  the seam is exercised — but not on S32K3, and not by us yet.
-* Media converter for T1 ↔ 100BASE-TX — needed before any host interop test.
+  the seam is exercised — and now on S32K3 too: the entry builds and runs here.
+  The caveat is stale as written; upstream has not been told.
+* Media converter for T1 ↔ 100BASE-TX — still absent, and no longer blocking:
+  the link is serial (4c). It gates T1 specifically, not the island.
 * Does the FS26 driver need board-specific Kconfig beyond the board default, or
   is `CONFIG_WATCHDOG=y` (already in `mr_canhubk3_defconfig`) sufficient?
 * `src/safety_island_bringup/config/system_model.yaml` is COMMITTED. Upstream
