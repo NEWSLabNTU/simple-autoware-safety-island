@@ -249,6 +249,80 @@ Every earlier sizing pass in this document measured what the image consumed, and
 none of them would have caught a heap too small for a single allocation out of
 it. The check is upstream's, and it found our bug.
 
+## 4d. Z4 on silicon: it does not fit, and the reason is structural (2026-08-31)
+
+The island was flashed and run. Boot gets through all four nodes' entity
+creation and then the image is out of memory in both regions at once: SRAM
+98.58%, DTCM 98.33%. That is not a tuning gap, so the number that matters is
+not "how much over" but "why".
+
+**The executor arena charges every handle a receive buffer.** It is derived as
+`max_cbs * (3 * NROS_SUBSCRIPTION_BUFFER_SIZE + 512) + 2048`. The island has 33
+handles, of which only 13 ever receive anything:
+
+| node | pub | sub | svc | tmr |
+| --- | ---: | ---: | ---: | ---: |
+| mrm_handler | 5 | 7 | 2 | 1 |
+| stop_mode_operator | 4 | 3 | 0 | 1 |
+| mrm_comfortable_stop_operator | 3 | 0 | 0 | 2 |
+| mrm_emergency_stop_operator | 2 | 1 | 0 | 2 |
+| **total** | **14** | **11** | **2** | **6** |
+
+14 publishers and 6 timers are each charged 3 KiB of receive buffer they can
+never use. That is ~61 KiB of DTCM spent on entities that do not receive.
+
+**Which makes the configuration unsatisfiable.** DTCM leaves 77968 B for the
+arena. The largest subscribed type is `nav_msgs/Odometry` at ~718 B, so the
+buffer must be at least 768:
+
+| buffer | 33 slots | 36 slots |
+| ---: | ---: | ---: |
+| 512 | 69632 (fits, but drops Odometry) | 75776 (same) |
+| 768 | 94976 (over by 17008) | 103424 (over by 25456) |
+| 1024 | 120320 (over by 42352) | 131072 (over by 53104) |
+
+The largest buffer that fits at 36 slots is 532 B, below the 718 B Odometry
+needs. There is no valid setting. A booting image is reachable only by
+undersizing the buffer, and the upstream help is explicit that an oversized
+sample is then dropped SILENTLY on the C++ arena dispatch path -- a subscription
+that never fires rather than an error. That is a worse outcome than not booting,
+so the board file keeps 1024 and does not link.
+
+**The fix is upstream, not here.** Sizing the arena per entity KIND rather than
+per slot -- receivers get `3 * buf + 512`, publishers and timers get a slot
+header -- costs roughly `13 * 2816 + 23 * 512 + 2048 = 50432 B`, which fits in
+77968 with room to spare. Nothing about the island changes.
+
+### What the bring-up did establish
+
+Everything up to the arena is proven on hardware:
+
+* The flash chain, boot, and all four MRM component factories linked.
+* zenoh-pico opening the serial link and framing COBS on `lpuart2`.
+* RTT over SWD as a console while zenoh owns the only wired UART. Without it
+  none of the failures below were visible: the shipping image has no console at
+  all, and a boot halt is indistinguishable from a healthy idle over SWD (both
+  sit in `arch_cpu_idle` once halted).
+* Every entity creating successfully once `MAX_CBS` was right.
+
+### Sizing values this corrected, all of which were wrong on silicon
+
+| knob | was | is | why the old value was wrong |
+| --- | ---: | ---: | --- |
+| `NROS_EXECUTOR_MAX_CBS` | 14 | 36 | caps total HANDLES, not callbacks; publishers and timers count |
+| `NROS_EXECUTOR_ACTION_CLIENTS` | 4 | 0 | island instantiates no action entity |
+| `NROS_ZEPHYR_TASK_STACK_SIZE` | inherit | 8192 | inherits MAIN_STACK_SIZE, multiplying it into 4 zenoh task stacks |
+| `MAIN_STACK_SIZE` | 8192 | 32768 | overflowed in `Executor::open_in`; 16384 also overflowed |
+| `NROS_ZEPHYR_HEAP_SIZE` | 65536 | 98304 | build gate caught the arena not fitting; runtime then reported HEAP EXHAUSTED at 82432 |
+| `EXECUTOR_ARENA_SIZE` | 52224 hardcoded | derived | hand-derived from the wrong handle count |
+
+**Count entities with both spellings.** Most subscriptions are the
+`NROS_SUBSCRIBE` macro and timers are `NROS_CREATE_TIMER`; grepping for
+`create_subscription` finds 1 of 11 and none of the 6 timers. That mistake put
+the handle count at 17 instead of 33 and cost two silicon round-trips. The
+original board file's "11 subs + 2 service servers" was arithmetically CORRECT
+-- it was counting callbacks for a knob that caps handles.
+
 ## 5. Waves
 
 | | What | State |
@@ -257,7 +331,7 @@ it. The check is upstream's, and it found our bug.
 | **Z1** | Board conf + networking. Get an IP up and ping across the T1 link | superseded, not done. T1 needs a 100BASE-T1 to 100BASE-TX media converter we do not have, so nothing can sit at the other end of the link. The transport is serial instead (4c); `CONFIG_NETWORKING` is off in the board conf. The static IPv4 + GMAC/TJA1103 config stays in tree, unexercised, against a converter arriving |
 | **Z2** | Entry: point `src/zephyr_entry` at the board. **No CMakeLists change needed to build** — checked 2026-08-16: `nano_ros_entry` accepts both `MODEL` and `BRINGUP` and emits no deprecation, so the board build works with the entry as-is. The `MODEL` → `BRINGUP` migration is hygiene (models are build artifacts upstream; `check-no-tracked-models` gates nano-ros's own tree, not a consumer's) and is separable from the bring-up | done — the entry builds for the board |
 | **Z3** | RMW + sizing. zenoh first; measure; decide about Cyclone | done for zenoh — see 4b. Cyclone deferred, not evaluated |
-| **Z4** | The demo on hardware — phase-2's verdict reproduced with the island on real silicon | in progress (2026-08-31). The entry builds for the board over serial and the transport is proven by the talker, but the four MRM nodes have never executed on silicon. The entity counts in the board conf are derived, not measured |
+| **Z4** | The demo on hardware — phase-2's verdict reproduced with the island on real silicon | BLOCKED (2026-08-31) on an upstream arena sizing issue, not on the board. Flashed and run: boot reaches all four nodes and every entity creates, then the image is out of RAM and DTCM at once. The arena charges all 33 handles a receive buffer when only 13 receive, and the buffer cannot go below the 718 B Odometry needs. See 4c/4d |
 
 Z0 needed no decisions and no nano-ros, but it was overtaken: bringing the
 talker up on the board proved the same chain and more, so Z0 is closed by
