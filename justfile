@@ -54,6 +54,12 @@ CYCLONEDDS_HOME := env("NROS_CYCLONEDDS_HOME", env("HOME") / ".nros/sdk/cycloned
 # both work at once — see docs/roadmap/phase-3-canhubk344-real-silicon.md.
 BOARD := env("NROS_BOARD", "mr_canhubk3/s32k344")
 BOARD_RMW := env("NROS_BOARD_RMW", "nros-zenoh")
+# Transport snippet. The board file states board facts and deliberately names
+# no transport, so SOMETHING must select one -- and the board DTS has emac0,
+# mdio0 and ethernet-phy@12 `status = "okay"`, which means the Ethernet stack
+# arrives by default when nothing says otherwise. Leaving this unset does not
+# yield "no transport", it yields the Ethernet one, silently, 45 KB over RAM.
+BOARD_LINK := env("NROS_BOARD_LINK", "island-serial")
 BOARD_BUILD_DIR := "build-board"
 # 4.4's workspace (the 3.7 LTS one is nano-ros's in-tree zephyr-workspace/).
 # Anchored to THIS repo, not to NANO_ROS_ROOT: the workspace is a sibling of the
@@ -376,7 +382,7 @@ board-build:
         [ -n "${!k:-}" ] && EXTRA+=("-D${k}=${!k}")
     done
     [ ${#EXTRA[@]} -gt 0 ] && echo "board-build: env overrides -> ${EXTRA[*]}"
-    west build -b {{BOARD}} -S {{BOARD_RMW}} -d {{BOARD_BUILD_DIR}} $PWD/src/zephyr_entry -- \
+    west build -b {{BOARD}} -S {{BOARD_RMW}} -S {{BOARD_LINK}} -d {{BOARD_BUILD_DIR}} $PWD/src/zephyr_entry -- \
         -Dnano_ros_ROOT={{NANO_ROS_ROOT}} \
         -DCMAKE_PREFIX_PATH={{NANO_ROS_ROOT}} "${EXTRA[@]}"
     # Pass the build dir through: a nested `just` starts a FRESH invocation and
