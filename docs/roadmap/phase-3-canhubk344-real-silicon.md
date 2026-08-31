@@ -249,7 +249,45 @@ Every earlier sizing pass in this document measured what the image consumed, and
 none of them would have caught a heap too small for a single allocation out of
 it. The check is upstream's, and it found our bug.
 
-## 4d. Z4 on silicon: it does not fit, and the reason is structural (2026-08-31)
+## 4d. Z4 on silicon: what it took (2026-08-31)
+
+**Z4 is MET.** The four MRM components run on the board:
+
+```
+/mrm_comfortable_stop_operator   /mrm_handler
+/mrm_emergency_stop_operator     /stop_mode_operator
+```
+
+with all 22 island topics visible from a stock Humble graph over zenoh-pico on
+serial. Final image: RAM 99.16%, DTCM 71.52%, FLASH 9.82%.
+
+Every failure between the first flash and that verdict was a sizing defect, and
+each one hid the next -- which is why the section below reads as a sequence
+rather than a list. Two were nano-ros defects rather than configuration, and
+both are fixed upstream (NEWSLabNTU/nano-ros#139).
+
+| | defect | fix |
+| --- | --- | --- |
+| 1 | `board-build` selected no link, so Ethernet silently returned -- 44968 B over | `BOARD_LINK` |
+| 2 | `MAIN_STACK_SIZE` multiplied into four zenoh task stacks | `NROS_ZEPHYR_TASK_STACK_SIZE` |
+| 3 | `MAX_CBS` caps total HANDLES, not callbacks: 33, not 14 | 36 |
+| 4 | the arena budgeted every slot at ActionClient size | `ACTION_CLIENTS=0` |
+| 5 | every slot charged the largest type's receive buffer | phase-403 W3/W5 |
+| 6 | QoS depth 10 multiplies the type's bound | depth 1 |
+| 7 | `Executor` was a 16 KiB value moved twice on the stack | phase-409 |
+| 8 | zenoh needs a fifth task slot | `TASK_SLOTS=5` |
+
+Number 8 was invisible until 7 stopped crashing the boot, and 5 was invisible
+until 3 and 4 let the image get far enough to allocate.
+
+### The original 4d analysis, and where it was wrong
+
+What follows was written when Z4 looked structurally blocked. The diagnosis of
+the MECHANISM was right and the NUMBERS were wrong, because they came from the
+C++ pack's estimated sizes rather than derived bounds -- `Control` was read as
+2052 and serializes to 114. Kept because the mechanism is the reusable part, and
+because the way the numbers misled is itself the finding (nano-ros #0964).
+
 
 The island was flashed and run. Boot gets through all four nodes' entity
 creation and then the image is out of memory in both regions at once: SRAM
@@ -356,7 +394,7 @@ original board file's "11 subs + 2 service servers" was arithmetically CORRECT
 | **Z1** | Board conf + networking. Get an IP up and ping across the T1 link | superseded, not done. T1 needs a 100BASE-T1 to 100BASE-TX media converter we do not have, so nothing can sit at the other end of the link. The transport is serial instead (4c); `CONFIG_NETWORKING` is off in the board conf. The static IPv4 + GMAC/TJA1103 config stays in tree, unexercised, against a converter arriving |
 | **Z2** | Entry: point `src/zephyr_entry` at the board. **No CMakeLists change needed to build** — checked 2026-08-16: `nano_ros_entry` accepts both `MODEL` and `BRINGUP` and emits no deprecation, so the board build works with the entry as-is. The `MODEL` → `BRINGUP` migration is hygiene (models are build artifacts upstream; `check-no-tracked-models` gates nano-ros's own tree, not a consumer's) and is separable from the bring-up | done — the entry builds for the board |
 | **Z3** | RMW + sizing. zenoh first; measure; decide about Cyclone | done for zenoh — see 4b. Cyclone deferred, not evaluated |
-| **Z4** | The demo on hardware — phase-2's verdict reproduced with the island on real silicon | BLOCKED (2026-08-31) on an upstream arena sizing issue, not on the board. Flashed and run: boot reaches all four nodes and every entity creates, then the image is out of RAM and DTCM at once. The arena charges all 33 handles a receive buffer when only 13 receive, and the buffer cannot go below the 718 B Odometry needs. See 4c/4d |
+| **Z4** | The demo on hardware — phase-2's verdict reproduced with the island on real silicon | **MET (2026-08-31).** All four MRM components run on the board and appear in a stock ROS 2 Humble graph with 22 island topics, over zenoh-pico on serial. Final image RAM 99.16%, DTCM 71.52%, FLASH 9.82%. It took two upstream fixes and six configuration corrections; see 4d |
 
 Z0 needed no decisions and no nano-ros, but it was overtaken: bringing the
 talker up on the board proved the same chain and more, so Z0 is closed by
