@@ -1,0 +1,22 @@
+# Bound the stock ROS strings this island receives.
+#
+# nano-ros requires every message type to carry a derived upper bound, and a
+# receive buffer is sized from it. `std_msgs/Header.frame_id` is an unbounded
+# `string` in the stock .msg, which we do not own, so it is capped here instead.
+#
+# `inline` is the only mode that BOUNDS: it decodes through
+# `heapless::String::try_from(..).map_err(|_| CapacityExceeded)`, so the cap is
+# checked on every sample. `heap` treats the cap as a hint and `view` aliases
+# the receive buffer with no length check, so neither yields a bound.
+#
+# 64 is generous for this deployment: the island's frames are `base_link` and
+# `map`. A longer frame_id from a remote publisher is REPORTED, not silently
+# truncated -- report_dropped_take logs it and DROPPED_TAKES counts it.
+[fields]
+"std_msgs/Header.frame_id" = { cap = 64, mode = "inline" }
+
+# Odometry carries its own frame string beside the Header's. Capping the Header
+# alone leaves it unbounded, which is the useful shape of the diagnostic: it
+# names every unbounded member rather than the first, so this was one build to
+# find and not two.
+"nav_msgs/Odometry.child_frame_id" = { cap = 64, mode = "inline" }
