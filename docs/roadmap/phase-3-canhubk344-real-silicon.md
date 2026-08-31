@@ -270,7 +270,7 @@ both are fixed upstream (NEWSLabNTU/nano-ros#139).
 | --- | --- | --- |
 | 1 | `board-build` selected no link, so Ethernet silently returned -- 44968 B over | `BOARD_LINK` |
 | 2 | `MAIN_STACK_SIZE` multiplied into four zenoh task stacks | `NROS_ZEPHYR_TASK_STACK_SIZE` |
-| 3 | `MAX_CBS` caps total HANDLES, not callbacks: 33, not 14 | 36 |
+| 3 | `MAX_CBS` caps CALLBACK SLOTS: the image demands 19, and 14 was set | 36 |
 | 4 | the arena budgeted every slot at ActionClient size | `ACTION_CLIENTS=0` |
 | 5 | every slot charged the largest type's receive buffer | phase-403 W3/W5 |
 | 6 | QoS depth 10 multiplies the type's bound | depth 1 |
@@ -372,7 +372,7 @@ Everything up to the arena is proven on hardware:
 
 | knob | was | is | why the old value was wrong |
 | --- | ---: | ---: | --- |
-| `NROS_EXECUTOR_MAX_CBS` | 14 | 36 | caps total HANDLES, not callbacks; publishers and timers count |
+| `NROS_EXECUTOR_MAX_CBS` | 14 | 36 | caps CALLBACK SLOTS; the demand is 19, not the 33 entity count (see below) |
 | `NROS_EXECUTOR_ACTION_CLIENTS` | 4 | 0 | island instantiates no action entity |
 | `NROS_ZEPHYR_TASK_STACK_SIZE` | inherit | 8192 | inherits MAIN_STACK_SIZE, multiplying it into 4 zenoh task stacks |
 | `MAIN_STACK_SIZE` | 8192 | 32768 | overflowed in `Executor::open_in`; 16384 also overflowed |
@@ -385,6 +385,39 @@ Everything up to the arena is proven on hardware:
 the handle count at 17 instead of 33 and cost two silicon round-trips. The
 original board file's "11 subs + 2 service servers" was arithmetically CORRECT
 -- it was counting callbacks for a knob that caps handles.
+
+### Correction: MAX_CBS counts callback slots, not entities (2026-08-31)
+
+This document said `MAX_CBS` "caps total HANDLES, not callbacks; publishers and
+timers count". **Publishers do not count.** Verified against nano-ros: every
+registration that claims a slot calls `Executor::next_entry_slot()`, and
+`create_publisher` is not among them -- the C++ path writes an `RmwPublisher`
+into caller-owned storage and the C API has no `add_publisher` to increment
+`handle_count`.
+
+So for this island:
+
+| | count |
+| --- | ---: |
+| entities created | 33 |
+| **callback slots demanded** | **19** |
+| hand-set `MAX_CBS` | 36 |
+
+Subscriptions, timers, services, service clients, action entities and guard
+conditions claim a slot; publishers do not. `ParamState` lives outside the arena
+by design, and the lifecycle servers go through `create_lc_srv` directly, so
+neither is a hidden term.
+
+What the original diagnosis got RIGHT: 14 was too small and raising it fixed the
+boot halt. What it got WRONG was the reason -- the shortfall was 19 against 14,
+not 33 against 14, and the fix was over-provisioned by 17 slots as a result.
+
+The per-node table in 4d is also mis-attributed: it reads 6 timers and 2
+services where the source has 4 timers, 2 service servers and 2 service clients.
+The TOTAL came out right by coincidence, which is why nothing caught it.
+
+Tracked upstream as nano-ros #0965's first consumer, which derives 19 from a
+declared entity inventory rather than from anyone's count.
 
 ## 5. Waves
 
