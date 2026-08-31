@@ -6,4 +6,5 @@ project(island_interfaces LANGUAGES C CXX)
 
 find_package(nano_ros REQUIRED)
 
-nros_find_interfaces(LANGUAGE cpp SKIP_INSTALL)
+nros_find_interfaces(LANGUAGE cpp SKIP_INSTALL
+    CODEGEN_CONFIG "${CMAKE_CURRENT_SOURCE_DIR}/nros-codegen.toml")
