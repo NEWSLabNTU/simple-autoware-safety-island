@@ -288,10 +288,35 @@ sample is then dropped SILENTLY on the C++ arena dispatch path -- a subscription
 that never fires rather than an error. That is a worse outcome than not booting,
 so the board file keeps 1024 and does not link.
 
-**The fix is upstream, not here.** Sizing the arena per entity KIND rather than
-per slot -- receivers get `3 * buf + 512`, publishers and timers get a slot
-header -- costs roughly `13 * 2816 + 23 * 512 + 2048 = 50432 B`, which fits in
-77968 with room to spare. Nothing about the island changes.
+**The fix is upstream, and it is already open.** This island is a data point for
+work that exists rather than a new finding:
+
+* **nano-ros phase-403, "the type's bound sizes every receive buffer"** (design,
+  nothing landed as of 2026-08-30). It states this exact problem: buffer 1 is one
+  global size for every subscription in the image, so "a 68-byte type and a
+  1000-byte type get the same small block". Our 14 publishers and 6 timers paying
+  Odometry's price is the same defect seen from the arena side. It is not a
+  parameter change because `RX_BUF` is a const generic and the C path is
+  type-erased by design (RFC-0043 components subscribe raw with the type name as
+  a string), so there is no `M` to monomorphise on.
+* **nano-ros issue 0900**, "every executor arena slot is budgeted at the
+  ActionClient worst case". `NROS_EXECUTOR_ACTION_CLIENTS=0` is its mitigation and
+  is set above; it is what took the arena from the ActionClient figure down to
+  `3 * rx_buf + 512` per slot.
+* **phase-402** landed the plumbing for a per-type receive hint. phase-403 exists
+  because that hint reaches the backend and sizes nothing yet.
+
+With per-type sizing only the 11 subscriptions carry a buffer, and only
+Odometry's needs to be large. The 14 publishers and 6 timers stop paying for
+receive buffers they cannot use.
+
+**Correction on the strength of the claim.** "No valid setting exists" holds only
+with every other pool fixed. At the minimum viable 33 slots x 768 B the arena
+wants 94976 B against 77968 free, so DTCM is short about 17008 B; trimming the
+heap, main's stack and the RTT buffer could recover on the order of 12 KiB of
+that. So this is a shortfall of roughly 5-17 KiB, not an impossibility by
+construction -- close enough that a landed phase-403 clears it outright, and
+close enough that nobody should try to close it by undersizing the buffer.
 
 ### What the bring-up did establish
 
