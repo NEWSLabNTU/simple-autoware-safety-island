@@ -63,9 +63,9 @@ StopModeOperator::StopModeOperator(::nros::NodeHandle handle)
   pub_hazard_lights_ =
     create_publisher<HazardLightsCommand>("/system/stop_mode/hazard_lights", durable_qos);
 
-  NROS_SUBSCRIBE(SteeringReport, on_steering, "/vehicle/status/steering_status");
-  NROS_SUBSCRIBE(VelocityReport, on_velocity, "/vehicle/status/velocity_status");
-  NROS_SUBSCRIBE(RouteState, on_route_state, "/planning/route_state");
+  NROS_SUBSCRIBE(SteeringReport, on_steering, "/vehicle/status/steering_status", ::nros::QoS(1));
+  NROS_SUBSCRIBE(VelocityReport, on_velocity, "/vehicle/status/velocity_status", ::nros::QoS(1));
+  NROS_SUBSCRIBE(RouteState, on_route_state, "/planning/route_state", ::nros::QoS(1));
 
   // Upstream: rate is a double parameter fed to rclcpp::Rate.
   const double rate = declare_parameter<double>("rate", 30.0);

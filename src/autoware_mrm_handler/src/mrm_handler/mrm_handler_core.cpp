@@ -85,23 +85,23 @@ MrmHandler::MrmHandler(::nros::NodeHandle handle) : ::nros::ComponentNode(handle
   // subscribers became caching callbacks (porting-notes 14).
   NROS_SUBSCRIBE(
     tier4_system_msgs::msg::OperationModeAvailability, onOperationModeAvailability,
-    "/system/operation_mode/availability");
-  NROS_SUBSCRIBE(nav_msgs::msg::Odometry, onOdometry, "/localization/kinematic_state");
+    "/system/operation_mode/availability", ::nros::QoS(1));
+  NROS_SUBSCRIBE(nav_msgs::msg::Odometry, onOdometry, "/localization/kinematic_state", ::nros::QoS(1));
   NROS_SUBSCRIBE(
-    autoware_vehicle_msgs::msg::ControlModeReport, onControlMode, "/vehicle/status/control_mode");
+    autoware_vehicle_msgs::msg::ControlModeReport, onControlMode, "/vehicle/status/control_mode", ::nros::QoS(1));
   NROS_SUBSCRIBE(
     tier4_system_msgs::msg::MrmBehaviorStatus, onComfortableStopStatus,
-    "/system/mrm/comfortable_stop/status");
+    "/system/mrm/comfortable_stop/status", ::nros::QoS(1));
   NROS_SUBSCRIBE(
     tier4_system_msgs::msg::MrmBehaviorStatus, onEmergencyStopStatus,
-    "/system/mrm/emergency_stop/status");
+    "/system/mrm/emergency_stop/status", ::nros::QoS(1));
   // transient_local: the topic is latched at source; a volatile sub misses
   // the current mode on late join -> handler stuck "emergency" (deadlocks
   // engage once mrm_state is honestly bridged back to Autoware).
   create_subscription<autoware_adapi_v1_msgs::msg::OperationModeState, MrmHandler,
                       &MrmHandler::onOperationModeState>(
     "/api/operation_mode/state", ::nros::QoS(1).transient_local());
-  NROS_SUBSCRIBE(autoware_vehicle_msgs::msg::GearCommand, onGearCmd, "/control/command/gear_cmd");
+  NROS_SUBSCRIBE(autoware_vehicle_msgs::msg::GearCommand, onGearCmd, "/control/command/gear_cmd", ::nros::QoS(1));
 
   // Publisher
   pub_turn_indicator_cmd_ = create_publisher<autoware_vehicle_msgs::msg::TurnIndicatorsCommand>(
