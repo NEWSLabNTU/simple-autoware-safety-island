@@ -60,7 +60,7 @@ MrmEmergencyStopOperator::MrmEmergencyStopOperator(::nros::NodeHandle handle)
   // parses launch remaps but does not route them yet, and `~/` private
   // expansion is unsupported (porting-notes 07). Upstream:
   //   ~/input/control/control_cmd  → /control/command/control_cmd
-  NROS_SUBSCRIBE(Control, onControlCommand, "/control/command/control_cmd");
+  NROS_SUBSCRIBE(Control, onControlCommand, "/control/command/control_cmd", ::nros::QoS(1));
 
   // Server
   //   ~/input/mrm/emergency_stop/operate → /system/mrm/emergency_stop/operate
