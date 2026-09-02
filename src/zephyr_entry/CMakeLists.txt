@@ -24,7 +24,30 @@ project(safety_island_zephyr_entry)
 
 # RFC-0048: on Zephyr find_package(nano_ros) supplies the verbs + entry
 # machinery; the nano-ros west module already provides the runtime.
+#
+# PIN IT TO THE SUBMODULE. Unpinned, find_package() is free to resolve
+# nano_ros from anywhere on CMAKE_PREFIX_PATH -- on a machine that also has a
+# standalone nano-ros checkout it silently picks that one up, and the build
+# then uses ANOTHER tree's cmake verbs and codegen against THIS tree's sources.
+# It fails far away from the cause: caps in nros-codegen.toml stop being
+# applied, every type reads as unbounded, and the static_asserts fire on
+# messages nobody touched. Diagnosed the long way once (seven separate
+# detours); the tell is `nano_ros_DIR` in CMakeCache.txt naming a path outside
+# this repo. An explicit -Dnano_ros_DIR= still wins, so this only supplies the
+# default nobody should have to remember.
+if(NOT DEFINED nano_ros_DIR)
+    set(nano_ros_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../third-party/nano-ros"
+        CACHE PATH "nano-ros checkout backing this island (default: the submodule)")
+endif()
 find_package(nano_ros REQUIRED)
+get_filename_component(_nros_resolved "${nano_ros_DIR}" REALPATH)
+get_filename_component(_nros_expected "${CMAKE_CURRENT_SOURCE_DIR}/../../third-party/nano-ros" REALPATH)
+if(NOT _nros_resolved STREQUAL _nros_expected)
+    message(WARNING
+        "nano_ros resolved to ${_nros_resolved}, NOT this repo's submodule at "
+        "${_nros_expected}. That is supported, but say so deliberately -- an "
+        "ACCIDENTAL one produces unbounded-type errors in untouched messages.")
+endif()
 
 if(NOT COMMAND nano_ros_workspace_pkg_guard)
     function(nano_ros_workspace_pkg_guard)

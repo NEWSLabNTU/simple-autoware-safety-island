@@ -14,6 +14,17 @@ nano_ros_auto_add_library(mrm_comfortable_stop_operator_lib STATIC src/mrm_comfo
 nros_components_register_node(mrm_comfortable_stop_operator_lib
     PLUGIN autoware::mrm_comfortable_stop_operator::MrmComfortableStopOperator
     EXECUTABLE mrm_comfortable_stop_operator
-    HEADER autoware/mrm_comfortable_stop_operator/mrm_comfortable_stop_operator_core.hpp)
+    HEADER autoware/mrm_comfortable_stop_operator/mrm_comfortable_stop_operator_core.hpp
+    # phase-403 W9. Enumerated from THIS component's sources, not from the
+    # topic contract, which was one subscription short. Every callback slot
+    # NROS_EXECUTOR_MAX_CBS must cover is listed; publishers claim no slot,
+    # and are declared because the payload classes price what is RECEIVED
+    # and a reader should not have to know which half matters.
+    ENTITIES
+        pub:autoware_internal_planning_msgs/msg/VelocityLimit
+        pub:autoware_internal_planning_msgs/msg/VelocityLimitClearCommand
+        pub:tier4_system_msgs/msg/MrmBehaviorStatus
+        timer
+)
 
 # Topo-last superset interface lib only (porting-notes 08 / nano-ros #253).
