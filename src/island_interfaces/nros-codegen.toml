@@ -21,3 +21,12 @@
 # find and not two.
 "nav_msgs/Odometry.child_frame_id" = { cap = 64, mode = "inline" }
 
+
+# Blanket caps for the rest of the linked closure -- 24 types the island only
+# LINKS and never puts on the wire. A DEPLOYMENT ASSERTION, not a measurement:
+# nothing here is subscribed, so nothing checks these at runtime. Everything the
+# island actually receives is capped by name above, against the type's real
+# content.
+[defaults]
+string = { cap = 64, mode = "inline" }
+sequence = { cap = 16, element_cap = 64, mode = "inline" }
