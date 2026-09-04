@@ -29,6 +29,11 @@ nros_components_register_node(mrm_handler_lib
         sub:tier4_system_msgs/msg/MrmBehaviorStatus:/system/mrm/comfortable_stop/status
         sub:tier4_system_msgs/msg/MrmBehaviorStatus:/system/mrm/emergency_stop/status
         sub:autoware_vehicle_msgs/msg/GearCommand:/control/command/gear_cmd
+        # Created with a direct create_subscription<> rather than NROS_SUBSCRIBE,
+        # because it needs transient_local QoS. It was missing from this list,
+        # so the derived NROS_RMW_SUBSCRIBER_SLOTS was 10 for an image that
+        # creates 11, and the eleventh failed at the metadata-slot guard.
+        sub:autoware_adapi_v1_msgs/msg/OperationModeState:/api/operation_mode/state
         pub:autoware_adapi_v1_msgs/msg/MrmState
         pub:autoware_vehicle_msgs/msg/GearCommand
         pub:autoware_vehicle_msgs/msg/HazardLightsCommand
