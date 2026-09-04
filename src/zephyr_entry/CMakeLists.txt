@@ -161,8 +161,13 @@ zephyr_code_relocate(LIBRARY stop_mode_operator_lib            LOCATION ITCM_TEX
 zephyr_code_relocate(LIBRARY mrm_emergency_stop_operator_lib   LOCATION ITCM_TEXT)
 zephyr_code_relocate(LIBRARY mrm_comfortable_stop_operator_lib LOCATION ITCM_TEXT)
 
+# phase-405 W4 retired MODEL, which named a RESOLVED artifact directly and so
+# let the entry be built from a stale system_model.yaml. BRINGUP names the
+# package instead, and the launch file inside it is what gets resolved -- the
+# launch tree is the source of truth for the node/topic structure, not a
+# checked-in resolution of it.
 nano_ros_add_executable(zephyr_entry
     BOARD   zephyr
-    MODEL   "${CMAKE_CURRENT_SOURCE_DIR}/../safety_island_bringup/config/system_model.yaml"
+    BRINGUP "${CMAKE_CURRENT_SOURCE_DIR}/../safety_island_bringup"
     TYPED
     DEPLOY  zephyr)
