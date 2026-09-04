@@ -369,7 +369,7 @@ void MrmHandler::drainMrmClientReplies()
   for (void * storage :
        {static_cast<void *>(client_mrm_comfortable_stop_.bytes),
         static_cast<void *>(client_mrm_emergency_stop_.bytes)}) {
-    while (nros_cpp_service_client_try_recv_reply(storage, resp, sizeof(resp), &rlen) == 0 &&
+    while (nros_cpp_service_client_take_response(storage, resp, sizeof(resp), &rlen) == 0 &&
            rlen > 0) {
       tier4_system_msgs::srv::OperateMrm::Response r{};
       if (tier4_system_msgs::srv::OperateMrm::Response::ffi_deserialize(resp, rlen, &r) == 0) {
