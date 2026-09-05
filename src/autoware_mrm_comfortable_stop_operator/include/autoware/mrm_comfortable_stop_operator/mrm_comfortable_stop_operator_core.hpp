@@ -64,7 +64,7 @@ private:
   void publishVelocityLimit();
   void publishVelocityLimitClearCommand();
 
-  // Timer — handle lives in the ComponentNode base (NROS_CREATE_TIMER).
+  // Timer — handle lives in the ComponentNode base (NROS_CREATE_WALL_TIMER).
   void onTimer();
 
   // States

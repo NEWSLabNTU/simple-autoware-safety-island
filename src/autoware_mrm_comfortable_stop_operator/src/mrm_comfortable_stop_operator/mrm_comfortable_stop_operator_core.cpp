@@ -63,7 +63,7 @@ MrmComfortableStopOperator::MrmComfortableStopOperator(::nros::NodeHandle handle
       ::nros::QoS(1).transient_local());
 
   // Timer
-  NROS_CREATE_TIMER(static_cast<uint64_t>(1000 / params_.update_rate), onTimer);
+  NROS_CREATE_WALL_TIMER(static_cast<uint64_t>(1000 / params_.update_rate), onTimer);
 
   // Initialize
   status_ = {};

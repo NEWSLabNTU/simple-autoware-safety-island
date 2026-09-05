@@ -70,7 +70,7 @@ private:
   void publishStatus();
   void publishControlCommand(const Control & command);
 
-  // Timer — handle lives in the ComponentNode base (NROS_CREATE_TIMER).
+  // Timer — handle lives in the ComponentNode base (NROS_CREATE_WALL_TIMER).
   void onTimer();
 
   // States

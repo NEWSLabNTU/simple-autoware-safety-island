@@ -75,7 +75,7 @@ MrmEmergencyStopOperator::MrmEmergencyStopOperator(::nros::NodeHandle handle)
   pub_control_cmd_ = create_publisher<Control>("/system/emergency/control_cmd");
 
   // Timer
-  NROS_CREATE_TIMER(static_cast<uint64_t>(1000 / params_.update_rate), onTimer);
+  NROS_CREATE_WALL_TIMER(static_cast<uint64_t>(1000 / params_.update_rate), onTimer);
 
   // Initialize
   status_.state = MrmBehaviorStatus::AVAILABLE;

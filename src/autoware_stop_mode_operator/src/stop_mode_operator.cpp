@@ -69,7 +69,7 @@ StopModeOperator::StopModeOperator(::nros::NodeHandle handle)
 
   // Upstream: rate is a double parameter fed to rclcpp::Rate.
   const double rate = declare_parameter<double>("rate", 30.0);
-  NROS_CREATE_TIMER(static_cast<uint64_t>(1000.0 / rate), on_timer);
+  NROS_CREATE_WALL_TIMER(static_cast<uint64_t>(1000.0 / rate), on_timer);
 }
 
 void StopModeOperator::on_steering(const SteeringReport & msg)

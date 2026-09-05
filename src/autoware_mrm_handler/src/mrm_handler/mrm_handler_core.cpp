@@ -133,7 +133,7 @@ MrmHandler::MrmHandler(::nros::NodeHandle handle) : ::nros::ComponentNode(handle
   stamp_operation_mode_availability_ = now_sec();
 
   // Timer
-  NROS_CREATE_TIMER(static_cast<uint64_t>(1000 / param_.update_rate), onTimer);
+  NROS_CREATE_WALL_TIMER(static_cast<uint64_t>(1000 / param_.update_rate), onTimer);
 }
 
 void MrmHandler::onOperationModeAvailability(
