@@ -53,14 +53,28 @@
 # exactly one, and its `output` is what that tick actually publishes, read from
 # the callback body rather than assumed to be every publisher the node has.
 #
-# NOT HERE: services. `/system/mrm/*/operate` is a service pair and belongs in
-# a `services:` section; neither operator declares one yet, so nothing is
-# claimed about them.
+# SERVICES ARE HERE TOO, since 2026-09-06. They were omitted on the grounds
+# that "nothing is claimed about them", which sounded conservative and was not:
+# the image creates two service SERVERS, and a contract that omits them makes
+# the derivation predict MAX_QUERYABLES 1 for an image that needs at least two.
+# An omission is not neutral when something downstream sizes a pool from it.
+#
+# What settled it was the running board. With a router attached, the liveliness
+# tokens it declares are the image describing itself:
+#
+#   SS mrm_comfortable_stop_operator /system/mrm/comfortable_stop/operate
+#   SS mrm_emergency_stop_operator   /system/mrm/emergency_stop/operate
+#   SC mrm_handler                   /system/mrm/comfortable_stop/operate
+#
+# Both pairs are INTERNAL -- server and client are both on this board -- so
+# neither needs the `external:` mark that a split pair does.
 
 version: 1
 
 nodes:
   mrm_comfortable_stop_operator:
+    srv:
+      operate: {}
     paths:
       # `onTimer` -> `publishStatus()`. The velocity-limit publishers are not
       # here: they fire on an operate/cancel service transition, not on the
@@ -75,6 +89,8 @@ nodes:
       status: { min_rate_hz: 10 }
 
   mrm_emergency_stop_operator:
+    srv:
+      operate: {}
     paths:
       # `onTimer` -> `publishControlCommand()` + `publishStatus()`.
       on_timer:
@@ -89,6 +105,9 @@ nodes:
   # The arbiter. Seven subscriptions -- `operation_mode_state` is the one the
   # CMakeLists list omitted.
   mrm_handler:
+    cli:
+      comfortable_stop_operate: {}
+      emergency_stop_operate: {}
     paths:
       # `onTimer` -> publishMrmState / TurnIndicatorCmd / HazardCmd / GearCmd /
       # EmergencyHolding, in that order.
@@ -253,3 +272,16 @@ topics:
     external: sub
     pub: [stop_mode_operator/turn_indicators]
     rate_hz: 30
+
+# The two MRM operate services. `mrm_handler` is the arbiter: it decides which
+# behaviour to run and calls the operator that runs it. Both sides are on this
+# board, so both are stated and neither is external.
+services:
+  /system/mrm/comfortable_stop/operate:
+    type: tier4_system_msgs/srv/OperateMrm
+    server: [mrm_comfortable_stop_operator/operate]
+    client: [mrm_handler/comfortable_stop_operate]
+  /system/mrm/emergency_stop/operate:
+    type: tier4_system_msgs/srv/OperateMrm
+    server: [mrm_emergency_stop_operator/operate]
+    client: [mrm_handler/emergency_stop_operate]
