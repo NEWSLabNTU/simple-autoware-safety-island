@@ -330,7 +330,7 @@ CONFIG_MAX_PTHREAD_MUTEX_COUNT=1024
       ```cmake
 nano_ros_add_executable(zephyr_entry
   BOARD zephyr  TYPED  DEPLOY zephyr
-  MODEL .../config/system_model.yaml)
+  BRINGUP ../safety_island_bringup)
       ```]
       #text(size: 14pt)[Same model as native — no `[deploy]` pins, so nodes stay board-agnostic.]
     ],

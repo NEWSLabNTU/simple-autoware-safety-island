@@ -14,3 +14,8 @@ demo/.bridge.pgid
 play_log/
 tmp_*.log
 demo/.*.pgid
+
+# `nros sync` writes a source-metadata probe cache beside each node package.
+# Generated per host from that host's build, and `.unprobeable` when the node
+# has no nano-ros path at all -- a fact about this checkout, not about the code.
+src/*/metadata/

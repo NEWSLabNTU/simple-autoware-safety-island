@@ -138,10 +138,12 @@ not in the build.
 
 ### 5. Open items not on the critical path
 
-* `just resolve-model` (part of `just setup`) has not been exercised since
-  play_launch was reinstalled — it needs the `resolve` verb, which only the
-  >= 0.8.x line has. `src/safety_island_bringup/config/system_model.yaml` is
-  committed, so the demo does not depend on re-running it.
+* The model is no longer committed. `just sync` (part of `just setup`, and a
+  dependency of `just build` / `just zephyr-build` / `just board-build`)
+  resolves it into `build/nros/models/safety_island_bringup/system_model.yaml`
+  and costs 0.08 s when nothing changed. It needs play_launch's `resolve`
+  verb, which only the >= 0.8.x line has, so `just doctor` still checks the
+  version.
 * Clock domains: the ported operators integrate `dt` from message stamps;
   host Autoware stamps are wall-clock while the island clock boots at ~0.
   The emergency stop operator carries a clamp (its unguarded first MRM tick

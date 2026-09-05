@@ -639,10 +639,14 @@ because the diagnosis path is the reusable part.
   the link is serial (4c). It gates T1 specifically, not the island.
 * Does the FS26 driver need board-specific Kconfig beyond the board default, or
   is `CONFIG_WATCHDOG=y` (already in `mr_canhubk3_defconfig`) sufficient?
-* `src/safety_island_bringup/config/system_model.yaml` is COMMITTED. Upstream
-  treats SystemModels as build artifacts and gates against committing them, but
-  that gate covers nano-ros's tree, not ours — so this is a convention debt we
-  carry deliberately until the `BRINGUP` migration, not a build blocker.
+* ~~`src/safety_island_bringup/config/system_model.yaml` is COMMITTED.~~
+  CLOSED 2026-09-05 by the `BRINGUP` migration. The debt was not only a
+  convention one: the committed model had been resolved BEFORE the contract
+  sidecar existed, so it carried `topics: 0` and every pool derived from it
+  was sized for a system with no wiring. Both entries now say `BRINGUP
+  <pkg>`, `nros sync` writes the model under `build/nros/models/`, and the
+  resolved artifact records each input's sha256 in `meta.inputs` — the
+  contract included, which is what makes a stale model detectable at all.
 
 ---
 

@@ -1,0 +1,211 @@
+# Node interface contract for safety_island.launch.xml.
+#
+# WHY THIS FILE EXISTS
+#
+# A ROS 2 launch file names nodes, namespaces, parameters and remaps. It cannot
+# say that a node creates seven subscriptions -- that is a property of the
+# node's code, and `<remap>` only renames a topic the node already has. So the
+# launch tree alone cannot size the image's pools.
+#
+# play_launch's contract channel is where that belongs. It is read through the
+# PROVIDER SIDECAR channel -- `<stem>.contract.yaml` beside `<stem>.launch.xml`,
+# on by default -- and folded into the SystemModel, whose `structure.topics`
+# is what `nros_orchestration_ir::executor_sizing::count_callbacks` counts.
+#
+# It replaces the `ENTITIES` lists duplicated across the four components'
+# CMakeLists.txt. Those were hand-maintained with nothing comparing them to the
+# code, and on 2026-09-04 that cost several days: mrm_handler declared six
+# subscriptions and creates seven, so every pool derived from the list was short
+# by one and the eleventh subscription failed at boot with an opaque transport
+# error.
+#
+# THE TWO SECTIONS DO DIFFERENT JOBS
+#
+# `nodes:` names each node's endpoints and their rates. The keys are LOCAL
+# endpoint names, not topic paths -- an absolute path here is concatenated onto
+# the node FQN and produces a malformed `/node//abs/path` endpoint that matches
+# no topic.
+#
+# `topics:` is the wiring: absolute topic name -> message type plus the endpoint
+# refs on each side. `external: pub` means the publisher lives outside this
+# image (the vehicle, Autoware proper); `external: sub` means the consumer does.
+# Only two topics here are internal to the island, both MRM status reports.
+#
+# Rates are each node's own `update_rate`/`rate` parameter -- 10 Hz for
+# mrm_comfortable_stop_operator and mrm_handler, 30 Hz for
+# mrm_emergency_stop_operator and stop_mode_operator -- not numbers invented to
+# satisfy the mapper.
+#
+# NOT HERE: timers. The schema has no timer entity and this system has four, so
+# the model under-counts callbacks by four. nano-ros closes that with the
+# `max(model_wiring, recorded_metadata)` rule in `model_ingest`; the retirement
+# of ENTITIES must keep that second source rather than replace it. Services are
+# likewise absent -- `/system/mrm/*/operate` is a service pair, counted through
+# the service path.
+
+version: 1
+
+nodes:
+  mrm_comfortable_stop_operator:
+    pub:
+      max_velocity_candidates: { min_rate_hz: 10 }
+      clear_velocity_limit: { min_rate_hz: 10 }
+      status: { min_rate_hz: 10 }
+
+  mrm_emergency_stop_operator:
+    sub:
+      control_cmd: { min_rate_hz: 30 }
+    pub:
+      emergency_control_cmd: { min_rate_hz: 30 }
+      status: { min_rate_hz: 30 }
+
+  # The arbiter. Seven subscriptions -- `operation_mode_state` is the one the
+  # CMakeLists list omitted.
+  mrm_handler:
+    sub:
+      operation_mode_availability: { min_rate_hz: 10 }
+      kinematic_state: { min_rate_hz: 10 }
+      control_mode: { min_rate_hz: 10 }
+      comfortable_stop_status: { min_rate_hz: 10 }
+      emergency_stop_status: { min_rate_hz: 10 }
+      gear_cmd_in: { min_rate_hz: 10 }
+      operation_mode_state: { min_rate_hz: 10 }
+    pub:
+      mrm_state: { min_rate_hz: 10 }
+      gear_cmd_out: { min_rate_hz: 10 }
+      hazard_lights_cmd: { min_rate_hz: 10 }
+      turn_indicators_cmd: { min_rate_hz: 10 }
+      emergency_holding: { min_rate_hz: 10 }
+
+  stop_mode_operator:
+    sub:
+      steering_status: { min_rate_hz: 30 }
+      velocity_status: { min_rate_hz: 30 }
+      route_state: { min_rate_hz: 30 }
+    pub:
+      control: { min_rate_hz: 30 }
+      gear: { min_rate_hz: 30 }
+      hazard_lights: { min_rate_hz: 30 }
+      turn_indicators: { min_rate_hz: 30 }
+
+topics:
+  # --- internal to the island: both sides are components in this image -------
+  /system/mrm/comfortable_stop/status:
+    type: tier4_system_msgs/msg/MrmBehaviorStatus
+    pub: [mrm_comfortable_stop_operator/status]
+    sub: [mrm_handler/comfortable_stop_status]
+    rate_hz: 10
+  /system/mrm/emergency_stop/status:
+    type: tier4_system_msgs/msg/MrmBehaviorStatus
+    pub: [mrm_emergency_stop_operator/status]
+    sub: [mrm_handler/emergency_stop_status]
+    rate_hz: 30
+
+  # --- consumed by the island, produced by the vehicle or Autoware ----------
+  /control/command/control_cmd:
+    type: autoware_control_msgs/msg/Control
+    external: pub
+    sub: [mrm_emergency_stop_operator/control_cmd]
+    rate_hz: 30
+  /system/operation_mode/availability:
+    type: tier4_system_msgs/msg/OperationModeAvailability
+    external: pub
+    sub: [mrm_handler/operation_mode_availability]
+    rate_hz: 10
+  /localization/kinematic_state:
+    type: nav_msgs/msg/Odometry
+    external: pub
+    sub: [mrm_handler/kinematic_state]
+    rate_hz: 10
+  /vehicle/status/control_mode:
+    type: autoware_vehicle_msgs/msg/ControlModeReport
+    external: pub
+    sub: [mrm_handler/control_mode]
+    rate_hz: 10
+  /control/command/gear_cmd:
+    type: autoware_vehicle_msgs/msg/GearCommand
+    external: pub
+    sub: [mrm_handler/gear_cmd_in]
+    rate_hz: 10
+  /api/operation_mode/state:
+    type: autoware_adapi_v1_msgs/msg/OperationModeState
+    external: pub
+    sub: [mrm_handler/operation_mode_state]
+    rate_hz: 10
+  /vehicle/status/steering_status:
+    type: autoware_vehicle_msgs/msg/SteeringReport
+    external: pub
+    sub: [stop_mode_operator/steering_status]
+    rate_hz: 30
+  /vehicle/status/velocity_status:
+    type: autoware_vehicle_msgs/msg/VelocityReport
+    external: pub
+    sub: [stop_mode_operator/velocity_status]
+    rate_hz: 30
+  /planning/route_state:
+    type: autoware_planning_msgs/msg/RouteState
+    external: pub
+    sub: [stop_mode_operator/route_state]
+    rate_hz: 30
+
+  # --- produced by the island, consumed outside it --------------------------
+  /planning/scenario_planning/max_velocity_candidates:
+    type: autoware_internal_planning_msgs/msg/VelocityLimit
+    external: sub
+    pub: [mrm_comfortable_stop_operator/max_velocity_candidates]
+    rate_hz: 10
+  /planning/scenario_planning/clear_velocity_limit:
+    type: autoware_internal_planning_msgs/msg/VelocityLimitClearCommand
+    external: sub
+    pub: [mrm_comfortable_stop_operator/clear_velocity_limit]
+    rate_hz: 10
+  /system/emergency/control_cmd:
+    type: autoware_control_msgs/msg/Control
+    external: sub
+    pub: [mrm_emergency_stop_operator/emergency_control_cmd]
+    rate_hz: 30
+  /system/fail_safe/mrm_state:
+    type: autoware_adapi_v1_msgs/msg/MrmState
+    external: sub
+    pub: [mrm_handler/mrm_state]
+    rate_hz: 10
+  /system/emergency/gear_cmd:
+    type: autoware_vehicle_msgs/msg/GearCommand
+    external: sub
+    pub: [mrm_handler/gear_cmd_out]
+    rate_hz: 10
+  /system/emergency/hazard_lights_cmd:
+    type: autoware_vehicle_msgs/msg/HazardLightsCommand
+    external: sub
+    pub: [mrm_handler/hazard_lights_cmd]
+    rate_hz: 10
+  /system/emergency/turn_indicators_cmd:
+    type: autoware_vehicle_msgs/msg/TurnIndicatorsCommand
+    external: sub
+    pub: [mrm_handler/turn_indicators_cmd]
+    rate_hz: 10
+  /system/fail_safe/emergency_holding:
+    type: tier4_system_msgs/msg/EmergencyHoldingState
+    external: sub
+    pub: [mrm_handler/emergency_holding]
+    rate_hz: 10
+  /system/stop_mode/control:
+    type: autoware_control_msgs/msg/Control
+    external: sub
+    pub: [stop_mode_operator/control]
+    rate_hz: 30
+  /system/stop_mode/gear:
+    type: autoware_vehicle_msgs/msg/GearCommand
+    external: sub
+    pub: [stop_mode_operator/gear]
+    rate_hz: 30
+  /system/stop_mode/hazard_lights:
+    type: autoware_vehicle_msgs/msg/HazardLightsCommand
+    external: sub
+    pub: [stop_mode_operator/hazard_lights]
+    rate_hz: 30
+  /system/stop_mode/turn_indicators:
+    type: autoware_vehicle_msgs/msg/TurnIndicatorsCommand
+    external: sub
+    pub: [stop_mode_operator/turn_indicators]
+    rate_hz: 30

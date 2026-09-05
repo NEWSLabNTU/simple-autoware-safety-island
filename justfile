@@ -100,26 +100,43 @@ doctor:
     [ "$ok" = 1 ] && echo "doctor: OK (NANO_ROS_ROOT={{NANO_ROS_ROOT}}, DISPLAY={{VNC_DISPLAY}})"
     [ "$ok" = 1 ]
 
-# Resolve the declarative system into the baked model consumed by the entry.
-# Re-run after editing system.toml or any launch/*.xml.
+# Regenerate the generated inputs the build consumes: the message crates and
+# the SystemModel.
 #
-# Bake system.toml + the island launch XML into config/system_model.yaml.
-resolve-model:
+# WHAT A HUMAN AUTHORS, AND WHAT IS GENERATED
+#
+# Authored, in src/{{BRINGUP}}/: system.toml, launch/*.launch.xml, and the
+# launch file's sidecars (<stem>.contract.yaml naming each node's pub/sub sets,
+# <stem>.system.<target>.yaml carrying the scheduling platform). Those are the
+# only files anyone edits.
+#
+# Generated: build/nros/models/{{BRINGUP}}/system_model.yaml. It is a BUILD
+# ARTIFACT -- never committed, never hand-edited, and never named by an entry
+# (the entries say `BRINGUP <pkg>` and let `nros model-path` locate it).
+#
+# This recipe used to run `play_launch resolve -o src/.../config/
+# system_model.yaml`, writing a resolved model INTO the source tree and
+# committing it. That put a generated file under human maintenance, and it
+# went stale the moment it stopped being regenerated: the committed model was
+# resolved before the contract sidecar existed, so it carried `topics: 0` and
+# every pool derived from it was sized for a system with no wiring. `nros
+# sync` resolves the same tree, records every input's sha256 in the model's
+# `meta.inputs` (the contract INCLUDED, which is what makes staleness
+# detectable), and writes it where nobody is tempted to edit it.
+sync:
     #!/usr/bin/env bash
     set -e
     source /opt/ros/humble/setup.bash
-    {{PLAY_LAUNCH}} resolve \
-        src/{{BRINGUP}}/launch/safety_island.launch.xml \
-        --system src/{{BRINGUP}}/system.toml \
-        -o src/{{BRINGUP}}/config/system_model.yaml
+    source "{{NANO_ROS_ROOT}}/activate.sh"
+    nros sync
 
 # One-time workspace prep, in dependency order:
 #   play_launch (source build + wheel install) -> env check -> demo overlay
-#   (domain_bridge + MRM-shadowed tier4_system_launch) -> baked system model.
+#   (domain_bridge + MRM-shadowed tier4_system_launch) -> generated inputs.
 # Interface codegen runs at cmake-configure time, so `just build` is next.
 #
-# One-time workspace prep (play_launch, demo overlay, system model).
-setup: setup-play-launch doctor demo-host-ws resolve-model
+# One-time workspace prep (play_launch, demo overlay, generated inputs).
+setup: setup-play-launch doctor demo-host-ws sync
 
 # Put play_launch (>= {{PLAY_LAUNCH_MIN}}) on PATH. Two sources:
 #   * default          — pip install the published package
@@ -171,7 +188,7 @@ setup-deps:
 # Cyclone, and the island links against the SDK one at runtime anyway.
 #
 # Build the island for the native board.
-build:
+build: sync
     env NROS_EXECUTOR_MAX_CBS=32 cmake -S . -B {{BUILD_DIR}} -DNANO_ROS_ROOT={{NANO_ROS_ROOT}} \
         -DCycloneDDS_DIR={{CYCLONEDDS_HOME}}/lib/cmake/CycloneDDS
     env NROS_EXECUTOR_MAX_CBS=32 cmake --build {{BUILD_DIR}} -j
@@ -206,7 +223,7 @@ clean:
 # native_sim first; QEMU board bring-up is a follow-up item.
 
 # Build the island as a Zephyr native_sim image.
-zephyr-build:
+zephyr-build: sync
     #!/usr/bin/env bash
     set -e
     # The 3.7 LTS workspace lives INSIDE the nano-ros checkout. NANO_ROS_ROOT now
@@ -316,7 +333,7 @@ board-hello:
 # switch this to -DCONF_FILE, that suppresses the board file.
 #
 # Build the island for the board.
-board-build:
+board-build: sync
     #!/usr/bin/env bash
     set -e
     # `west build` must run INSIDE a west workspace or it reports

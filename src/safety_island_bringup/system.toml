@@ -1,6 +1,15 @@
 # Safety-island system descriptor (nano-ros bringup pkg, schema v0.1).
-# Resolve to the baked model with `just resolve-model`
-# (play_launch resolve --system this-file -o config/system_model.yaml).
+#
+# This file is AUTHORED, alongside launch/safety_island.launch.xml and that
+# launch file's two sidecars (safety_island.contract.yaml, which states each
+# node's pub/sub sets, and safety_island.system.posix.yaml, the scheduling
+# platform the contract channel needs to open). Those four are the whole of
+# what a human edits here.
+#
+# `just sync` resolves them into build/nros/models/safety_island_bringup/
+# system_model.yaml -- a BUILD ARTIFACT, gitignored, never hand-edited. The
+# entries name this PACKAGE (`BRINGUP ../safety_island_bringup`) and let
+# `nros model-path` find the artifact, so no CMakeLists spells a model path.
 
 [system]
 name = "safety_island"
