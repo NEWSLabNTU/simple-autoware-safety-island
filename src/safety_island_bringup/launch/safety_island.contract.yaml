@@ -12,6 +12,14 @@
 # on by default -- and folded into the SystemModel, whose `structure.topics`
 # is what `nros_orchestration_ir::executor_sizing::count_callbacks` counts.
 #
+# THE CONTRACT ALONE IS ENOUGH. A `<stem>.system.<target>.yaml` scheduling
+# platform file sat beside this one for a while, on the belief that the channel
+# only opened when a platform file was present for the target. That was wrong,
+# and it was measured wrong: resolving with and without it produced BYTE-
+# IDENTICAL models. The symptom that produced the belief ("4 nodes, 0 topics")
+# had a different cause -- this file had no `topics:` section at all -- and the
+# platform file arrived at the same time as the fix. It is deleted.
+#
 # It replaces the `ENTITIES` lists duplicated across the four components'
 # CMakeLists.txt. Those were hand-maintained with nothing comparing them to the
 # code, and on 2026-09-04 that cost several days: mrm_handler declared six
@@ -36,23 +44,42 @@
 # mrm_emergency_stop_operator and stop_mode_operator -- not numbers invented to
 # satisfy the mapper.
 #
-# NOT HERE: timers. The schema has no timer entity and this system has four, so
-# the model under-counts callbacks by four. nano-ros closes that with the
-# `max(model_wiring, recorded_metadata)` rule in `model_ingest`; the retirement
-# of ENTITIES must keep that second source rather than replace it. Services are
-# likewise absent -- `/system/mrm/*/operate` is a service pair, counted through
-# the service path.
+# TIMERS ARE HERE, under each node's `paths:`. This file once said they could
+# not be expressed and that `ENTITIES` had to survive to carry them. That was
+# wrong. A node path is a `take -> publish` causal path, and a path whose
+# trigger is `{ timer: { rate_hz: N } }` resolves into the model as a
+# `contracts.node_paths` entry with an EMPTY `input` -- which the model's own
+# definition of that field calls "periodic (timer-driven)". Each node here runs
+# exactly one, and its `output` is what that tick actually publishes, read from
+# the callback body rather than assumed to be every publisher the node has.
+#
+# NOT HERE: services. `/system/mrm/*/operate` is a service pair and belongs in
+# a `services:` section; neither operator declares one yet, so nothing is
+# claimed about them.
 
 version: 1
 
 nodes:
   mrm_comfortable_stop_operator:
+    paths:
+      # `onTimer` -> `publishStatus()`. The velocity-limit publishers are not
+      # here: they fire on an operate/cancel service transition, not on the
+      # tick, so listing them would claim a periodic output the node does not
+      # produce.
+      on_timer:
+        trigger: { timer: { rate_hz: 10 } }
+        output: [status]
     pub:
       max_velocity_candidates: { min_rate_hz: 10 }
       clear_velocity_limit: { min_rate_hz: 10 }
       status: { min_rate_hz: 10 }
 
   mrm_emergency_stop_operator:
+    paths:
+      # `onTimer` -> `publishControlCommand()` + `publishStatus()`.
+      on_timer:
+        trigger: { timer: { rate_hz: 30 } }
+        output: [emergency_control_cmd, status]
     sub:
       control_cmd: { min_rate_hz: 30 }
     pub:
@@ -62,6 +89,17 @@ nodes:
   # The arbiter. Seven subscriptions -- `operation_mode_state` is the one the
   # CMakeLists list omitted.
   mrm_handler:
+    paths:
+      # `onTimer` -> publishMrmState / TurnIndicatorCmd / HazardCmd / GearCmd /
+      # EmergencyHolding, in that order.
+      on_timer:
+        trigger: { timer: { rate_hz: 10 } }
+        output:
+          - mrm_state
+          - turn_indicators_cmd
+          - hazard_lights_cmd
+          - gear_cmd_out
+          - emergency_holding
     sub:
       operation_mode_availability: { min_rate_hz: 10 }
       kinematic_state: { min_rate_hz: 10 }
@@ -78,6 +116,12 @@ nodes:
       emergency_holding: { min_rate_hz: 10 }
 
   stop_mode_operator:
+    paths:
+      # `on_timer` -> publish_control_command / gear_command /
+      # turn_indicators_command / hazard_lights_command.
+      on_timer:
+        trigger: { timer: { rate_hz: 30 } }
+        output: [control, gear, turn_indicators, hazard_lights]
     sub:
       steering_status: { min_rate_hz: 30 }
       velocity_status: { min_rate_hz: 30 }

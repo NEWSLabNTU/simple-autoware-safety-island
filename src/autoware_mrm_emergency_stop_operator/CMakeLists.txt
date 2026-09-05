@@ -18,15 +18,12 @@ nros_components_register_node(mrm_emergency_stop_operator_lib
     PLUGIN autoware::mrm_emergency_stop_operator::MrmEmergencyStopOperator
     EXECUTABLE mrm_emergency_stop_operator
     HEADER autoware/mrm_emergency_stop_operator/mrm_emergency_stop_operator_core.hpp
-    # phase-403 W9. Enumerated from THIS component's sources, not from the
-    # topic contract, which was one subscription short. Every callback slot
-    # NROS_EXECUTOR_MAX_CBS must cover is listed; publishers claim no slot,
-    # and are declared because the payload classes price what is RECEIVED
-    # and a reader should not have to know which half matters.
-    ENTITIES
-        sub:autoware_control_msgs/msg/Control:/control/command/control_cmd
-        pub:autoware_control_msgs/msg/Control
-        pub:tier4_system_msgs/msg/MrmBehaviorStatus
-        timer
+    # phase-412 -- `ENTITIES` is retired. This node's subscriptions,
+    # publishers and timer are stated in
+    # safety_island_bringup/launch/safety_island.contract.yaml, beside the
+    # launch file that runs it, and reach the pool sizing through the
+    # resolved SystemModel. The list that used to live here was
+    # hand-maintained with nothing comparing it to the code, and one of
+    # them was short by a subscription the node creates.
 )
 
