@@ -402,6 +402,34 @@ board-build: sync
     west build -b {{BOARD}} -S {{BOARD_RMW}} -S {{BOARD_LINK}} -d {{BOARD_BUILD_DIR}} $PWD/src/zephyr_entry -- \
         -Dnano_ros_ROOT={{NANO_ROS_ROOT}} \
         -DCMAKE_PREFIX_PATH={{NANO_ROS_ROOT}} "${EXTRA[@]}"
+
+    # A DERIVED value being right is not the question; whether it ARRIVED is.
+    #
+    # The knob chain here is two producers deep -- the entity inventory feeds
+    # the message-bound sizes, which the knob resolver reads FIRST, inside
+    # find_package(Zephyr) -- so the value delivered to the compiler settles
+    # only on the third configure. nano-ros arms those re-configures and states
+    # that ninja runs all three inside one `west build`. Measured on this board
+    # 2026-09-06, it does not: a clean build dir gets 2 configures against 3
+    # arming requests, and the image links with the pass-2 value.
+    #
+    # That is not cosmetic. The subscriber payload class arrives as the whole
+    # linked CLOSURE (1496 B) instead of the SUBSCRIBED set (880 B), the arena
+    # model bills three receive buffers per subscription at the wrong one, and
+    # the image ships a 70296-byte arena where 46272 is correct -- 24 KB, on a
+    # part with 320 KB of RAM. It is silent because over-sized always is.
+    #
+    # So the build refuses instead of flashing it. Running `just board-build`
+    # again is what converges it, which is why the message says so rather than
+    # this recipe looping: a build that quietly re-runs itself hides how many
+    # passes the chain actually needs, and that number is the bug.
+    if ! python3 {{NANO_ROS_ROOT}}/scripts/check-knob-delivery.py {{BOARD_BUILD_DIR}}; then
+        echo ""
+        echo "board-build: REFUSING this image -- a resolved knob did not reach the compile."
+        echo "  The fragments on disk are correct and the delivered value is one pass behind."
+        echo "  Run `just board-build` again; the second pass converges."
+        exit 1
+    fi
     # Pass the build dir through: a nested `just` starts a FRESH invocation and
     # does NOT inherit a `BOARD_BUILD_DIR=` override from the outer one, so a
     # bare `just board-size` here reported on `build-board` no matter which
