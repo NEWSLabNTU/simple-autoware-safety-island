@@ -97,7 +97,7 @@ nodes:
         trigger: { timer: { rate_hz: 30 } }
         output: [emergency_control_cmd, status]
     sub:
-      control_cmd: { min_rate_hz: 30 }
+      control_cmd: { min_rate_hz: 30, qos: { depth: 1 } }
     pub:
       emergency_control_cmd: { min_rate_hz: 30 }
       status: { min_rate_hz: 30 }
@@ -120,13 +120,13 @@ nodes:
           - gear_cmd_out
           - emergency_holding
     sub:
-      operation_mode_availability: { min_rate_hz: 10 }
-      kinematic_state: { min_rate_hz: 10 }
-      control_mode: { min_rate_hz: 10 }
-      comfortable_stop_status: { min_rate_hz: 10 }
-      emergency_stop_status: { min_rate_hz: 10 }
-      gear_cmd_in: { min_rate_hz: 10 }
-      operation_mode_state: { min_rate_hz: 10 }
+      operation_mode_availability: { min_rate_hz: 10, qos: { depth: 1 } }
+      kinematic_state: { min_rate_hz: 10, qos: { depth: 1 } }
+      control_mode: { min_rate_hz: 10, qos: { depth: 1 } }
+      comfortable_stop_status: { min_rate_hz: 10, qos: { depth: 1 } }
+      emergency_stop_status: { min_rate_hz: 10, qos: { depth: 1 } }
+      gear_cmd_in: { min_rate_hz: 10, qos: { depth: 1 } }
+      operation_mode_state: { min_rate_hz: 10, qos: { depth: 1 } }
     pub:
       mrm_state: { min_rate_hz: 10 }
       gear_cmd_out: { min_rate_hz: 10 }
@@ -142,9 +142,9 @@ nodes:
         trigger: { timer: { rate_hz: 30 } }
         output: [control, gear, turn_indicators, hazard_lights]
     sub:
-      steering_status: { min_rate_hz: 30 }
-      velocity_status: { min_rate_hz: 30 }
-      route_state: { min_rate_hz: 30 }
+      steering_status: { min_rate_hz: 30, qos: { depth: 1 } }
+      velocity_status: { min_rate_hz: 30, qos: { depth: 1 } }
+      route_state: { min_rate_hz: 30, qos: { depth: 1 } }
     pub:
       control: { min_rate_hz: 30 }
       gear: { min_rate_hz: 30 }
