@@ -69,10 +69,23 @@
 # Both pairs are INTERNAL -- server and client are both on this board -- so
 # neither needs the `external:` mark that a split pair does.
 
+# PARAMETERS ARE DECLARED HERE, name and type, one entry per
+# `declare_parameter<T>` call in the node's code (phase 446 in nano-ros). The
+# sizes of the image's parameter store follow from this list: 21 parameters
+# plus one `use_sim_time` per node gives 25 slots, and since every one is a
+# scalar the string and array capacities are zero. Values stay in each
+# package's `config/*.param.yaml`, loaded by the launch file. Capacities for a
+# string or array parameter would be a board fact, never stated here.
+
 version: 1
 
 nodes:
   mrm_comfortable_stop_operator:
+    params:
+      update_rate: { type: integer }
+      min_acceleration: { type: double }
+      max_jerk: { type: double }
+      min_jerk: { type: double }
     srv:
       operate: {}
     paths:
@@ -89,6 +102,10 @@ nodes:
       status: { min_rate_hz: 10 }
 
   mrm_emergency_stop_operator:
+    params:
+      update_rate: { type: integer }
+      target_acceleration: { type: double }
+      target_jerk: { type: double }
     srv:
       operate: {}
     paths:
@@ -105,6 +122,18 @@ nodes:
   # The arbiter. Seven subscriptions -- `operation_mode_state` is the one the
   # CMakeLists list omitted.
   mrm_handler:
+    params:
+      update_rate: { type: integer }
+      timeout_operation_mode_availability: { type: double }
+      timeout_call_mrm_behavior: { type: double }
+      timeout_cancel_mrm_behavior: { type: double }
+      use_emergency_holding: { type: bool }
+      timeout_emergency_recovery: { type: double }
+      use_parking_after_stopped: { type: bool }
+      use_pull_over: { type: bool }
+      use_comfortable_stop: { type: bool }
+      turning_hazard_on.emergency: { type: bool }
+      turning_indicator_on.emergency: { type: bool }
     cli:
       comfortable_stop_operate: {}
       emergency_stop_operate: {}
@@ -135,6 +164,10 @@ nodes:
       emergency_holding: { min_rate_hz: 10 }
 
   stop_mode_operator:
+    params:
+      rate: { type: double }
+      stop_hold_acceleration: { type: double }
+      enable_auto_parking: { type: bool }
     paths:
       # `on_timer` -> publish_control_command / gear_command /
       # turn_indicators_command / hazard_lights_command.

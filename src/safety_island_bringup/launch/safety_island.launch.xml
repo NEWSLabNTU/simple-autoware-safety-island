@@ -6,8 +6,21 @@
   <!-- Topic names are resolved in-source for now: nano-ros parses <remap>
        but does not route it (porting-notes 07); the names here document the
        contract wiring. -->
-  <node pkg="autoware_mrm_emergency_stop_operator" exec="mrm_emergency_stop_operator" name="mrm_emergency_stop_operator"/>
-  <node pkg="autoware_mrm_comfortable_stop_operator" exec="mrm_comfortable_stop_operator" name="mrm_comfortable_stop_operator"/>
-  <node pkg="autoware_stop_mode_operator" exec="stop_mode_operator" name="stop_mode_operator"/>
-  <node pkg="autoware_mrm_handler" exec="mrm_handler" name="mrm_handler"/>
+  <!-- Each node loads its package's parameter file, as the upstream launch
+       files do. The names and types are declared in
+       safety_island.contract.yaml; the values live here. The paths are
+       relative because these packages are built into the image, not
+       installed into an ament share directory. -->
+  <node pkg="autoware_mrm_emergency_stop_operator" exec="mrm_emergency_stop_operator" name="mrm_emergency_stop_operator">
+    <param from="$(dirname)/../../autoware_mrm_emergency_stop_operator/config/mrm_emergency_stop_operator.param.yaml"/>
+  </node>
+  <node pkg="autoware_mrm_comfortable_stop_operator" exec="mrm_comfortable_stop_operator" name="mrm_comfortable_stop_operator">
+    <param from="$(dirname)/../../autoware_mrm_comfortable_stop_operator/config/mrm_comfortable_stop_operator.param.yaml"/>
+  </node>
+  <node pkg="autoware_stop_mode_operator" exec="stop_mode_operator" name="stop_mode_operator">
+    <param from="$(dirname)/../../autoware_stop_mode_operator/config/default.param.yaml"/>
+  </node>
+  <node pkg="autoware_mrm_handler" exec="mrm_handler" name="mrm_handler">
+    <param from="$(dirname)/../../autoware_mrm_handler/config/mrm_handler.param.yaml"/>
+  </node>
 </launch>
