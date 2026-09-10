@@ -44,7 +44,15 @@ if(NANO_ROS_PLATFORM STREQUAL "posix")
         src/native_entry)
 endif()
 
+# SYSTEM names the bringup whose system.toml declares the image's capabilities
+# (param_services). Without it nano_ros_workspace() resolves NO capability, so
+# nros-cpp is built without param-services while codegen -- which reads the same
+# system.toml through `nros sync` -- still emits the registration call, and the
+# link fails on `undefined reference to nros_cpp_register_parameter_services`.
+# posix used to get param_services unconditionally, which hid this until
+# nano-ros phase-323 made capabilities come from the declaration.
 nano_ros_workspace(
     BACKEND  cyclonedds
     PLATFORM "${NANO_ROS_PLATFORM}"
+    SYSTEM   safety_island_bringup
     SUBDIRS  ${_ws_subdirs})

@@ -16,8 +16,13 @@ name = "safety_island"
 rmw = "cyclonedds"
 domain_id = 2                       # island domain; Autoware is domain 1 (bridged)
 default_launch = "safety_island.launch.xml"
-# P4 flips on the E2E integrity layer (nano-ros RFC-0028):
-# features = ["safety"]
+# param_services: the image's parameter store. All four components call
+# declare_parameter, and since nano-ros phase-426 W4 the ONLY store is the one
+# this capability links in -- the per-component inline store was deleted
+# because `ros2 param get` never saw it. Without it every component halts
+# boot at its first declare_parameter (code -16, Unsupported).
+# P4 adds the E2E integrity layer (nano-ros RFC-0028): "safety".
+features = ["param_services"]
 
 # ── Components — uncommented as ports land ─────────────────────────────────
 [[component]]
