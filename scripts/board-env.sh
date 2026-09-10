@@ -71,6 +71,12 @@ _island_zephyr_env() {
     source "$ws/zephyr/zephyr-env.sh"
     export ZEPHYR_SDK_INSTALL_DIR="$sdk"
     export ZEPHYR_TOOLCHAIN_VARIANT=zephyr
+    # The pinned checkout's CLI, first on PATH. nano-ros's Zephyr cmake calls
+    # `nros` by name -- board facts, codegen, and `nros sdk-path` to find the
+    # store's Cyclone idlc -- and a configure outside direnv found none of them
+    # ("no nros CLI", then "host Cyclone idlc not found"). Never ~/.nros/bin:
+    # a stale copy there shadows the in-tree CLI (packages/cli/CLAUDE.md).
+    export PATH="$root/packages/cli/target/release:$PATH"
     if [ -d "$ws/.venv312/bin" ]; then
         export PATH="$ws/.venv312/bin:$PATH"
     fi

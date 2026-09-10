@@ -243,6 +243,10 @@ zephyr-build: sync
     # The 3.7 LTS workspace and its SDK come from the nros store, the same way
     # the board's do (`just zephyr-setup` provisions them).
     source scripts/board-env.sh "{{NANO_ROS_ROOT}}" 3.7
+    # This image uses Cyclone, whose typesupport step runs ROS's rosidl_adapter
+    # inside the nested build; ROS is sourced here for the reason `build`
+    # sources it (the board image is zenoh and never needed it).
+    source /opt/ros/humble/setup.bash
     export NROS_EXECUTOR_MAX_CBS="${NROS_EXECUTOR_MAX_CBS:-32}" NROS_INTERFACE_SEARCH_PATH=$PWD/src
     # Capabilities from system.toml, as board-build does (see the note there).
     caps="$PWD/build/nros/nros_capabilities.cmake"
@@ -252,7 +256,7 @@ zephyr-build: sync
     west build -b native_sim/native/64 -d build-zephyr src/zephyr_entry -- \
         -C "$caps" \
         -DCONF_FILE="prj.conf;prj-cyclonedds.conf" \
-        -Dnano_ros_ROOT=$NANO_ROS_ROOT -DCMAKE_PREFIX_PATH=$NANO_ROS_ROOT
+        -Dnano_ros_ROOT={{NANO_ROS_ROOT}} -DCMAKE_PREFIX_PATH={{NANO_ROS_ROOT}}
 
 # Run the Zephyr island (domain 2 baked; host side: `just host-env`).
 zephyr-run:
@@ -404,11 +408,9 @@ board-build: sync
     # `west build` from outside the workspace finds it through ZEPHYR_BASE, or
     # reports `unknown command "build"`. board-env.sh resolves the workspace,
     # its py3.12 venv (west itself; 4.4 needs python >= 3.12) and the SDK from
-    # the nros store. The codegen `nros` comes from the pinned checkout, never
-    # from ~/.nros/bin: a stale copy there shadows the in-tree CLI, which
-    # packages/cli/CLAUDE.md forbids.
+    # the nros store, and puts the pinned checkout's `nros` first on PATH
+    # (never ~/.nros/bin -- see the note in board-env.sh).
     source scripts/board-env.sh "{{NANO_ROS_ROOT}}"
-    export PATH="{{NANO_ROS_ROOT}}/packages/cli/target/release:$PATH"
     export NROS_INTERFACE_SEARCH_PATH=$PWD/src
     # ── Post-snippet Kconfig overrides ──────────────────────────────────────
     # ONLY the settings the nros-zenoh snippet also sets belong here. It rides
