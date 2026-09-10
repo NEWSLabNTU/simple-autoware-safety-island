@@ -61,13 +61,11 @@ BOARD_RMW := env("NROS_BOARD_RMW", "nros-zenoh")
 # yield "no transport", it yields the Ethernet one, silently, 45 KB over RAM.
 BOARD_LINK := env("NROS_BOARD_LINK", "island-serial")
 BOARD_BUILD_DIR := "build-board"
-# 4.4's workspace (the 3.7 LTS one is nano-ros's in-tree zephyr-workspace/).
-# Anchored to THIS repo, not to NANO_ROS_ROOT: the workspace is a sibling of the
-# project, so deriving it from a submodule path would point inside third-party/.
-ZEPHYR44_WS := env("NROS_ZEPHYR_WORKSPACE", justfile_directory() / "../nano-ros-workspace-4.4")
-# 4.4 needs Python >= 3.12 for find_package(Python3); this host is 22.04 (3.10),
-# so nano-ros provisions a venv in the workspace. `west` MUST resolve there.
-ZEPHYR44_VENV_BIN := ZEPHYR44_WS / ".venv312/bin"
+# The Zephyr 4.4 workspace, its py3.12 venv and the Zephyr SDK live in the nros
+# store (~/.nros, nano-ros RFC-0095), shared by every project on the host, and
+# are RESOLVED at recipe time by scripts/board-env.sh -- never a path literal
+# here, which is how this repo came to build against a sibling clone's SDK.
+# NROS_ZEPHYR_WORKSPACE still overrides the workspace.
 # play_launch comes from PATH (installed by `just setup`); override with
 # PLAY_LAUNCH=<path> to point at a specific binary. The demo needs >= 0.8.2 —
 # 0.5.x stalls on Autoware's busy composable containers and has no `resolve`.
@@ -82,7 +80,13 @@ doctor:
     #!/usr/bin/env bash
     set -u
     ok=1
-    command -v nros >/dev/null || { echo "MISSING: nros CLI — source $NANO_ROS_ROOT/activate.sh"; ok=0; }
+    # The recipes call the PINNED checkout's own CLI by path (board-env.sh,
+    # board-build), never a PATH lookup -- so check that binary, not whatever
+    # `nros` an activate.sh or ~/.nros/bin put first on PATH. The message uses
+    # the justfile value: $NANO_ROS_ROOT is not exported, and under `set -u`
+    # expanding it killed this recipe instead of reporting.
+    [ -x "{{NANO_ROS_ROOT}}/packages/cli/target/release/nros" ] \
+        || { echo "MISSING: nros CLI at {{NANO_ROS_ROOT}}/packages/cli/target/release/nros — run: (cd {{NANO_ROS_ROOT}} && just setup-cli)"; ok=0; }
     command -v cmake >/dev/null || { echo "MISSING: cmake"; ok=0; }
     command -v parallel >/dev/null || { echo "MISSING: GNU parallel (apt install parallel) — supervises demo-all"; ok=0; }
     [ -d "{{NANO_ROS_ROOT}}/cmake" ] || { echo "MISSING: NANO_ROS_ROOT ({{NANO_ROS_ROOT}}) is not a nano-ros checkout"; ok=0; }
@@ -188,7 +192,17 @@ setup-deps:
 # Cyclone, and the island links against the SDK one at runtime anyway.
 #
 # Build the island for the native board.
+#
+# ROS is sourced HERE, the way `sync` does it, not left to .envrc: the Cyclone
+# typesupport step runs ROS's rosidl_adapter from inside the nested cmake
+# build, and a shell direnv never touched (CI, a script, an agent) reached it
+# with no ROS site-packages on PYTHONPATH and failed with "rosidl_adapter is not
+# importable by this build's interpreter". The CycloneDDS_DIR pin above is what
+# keeps a sourced ROS from also supplying the wrong Cyclone.
 build: sync
+    #!/usr/bin/env bash
+    set -e
+    source /opt/ros/humble/setup.bash
     env NROS_EXECUTOR_MAX_CBS=32 cmake -S . -B {{BUILD_DIR}} -DNANO_ROS_ROOT={{NANO_ROS_ROOT}} \
         -DCycloneDDS_DIR={{CYCLONEDDS_HOME}}/lib/cmake/CycloneDDS
     env NROS_EXECUTOR_MAX_CBS=32 cmake --build {{BUILD_DIR}} -j
@@ -226,13 +240,17 @@ clean:
 zephyr-build: sync
     #!/usr/bin/env bash
     set -e
-    # The 3.7 LTS workspace lives INSIDE the nano-ros checkout. NANO_ROS_ROOT now
-    # defaults to the submodule, so this needs `just zephyr setup` to have been
-    # run there once; a sibling checkout that already has one can be used with
-    # NANO_ROS_ROOT=<path>.
-    source {{NANO_ROS_ROOT}}/zephyr-workspace/env.sh > /dev/null
+    # The 3.7 LTS workspace and its SDK come from the nros store, the same way
+    # the board's do (`just zephyr-setup` provisions them).
+    source scripts/board-env.sh "{{NANO_ROS_ROOT}}" 3.7
     export NROS_EXECUTOR_MAX_CBS="${NROS_EXECUTOR_MAX_CBS:-32}" NROS_INTERFACE_SEARCH_PATH=$PWD/src
+    # Capabilities from system.toml, as board-build does (see the note there).
+    caps="$PWD/build/nros/nros_capabilities.cmake"
+    mkdir -p "$(dirname "$caps")"
+    "{{NANO_ROS_ROOT}}/packages/cli/target/release/nros" config show \
+        --workspace "$PWD" --system {{BRINGUP}} --format cmake > "$caps"
     west build -b native_sim/native/64 -d build-zephyr src/zephyr_entry -- \
+        -C "$caps" \
         -DCONF_FILE="prj.conf;prj-cyclonedds.conf" \
         -Dnano_ros_ROOT=$NANO_ROS_ROOT -DCMAKE_PREFIX_PATH=$NANO_ROS_ROOT
 
@@ -253,36 +271,82 @@ zephyr-run:
 # CLI first: `nros setup --source` runs inside the zephyr setup and resolves the
 # binary from $NROS_CLI / PATH / ~/.nros, none of which are guaranteed here.
 #
-# One-time: install the Zephyr 4.4 workspace + its Python 3.12 venv (large).
-board-setup:
+# Provisions into the nros store (~/.nros), the user-workflow layout of nano-ros
+# RFC-0095, in three steps: the Zephyr 4.4 workspace and its py3.12 venv, the
+# Zephyr SDK that tree asks for, then this island's own Zephyr patch. Every step
+# is idempotent, so re-run it after a `west update` drops the patch.
+#
+# One-time: provision the Zephyr 4.4 workspace, venv and SDK into ~/.nros (large).
+board-setup: (_zephyr-provision "4.4")
     #!/usr/bin/env bash
     set -e
-    cd {{NANO_ROS_ROOT}}
-    if [ ! -x packages/cli/target/release/nros ]; then
-        echo "[board-setup] building the nros CLI first..."
-        just setup-cli
+    source scripts/board-env.sh "{{NANO_ROS_ROOT}}" 4.4
+    # patches/zephyr/0001 (DTCM relocation), board-only. See board-doctor for
+    # what its absence looks like.
+    if ! grep -q 'trailing_match' "$ISLAND_ZEPHYR_WS/zephyr/scripts/build/gen_relocate_app.py"; then
+        git -C "$ISLAND_ZEPHYR_WS/zephyr" apply {{justfile_directory()}}/patches/zephyr/*.patch
     fi
-    export NROS_CLI="$PWD/packages/cli/target/release/nros"
-    export PATH="$PWD/packages/cli/target/release:$PATH"
-    NROS_ZEPHYR_VERSION=4.4 NROS_ZEPHYR_SKIP_XRCE_AGENT=1 just zephyr setup
-    echo "workspace: {{ZEPHYR44_WS}}"
+    echo "workspace: $ISLAND_ZEPHYR_WS"
+    echo "sdk:       $ZEPHYR_SDK_INSTALL_DIR"
+
+# One-time: provision the Zephyr 3.7 LTS workspace and SDK (native_sim) into ~/.nros.
+zephyr-setup: (_zephyr-provision "3.7")
+    #!/usr/bin/env bash
+    set -e
+    source scripts/board-env.sh "{{NANO_ROS_ROOT}}" 3.7
+    echo "workspace: $ISLAND_ZEPHYR_WS"
+    echo "sdk:       $ZEPHYR_SDK_INSTALL_DIR"
+
+# One Zephyr line into the store: the west workspace (and, for 4.4, its py3.12
+# venv), then the SDK that tree asks for. Idempotent.
+[private]
+_zephyr-provision line:
+    #!/usr/bin/env bash
+    set -e
+    root="{{NANO_ROS_ROOT}}"
+    nros="$root/packages/cli/target/release/nros"
+    index="$root/nros-sdk-index.toml"
+    if [ ! -x "$nros" ]; then
+        echo "[zephyr-provision] building the nros CLI first..."
+        (cd "$root" && just setup-cli)
+    fi
+    ws="${NROS_ZEPHYR_WORKSPACE:-$("$root/scripts/lib/zephyr-workspace.sh" --version {{line}} resolve-or-default)}"
+    # 1. The west workspace. `just zephyr setup` is nano-ros's only provisioner
+    #    for one; the index does not model a west workspace. --skip-sdk because
+    #    its SDK install lands INSIDE the checkout (nano-ros issue 1254); step 2
+    #    puts the SDK in the store instead. NROS_ZEPHYR_CREATE_VENV=1 lets it
+    #    create .venv312 with uv; without it the 4.4 line only checks for one.
+    (cd "$root" && NROS_ZEPHYR_VERSION={{line}} NROS_ZEPHYR_WORKSPACE="$ws" \
+        NROS_ZEPHYR_CREATE_VENV=1 NROS_ZEPHYR_SKIP_XRCE_AGENT=1 \
+        just zephyr setup --skip-sdk)
+    # 2. The SDK the tree asks for, into the store. `nros setup --tool` unpacks
+    #    the bundle only (nano-ros issue 1259). The SDK's own installer does the
+    #    rest -- the toolchains when the bundle is `_minimal` (1.x), the host
+    #    tools (-h) and the CMake package registration (-c) always -- and
+    #    nano-ros runs it only when it installs the SDK itself, into the
+    #    checkout. Run it every time: it skips a toolchain already present, and
+    #    "a toolchain directory exists" does not mean the host tools do.
+    read -r tool ver < <(scripts/zephyr-sdk-tool.sh "$root" "$ws")
+    [ -n "$tool" ] || exit 1
+    "$nros" setup --tool "$tool" --index "$index"
+    sdk="$("$nros" sdk-path "$tool" --require --index "$index")/zephyr-sdk-$ver"
+    (cd "$sdk" && ./setup.sh -t x86_64-zephyr-elf -t arm-zephyr-eabi -h -c)
 
 # Report whether the board toolchain is ready. Read-only.
 board-doctor:
     #!/usr/bin/env bash
     set +e
     fail=0
-    if [ -d "{{ZEPHYR44_WS}}/zephyr" ]; then
-        echo "  [OK]      zephyr 4.4 workspace: {{ZEPHYR44_WS}}"
+    # Resolve exactly what board-build will use; on a miss board-env.sh names
+    # what is missing and the remedy.
+    if source scripts/board-env.sh "{{NANO_ROS_ROOT}}"; then
+        echo "  [OK]      zephyr 4.4 workspace: $ISLAND_ZEPHYR_WS"
+        echo "  [OK]      zephyr sdk: $ZEPHYR_SDK_INSTALL_DIR"
+        echo "  [OK]      west (py3.12 venv): $(python --version 2>&1)"
     else
-        echo "  [MISSING] zephyr 4.4 workspace (run: just board-setup)"; fail=1
+        fail=1
     fi
-    if [ -x "{{ZEPHYR44_VENV_BIN}}/west" ]; then
-        echo "  [OK]      west (py3.12 venv): $({{ZEPHYR44_VENV_BIN}}/python --version)"
-    else
-        echo "  [MISSING] {{ZEPHYR44_VENV_BIN}}/west — 4.4 needs python >= 3.12"; fail=1
-    fi
-    if [ -d "{{ZEPHYR44_WS}}/zephyr/boards/nxp/mr_canhubk3" ]; then
+    if [ -d "$ISLAND_ZEPHYR_WS/zephyr/boards/nxp/mr_canhubk3" ]; then
         echo "  [OK]      board mr_canhubk3 present upstream"
     else
         echo "  [MISSING] boards/nxp/mr_canhubk3 in the workspace"; fail=1
@@ -303,12 +367,12 @@ board-doctor:
     # zephyr_code_relocate() emits an empty fragment, prints nothing, exits 0 --
     # and the build then fails with "region RAM overflowed by ~39000 bytes",
     # which does not name the real cause. Check for the fix, not the patch file.
-    if grep -q 'trailing_match' "{{ZEPHYR44_WS}}/zephyr/scripts/build/gen_relocate_app.py" 2>/dev/null; then
+    if grep -q 'trailing_match' "$ISLAND_ZEPHYR_WS/zephyr/scripts/build/gen_relocate_app.py" 2>/dev/null; then
         echo "  [OK]      zephyr patch 0001 (gen_relocate_app) applied"
     else
         echo "  [MISSING] zephyr patch 0001 — DTCM relocation will silently no-op"
         echo "            and the build will overflow RAM. Re-apply:"
-        echo "            cd {{ZEPHYR44_WS}}/zephyr && git apply {{justfile_directory()}}/patches/zephyr/*.patch"
+        echo "            cd $ISLAND_ZEPHYR_WS/zephyr && git apply {{justfile_directory()}}/patches/zephyr/*.patch"
         fail=1
     fi
     exit $fail
@@ -320,9 +384,10 @@ board-doctor:
 board-hello:
     #!/usr/bin/env bash
     set -e
-    export PATH="{{ZEPHYR44_VENV_BIN}}:$PATH"
-    cd {{ZEPHYR44_WS}}
-    west build -b {{BOARD}} -d build-hello zephyr/samples/hello_world --pristine=auto
+    source scripts/board-env.sh "{{NANO_ROS_ROOT}}"
+    # Build output stays with this project, never inside the shared store
+    # workspace (nano-ros RFC-0095 D2).
+    west build -b {{BOARD}} -d build-hello "$ZEPHYR_BASE/samples/hello_world" --pristine=auto
     # -r pyocd explicitly: the board lists jlink FIRST in board.cmake, so west
     # picks it by default and dies on `JLinkExe not found`. We flash with an
     # MCU-Link (CMSIS-DAP), which is pyocd's job.
@@ -336,15 +401,14 @@ board-hello:
 board-build: sync
     #!/usr/bin/env bash
     set -e
-    # `west build` must run INSIDE a west workspace or it reports
-    # `unknown command "build"`. env.sh supplies ZEPHYR_BASE + the SDK dir; the
-    # venv supplies west itself (4.4 needs python >= 3.12). Both are required.
-    source {{ZEPHYR44_WS}}/env.sh > /dev/null
-    # Three things must be on PATH and they come from three places: west from
-    # the py3.12 venv, the codegen `nros` from the nano-ros checkout (there is
-    # deliberately no ~/.nros/bin copy — a stale one there shadows the in-tree
-    # CLI, which packages/cli/CLAUDE.md forbids), and the SDK via env.sh.
-    export PATH="{{ZEPHYR44_VENV_BIN}}:{{NANO_ROS_ROOT}}/packages/cli/target/release:$PATH"
+    # `west build` from outside the workspace finds it through ZEPHYR_BASE, or
+    # reports `unknown command "build"`. board-env.sh resolves the workspace,
+    # its py3.12 venv (west itself; 4.4 needs python >= 3.12) and the SDK from
+    # the nros store. The codegen `nros` comes from the pinned checkout, never
+    # from ~/.nros/bin: a stale copy there shadows the in-tree CLI, which
+    # packages/cli/CLAUDE.md forbids.
+    source scripts/board-env.sh "{{NANO_ROS_ROOT}}"
+    export PATH="{{NANO_ROS_ROOT}}/packages/cli/target/release:$PATH"
     export NROS_INTERFACE_SEARCH_PATH=$PWD/src
     # ── Post-snippet Kconfig overrides ──────────────────────────────────────
     # ONLY the settings the nros-zenoh snippet also sets belong here. It rides
@@ -399,7 +463,18 @@ board-build: sync
         [ -n "${!k:-}" ] && EXTRA+=("-D${k}=${!k}")
     done
     [ ${#EXTRA[@]} -gt 0 ] && echo "board-build: env overrides -> ${EXTRA[*]}"
+    # The image's capabilities (param_services), from system.toml through the
+    # CLI's SSoT accessor. The Zephyr lane does not resolve them from the
+    # entry's BRINGUP yet (nano-ros zephyr/CMakeLists.txt, "Follow-up: resolve
+    # from the entry's BRINGUP"), so it reads NANO_ROS_FEATURES; the CLI's
+    # `--format cmake` output is a `set(... CACHE ... FORCE)` line, which is
+    # exactly an initial-cache file for `-C`. Nothing here restates the list.
+    caps="$PWD/build/nros/nros_capabilities.cmake"
+    mkdir -p "$(dirname "$caps")"
+    "{{NANO_ROS_ROOT}}/packages/cli/target/release/nros" config show \
+        --workspace "$PWD" --system {{BRINGUP}} --format cmake > "$caps"
     west build -b {{BOARD}} -S {{BOARD_RMW}} -S {{BOARD_LINK}} -d {{BOARD_BUILD_DIR}} $PWD/src/zephyr_entry -- \
+        -C "$caps" \
         -Dnano_ros_ROOT={{NANO_ROS_ROOT}} \
         -DCMAKE_PREFIX_PATH={{NANO_ROS_ROOT}} "${EXTRA[@]}"
 
@@ -448,8 +523,7 @@ board-build: sync
 board-flash:
     #!/usr/bin/env bash
     set -e
-    source {{ZEPHYR44_WS}}/env.sh > /dev/null
-    export PATH="{{ZEPHYR44_VENV_BIN}}:$PATH"
+    source scripts/board-env.sh "{{NANO_ROS_ROOT}}"
     west flash -d {{BOARD_BUILD_DIR}} -r pyocd
 
 # 320 KiB SRAM total for .data + .bss + heap + every stack.
@@ -458,8 +532,7 @@ board-flash:
 board-size:
     #!/usr/bin/env bash
     set -e
-    source {{ZEPHYR44_WS}}/env.sh > /dev/null
-    export PATH="{{ZEPHYR44_VENV_BIN}}:$PATH"
+    source scripts/board-env.sh "{{NANO_ROS_ROOT}}"
     # A missing or unconfigured build dir makes ninja complain that `rom_report`
     # is an unknown target, which reads as "this build cannot produce a report"
     # rather than "there is no build here". Say the true thing.
@@ -529,6 +602,10 @@ _sim-prereq-check:
 [private]
 _svc-sim:
     #!/usr/bin/env bash
+    # Before `set -e`: the ROS/Autoware setup scripts env.sh sources are not
+    # errexit-safe. Without it this ran with no Autoware on AMENT_PREFIX_PATH
+    # whenever direnv had not, and died on "Package 'autoware_launch' not found".
+    source scripts/env.sh
     set -e
     PL="$(command -v {{PLAY_LAUNCH}})"
     export DISPLAY="${DISPLAY:-{{VNC_DISPLAY}}}"
@@ -594,6 +671,9 @@ _island-image-check target:
 [private]
 _svc-island target="zephyr":
     #!/usr/bin/env bash
+    # The island joins Autoware on the demo's domain and Cyclone config, which
+    # env.sh sets (before `set -e`, see _svc-sim).
+    source scripts/env.sh
     set -e
     ps -o pgid= -p $$ | tr -d ' ' > demo/.island.pgid
     if [ "{{target}}" = "zephyr" ]; then
@@ -627,6 +707,10 @@ demo:
 # The raw sequence, no readiness gating (env from .envrc).
 [private]
 _scenario:
+    #!/usr/bin/env bash
+    # rclpy, the overlay's message packages, the RMW and the domain all come
+    # from env.sh.
+    source scripts/env.sh
     exec python3 demo/scenario_driver.py
 
 # ── All of it, one command ──────────────────────────────────────────────────
