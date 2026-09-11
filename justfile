@@ -290,7 +290,29 @@ board-setup: (_zephyr-provision "4.4")
     if ! grep -q 'trailing_match' "$ISLAND_ZEPHYR_WS/zephyr/scripts/build/gen_relocate_app.py"; then
         git -C "$ISLAND_ZEPHYR_WS/zephyr" apply {{justfile_directory()}}/patches/zephyr/*.patch
     fi
+    # hal_nxp — this board's vendor HAL. nano-ros's 4.4 allowlist omits it on
+    # purpose and names this tree as the downstream that re-enables it; see the
+    # long note in `board-build` for why we name the module there rather than
+    # re-rooting the west manifest. west therefore never fetches it, so fetch it
+    # here, pinned to what THIS Zephyr asks for (its own west.yml entry) rather
+    # than a revision of our choosing.
+    hal_nxp="$ISLAND_ZEPHYR_WS/modules/hal/nxp"
+    rev="$(awk '/^    - name: hal_nxp$/{f=1;next} f&&/revision:/{print $2;exit}' \
+        "$ISLAND_ZEPHYR_WS/zephyr/west.yml")"
+    if [ -z "$rev" ]; then
+        echo "board-setup: no hal_nxp revision in $ISLAND_ZEPHYR_WS/zephyr/west.yml" >&2
+        exit 1
+    fi
+    if [ ! -d "$hal_nxp/.git" ]; then
+        echo "[board-setup] fetching hal_nxp @ $rev (~1.3 GB, the index's approx_mb)"
+        git clone --filter=blob:none https://github.com/zephyrproject-rtos/hal_nxp "$hal_nxp"
+    fi
+    if [ "$(git -C "$hal_nxp" rev-parse HEAD)" != "$rev" ]; then
+        git -C "$hal_nxp" fetch origin "$rev"
+        git -C "$hal_nxp" checkout --detach "$rev"
+    fi
     echo "workspace: $ISLAND_ZEPHYR_WS"
+    echo "hal_nxp:   $hal_nxp @ $rev"
     echo "sdk:       $ZEPHYR_SDK_INSTALL_DIR"
 
 # One-time: provision the Zephyr 3.7 LTS workspace and SDK (native_sim) into ~/.nros.
@@ -475,9 +497,34 @@ board-build: sync
     mkdir -p "$(dirname "$caps")"
     "{{NANO_ROS_ROOT}}/packages/cli/target/release/nros" config show \
         --workspace "$PWD" --system {{BRINGUP}} --format cmake > "$caps"
+    # hal_nxp is NOT in nano-ros's west-4.4 allowlist, on purpose:
+    # `nros-sdk-index.toml` `[zephyr_module.hal_nxp]` says "no build in this
+    # repo needs `hal_nxp`; a downstream one does", and names US as that
+    # downstream. This board IS an NXP S32K344, and its board files include
+    #     #include <nxp/s32/S32K344-172MQFP-pinctrl.h>
+    # which ships in the module's `dts/`. Unregistered, west never lists the
+    # module, Zephyr never puts that `dts/` on the devicetree include path, and
+    # the build dies in devicetree preprocessing with "No such file or
+    # directory" -- with the header sitting on disk the whole time, because
+    # FETCHED and REGISTERED AS A ZEPHYR MODULE are different things.
+    #
+    # The index suggests a downstream manifest that `import:`s nano-ros's. We
+    # do not take that route: nano-ros is already IN this workspace as the
+    # manifest repo (a symlink to our own submodule), so re-rooting the
+    # manifest would clone a SECOND nano-ros at whatever `revision:` we wrote,
+    # free to drift from the submodule pin this tree actually builds. Naming
+    # the module directly keeps one nano-ros and one pin.
+    hal_nxp="$ISLAND_ZEPHYR_WS/modules/hal/nxp"
+    if [ ! -d "$hal_nxp" ]; then
+        echo "board-build: hal_nxp is not in the workspace ($hal_nxp)" >&2
+        echo "board-build:   provision it: just board-setup" >&2
+        exit 1
+    fi
+
     west build -b {{BOARD}} -S {{BOARD_RMW}} -S {{BOARD_LINK}} -d {{BOARD_BUILD_DIR}} $PWD/src/zephyr_entry -- \
         -C "$caps" \
         -Dnano_ros_ROOT={{NANO_ROS_ROOT}} \
+        -DZEPHYR_EXTRA_MODULES="$hal_nxp" \
         -DCMAKE_PREFIX_PATH={{NANO_ROS_ROOT}} "${EXTRA[@]}"
 
     # A DERIVED value being right is not the question; whether it ARRIVED is.
