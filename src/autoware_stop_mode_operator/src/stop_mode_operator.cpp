@@ -39,7 +39,7 @@ namespace autoware::stop_mode_operator
 {
 
 StopModeOperator::StopModeOperator(::nros::NodeHandle handle)
-: ::nros::ComponentNode(handle, "stop_mode_operator")
+: ::nros::NodeWithTimers<1>(handle, "stop_mode_operator")
 {
   current_steering_ = {};
   current_steering_.steering_tire_angle = 0.0f;
@@ -56,12 +56,12 @@ StopModeOperator::StopModeOperator(::nros::NodeHandle handle)
   // Resolved contract names (porting-notes 07). Upstream remaps these into
   // the control_command_gate "stop" source; without the gate on-island they
   // publish under /system/stop_mode/ (gate port is a stretch goal).
-  pub_control_ = create_publisher<Control>("/system/stop_mode/control", control_qos);
-  pub_gear_ = create_publisher<GearCommand>("/system/stop_mode/gear", durable_qos);
+  pub_control_ = create_publisher_in<Control>("/system/stop_mode/control", control_qos);
+  pub_gear_ = create_publisher_in<GearCommand>("/system/stop_mode/gear", durable_qos);
   pub_turn_indicators_ =
-    create_publisher<TurnIndicatorsCommand>("/system/stop_mode/turn_indicators", durable_qos);
+    create_publisher_in<TurnIndicatorsCommand>("/system/stop_mode/turn_indicators", durable_qos);
   pub_hazard_lights_ =
-    create_publisher<HazardLightsCommand>("/system/stop_mode/hazard_lights", durable_qos);
+    create_publisher_in<HazardLightsCommand>("/system/stop_mode/hazard_lights", durable_qos);
 
   NROS_SUBSCRIBE(SteeringReport, on_steering, "/vehicle/status/steering_status", ::nros::QoS(1));
   NROS_SUBSCRIBE(VelocityReport, on_velocity, "/vehicle/status/velocity_status", ::nros::QoS(1));
