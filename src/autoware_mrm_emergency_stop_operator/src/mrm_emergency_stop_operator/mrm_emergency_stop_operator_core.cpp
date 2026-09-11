@@ -44,7 +44,7 @@ namespace autoware::mrm_emergency_stop_operator
 {
 
 MrmEmergencyStopOperator::MrmEmergencyStopOperator(::nros::NodeHandle handle)
-: ::nros::ComponentNode(handle, "mrm_emergency_stop_operator")
+: ::nros::NodeWithTimers<1>(handle, "mrm_emergency_stop_operator")
 {
   // Parameter
   // nano-ros port: upstream declares these without defaults (values injected
@@ -66,13 +66,13 @@ MrmEmergencyStopOperator::MrmEmergencyStopOperator(::nros::NodeHandle handle)
   //   ~/input/mrm/emergency_stop/operate → /system/mrm/emergency_stop/operate
   ::nros::bind_service<OperateMrm, MrmEmergencyStopOperator,
                        &MrmEmergencyStopOperator::operateEmergencyStop>(
-    node(), "/system/mrm/emergency_stop/operate", this);
+    *this, "/system/mrm/emergency_stop/operate", this);
 
   // Publisher
   //   ~/output/mrm/emergency_stop/status      → /system/mrm/emergency_stop/status
   //   ~/output/mrm/emergency_stop/control_cmd → /system/emergency/control_cmd
-  pub_status_ = create_publisher<MrmBehaviorStatus>("/system/mrm/emergency_stop/status");
-  pub_control_cmd_ = create_publisher<Control>("/system/emergency/control_cmd");
+  pub_status_ = create_publisher_in<MrmBehaviorStatus>("/system/mrm/emergency_stop/status");
+  pub_control_cmd_ = create_publisher_in<Control>("/system/emergency/control_cmd");
 
   // Timer
   NROS_CREATE_WALL_TIMER(static_cast<uint64_t>(1000 / params_.update_rate), onTimer);
