@@ -33,7 +33,7 @@ namespace autoware::mrm_comfortable_stop_operator
 {
 
 MrmComfortableStopOperator::MrmComfortableStopOperator(::nros::NodeHandle handle)
-: ::nros::ComponentNode(handle, "mrm_comfortable_stop_operator")
+: ::nros::NodeWithTimers<1>(handle, "mrm_comfortable_stop_operator")
 {
   // Parameter — upstream config/mrm_comfortable_stop_operator.param.yaml
   // values as node-local defaults (porting-notes 06).
@@ -46,19 +46,19 @@ MrmComfortableStopOperator::MrmComfortableStopOperator(::nros::NodeHandle handle
   //   ~/input/mrm/comfortable_stop/operate → /system/mrm/comfortable_stop/operate
   ::nros::bind_service<tier4_system_msgs::srv::OperateMrm, MrmComfortableStopOperator,
                        &MrmComfortableStopOperator::operateComfortableStop>(
-    node(), "/system/mrm/comfortable_stop/operate", this);
+    *this, "/system/mrm/comfortable_stop/operate", this);
 
   // Publisher
   //   ~/output/mrm/comfortable_stop/status → /system/mrm/comfortable_stop/status
   //   ~/output/velocity_limit              → /planning/scenario_planning/max_velocity_candidates
   //   ~/output/velocity_limit/clear        → /planning/scenario_planning/clear_velocity_limit
-  pub_status_ = create_publisher<tier4_system_msgs::msg::MrmBehaviorStatus>(
+  pub_status_ = create_publisher_in<tier4_system_msgs::msg::MrmBehaviorStatus>(
     "/system/mrm/comfortable_stop/status");
-  pub_velocity_limit_ = create_publisher<autoware_internal_planning_msgs::msg::VelocityLimit>(
+  pub_velocity_limit_ = create_publisher_in<autoware_internal_planning_msgs::msg::VelocityLimit>(
     "/planning/scenario_planning/max_velocity_candidates",
     ::nros::QoS(1).transient_local());
   pub_velocity_limit_clear_command_ =
-    create_publisher<autoware_internal_planning_msgs::msg::VelocityLimitClearCommand>(
+    create_publisher_in<autoware_internal_planning_msgs::msg::VelocityLimitClearCommand>(
       "/planning/scenario_planning/clear_velocity_limit",
       ::nros::QoS(1).transient_local());
 
