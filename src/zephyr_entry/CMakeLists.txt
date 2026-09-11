@@ -76,18 +76,25 @@ zephyr_compile_definitions(
     NROS_ZEPHYR_TIER_STACK_SIZE=4096
     NROS_ZEPHYR_MAX_THREADS=4)
 
-# Per-node parameter pool sizing (nano-ros issue 0316 — an unknobbed pool).
-# `ComponentNode` embeds `ParameterServer<NROS_COMPONENT_MAX_PARAMS, ...>` by
-# value, so the default 256 scalar slots cost ~51 KiB of .bss PER NODE — 205 KiB
-# across the island's four, on a part with 320 KiB of SRAM total. The busiest
-# node (mrm_handler) declares 11 scalar parameters and none of the four declares
-# a sequence parameter, so 16 slots leaves better than 45% headroom.
-# Only overridable as a compile definition: the header guards each with #ifndef
-# and nothing in CMake/Kconfig/env feeds them.
-add_compile_definitions(
-    NROS_COMPONENT_MAX_PARAMS=16
-    NROS_COMPONENT_MAX_SEQ_PARAMS=2
-    NROS_COMPONENT_SEQ_POOL_BYTES=512)
+# Parameter pool sizing -- STALE SINCE nano-ros 1f3b88aec (phase-427 W4).
+#
+# This used to size an unknobbed pool (nano-ros issue 0316): `ComponentNode`
+# embedded a `ParameterServer<NROS_COMPONENT_MAX_PARAMS, ...>` by value, so the
+# default 256 scalar slots cost ~51 KiB of .bss PER NODE, and the three
+# `add_compile_definitions` below were the only way to shrink it (the header
+# guarded each with #ifndef; nothing in CMake/Kconfig/env fed them otherwise).
+#
+# `ComponentNode` is gone, and with it that embed. `NROS_COMPONENT_MAX_PARAMS`,
+# `NROS_COMPONENT_MAX_SEQ_PARAMS` and `NROS_COMPONENT_SEQ_POOL_BYTES` are not
+# read by any nano-ros header any more -- the three lines this comment used to
+# introduce are inert now, which is why they are gone too. Parameters live in
+# ONE store the EXECUTOR owns (shared across every node on it, so `ros2 param
+# get` and a sibling node both see what one node declared), sized by the
+# Rust-side `NROS_MAX_PARAMETERS` knob (crate default 32) -- on Zephyr that is
+# `CONFIG_NROS_MAX_PARAMETERS` in prj.conf, `-1` (derive from the system
+# contract's declared `params:`) by Kconfig default, falling to the crate
+# default where the contract declares none. Sizing that pool for this entry's
+# four nodes is unstarted; it is not a compile definition here any more.
 
 # Interface union first (one superset FFI archive — nano-ros #253), then the
 # node component libs the model names.
