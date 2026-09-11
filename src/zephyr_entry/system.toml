@@ -1,0 +1,26 @@
+# What this entry deploys to (nano-ros RFC-0098 D3/D5, phase-445 W3).
+#
+# It replaces the `package.xml` `<nano_ros deploy= board= rmw=/>` element,
+# which nano-ros retired: both readers (`find_package(nano_ros)` through
+# `nros ws leaf-system`, and cargo-nano-ros) now refuse that element rather
+# than ignore a board selection the author believes is in force.
+#
+# The TOPOLOGY is not here. This package is an entry: its components, launch
+# and contract live in safety_island_bringup, whose own system.toml the entry
+# names with `BRINGUP ../safety_island_bringup`. This file states only where
+# THIS image is built for.
+#
+# On Zephyr the RMW actually linked is still chosen by the Kconfig overlay
+# (prj-cyclonedds.conf); Kconfig stays the Zephyr front end. The `rmw` here
+# names the same choice for the readers that need it before Kconfig runs.
+
+[system]
+name = "safety_island_zephyr_entry"
+rmw = "cyclonedds"
+domain_id = 2                       # island domain, as in the bringup
+
+# The Zephyr family. The concrete board (native_sim, or the MR-CANHUBK344 the
+# board-* recipes pass) is west's `-b` argument, resolved through nano-ros's
+# board catalog.
+[image.zephyr]
+board = "zephyr"

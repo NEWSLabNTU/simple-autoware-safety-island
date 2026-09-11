@@ -8,6 +8,8 @@
   <exec_depend>safety_island_bringup</exec_depend>
   <export>
     <build_type>cmake</build_type>
-    <nano_ros deploy="zephyr" rmw="cyclonedds"/>
+    <!-- The deployment (board, rmw, domain) is in system.toml beside this
+         file: nano-ros retired the <nano_ros deploy= board= rmw=/> element
+         (RFC-0098 D3/D5, phase-445) and both readers now refuse it. -->
   </export>
 </package>
