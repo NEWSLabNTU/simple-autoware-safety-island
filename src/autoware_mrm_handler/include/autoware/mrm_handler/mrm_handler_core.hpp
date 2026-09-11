@@ -29,9 +29,16 @@
 
 #include <nav_msgs/msg/odometry.hpp>
 
-// nano-ros port: <rclcpp/rclcpp.hpp> → nros::ComponentNode (porting-notes 01).
+// nano-ros port: <rclcpp/rclcpp.hpp> -> nros::Node (porting-notes 01). A
+// component IS-A node since nano-ros 1f3b88aec; the timer pool is the base's
+// template argument, so a node with one timer derives NodeWithTimers<1>.
 #include <nros/component.hpp>
-#include <nros/component_node.hpp>
+// component_node.hpp used to pull this in; component.hpp does not, and the
+// nros::Publisher<M> members below plus create_publisher_in need it complete.
+#include <nros/publisher.hpp>
+// The freestanding parameter forwarders the declare_parameter helper below
+// calls (nros::Node hosts the same facade, but only under NROS_CPP_STD).
+#include <nros/node_parameters.hpp>
 
 namespace autoware::mrm_handler
 {
@@ -61,12 +68,39 @@ struct Param
   TurnIndicatorPolicy turning_indicator_on{};
 };
 
-class MrmHandler : public ::nros::ComponentNode
+class MrmHandler : public ::nros::NodeWithTimers<1>
 {
 public:
   explicit MrmHandler(::nros::NodeHandle handle);
 
 private:
+
+  // nano-ros port: the parameter facade `ComponentNode` carried unconditionally
+  // now lives on `nros::Node` behind NROS_CPP_NODE_HOSTED, which nano-ros
+  // phase-438 W2 made an opt-in (`NROS_CPP_STD`) this node cannot take: the
+  // same sources build for Zephyr, whose minimal libcpp has no <memory> /
+  // <string> / <vector>. Same shape, same store -- the freestanding forwarders
+  // onto the executor's parameter server, which is what the retired facade
+  // called too.
+  template <typename T>
+  T declare_parameter(const char * name, T default_value = T{})
+  {
+    const nros_cpp_node_t * h = ffi_handle();
+    const ::nros::Result r = ::nros::detail::node_param_declare(h, name, default_value);
+    // A launch-seeded parameter is declared before this ctor runs, so a
+    // re-declare adopts the override instead of failing.
+    if (!r.ok() && r.code() != ::nros::ErrorCode::AlreadyExists) {
+      set_error("declare_parameter", r.raw());
+      return default_value;
+    }
+    T out{};
+    const ::nros::Result g = ::nros::detail::node_param_get(h, name, out);
+    if (!g.ok()) {
+      set_error("declare_parameter(read-back)", g.raw());
+      return default_value;
+    }
+    return out;
+  }
   // type
   enum RequestType { CALL, CANCEL };
 

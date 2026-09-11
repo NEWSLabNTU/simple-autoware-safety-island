@@ -60,7 +60,8 @@ const char * state2string(const int state)
 namespace autoware::mrm_handler
 {
 
-MrmHandler::MrmHandler(::nros::NodeHandle handle) : ::nros::ComponentNode(handle, "mrm_handler")
+MrmHandler::MrmHandler(::nros::NodeHandle handle)
+: ::nros::NodeWithTimers<1>(handle, "mrm_handler")
 {
   ::setvbuf(stdout, nullptr, _IONBF, 0);
 
@@ -98,30 +99,30 @@ MrmHandler::MrmHandler(::nros::NodeHandle handle) : ::nros::ComponentNode(handle
   // transient_local: the topic is latched at source; a volatile sub misses
   // the current mode on late join -> handler stuck "emergency" (deadlocks
   // engage once mrm_state is honestly bridged back to Autoware).
-  create_subscription<autoware_adapi_v1_msgs::msg::OperationModeState, MrmHandler,
-                      &MrmHandler::onOperationModeState>(
+  create_subscription_in<autoware_adapi_v1_msgs::msg::OperationModeState, MrmHandler,
+                         &MrmHandler::onOperationModeState>(
     "/api/operation_mode/state", ::nros::QoS(1).transient_local());
   NROS_SUBSCRIBE(autoware_vehicle_msgs::msg::GearCommand, onGearCmd, "/control/command/gear_cmd", ::nros::QoS(1));
 
   // Publisher
-  pub_turn_indicator_cmd_ = create_publisher<autoware_vehicle_msgs::msg::TurnIndicatorsCommand>(
+  pub_turn_indicator_cmd_ = create_publisher_in<autoware_vehicle_msgs::msg::TurnIndicatorsCommand>(
     "/system/emergency/turn_indicators_cmd");
-  pub_hazard_cmd_ = create_publisher<autoware_vehicle_msgs::msg::HazardLightsCommand>(
+  pub_hazard_cmd_ = create_publisher_in<autoware_vehicle_msgs::msg::HazardLightsCommand>(
     "/system/emergency/hazard_lights_cmd");
   pub_gear_cmd_ =
-    create_publisher<autoware_vehicle_msgs::msg::GearCommand>("/system/emergency/gear_cmd");
+    create_publisher_in<autoware_vehicle_msgs::msg::GearCommand>("/system/emergency/gear_cmd");
   pub_mrm_state_ =
-    create_publisher<autoware_adapi_v1_msgs::msg::MrmState>("/system/fail_safe/mrm_state");
-  pub_emergency_holding_ = create_publisher<tier4_system_msgs::msg::EmergencyHoldingState>(
+    create_publisher_in<autoware_adapi_v1_msgs::msg::MrmState>("/system/fail_safe/mrm_state");
+  pub_emergency_holding_ = create_publisher_in<tier4_system_msgs::msg::EmergencyHoldingState>(
     "/system/fail_safe/emergency_holding");
 
   // Clients — POLL model (porting-notes 14). Callback groups dropped (single
   // executor); pull_over client dropped (no on-island operator).
   ::nros::create_service_client_raw(
-    node(), client_mrm_comfortable_stop_.bytes, "/system/mrm/comfortable_stop/operate",
+    *this, client_mrm_comfortable_stop_.bytes, "/system/mrm/comfortable_stop/operate",
     tier4_system_msgs::srv::OperateMrm::TYPE_NAME);
   ::nros::create_service_client_raw(
-    node(), client_mrm_emergency_stop_.bytes, "/system/mrm/emergency_stop/operate",
+    *this, client_mrm_emergency_stop_.bytes, "/system/mrm/emergency_stop/operate",
     tier4_system_msgs::srv::OperateMrm::TYPE_NAME);
 
   // Initialize
