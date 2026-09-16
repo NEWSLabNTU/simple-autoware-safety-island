@@ -4,15 +4,16 @@ What the MR-CANHUBK344 image actually contains: which nodes run, where every
 byte of RAM goes, and which parts of the launch contract reach the operating
 system.
 
+The hardware is in section 0; the software provenance is:
+
 | | |
 | --- | --- |
-| Board | MR-CANHUBK344, NXP S32K344, Cortex-M7 r1p2, v7.0-M |
 | Zephyr board string | `mr_canhubk3/s32k344` |
 | Zephyr | 4.4.0, SDK 1.0.1 (`arm-zephyr-eabi` 14.3.0) |
 | RMW | zenoh (`-S nros-zenoh`), serial link (`-S island-serial`) |
 | nano-ros pin | `f8655e9b7` |
 | Island commits | `07ffdb7`, `20bc6d9`, `368b766` |
-| Status | configures, compiles and links; **over RAM budget with the parameter server on** |
+| Status | configures, compiles and links; **over RAM budget by 61,608 B with the parameter server on** |
 
 The same four nodes and the same contract also build for `native_sim` over
 CycloneDDS, and that image is verified end to end:
@@ -21,6 +22,75 @@ vehicle resumed (1.43 m/s)`, with `MrmState` reaching `state=2 behavior=2`
 (EMERGENCY_STOP) and returning to NORMAL. Nothing below has run on silicon; the
 board is blocked on the MCU-Link probe, so every board number here is from the
 linker and the map file, not from a running target.
+
+---
+
+## 0. The hardware
+
+NXP **S32K344**, Cortex-M7 r1p2, ARMv7E-M, **160 MHz**, on an
+**MR-CANHUBK344** board. DAP IDCODE `0x6ba02477`. Everything in this section was
+measured on the board in this repo except where marked; several things "known"
+from documentation turned out to have exceptions only the silicon showed.
+
+### Memory
+
+Read from the device with `pyocd cmd -c "show map"`:
+
+| region | start | end | size | access | sector |
+| --- | --- | --- | ---: | --- | --- |
+| `itcm` | `0x00000000` | `0x0000ffff` | 64 KiB | rwx | -- |
+| `pflash` | `0x00400000` | `0x007fffff` | **4 MiB** | rx | 8 KiB |
+| `dflash` | `0x10000000` | `0x1001ffff` | 128 KiB | rx | 8 KiB |
+| `dtcm` | `0x20000000` | `0x2001ffff` | 128 KiB | rwx | -- |
+| `sram` | `0x20400000` | `0x2044ffff` | **320 KiB** | rwx | -- |
+
+**320 KiB of SRAM is the binding constraint for everything on this board.** The
+4 MiB of flash is barely touched -- this image uses 14% of it. Both TCMs are
+zero-wait-state and private to the CPU, which is what makes them useful for
+determinism and useless for DMA.
+
+Two flash caveats worth carrying: the top 48 KiB of pflash
+(`0x007F4000`-`0x007FFFFF`) faults on read, bisected to 8 KiB granularity, so a
+flash backup taken from this board does not contain it; and a single 4 MiB
+`savemem` fails even across the readable range, so dumps must be chunked at
+512 KiB or less.
+
+### CPU
+
+```
+CPU core #0: Cortex-M7 r1p2, v7.0-M architecture
+  Extensions: [DSP, FPU, FPU_V5, MPU]
+```
+
+| feature | present |
+| --- | --- |
+| ARMv7E-M DSP / 32-bit SIMD | yes -- `uadd8`, `smlad`, `qadd16` all emit |
+| FPU FPv5, single and double | yes -- `vfma.f32` and `vfma.f64` emit |
+| I-cache and D-cache | yes, both enabled, 32 B lines |
+| NEON | **no** |
+| Helium / MVE | **no** (Cortex-M55/M85 only) |
+| GPU, VPU, ISP, camera interface | **no** |
+
+The DSP extension is real but **32 bits wide** -- 4 x 8-bit or 2 x 16-bit lanes
+per instruction, against NEON's 16 bytes. It suits control-loop filtering, CRC
+and small FFTs. It does not make this part a vision processor: a decoded 1080p
+frame is 6.2 MB against 320 KiB of SRAM, **19x short**, and even a compressed
+1080p JPEG exceeds total SRAM.
+
+### Connectivity
+
+Six CAN interfaces, confirmed on the running factory image. Ethernet is
+**100 Mbit** for two independent reasons: the PHY is a TJA1103 (100BASE-T1,
+single-pair automotive), and `FEATURE_GMAC_RGMII_EN = 0` for the S32K344 in the
+NXP HAL, so the MAC-to-PHY bus is MII/RMII and caps at 100 Mbit regardless of
+the PHY.
+
+The P6 "DCD-LZ" JST-GH connector carries **SWD and the console UART combined** --
+the MCU-Link probe and the console cable both live there, and the probe is
+single-access, so a second pyocd command during a dump gets
+`Unable to claim interface`.
+
+This deployment links over serial (`-S island-serial`), not Ethernet.
 
 ---
 
@@ -329,18 +399,9 @@ largest message a node can receive. Zero-copy eligibility is computed as a
 
 ## 5. Memory layout
 
-### Regions
-
-| region | start | end | size | notes |
-| --- | --- | --- | ---: | --- |
-| `itcm` | `0x00000000` | `0x0000ffff` | 64 KiB | zero-wait, CPU only, no DMA |
-| `pflash` | `0x00400000` | `0x007fffff` | 4 MiB | top 48 KiB faults on read |
-| `dflash` | `0x10000000` | `0x1001ffff` | 128 KiB | unused by this image |
-| `dtcm` | `0x20000000` | `0x2001ffff` | 128 KiB | zero-wait, CPU only, no DMA |
-| `sram` | `0x20400000` | `0x2044ffff` | **320 KiB** | the binding constraint |
-
-320 KiB of SRAM is what everything competes for. The 4 MiB of flash is barely
-touched (14% used).
+The regions are in section 0. What matters here is that of the five, this image
+uses three: SRAM for everything by default, DTCM and ITCM for what is moved
+into them deliberately, and `dflash` not at all.
 
 ### What is relocated, and why
 
