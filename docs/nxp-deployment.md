@@ -403,6 +403,76 @@ The regions are in section 0. What matters here is that of the five, this image
 uses three: SRAM for everything by default, DTCM and ITCM for what is moved
 into them deliberately, and `dflash` not at all.
 
+### The image's memory map
+
+Laid out by address, from the map file of the real derived configuration:
+
+```
+RAM   0x20400000  datas       3,448   initialised data, copied from flash at boot
+      0x20400ef0  bss       310,811   zero-filled at boot
+      0x2044cd10  noinit     74,648   stacks and heaps, not touched at boot
+      0x2045f0a8  end
+                          ---------
+                            389,288   needed
+                            327,680   available        OVER BY 61,608
+
+DTCM  0x20000000  .dtcm_bss_reloc   83,216 of 131,072    63.5%
+ITCM  0x00000000  .itcm_text_reloc  13,052 of  65,536    19.9%
+FLASH 0x00400100  text + rodata    582,020 of 4,144,896  14.0%
+```
+
+Seventeen symbols account for 97% of that RAM. Grouped by what owns them:
+
+| owner | bytes | what |
+| --- | ---: | --- |
+| **RMW (zenoh)** | **196,112** | |
+| | 115,128 | service inbox table -- 26 queryables x 4,428 |
+| | 38,720 | subscriber slots -- 11 x 3,520 |
+| | 24,992 | zenoh-pico session pool |
+| | 11,264 | cffi subscription-handle registry |
+| | 3,584 | message info table |
+| | 2,424 | subscriber auxiliary state |
+| **Heap** | **95,928** | 94,208 arena + 1,720 TLSF metadata and slab |
+| **Stacks** | **63,488** | |
+| | 40,960 | nano-ros task stacks -- 5 slots x 8,192 |
+| | 16,384 | Zephyr `main` |
+| | 4,096 | system work queue |
+| | 2,048 | interrupt stacks |
+| **Kernel heap** | **8,268** | `CONFIG_HEAP_MEM_POOL_SIZE`, still present -- see section 6 |
+| **Other** | **12,168** | POSIX thread pool 5,120; three action stashes 4,488; shell 2,560 |
+
+The remaining ~11.6 KiB is spread across many small symbols, plus section
+alignment.
+
+### What is NOT in the map
+
+**The executor arena.** It is the largest single allocation in the image and it
+never appears as a symbol, because it is carved out of the TLSF heap at runtime
+rather than reserved in `.bss`. `CONFIG_NROS_EXECUTOR_ARENA_SIZE=0` means
+derive, and the derivation sizes it from the *subscribed* bound and the declared
+depths:
+
+```
+buffered_region(depth=1, bound=880)  =  3 x 880          (triple buffer)
+pubsub_entry                          =  region + 1024
+```
+
+At the delivered `NROS_SUBSCRIBER_BUFFER_SIZE=880` that lands near 46 KiB; at
+the stale 1496 it was 70,296, and this tree has shipped the latter by accident.
+Because the arena comes out of the heap, cmake gates the two against each other
+at configure time -- `arena + 24576 <= NROS_ZEPHYR_HEAP_SIZE` -- which at
+94,208 leaves roughly 23 KiB of margin over the current arena.
+
+That relationship is the one to hold onto: **the heap number is not free space,
+it is mostly the arena.** Raising a buffer bound raises the arena, which eats
+heap, which the gate then refuses rather than letting it fail at first
+allocation.
+
+**The parameter store.** Sized by `NROS_MAX_PARAMETERS=25` and owned by the
+executor, not embedded per node. It does not appear as a large symbol, and the
+A/B in section 8 shows varying its sizing moves the image by 0 bytes -- the
+parameter cost is entirely in the 24 service queryables above, not in the store.
+
 ### What is relocated, and why
 
 `src/zephyr_entry/CMakeLists.txt`:
@@ -433,22 +503,9 @@ match it writes an empty fragment, prints nothing, and exits 0. Without the
 patch these lines link fine and relocate nothing. **Verify by the region
 report, never by the build succeeding.**
 
-### Where the RAM goes
+### Every figure traces to a stated knob
 
-Largest consumers, from `zephyr_pre0.map` of the real derived configuration:
 
-| bytes | symbol | what it is |
-| ---: | --- | --- |
-| 115,128 | `nros_rmw_zenoh::shim::service::SE...` | service inbox table, 26 x 4,428 |
-| 95,928 | `nros_platform::zephyr_heap::HEAP` | nano-ros heap |
-| 40,960 | `nros_thread_stacks` | task stacks (noinit) |
-| 38,720 | `nros_rmw_zenoh::shim::subscriber...` | subscriber slots, 11 x 3,520 |
-| 24,992 | `g_sessions` | zenoh-pico session pool |
-| 16,384 | `z_main_stack` | Zephyr main (noinit) |
-| 11,264 | `nros_rmw_cffi::rust_adapter::st...` | cffi adapter state |
-| 8,268 | `kheap__system_heap` | Zephyr system heap (noinit) |
-
-Every one of those traces to a stated knob:
 
 ```
 nros_thread_stacks  40,960 = TASK_SLOTS 5 x TASK_STACK_SIZE 8192   exact
