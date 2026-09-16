@@ -124,7 +124,210 @@ line that ties the first block together.
 
 ---
 
-## 3. Memory layout
+## 3. Exactly-sized buffers: one derivation, many backends
+
+Two questions get asked of the message types, and they have different answers.
+Confusing them is worth tens of kilobytes here.
+
+| basis | knob | this island | what it means |
+| --- | --- | ---: | --- |
+| `closure` | `NROS_SUBSCRIPTION_BUFFER_SIZE` | **1496** | every type the image LINKS |
+| `subscribed` | `NROS_SUBSCRIBER_BUFFER_SIZE` | **880** | every type the image RECEIVES |
+
+The closure basis is not over-caution: that number becomes the default receive
+*and* transmit buffer for raw subscriptions, service servers and clients, and
+action cores. A type this image only publishes still has to fit.
+
+The subscribed basis sizes the executor arena and the zenoh payload class,
+where paying for types you never receive is pure waste. On this island the gap
+is the dominant term, not a rounding error -- one `std_msgs/Float64MultiArray`,
+linked and never received, sets the closure number for the whole image.
+
+### The layering rule
+
+A knob is RMW-agnostic if it states a fact about the image; it is
+backend-specific if it states how a backend spells that fact. The derivation
+happens once, then lowers:
+
+```
+NROS_MAX_SUBSCRIBERS  ->  ZPICO_MAX_SUBSCRIBERS, NROS_XRCE_MAX_SUBSCRIBERS
+NROS_MAX_QUERYABLES   ->  ZPICO_MAX_QUERYABLES,  NROS_XRCE_MAX_SERVICE_SERVERS
+NROS_MAX_LIVELINESS   ->  ZPICO_MAX_LIVELINESS
+```
+
+The rule is stated where it bites, in backend-agnostic core code: a crate that
+is not a backend **may not read a backend-prefixed name**. `nros-node` used to
+read `ZPICO_SUBSCRIBER_BUFFER_SIZE`; the fix was to rename the knob rather than
+let the core crate keep reading a zenoh name, and the old spelling is recorded
+as dead.
+
+Floors, unlike derivations, are per-consumer and deliberately so: the same
+derived number reaches the XRCE knobs where a zero is a meaningful answer worth
+tens of kilobytes of heap, and reaches zenoh where it is not. **One derivation,
+two consumers, two different legal minima.**
+
+### QoS depth is a multiplier, not a size
+
+The contract's `qos: { depth: 1 }` never enters a buffer size. It multiplies the
+arena:
+
+```
+buffered_region(depth, bound) = (depth + 1) * bound + (depth + 1) * 8
+```
+
+Measured on this island across ten subscriptions: **86,108 bytes at the ROS
+default depth 10, 24,516 at depth 1.** Every one of the island's eleven
+subscriptions declares depth 1, which is why the arena is affordable at all.
+
+A subscription that declares no depth is not an error -- it is an image that has
+not opted in, and the arena then *refuses* to derive rather than guessing. Ten
+inflates tenfold and one under-sizes, so neither is a safe default.
+
+The declared depth is also checked against the code: codegen emits the contract
+QoS into a generated header and the subscribe macro static-asserts against it,
+so a contract that disagrees with the source is a build error naming the topic
+and both numbers.
+
+### The precedence ladder
+
+Every derivable knob resolves through one function, against a `-1` sentinel
+that means "the image chose nothing" -- distinct from `0`, which for some knobs
+is a meaningful claim:
+
+```
+1. an explicit environment value         -- a person, right now
+2. a Kconfig / board .conf value         -- a person, in the tree
+3. the value derived from the inventory  -- the build
+4. the crate's own default               -- nobody; the knob stays unset
+```
+
+**A derived value is a DEFAULT, never an override.** Rung 4 is a deliberate
+no-op: the knob is not resolved at all, so the cargo environment never carries
+it and the reading `build.rs` falls through to its own literal, which is the one
+place that literal is written.
+
+Gates keep the road honest. One checks each knob is resolved exactly once;
+another maps every derived fact to every resolved name it must reach, in both
+directions, because "a derived 880 delivered as 1496 for four consecutive island
+builds and nothing said so -- over-sized, therefore silent."
+
+That failure is not hypothetical here. A three-configure chain that ninja ran
+twice left this island linking at 1496 where 880 was correct, shipping a
+70,296-byte arena where 46,272 was right -- 24 KB on a 320 KB part. The island's
+own justfile now refuses to flash when the delivery check fails.
+
+---
+
+## 4. Message size bounds
+
+A bound is a pair of byte counts for one type, plus an honest third state:
+
+```rust
+enum BoundState {
+    Bounded { tx, rx },          // bytes, encapsulation header included
+    Unbounded { reason },        // no bound EXISTS
+    Unresolved { reason },       // the bound was not COMPUTED
+}
+```
+
+`tx` is XCDR1 exact, because this stack writes XCDR1. `rx` is
+`max(XCDR1, XCDR2)` rounded up to 4, because a buffer has to accept whatever
+arrives -- `rx >= tx` always. The two failure states are kept apart because "we
+looked and no bound exists" and "we could not look" license different fixes; the
+second is usually a search-path problem, not a property of the message.
+
+### Where bounds come from -- not the contract
+
+The `.msg` / `.idl` is authoritative and cannot be overridden: a bounded shape
+like `string<=64` has its own path and never consults configuration. A config
+cap can neither widen nor narrow it.
+
+Unbounded fields get their capacity from `nros-codegen.toml`, not from the
+contract, and that is deliberate. The island's own contract says why:
+capacities for a string or array would be **a board fact, never stated here**.
+This island sets blanket defaults:
+
+```toml
+[defaults]
+string   = { cap = 64, mode = "inline" }
+sequence = { cap = 16, element_cap = 64, mode = "inline" }
+```
+
+Only `inline` yields a bound. `heap` treats the cap as a hint and `view` aliases
+the receive buffer with no length check, so neither bounds anything.
+
+### An unbounded type refuses the build, loudly
+
+It does not warn and it does not silently pick a default. Codegen poisons the
+type's size constants with a token naming the type and the offending member, so
+the compiler says which field costs the bound rather than emitting "undeclared
+identifier". The C++ pack does it with a dependent static assert inside the
+size-bound template, so the error fires only when a size is actually asked for.
+
+The diagnostic names the fix: bound the field in the `.msg`, give it an inline
+cap, or pass an explicit byte count to size that one subscription by hand.
+
+Every offender is named in one build, not the first one found -- otherwise
+bounding a package costs one cap and one full codegen run per member.
+
+The image-wide derivation refuses the same way: **if any type in the closure is
+unbounded or unresolved, no class size is derived at all.** Deriving over the
+bounded subset would publish a maximum a real sample can exceed, which is the
+silent dropped-message this whole mechanism exists to prevent.
+
+### Why the walk cannot be a sum
+
+Padding is a function of where a field starts, so summing per-field maxima is
+wrong the moment a variable-length field shifts what follows. The walk threads
+the current alignment through and returns the size from there, which also makes
+nested structs compose with no special case.
+
+XCDR2 caps alignment at 4 and reserves a 4-byte header for every struct
+including nested ones, so **a message containing an `int64` has two different
+bounds** and one constant would be silently wrong for one encoding. The rules
+are read off the writer, not the spec, and the bounds are unit-tested against
+bytes the writer actually emitted.
+
+### Where 1496 comes from
+
+`std_msgs/msg/Float64MultiArray`, tied with the Int64 and UInt64 MultiArrays --
+all three linked, none subscribed:
+
+```
+MultiArrayDimension  4 encap + string(4+64+1 -> pad 76) + 2 x u32   =   84  tx
+                     + XCDR2 DHEADER                                     88  rx
+MultiArrayLayout     4 + (4 seq-len + 16 x 80) + 4 data_offset      = 1292  tx
+                                                                      1360  rx
+Float64MultiArray    4 + 1288 + 4 seq-len + pad + 16 x float64      = 1428  tx
+                                                                      1496  rx
+```
+
+That is the island's own `sequence.cap = 16` and `string.cap = 64` doing the
+work. The island's config calls these caps what they are: **a deployment
+assertion, not a measurement -- nothing here is subscribed, so nothing checks
+them at runtime.**
+
+The subscribed answer, 880, is `nav_msgs/msg/Odometry`: 8 stamp + 344 pose and
+covariance + 336 twist and covariance + two length-prefixed strings. Its two
+strings are the only fields this island caps *by name* rather than by blanket
+default.
+
+### What the bound is used for
+
+Implemented: the take buffer and its transmit alias; the executor arena via the
+subscribed size; the zenoh small and large payload classes, including how many
+subscribed types exceed the 2048 split (**zero**, on this island, which is why
+the large-payload pool is zero bytes).
+
+Not derived, and worth knowing: `NROS_FRAG_MAX_SIZE` is a plain Kconfig default
+of 2048 with no sentinel and no derivation, and **nothing compares it against
+the derived 1496** even though the tuning guide describes it as the limit on the
+largest message a node can receive. Zero-copy eligibility is computed as a
+`plain` flag on every bound and has no consumer -- that wave has not landed.
+
+---
+
+## 5. Memory layout
 
 ### Regions
 
@@ -198,7 +401,137 @@ subscriber table    38,720 = MAX_SUBSCRIBERS 11 x 3,520            exact
 
 ---
 
-## 4. The contract sizes the image; it does not schedule it
+## 6. The unified TLSF heap
+
+One static `.bss` arena behind one allocation funnel, serving both the vendored
+C RMW (zenoh-pico's `z_malloc`) and Rust's `#[global_allocator]`. The funnel is
+`nros_platform_alloc`; nano-ros phase-391 W3 repointed its Zephyr body off
+Zephyr's `k_malloc` / `sys_heap` onto an rlsf (Rust TLSF) arena.
+
+The phase states its own thesis as *"replace what sits behind the funnel, and
+make the property checkable"*.
+
+### Why TLSF: a worst-case bound, not a fragmentation one
+
+The predecessor was a first-fit, address-ordered free list. Its fragmentation
+behaviour was already good -- Robson (1977) showed first-fit is near-optimal --
+but it is **O(n)**, so it has no worst-case execution bound. That is the
+property a safety island needs and did not have.
+
+TLSF is O(1) for both allocate and free regardless of heap state, via two-level
+segregated free lists plus bitmaps and a `CLZ`, which is a single instruction on
+Cortex-M7. Internal fragmentation is bounded at `1/SLLEN`; with `SLLEN = 16`
+that is **6.25%**.
+
+The O(1) property is also load-bearing for a second reason: Zephyr is
+multi-threaded and the old free list was single-threaded by contract, so the C
+funnel wraps every call in a `k_spinlock`. O(1) is what keeps that critical
+section short and bounded.
+
+`o1heap` was rejected despite MISRA C:2012 conformance and a published
+worst-case formula, because it is single-level -- one bin per power of two, so
+worst-case internal fragmentation approaches 100%. UPV's tlsf was rejected on
+licence, mattconte's as unmaintained.
+
+### What "unified" merged
+
+| what was separate | merged by |
+| --- | --- |
+| zenoh-pico's C `z_malloc` vs Rust's `#[global_allocator]` | phase-230 / RFC-0034 D6-D7 |
+| a second `#[global_allocator]` in `nros-c`, letting a board bypass the funnel | phase-361 W8.c |
+| Zephyr's kernel `sys_heap` behind `nros_platform_alloc` | phase-391 W3 |
+
+There is no per-RMW pool in that list, and deliberately so -- see below.
+
+### Where the 95,928 bytes go
+
+The `.bss` symbol is `sizeof(FreeListHeap<94208, 18>)`, not just the arena:
+
+```
+arena    (CONFIG_NROS_ZEPHYR_HEAP_SIZE)          94,208
+slab     8 slots x 64 B                             512
+rlsf control  fl_bitmap 4 + [u16;18] 36
+              + [[Option<NonNull>;16];18] 1,152    1,192
+flags, stats counters, tail padding                   16
+                                                 --------
+                                                  95,928
+```
+
+That accounts for the 1,720 bytes over the stated knob exactly.
+
+### Payload buffers deliberately stay static
+
+This is the keystone, and it explains the shape of section 3's table. Robson's
+bound scales with the ratio of largest to smallest block, so a heap holding both
+20-byte key expressions and megabyte payloads has a punishing worst case. A heap
+that holds only *infrastructure* -- sessions, key expressions, Rust `String` and
+`Vec` churn -- has a narrow spread, and the bound is cheap to defend.
+
+The consequence is visible in this image: the 115,128 B service inbox table and
+the 38,720 B subscriber slots are static `.bss` symbols, and together they are
+larger than the heap itself.
+
+### What allocates, and when
+
+The executor arena is the largest single allocation and comes out of this heap
+in one piece, which is why cmake gates it at configure time:
+`NROS_EXECUTOR_ARENA_SIZE + 24576 <= NROS_ZEPHYR_HEAP_SIZE`, fatal if violated.
+The 24,576 is empirical, not derived -- treat it as a floor, not a formula.
+
+Beyond that: zenoh-pico sessions and key expressions (42 C call sites), its read
+and lease task structures, Rust `Box`/`Vec`/`String`, Zephyr sync primitives
+(`k_mutex`, `k_condvar`), the node runtime's registries, and the parameter
+services.
+
+**There is no boot-time-only rule and no "no allocation after init" guarantee.**
+Allocation is permitted at any time; what is guaranteed is that each one is
+O(1). zenoh-pico's tasks allocate concurrently with the application by design.
+
+Two tiers are defined and gated by `scripts/check-no-alloc-image.py`:
+`heap-free` (no allocation symbol links at all) and `unified` (allocation
+permitted, but only through the platform funnel). This image is `unified`.
+
+### Failure mode, and two gaps on this board
+
+Exhaustion is blunt: an application that outgrows the arena *stops*. Since
+phase-8 there is a diagnostic -- `nros: HEAP EXHAUSTED: request N bytes, arena N
+bytes, caller 0x...` with an `addr2line` hint, printed with `printk` rather than
+`LOG_*` because the logging subsystem may itself allocate and this is the path
+that just failed to allocate.
+
+Only **internal** fragmentation is bounded (the 6.25%). There is no external
+fragmentation bound computed or asserted anywhere in the tree; the narrow-spread
+argument is qualitative. A safety argument needing a defensible external bound
+will not find one here.
+
+Two things are unfinished on this island specifically:
+
+1. **It still carries both arenas.** `mr_canhubk3_s32k344.conf` sets
+   `CONFIG_HEAP_MEM_POOL_SIZE=8192`, so `kheap__system_heap` (8,268 B in
+   section 3's table) is live alongside the 94 KiB unified arena. W3's endgame
+   is to set that pool to 0, at which point `k_malloc` and `sys_heap_*`
+   garbage-collect out of the link -- which is simultaneously the test that no
+   enabled Zephyr subsystem still needs them. On a board 61,608 B over budget,
+   this is 8 KiB sitting there untested.
+2. **94,208 was chosen, not measured.** The high-water reporter now exists
+   (`nros_zephyr_heap_peak()`, surfaced as `heap_peak`), so the path to a
+   derived number is open and has not been walked.
+
+`CONFIG_COMMON_LIBC_MALLOC_ARENA_SIZE=0` in the board conf belongs to the same
+phase (W1b), and was added because of this board: denying the `malloc` *symbol*
+is necessary and not sufficient, because the arena is reserved in `.bss`
+whether or not any caller survives the linker. It was found reserved here twice,
+at 24,576 B and later 8,192 B after a rebuild lost the setting. Dead code is
+collected; dead reservations are not.
+
+One caution for readers of the older notes: the causal chain in
+`docs/board-facts.md` and in the board conf's own comment -- `z_malloc` ->
+`k_malloc` -> `CONFIG_HEAP_MEM_POOL_SIZE` -- is the pre-phase-391 shape and is
+no longer true for this image.
+
+---
+
+## 7. The contract sizes the image; it does not schedule it
 
 Worth stating plainly because it is easy to assume otherwise: `rate_hz` and
 `min_rate_hz` feed buffer sizing, callback counts and liveliness. On this image
@@ -340,135 +673,7 @@ path. No path in this model carries one, so `deadline_us`, `budget_us`,
 
 ---
 
-## 5. The unified TLSF heap
-
-One static `.bss` arena behind one allocation funnel, serving both the vendored
-C RMW (zenoh-pico's `z_malloc`) and Rust's `#[global_allocator]`. The funnel is
-`nros_platform_alloc`; nano-ros phase-391 W3 repointed its Zephyr body off
-Zephyr's `k_malloc` / `sys_heap` onto an rlsf (Rust TLSF) arena.
-
-The phase states its own thesis as *"replace what sits behind the funnel, and
-make the property checkable"*.
-
-### Why TLSF: a worst-case bound, not a fragmentation one
-
-The predecessor was a first-fit, address-ordered free list. Its fragmentation
-behaviour was already good -- Robson (1977) showed first-fit is near-optimal --
-but it is **O(n)**, so it has no worst-case execution bound. That is the
-property a safety island needs and did not have.
-
-TLSF is O(1) for both allocate and free regardless of heap state, via two-level
-segregated free lists plus bitmaps and a `CLZ`, which is a single instruction on
-Cortex-M7. Internal fragmentation is bounded at `1/SLLEN`; with `SLLEN = 16`
-that is **6.25%**.
-
-The O(1) property is also load-bearing for a second reason: Zephyr is
-multi-threaded and the old free list was single-threaded by contract, so the C
-funnel wraps every call in a `k_spinlock`. O(1) is what keeps that critical
-section short and bounded.
-
-`o1heap` was rejected despite MISRA C:2012 conformance and a published
-worst-case formula, because it is single-level -- one bin per power of two, so
-worst-case internal fragmentation approaches 100%. UPV's tlsf was rejected on
-licence, mattconte's as unmaintained.
-
-### What "unified" merged
-
-| what was separate | merged by |
-| --- | --- |
-| zenoh-pico's C `z_malloc` vs Rust's `#[global_allocator]` | phase-230 / RFC-0034 D6-D7 |
-| a second `#[global_allocator]` in `nros-c`, letting a board bypass the funnel | phase-361 W8.c |
-| Zephyr's kernel `sys_heap` behind `nros_platform_alloc` | phase-391 W3 |
-
-There is no per-RMW pool in that list, and deliberately so -- see below.
-
-### Where the 95,928 bytes go
-
-The `.bss` symbol is `sizeof(FreeListHeap<94208, 18>)`, not just the arena:
-
-```
-arena    (CONFIG_NROS_ZEPHYR_HEAP_SIZE)          94,208
-slab     8 slots x 64 B                             512
-rlsf control  fl_bitmap 4 + [u16;18] 36
-              + [[Option<NonNull>;16];18] 1,152    1,192
-flags, stats counters, tail padding                   16
-                                                 --------
-                                                  95,928
-```
-
-That accounts for the 1,720 bytes over the stated knob exactly.
-
-### Payload buffers deliberately stay static
-
-This is the keystone, and it explains the shape of section 3's table. Robson's
-bound scales with the ratio of largest to smallest block, so a heap holding both
-20-byte key expressions and megabyte payloads has a punishing worst case. A heap
-that holds only *infrastructure* -- sessions, key expressions, Rust `String` and
-`Vec` churn -- has a narrow spread, and the bound is cheap to defend.
-
-The consequence is visible in this image: the 115,128 B service inbox table and
-the 38,720 B subscriber slots are static `.bss` symbols, and together they are
-larger than the heap itself.
-
-### What allocates, and when
-
-The executor arena is the largest single allocation and comes out of this heap
-in one piece, which is why cmake gates it at configure time:
-`NROS_EXECUTOR_ARENA_SIZE + 24576 <= NROS_ZEPHYR_HEAP_SIZE`, fatal if violated.
-The 24,576 is empirical, not derived -- treat it as a floor, not a formula.
-
-Beyond that: zenoh-pico sessions and key expressions (42 C call sites), its read
-and lease task structures, Rust `Box`/`Vec`/`String`, Zephyr sync primitives
-(`k_mutex`, `k_condvar`), the node runtime's registries, and the parameter
-services.
-
-**There is no boot-time-only rule and no "no allocation after init" guarantee.**
-Allocation is permitted at any time; what is guaranteed is that each one is
-O(1). zenoh-pico's tasks allocate concurrently with the application by design.
-
-Two tiers are defined and gated by `scripts/check-no-alloc-image.py`:
-`heap-free` (no allocation symbol links at all) and `unified` (allocation
-permitted, but only through the platform funnel). This image is `unified`.
-
-### Failure mode, and two gaps on this board
-
-Exhaustion is blunt: an application that outgrows the arena *stops*. Since
-phase-8 there is a diagnostic -- `nros: HEAP EXHAUSTED: request N bytes, arena N
-bytes, caller 0x...` with an `addr2line` hint, printed with `printk` rather than
-`LOG_*` because the logging subsystem may itself allocate and this is the path
-that just failed to allocate.
-
-Only **internal** fragmentation is bounded (the 6.25%). There is no external
-fragmentation bound computed or asserted anywhere in the tree; the narrow-spread
-argument is qualitative. A safety argument needing a defensible external bound
-will not find one here.
-
-Two things are unfinished on this island specifically:
-
-1. **It still carries both arenas.** `mr_canhubk3_s32k344.conf` sets
-   `CONFIG_HEAP_MEM_POOL_SIZE=8192`, so `kheap__system_heap` (8,268 B in
-   section 3's table) is live alongside the 94 KiB unified arena. W3's endgame
-   is to set that pool to 0, at which point `k_malloc` and `sys_heap_*`
-   garbage-collect out of the link -- which is simultaneously the test that no
-   enabled Zephyr subsystem still needs them. On a board 61,608 B over budget,
-   this is 8 KiB sitting there untested.
-2. **94,208 was chosen, not measured.** The high-water reporter now exists
-   (`nros_zephyr_heap_peak()`, surfaced as `heap_peak`), so the path to a
-   derived number is open and has not been walked.
-
-`CONFIG_COMMON_LIBC_MALLOC_ARENA_SIZE=0` in the board conf belongs to the same
-phase (W1b), and was added because of this board: denying the `malloc` *symbol*
-is necessary and not sufficient, because the arena is reserved in `.bss`
-whether or not any caller survives the linker. It was found reserved here twice,
-at 24,576 B and later 8,192 B after a rebuild lost the setting. Dead code is
-collected; dead reservations are not.
-
-One caution for readers of the older notes: the causal chain in
-`docs/board-facts.md` and in the board conf's own comment -- `z_malloc` ->
-`k_malloc` -> `CONFIG_HEAP_MEM_POOL_SIZE` -- is the pre-phase-391 shape and is
-no longer true for this image.
-
-## 6. The parameter server, on and off
+## 8. The parameter server, on and off
 
 The parameter server is a **bringup capability**, not a Kconfig knob:
 
@@ -541,27 +746,123 @@ makes it pay.
 
 ---
 
-## 7. Where this leaves the board
+## 9. What this campaign did
 
-TCM relocation cannot close the gap on its own: DTCM has 47,856 B free against
-a 61,608 B overflow, 13,752 B short even if everything movable went there. The
-overflow moves when the parameter-service inbox sizing changes, or when the
-parameter server is turned off for this deployment.
+The board did not build at all when this started, and the Zephyr image did not
+join the DDS graph. Both now do, and three defects were found and filed upstream
+by the act of getting there.
 
-Open, roughly in order of how much they would buy:
+**Island, on `contract-params`:**
 
-- **nano-ros #1043 / issue 1352** -- parameter service inbox sizing. Worth
-  106,272 B here, and it also fixes `set_parameters` being silently dropped.
-- **Finish phase-391 W3 on this board** -- set `CONFIG_HEAP_MEM_POOL_SIZE=0` so
-  the 8,268 B kernel heap garbage-collects out, which doubles as the test that
-  no enabled Zephyr subsystem still calls `k_malloc`.
-- **Measure the heap instead of guessing it.** 94,208 B was chosen without a
-  measurement; `nros_zephyr_heap_peak()` now exists to replace it with a number.
-- **Declare callback groups** if the MRM control loop should be isolated from
-  telemetry. The tier derivation is complete and gated only on their absence.
-- **Correct two stale comments**: the island's tier-slot comment
-  (`src/zephyr_entry/CMakeLists.txt:70-73`) does not describe the build, and the
-  `z_malloc -> k_malloc` chain in `docs/board-facts.md` predates phase-391.
-- The board has never executed this image; the MCU-Link probe is the blocker.
-  The boot-time `z_data_copy()` that populates ITCM is exactly the thing a
-  linker cannot check.
+| commit | what |
+| --- | --- |
+| `07ffdb7` | move the nano-ros pin to main, drop a local `component.hpp` patch that had landed upstream |
+| `20bc6d9` | two lines of the native_sim NSOS profile the island's hand-copy had missed |
+| `368b766` | wire `hal_nxp` into `board-setup` and `board-build` |
+
+`20bc6d9` is why the demo passes. The island copies nano-ros's native_sim
+profile by hand, because it passes `CONF_FILE` explicitly and so does not get
+the file applied automatically -- and it had copied three of the four lines.
+`CONFIG_ETH_NATIVE_POSIX=n` was the missing one, so the TAP driver stayed
+compiled in and failed on `/dev/net/tun`, which needs root. Cyclone's receive
+thread then spun on `select failed` forever. A second line,
+`CONFIG_NET_SOCKETS_POLL_MAX=16`, was needed because Zephyr's default poll set
+of 3 is smaller than the descriptor set Cyclone's waitset selects on:
+
+```
+zeth errors            1 -> 0
+select failed  7,758,842 -> 0
+tmp_island.log    8.8 GB -> 4 KB
+engage          8 failures -> attempt 1: True
+```
+
+`368b766` is why the board builds. nano-ros omits `hal_nxp` from its Zephyr 4.4
+allowlist on purpose and names this tree as the downstream that re-enables it;
+no such wiring existed, so devicetree preprocessing could not find the S32K344
+pin-control header even on a machine where the file was already on disk.
+Fetched and registered as a Zephyr module are different things.
+
+**nano-ros:**
+
+| | |
+| --- | --- |
+| PR #992, issue 1337 | `package.xml` walk descended into build trees. Merged. |
+| PR #1043, issue 1352 | `set_parameters` does not fit its own service inbox. Open. |
+
+Issue 1337 was found by this migration and is worth recording: two hand-copied
+`package.xml` walks pruned `build` and `target-*` but not `build-*`, while the
+CLI's other two walkers did. One `nros image-facts` opened **362,782
+directories, 98.7% of every open it made, to read a single file** -- 242 MB of
+physical reads for 27 KB of answers. After the fix and a cleanup of 82 stale
+build trees, the same command runs in 0.95 s.
+
+**Measurements taken, not assumed:**
+
+- `native_sim` demo to VERDICT PASS, twice, with the MRM chain exercised end to
+  end.
+- The board image linked, and its region report recorded.
+- An A/B proving the parameter *store* sizing costs 0 bytes, byte-identical
+  across both configurations.
+- A control proving the parameter *services* cost 108,096 bytes.
+- The `set_parameters` overflow computed from the `rcl_interfaces` definitions
+  at this image's capacities, and cross-checked against the map: the model
+  predicts 4,428 bytes per service slot and the map measures 4,428.
+
+---
+
+## 10. Future work
+
+Nothing below is blocked on a decision; each is work that was scoped and not
+done.
+
+**The board does not fit, by 61,608 bytes.**
+
+The cause is isolated: the parameter services, 108,096 bytes measured. nano-ros
+#1043 is the fix, and it needs both halves -- per-type inbox sizing *and* a ring
+depth for the parameter family separate from the action path's. Per type at
+depth 1 the same four nodes need 43,344 B instead of 106,272 B; per type at the
+current depth 4 would be worse than today. TCM relocation cannot substitute:
+DTCM has 47,856 B free, 13,752 B short of the overflow.
+
+**Reclaimable without waiting for upstream:**
+
+- `CONFIG_HEAP_MEM_POOL_SIZE=8192` is still set, so this image carries both the
+  Zephyr kernel heap and the 94 KiB unified arena. Setting it to 0 frees
+  8,268 B and doubles as the link test that no enabled Zephyr subsystem still
+  calls `k_malloc`.
+- `CONFIG_NROS_ZEPHYR_HEAP_SIZE=94208` was chosen without a measurement.
+  `nros_zephyr_heap_peak()` now exists to replace it with a number.
+
+**Never executed on silicon.** The board is blocked on the MCU-Link probe.
+Everything here is from the linker and the map. The boot-time copy that
+populates ITCM is exactly what a linker cannot check, and the `set_parameters`
+drop is exactly what a linker cannot see.
+
+**Scheduling is available and unused.** The tier derivation is complete and
+gated only on components declaring callback groups. Declaring them would put the
+two 30 Hz nodes at Zephyr priority 0 and the two 10 Hz nodes at priority 1,
+instead of all 19 callbacks sharing `main`. Whether a safety island wants its
+MRM loop isolated from telemetry is a design question this deployment has not
+answered.
+
+**Gaps in the derivation, upstream:**
+
+- `NROS_FRAG_MAX_SIZE` is a hand-set 2048 that nothing compares against the
+  derived 1496, though it bounds the largest receivable message.
+- Zero-copy eligibility is computed on every bound and consumed by nothing.
+- No external fragmentation bound is computed or asserted for the TLSF arena;
+  only the 6.25% internal bound exists. A safety argument needing the former
+  will not find it.
+
+**Stale statements to correct in this tree:**
+
+- `src/zephyr_entry/CMakeLists.txt:70-73` claims one minimal tier slot; the
+  build gets four.
+- `docs/board-facts.md` still describes `z_malloc -> k_malloc ->
+  CONFIG_HEAP_MEM_POOL_SIZE`, which phase-391 W3 replaced.
+- The contract header's liveliness excerpt shows one service client; there are
+  two.
+
+**Not captured by the contract at all:** QoS durability. Several publishers and
+one subscription are transient-local in code, and no publisher entry in the
+contract carries a `qos` block. The contract records depth only.
