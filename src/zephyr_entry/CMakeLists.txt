@@ -54,27 +54,45 @@ if(NOT COMMAND nano_ros_workspace_pkg_guard)
     endfunction()
 endif()
 
-# Platform thread/tier stack pools (nros_platform_zephyr_shims.c:293-301,384-392).
-# Both are #ifndef-guarded in a Zephyr MODULE, so add_compile_definitions() in
-# this directory does not reach them -- zephyr_compile_definitions() does, via
-# the zephyr_interface target every Zephyr library links.
+# Platform thread/tier stack pools: NOT set here. Kconfig owns them.
 #
-#   nros_tier_stacks  = MAX_TIERS(4)   x TIER_STACK_SIZE(16384) = 64 KiB
-#   nros_thread_stacks = MAX_THREADS(8) x CONFIG_MAIN_STACK_SIZE = 64 KiB
+# This block used to call zephyr_compile_definitions() with
+# NROS_ZEPHYR_MAX_TIERS=1, NROS_ZEPHYR_TIER_STACK_SIZE=4096 and
+# NROS_ZEPHYR_MAX_THREADS=4, and the comment claimed the entry kept "one
+# minimal slot". It did not. nano-ros emits the same three tokens from Kconfig
+# (third-party/nano-ros/zephyr/CMakeLists.txt:97-108), so BOTH landed on every
+# compile command and gcc warned three times per TU:
 #
-# This entry's system model declares no tiers and the generated entry contains
-# no tier spawn, so the tier pool is dead weight here; keep one minimal slot
-# rather than zero so the array stays well-formed and a stray spawn still gets
-# the shim's "raise NROS_ZEPHYR_TIER_STACK_SIZE" diagnostic instead of UB.
+#   <command-line>: warning: "NROS_ZEPHYR_MAX_TIERS" redefined
 #
-# UNVALIDATED AT RUNTIME: MAX_THREADS=4 must cover every pthread the RMW starts
-# (zenoh's read + lease tasks with CONFIG_NROS_ZENOH_MULTI_THREAD=y, plus the
-# spin thread). Thread creation past the 4th returns an error -- raise this
-# first if bring-up reports a failed pthread_create.
-zephyr_compile_definitions(
-    NROS_ZEPHYR_MAX_TIERS=1
-    NROS_ZEPHYR_TIER_STACK_SIZE=4096
-    NROS_ZEPHYR_MAX_THREADS=4)
+# CMake sorts and de-duplicates the -D list, so which copy survives was decided
+# by the lexicographic order of the whole token, not by call order. Measured in
+# build-board/compile_commands.json, in this order:
+#
+#   -DNROS_ZEPHYR_MAX_THREADS=4      (here)      -DNROS_ZEPHYR_MAX_THREADS=5     (Kconfig, wins)
+#   -DNROS_ZEPHYR_MAX_TIERS=1        (here)      -DNROS_ZEPHYR_MAX_TIERS=4       (Kconfig, wins)
+#   -DNROS_ZEPHYR_TIER_STACK_SIZE=16384 (Kconfig) -DNROS_ZEPHYR_TIER_STACK_SIZE=4096 (here, wins)
+#
+# "16384" sorts before "4096", so the entry won exactly one of the three, by
+# accident. The effective build was MAX_THREADS=5, MAX_TIERS=4,
+# TIER_STACK_SIZE=4096, confirmed in build-board/zephyr/zephyr_pre0.map:
+#
+#   nros_thread_stacks    0xa000 = 5 x NROS_ZEPHYR_STACK_SIZE(8192)   LINKED
+#   nros_tier_threads     0x440  = 4 x sizeof(struct k_thread)        discarded
+#   the tier stack array  0x4000 = 4 x 4096                           discarded
+#
+# Both tier objects sit in the map's "Discarded input sections" list: this
+# entry's system model declares no tier and the generated entry contains no
+# tier spawn, so --gc-sections drops the pool whatever its size. That is why
+# the redefinition was harmless HERE and cost 0 bytes -- not because the
+# numbers agreed.
+#
+# So the definitions are deleted rather than reconciled. Both knobs have
+# Kconfig rows with help text (nano-ros zephyr/Kconfig, NROS_ZEPHYR_TASK_SLOTS
+# / NROS_ZEPHYR_MAX_TIERS / NROS_ZEPHYR_TIER_STACK_SIZE), and the board conf
+# already sets CONFIG_NROS_ZEPHYR_TASK_SLOTS=5 with its reasoning. Set these
+# from a .conf, next to the rest of this image's sizing; a value written here
+# would only re-enter the same coin toss.
 
 # Parameter pool sizing -- STALE SINCE nano-ros 1f3b88aec (phase-427 W4).
 #
