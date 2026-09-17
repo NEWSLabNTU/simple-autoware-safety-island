@@ -127,15 +127,25 @@ Four things this needs, none of which any error message mentions:
 The default 1 KiB up-buffer also wraps before a post-hoc reader attaches, so a
 failing run reads back empty: `CONFIG_SEGGER_RTT_BUFFER_SIZE_UP=16384`.
 
-### zenoh-pico is sized by the KERNEL heap, not the libc arena
+### zenoh-pico is sized by `CONFIG_NROS_ZEPHYR_HEAP_SIZE`
 
-`z_malloc` on Zephyr is `k_malloc` (zenoh-pico `src/system/zephyr/system.c`), so
-every zenoh buffer comes from `CONFIG_HEAP_MEM_POOL_SIZE`.
-`CONFIG_COMMON_LIBC_MALLOC_ARENA_SIZE` — which sizes the Rust/picolibc allocator
-— has no effect on it. Serial send and receive each take 1507+1516 B and can be
-live at once, so a serial image needs ~8 KiB of kernel heap before it does
-anything. Enlarging the arena while shrinking the kernel heap makes every send
-fail from boot, which reads as a transport bug.
+This section used to say `z_malloc` is `k_malloc`, so every zenoh buffer comes
+from `CONFIG_HEAP_MEM_POOL_SIZE`. **That was true before nano-ros phase-391 W3
+and is false now.** `z_malloc` and Rust's `__rust_alloc` both go through
+`nros_platform_alloc` into one rlsf arena sized by
+`CONFIG_NROS_ZEPHYR_HEAP_SIZE`
+(`third-party/nano-ros/zephyr/Kconfig:1372-1373` states it outright).
+
+Two other heaps exist and neither is the one to reach for:
+
+- `CONFIG_HEAP_MEM_POOL_SIZE` is Zephyr's kernel heap behind `k_malloc`. It is
+  set to 0 in the board conf, which Zephyr floors at 512 B for the POSIX
+  threads/semaphores that still call it. Raising it does nothing for zenoh.
+- `CONFIG_COMMON_LIBC_MALLOC_ARENA_SIZE` sizes the picolibc allocator. It is 0,
+  because nothing in this image calls `malloc`.
+
+Serial send and receive each take 1507+1516 B and can be live at once, so the
+arena must cover that plus everything else before the image does anything.
 
 ### Boots, then HANGS with no fault and no further output
 
@@ -156,18 +166,30 @@ the real number from `kernel thread stacks` (§4) rather than leaving it doubled
 
 ### `pthread_create` fails / a thread never starts
 
-`NROS_ZEPHYR_MAX_THREADS=4` (entry `CMakeLists.txt`). Covers zenoh's read and
-lease tasks plus the spin thread. The 5th `pthread_create` fails. Raise to 6 and
-retest before suspecting anything else.
+`NROS_ZEPHYR_MAX_THREADS` comes from `CONFIG_NROS_ZEPHYR_TASK_SLOTS`, which the
+board conf sets to **5**. It covers zenoh's read, lease and tx-flush tasks. The
+6th `pthread_create` fails. The entry `CMakeLists.txt` used to define the token
+as well, at 4; that definition is gone and it never took effect anyway (see
+`docs/nxp-deployment.md`, "Stale statements to correct in this tree"). Raise
+`CONFIG_NROS_ZEPHYR_TASK_SLOTS` in the board conf, at
+`CONFIG_NROS_ZEPHYR_TASK_STACK_SIZE` (8,192 B) per slot.
 
-### Allocation abort, `k_malloc` returns NULL, or zenoh fails to start
+### Allocation abort, `nros_platform_alloc` returns NULL, or zenoh fails to start
 
-| suspect | current | snippet default | where |
+One knob, not three:
+
+| suspect | current | crate default | where |
 | --- | ---: | ---: | --- |
-| `CONFIG_HEAP_MEM_POOL_SIZE` | 16384 | 65536 | `justfile` |
-| `CONFIG_COMMON_LIBC_MALLOC_ARENA_SIZE` | 24576 | — | board conf |
+| `CONFIG_NROS_ZEPHYR_HEAP_SIZE` | 94208 | 65536 | board conf |
 
-Both were cut to fit. There is 53 KiB of SRAM free — raising either is cheap.
+The other two are decoys since phase-391 W3. `CONFIG_HEAP_MEM_POOL_SIZE` (0,
+floored to 512) feeds `k_malloc`, which the application no longer uses, and
+`CONFIG_COMMON_LIBC_MALLOC_ARENA_SIZE` (0) feeds a `malloc` that nothing calls.
+
+On exhaustion nano-ros prints `nros: HEAP EXHAUSTED: request N bytes, arena M
+bytes, caller P` with a return address to feed to `addr2line`. This board's
+console is not wired, so read the boot report instead: `platform heap PEAK` in
+`third-party/nano-ros/scripts/read-boot-report.py`.
 
 ### Node creation fails at boot
 

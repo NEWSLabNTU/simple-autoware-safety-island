@@ -212,11 +212,30 @@ run reads back empty: `CONFIG_SEGGER_RTT_BUFFER_SIZE_UP=16384`.
 
 ### Sizing traps, all found the hard way
 
-- **`z_malloc` is `k_malloc`** in zenoh-pico's Zephyr port, so zenoh's buffers
-  come from `CONFIG_HEAP_MEM_POOL_SIZE` — the *kernel* heap.
-  `CONFIG_COMMON_LIBC_MALLOC_ARENA_SIZE` (the Rust/picolibc allocator) has **no
-  effect on it**. Enlarging the arena while shrinking the kernel heap makes every
-  send fail from boot and reads as a transport bug.
+- **The application heap is `CONFIG_NROS_ZEPHYR_HEAP_SIZE`, not
+  `CONFIG_HEAP_MEM_POOL_SIZE`.** This entry used to read "`z_malloc` is
+  `k_malloc`, so zenoh's buffers come from `CONFIG_HEAP_MEM_POOL_SIZE`". That
+  stopped being true at nano-ros phase-391 W3. `z_malloc` and Rust's
+  `__rust_alloc` both funnel through `nros_platform_alloc`
+  (`third-party/nano-ros/packages/platform/nros-platform-zephyr/src/platform.c:182`)
+  into one rlsf arena in `nros-platform/src/zephyr_heap.rs`, sized by
+  `CONFIG_NROS_ZEPHYR_HEAP_SIZE`. nano-ros says it flatly in
+  `third-party/nano-ros/zephyr/Kconfig:1372-1373`: "CONFIG_HEAP_MEM_POOL_SIZE
+  does NOT govern application allocation any more; this does." So:
+  - Raising `CONFIG_HEAP_MEM_POOL_SIZE` to cure an allocation failure under
+    zenoh does nothing. Raise `CONFIG_NROS_ZEPHYR_HEAP_SIZE`.
+  - Exhausting the arena does `printk("nros: HEAP EXHAUSTED: request %zu bytes,
+    arena %zu bytes, caller %p")` with the return address (platform.c:212).
+    On this board that console is not wired, so in practice the image just
+    stops. Size the arena from the boot report's `platform heap PEAK` instead.
+  - `CONFIG_COMMON_LIBC_MALLOC_ARENA_SIZE` (the picolibc allocator) is
+    unrelated to both and is 0 in the board conf, because nothing calls
+    `malloc`.
+  The kernel heap does not go away: it still backs the k_malloc callers that
+  remain (nano-ros's timer bridge, Zephyr's POSIX `semaphore.c` and `key.c`),
+  and Zephyr floors it at the sum of the enabled
+  `CONFIG_HEAP_MEM_POOL_ADD_SIZE_*` entries. See
+  `src/zephyr_entry/boards/mr_canhubk3_s32k344.conf`, "The Zephyr KERNEL heap".
 - **`CONFIG_MAIN_STACK_SIZE=4096` overflows** in zenoh's declare path
   (`_z_declare_resource` alone reserves 340 B). 8192 is the smallest that has
   held. It presents as a `USAGE FAULT` — *"Illegal use of the EPSR"* with a
@@ -298,10 +317,15 @@ Three things worth reading off that table:
   subscriber's large-message pool; `CONFIG_NROS_MAX_LARGE_SUBSCRIBERS=0` removes
   it, which is where the ~60 KiB saving quoted earlier comes from. A talker with
   one publisher does not need it at all.
-- **`kheap__system_heap` (32,852 B) versus `malloc_arena` (8,192 B)** — the
-  kernel heap is what `z_malloc`/`k_malloc` draws on and the libc arena is what
-  zenoh never touches. The sizing trap described above is visible right here in
-  the symbol table, which is the cheapest way to check you sized the right one.
+- **`kheap__system_heap` (32,852 B) is a pre-phase-391 figure and does not
+  describe a current image.** When this table was taken, `z_malloc` did route to
+  `k_malloc` and that heap was the application's. It no longer is (see the
+  sizing trap above), so a current image's application allocation shows up as
+  the rlsf arena `CONFIG_NROS_ZEPHYR_HEAP_SIZE` reserves, not here. The island
+  board conf now sets `CONFIG_HEAP_MEM_POOL_SIZE=0`, which Zephyr floors at 512
+  and which measured 572 B of `.noinit` against 8,268 B before. Reading the
+  symbol table is still the cheapest way to check you sized the right heap; just
+  read the arena, not this symbol.
 - **`_acUpBuffer` + `_RTT_SECTION_NAME` ≈ 33 KiB is debug-only** and comes
   straight back out of a production build.
 
