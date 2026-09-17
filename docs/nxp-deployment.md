@@ -13,7 +13,7 @@ The hardware is in section 0; the software provenance is:
 | RMW | zenoh (`-S nros-zenoh`), serial link (`-S island-serial`) |
 | nano-ros pin | `f8655e9b7` |
 | Island commits | `07ffdb7`, `20bc6d9`, `368b766` |
-| Status | configures, compiles and links; **over RAM budget by 61,608 B with the parameter server on** |
+| Status | configures and compiles; **does not link -- over RAM budget by 53,912 B with the parameter server on** |
 
 The same four nodes and the same contract also build for `native_sim` over
 CycloneDDS, and that image is verified end to end:
@@ -410,11 +410,11 @@ Laid out by address, from the map file of the real derived configuration:
 ```
 RAM   0x20400000  datas       3,448   initialised data, copied from flash at boot
       0x20400ef0  bss       310,811   zero-filled at boot
-      0x2044cd10  noinit     74,648   stacks and heaps, not touched at boot
-      0x2045f0a8  end
+      0x2044cd10  noinit     66,952   stacks and heaps, not touched at boot
+      0x2045d298  end
                           ---------
-                            389,288   needed
-                            327,680   available        OVER BY 61,608
+                            381,592   needed
+                            327,680   available        OVER BY 53,912
 
 DTCM  0x20000000  .dtcm_bss_reloc   83,216 of 131,072    63.5%
 ITCM  0x00000000  .itcm_text_reloc  13,052 of  65,536    19.9%
@@ -438,7 +438,7 @@ Seventeen symbols account for 97% of that RAM. Grouped by what owns them:
 | | 16,384 | Zephyr `main` |
 | | 4,096 | system work queue |
 | | 2,048 | interrupt stacks |
-| **Kernel heap** | **8,268** | `CONFIG_HEAP_MEM_POOL_SIZE`, still present -- see section 6 |
+| **Kernel heap** | **8,268** | `CONFIG_HEAP_MEM_POOL_SIZE=8192` at the time of this measurement; now 0, which Zephyr floors at 512, so the figure is **572** -- see section 6 |
 | **Other** | **12,168** | POSIX thread pool 5,120; three action stashes 4,488; shell 2,560 |
 
 The remaining ~11.6 KiB is spread across many small symbols, plus section
@@ -511,7 +511,9 @@ report, never by the build succeeding.**
 nros_thread_stacks  40,960 = TASK_SLOTS 5 x TASK_STACK_SIZE 8192   exact
 z_main_stack        16,384 = CONFIG_MAIN_STACK_SIZE                exact
 system_work_q        4,096 = CONFIG_SYSTEM_WORKQUEUE_STACK_SIZE    exact
-kheap__system_heap   8,268 = CONFIG_HEAP_MEM_POOL_SIZE 8192 + 76
+kheap__system_heap   8,268 = CONFIG_HEAP_MEM_POOL_SIZE 8192 + 76   (now 572:
+                             the symbol is 0, Zephyr floors K_HEAP_MEM_POOL_SIZE
+                             at 512 for POSIX threads + semaphores, + 60)
 zephyr_heap HEAP    95,928 = CONFIG_NROS_ZEPHYR_HEAP_SIZE 94208 + 1720
 service table      115,128 = MAX_QUERYABLES 26 x (4 x 1024 + 332)  exact
 subscriber table    38,720 = MAX_SUBSCRIBERS 11 x 3,520            exact
@@ -624,16 +626,44 @@ will not find one here.
 
 Two things are unfinished on this island specifically:
 
-1. **It still carries both arenas.** `mr_canhubk3_s32k344.conf` sets
-   `CONFIG_HEAP_MEM_POOL_SIZE=8192`, so `kheap__system_heap` (8,268 B in
-   section 3's table) is live alongside the 94 KiB unified arena. W3's endgame
-   is to set that pool to 0, at which point `k_malloc` and `sys_heap_*`
-   garbage-collect out of the link -- which is simultaneously the test that no
-   enabled Zephyr subsystem still needs them. On a board 61,608 B over budget,
-   this is 8 KiB sitting there untested.
-2. **94,208 was chosen, not measured.** The high-water reporter now exists
-   (`nros_zephyr_heap_peak()`, surfaced as `heap_peak`), so the path to a
-   derived number is open and has not been walked.
+1. **The second arena is down to 572 B, and W3's endgame is not reachable
+   here.** `mr_canhubk3_s32k344.conf` now sets `CONFIG_HEAP_MEM_POOL_SIZE=0`.
+   Measured over the rebuild: `kheap_buf__system_heap` 8,268 B -> 572 B, RAM
+   region overflow 61,608 B -> 53,912 B, so 7,696 B recovered.
+
+   W3's endgame was "set that pool to 0, at which point `k_malloc` and
+   `sys_heap_*` garbage-collect out of the link, which is simultaneously the
+   test that no enabled Zephyr subsystem still needs them". **That test comes
+   back negative on this image**, for two independent reasons:
+
+   - Zephyr floors the pool at the sum of the enabled
+     `CONFIG_HEAP_MEM_POOL_ADD_SIZE_*` entries
+     (`zephyr/kernel/Kconfig:779-794`). POSIX threads and POSIX semaphores add
+     256 B each, so `K_HEAP_MEM_POOL_SIZE` resolves to 512 whatever this symbol
+     says, and `k_malloc` stays compiled in.
+   - Three objects still reference the k_malloc family, from
+     `nm --undefined-only` over the build's archives: nano-ros's own timer
+     bridge (`nros_platform_zephyr_shims.c:222-255`, `k_malloc`/`k_free`), and
+     Zephyr's POSIX `semaphore.c` (`k_calloc`/`k_free`) and `key.c`
+     (`k_malloc`/`k_free`).
+
+   Forcing zero with `CONFIG_HEAP_MEM_POOL_IGNORE_MIN=y` would therefore break
+   the link rather than prove the kernel heap unused. 572 B is the floor for
+   this feature set, and POSIX is not optional while zenoh-pico runs on
+   pthreads.
+2. **94,208 was chosen, not measured.** The high-water reporter exists
+   (`nros_zephyr_heap_peak()`, surfaced as `platform heap PEAK` in the boot
+   self-report), and the board conf now writes out the exact five-step
+   procedure for reading it plus the three ways the reading can be invalid.
+   It still needs a run on this board: it is a runtime figure, there is no
+   static model, and the `native_sim` image is not a substitute (Zephyr 3.7
+   LTS over CycloneDDS, and `-DCONF_FILE=` there suppresses the board conf).
+
+   One caveat is worth repeating here because it is easy to trust the number:
+   if the report shows `PEAK` above `capacity`, the counter is not a high-water
+   mark. zpico-alloc decrements `used_bytes` only on the SLAB free path, never
+   on the rlsf path, so `used` is cumulative-allocated and `peak` tracks that.
+   `read-boot-report.py` prints "DO NOT SIZE A KNOB FROM THIS" when it happens.
 
 `CONFIG_COMMON_LIBC_MALLOC_ARENA_SIZE=0` in the board conf belongs to the same
 phase (W1b), and was added because of this board: denying the `malloc` *symbol*
@@ -642,10 +672,12 @@ whether or not any caller survives the linker. It was found reserved here twice,
 at 24,576 B and later 8,192 B after a rebuild lost the setting. Dead code is
 collected; dead reservations are not.
 
-One caution for readers of the older notes: the causal chain in
-`docs/board-facts.md` and in the board conf's own comment -- `z_malloc` ->
-`k_malloc` -> `CONFIG_HEAP_MEM_POOL_SIZE` -- is the pre-phase-391 shape and is
-no longer true for this image.
+One caution for readers of the older notes: the causal chain `z_malloc` ->
+`k_malloc` -> `CONFIG_HEAP_MEM_POOL_SIZE` is the pre-phase-391 shape and is no
+longer true for this image. It has now been corrected in the three places that
+carried it -- `docs/board-facts.md`, `docs/board-bringup-triage.md` and the
+board conf's own comment -- but it survives in anything written before
+2026-09-18.
 
 ---
 
@@ -808,7 +840,7 @@ a ring of 4 slots of `SERVICE_BUFFER_SIZE` (1024) bytes, 4,428 bytes all in.
 | --- | ---: | ---: |
 | Queryables | 26 | 2 |
 | Service inbox table | 115,128 B | 8,856 B |
-| RAM | **overflows by 61,608 B** | 281,192 B of 320 KiB (85.81%) |
+| RAM | **overflows by 53,912 B** | 281,192 B of 320 KiB (85.81%) |
 | ITCM | -- | 13,052 B (19.92%) |
 | DTCM | -- | 83,216 B (63.49%) |
 | FLASH | -- | 582,020 B (14.04%) |
@@ -826,7 +858,9 @@ Measured, not inferred:
 
 - Varying the parameter **store** knobs (`MAX_PARAMETERS` 25 -> 32,
   `MAX_PARAM_NAME_LEN` 35 -> 64, `PARAM_SERVICE_BUFFER_SIZE` derived -> 4096)
-  changes the overflow by **0 bytes**, byte-identical at 61,608.
+  changes the overflow by **0 bytes**. (Measured when the overflow was
+  61,608; the kernel-heap change since moved it to 53,912 without touching
+  that result.)
 - Removing the service queryables changes it by **108,096 bytes**.
 
 So phase-446's contract-declared parameter sizing is free. The services are
@@ -933,7 +967,7 @@ build trees, the same command runs in 0.95 s.
 Nothing below is blocked on a decision; each is work that was scoped and not
 done.
 
-**The board does not fit, by 61,608 bytes.**
+**The board does not fit, by 53,912 bytes.**
 
 The cause is isolated: the parameter services, 108,096 bytes measured. nano-ros
 #1043 is the fix, and it needs both halves -- per-type inbox sizing *and* a ring
@@ -944,12 +978,14 @@ DTCM has 47,856 B free, 13,752 B short of the overflow.
 
 **Reclaimable without waiting for upstream:**
 
-- `CONFIG_HEAP_MEM_POOL_SIZE=8192` is still set, so this image carries both the
-  Zephyr kernel heap and the 94 KiB unified arena. Setting it to 0 frees
-  8,268 B and doubles as the link test that no enabled Zephyr subsystem still
-  calls `k_malloc`.
+- ~~`CONFIG_HEAP_MEM_POOL_SIZE=8192` is still set~~ DONE 2026-09-18: set to 0,
+  which Zephyr floors at 512. Recovered **7,696 B** (`kheap_buf__system_heap`
+  8,268 -> 572; overflow 61,608 -> 53,912). The link test it doubles as came
+  back negative -- `k_malloc` still has three callers, see section 6.
 - `CONFIG_NROS_ZEPHYR_HEAP_SIZE=94208` was chosen without a measurement.
-  `nros_zephyr_heap_peak()` now exists to replace it with a number.
+  `nros_zephyr_heap_peak()` exists to replace it with a number, and the board
+  conf now carries the procedure for reading it; it is blocked on a run, not
+  on tooling.
 
 **Never executed on silicon.** The board is blocked on the MCU-Link probe.
 Everything here is from the linker and the map. The boot-time copy that
@@ -974,10 +1010,20 @@ answered.
 
 **Stale statements to correct in this tree:**
 
-- `src/zephyr_entry/CMakeLists.txt:70-73` claims one minimal tier slot; the
-  build gets four.
-- `docs/board-facts.md` still describes `z_malloc -> k_malloc ->
-  CONFIG_HEAP_MEM_POOL_SIZE`, which phase-391 W3 replaced.
+- ~~`src/zephyr_entry/CMakeLists.txt:70-73` claims one minimal tier slot; the
+  build gets four.~~ CORRECTED 2026-09-18. The three
+  `zephyr_compile_definitions` are deleted; Kconfig is the only producer now.
+  Worth recording why the old text was wrong in an unobvious way: both
+  producers emitted the same tokens, CMake sorts and de-duplicates the `-D`
+  list, so the survivor was chosen by the lexicographic order of the whole
+  token. `MAX_TIERS=1` lost to `=4`, `MAX_THREADS=4` lost to `=5`, and
+  `TIER_STACK_SIZE=16384` lost to `=4096` because "1" sorts before "4". The
+  entry won one of three, by accident. It cost 0 bytes only because
+  `--gc-sections` drops the whole tier pool from a tierless image -- both tier
+  objects sit in the map's "Discarded input sections" list.
+- ~~`docs/board-facts.md` still describes `z_malloc -> k_malloc ->
+  CONFIG_HEAP_MEM_POOL_SIZE`, which phase-391 W3 replaced.~~ CORRECTED
+  2026-09-18, there and in `docs/board-bringup-triage.md`.
 - The contract header's liveliness excerpt shows one service client; there are
   two.
 
