@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>native_sim_entry</name>
+  <version>0.1.0</version>
+  <description>Entry pkg -- the Zephyr native_sim island the demo runs (Cyclone DDS).</description>
+  <maintainer email="jerry73204@gmail.com">Hsiang-Jui Lin</maintainer>
+  <license>Apache-2.0</license>
+  <exec_depend>safety_island_bringup</exec_depend>
+  <export>
+    <build_type>cmake</build_type>
+    <!-- The deployment (board, rmw, domain) is in system.toml beside this
+         file: nano-ros retired the <nano_ros deploy= board= rmw=/> element
+         (RFC-0098 D3/D5, phase-445) and both readers now refuse it. -->
+  </export>
+</package>

@@ -1,4 +1,5 @@
-# What this entry deploys to (nano-ros RFC-0098 D3/D5, phase-445 W3).
+# What this entry deploys to (nano-ros RFC-0098 D3/D5, phase-445 W3): the
+# MR-CANHUBK344 board image, on zenoh.
 #
 # It replaces the `package.xml` `<nano_ros deploy= board= rmw=/>` element,
 # which nano-ros retired: both readers (`find_package(nano_ros)` through
@@ -10,17 +11,27 @@
 # names with `BRINGUP ../safety_island_bringup`. This file states only where
 # THIS image is built for.
 #
-# On Zephyr the RMW actually linked is still chosen by the Kconfig overlay
-# (prj-cyclonedds.conf); Kconfig stays the Zephyr front end. The `rmw` here
-# names the same choice for the readers that need it before Kconfig runs.
+# `rmw` is CHECKED, not advisory (since the nano-ros bump of 2026-09-21).
+# nano-ros's Zephyr cmake asks `nros image-facts --for-entry zephyr_entry`
+# for this image and refuses the configure when the Kconfig RMW -- the
+# `-S nros-zenoh` snippet `just board-build` passes -- disagrees with it
+# (cmake/NanoRosImageAgreement.cmake). This file used to say `cyclonedds`
+# with a note that Kconfig decides anyway. That was true only while the check
+# went silent on the Zephyr lane (nano-ros #1312 made it answer), and it is
+# why the native_sim / Cyclone image the demo runs is now its own entry
+# package, src/native_sim_entry: an image is resolved from its entry package,
+# first match, so one package cannot declare both.
 
 [system]
 name = "safety_island_zephyr_entry"
-rmw = "cyclonedds"
-domain_id = 10                      # the demo domain, as in the bringup and prj-cyclonedds.conf
+rmw = "zenoh"
+domain_id = 10                      # the demo domain, as in the bringup
 
-# The Zephyr family. The concrete board (native_sim, or the MR-CANHUBK344 the
-# board-* recipes pass) is west's `-b` argument, resolved through nano-ros's
-# board catalog.
+# The Zephyr family. The concrete board (the MR-CANHUBK344 the board-* recipes
+# pass) is west's `-b` argument, resolved through nano-ros's board catalog.
 [image.zephyr]
 board = "zephyr"
+# RFC-0085 D4: a Zephyr image NAMES its entry package. Derivation from the
+# image id gives the same answer; naming it keeps src/native_sim_entry from
+# ever being a candidate for this block.
+entry = "zephyr_entry"

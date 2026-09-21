@@ -272,7 +272,11 @@ zephyr-build: sync
     # by name, so the same tree listed twice is one module.
     source "{{NANO_ROS_ROOT}}/scripts/lib/zephyr-module.sh"
     module_arg="$(nros_zephyr_module_cmake_arg "{{NANO_ROS_ROOT}}")"
-    west build -b native_sim/native/64 -d build-zephyr src/zephyr_entry -- \
+    # src/native_sim_entry, not src/zephyr_entry: the board image is zenoh
+    # and nano-ros checks an image's declared `rmw` against Kconfig per ENTRY
+    # PACKAGE, so the Cyclone native_sim image has its own (see the
+    # CMakeLists there). The build dir and the demo recipes are unchanged.
+    west build -b native_sim/native/64 -d build-zephyr src/native_sim_entry -- \
         -C "$caps" \
         -DCONF_FILE="prj.conf;prj-cyclonedds.conf" \
         "$module_arg" \
@@ -764,7 +768,7 @@ _svc-island target="zephyr":
 # The zephyr island's cyclone profile is COMPILE-TIME: env CYCLONEDDS_URI
 # never reaches zephyr.exe (native_sim getenv sees no host environment —
 # nano-ros issue 0367). It is baked via CONFIG_NROS_CYCLONE_CONFIG_XML in
-# src/zephyr_entry/prj-cyclonedds.conf; edit there + `just zephyr-build`.
+# src/native_sim_entry/prj-cyclonedds.conf; edit there + `just zephyr-build`.
 
 # ── 3. Demo sequence ────────────────────────────────────────────────────────
 # The full driving sequence (pure rclpy — the ros2-CLI daemon is unreliable

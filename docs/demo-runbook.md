@@ -123,7 +123,7 @@ only reach loopback-advertised locators, so EVERY host participant must run
 the shared `demo/cyclonedds.xml` (lo-pinned, `ParticipantIndex auto`,
 `MaxAutoParticipantIndex 120`) — `.envrc` exports it. The island's own
 profile is compile-time: `CONFIG_NROS_CYCLONE_CONFIG_XML` in
-`src/zephyr_entry/prj-cyclonedds.conf` (nano-ros issue 0367 wired the
+`src/native_sim_entry/prj-cyclonedds.conf` (nano-ros issue 0367 wired the
 knob), plus a 256 MiB malloc arena.
 
 The pthread mutex/cond pools used to be part of that sizing story and no

@@ -16,7 +16,7 @@
 name = "safety_island"
 rmw = "cyclonedds"
 # The demo domain. The Zephyr image bakes CONFIG_NROS_CYCLONE_DOMAIN_ID=10 in
-# src/zephyr_entry/prj-cyclonedds.conf (the rationale is there: the island
+# src/native_sim_entry/prj-cyclonedds.conf (the rationale is there: the island
 # talks to Autoware directly, no bridge, on a domain the shared host does not
 # use), and the justfile defaults ROS_DOMAIN_ID to the same 10 for the host
 # side. This value names the same choice for the readers that see system.toml

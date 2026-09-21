@@ -1,9 +1,17 @@
-# P4 — Zephyr (native_sim) entry: all four ported Autoware nodes in one
-# bootable image. Shape mirrors nano-ros examples/workspaces/mixed/src/
-# zephyr_entry (C++-only variant — no Rust node, no NROS_WS_RUST_NODE_DIRS).
+# Zephyr entry for the BOARD (MR-CANHUBK344, zenoh): all four ported Autoware
+# nodes in one bootable image. Shape mirrors nano-ros examples/workspaces/
+# mixed/src/zephyr_entry (C++-only variant -- no Rust node).
 #
-#   west build -b native_sim/native/64 src/zephyr_entry \
-#     -- -DCONF_FILE="prj.conf;prj-cyclonedds.conf" -D_NANO_ROS_CODEGEN_TOOL=<nros>
+#   just board-build     (west build -b mr_canhubk3/s32k344 -S nros-zenoh ...)
+#
+# The native_sim / Cyclone image the demo runs is src/native_sim_entry, a
+# SEPARATE entry package since the nano-ros bump of 2026-09-21: nano-ros
+# resolves an image from its ENTRY PACKAGE (`nros image-facts --for-entry`)
+# and refuses a west build whose Kconfig RMW disagrees with the image's `rmw`
+# (cmake/NanoRosImageAgreement.cmake), so one entry cannot honestly be both a
+# zenoh board image and a Cyclone native_sim image. This package used to be
+# both, built two ways. Board-only policy -- the TCM relocation below,
+# boards/, snippets/ -- stays here.
 
 cmake_minimum_required(VERSION 3.20.0)
 

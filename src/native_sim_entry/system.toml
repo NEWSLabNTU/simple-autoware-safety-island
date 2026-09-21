@@ -1,0 +1,32 @@
+# What this entry deploys to (nano-ros RFC-0098 D3/D5): the Zephyr native_sim
+# image the demo runs, on Cyclone DDS, joining Autoware's domain directly.
+#
+# The TOPOLOGY is not here. This package is an entry: its components, launch
+# and contract live in safety_island_bringup, whose own system.toml the entry
+# names with `BRINGUP ../safety_island_bringup`. This file states only where
+# THIS image is built for.
+#
+# `rmw` is CHECKED, not advisory. nano-ros's Zephyr cmake asks
+# `nros image-facts --for-entry native_sim_entry` for this image and refuses
+# the configure when the Kconfig RMW (prj-cyclonedds.conf) disagrees with it
+# (cmake/NanoRosImageAgreement.cmake). An image is resolved from its ENTRY
+# PACKAGE, first match, so one package can honestly declare one `rmw` -- which
+# is why this image is a separate package from the zenoh board image in
+# src/zephyr_entry (2026-09-21, nano-ros f0d191c98; the same split nano-ros's
+# examples/workspaces/cpp makes, and explains, between `zephyr_entry` and
+# `zephyr_cyclonedds_entry`).
+
+[system]
+name = "safety_island_native_sim_entry"
+rmw = "cyclonedds"
+domain_id = 10                      # the demo domain, as in the bringup and prj-cyclonedds.conf
+
+# The Zephyr family; the concrete board is west's `-b native_sim/native/64`
+# (`just zephyr-build`), resolved through nano-ros's board catalog.
+[image.native_sim]
+board = "zephyr"
+conf = ["prj-cyclonedds.conf"]
+# RFC-0085 D4: a Zephyr image NAMES its entry package. Derivation from the
+# image id gives the same answer; naming it keeps src/zephyr_entry from ever
+# being a candidate for this block.
+entry = "native_sim_entry"

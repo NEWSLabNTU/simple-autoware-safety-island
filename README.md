@@ -60,7 +60,8 @@ src/
   autoware_mrm_*/           ported node pkgs (upstream file layout preserved)
   safety_island_bringup/    system.toml + launch XML + params + resolved model
   native_entry/             native demo entry (fast dev loop)
-  zephyr_entry/             Zephyr entry (added in phase 4)
+  native_sim_entry/         Zephyr native_sim entry, Cyclone (the demo island)
+  zephyr_entry/             Zephyr board entry, zenoh (MR-CANHUBK344)
 demo/                       Autoware planning_simulator recipes + shared cyclone config
 docs/
   roadmap/                  phase doc — plan + acceptance
