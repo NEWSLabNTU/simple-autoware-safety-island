@@ -23,11 +23,15 @@ rmw = "cyclonedds"
 # before Kconfig runs; the three must agree, and nothing checks it yet.
 domain_id = 10
 default_launch = "safety_island.launch.xml"
-# param_services: the image's parameter store. All four components call
-# declare_parameter, and since nano-ros phase-426 W4 the ONLY store is the one
-# this capability links in -- the per-component inline store was deleted
-# because `ros2 param get` never saw it. Without it every component halts
-# boot at its first declare_parameter (code -16, Unsupported).
+# param_services: the six parameter services per node (get, set, list, ...)
+# that make `ros2 param` work against the image. The parameter STORE itself
+# is unconditional in nros-node; what this capability gates is the C++ shim:
+# `nros_cpp_declare_param` is compiled under the `param-services` feature and
+# its stub answers Unsupported (code -16), which is why every component halts
+# boot at its first declare_parameter without it. The services cost 24
+# queryables and are the reason the S32K344 image does not fit; a store-only
+# capability (no queryables, no `ros2 param`) is planned as nano-ros
+# phase-461 W6 and would be the workaround here.
 # P4 adds the E2E integrity layer (nano-ros RFC-0028): "safety".
 features = ["param_services"]
 

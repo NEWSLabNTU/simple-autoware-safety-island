@@ -866,35 +866,34 @@ Measured, not inferred:
 So phase-446's contract-declared parameter sizing is free. The services are
 what the board cannot afford.
 
-### And two of the six do not fit their own buffer
+### The request sizes, and a correction
 
 Computed from the `rcl_interfaces` definitions at this image's capacities
 (`MAX_STRING_VALUE_LEN=0`, `MAX_ARRAY_LEN=0`, `MAX_BYTE_ARRAY_LEN=0` collapse
 every `ParameterValue` arm to its empty-sequence header, giving
-`ParameterValue` = 56 B and `Parameter` = 96 B):
+`ParameterValue` = 56 B and `Parameter` = 96 B), a `set_parameters` request
+naming 25 parameters is 2,408 B, and the earlier revision of this section
+concluded that it does not fit the 1,024 B slot and is dropped.
 
-| service | request bytes | fits 1024 |
-| --- | ---: | --- |
-| `get_parameters` | 1004 | yes |
-| `get_parameter_types` | 1004 | yes |
-| `describe_parameters` | 1004 | yes |
-| `list_parameters` | 1016 | yes |
-| `set_parameters` | **2408** | **no** |
-| `set_parameters_atomically` | **2408** | **no** |
+CORRECTED 2026-09-21 (nano-ros phase-461 planning, which re-derived the bound
+from `nros-node`'s per-node shape): 25 is `NROS_MAX_PARAMETERS`, the executor
+store across all FOUR nodes. No node declares 25. The per-node shapes are
+mrm_comfortable_stop_operator 4 parameters / 40 name bytes,
+mrm_emergency_stop_operator 6 / 69, mrm_handler 8 / 170, stop_mode_operator
+7 / 103, and the worst well-formed request against any of them is **669 B**,
+which fits. A request is dropped only when a client names parameters the node
+never declared, which is a malformed request, not a capacity defect. The RAM
+half of the finding stands unchanged: the inbox table is 26 x 4,428 B because
+the slot is sized for the largest service in the image at the action path's
+ring depth, not for the parameter family's own bound.
 
-A `set_parameters` carrying the node's 25 declared parameters is 2.35x the slot
-it must land in. The callback sets an overflow flag and drops the request: the
-caller sees a node that answers `get_parameters` and silently ignores
-`set_parameters`. Nothing fails at build time. The four that do fit are not
-comfortable either -- 1004 of 1024 means one longer name, or a 26th parameter,
-drops those too.
-
-Filed upstream as nano-ros issue 1352. The fix wants per-type inbox sizing plus
-a ring depth for the parameter family separate from the action path's: sized
-per type at depth 1 the same four nodes need 43,344 B instead of 106,272 B,
-which is more than the overflow, and `set_parameters` gets a slot it fits in.
-Per type at depth 4 would be worse than today, so the depth is the half that
-makes it pay.
+Filed upstream as nano-ros issue 1352; the fix is planned as nano-ros
+phase-461 (service inbox per family): the parameter family gets its own
+static inbox at depth 1, sized by the declared shape, with a const assert
+that the worst request fits; user services and actions keep their tables.
+Projected for this island: 32,088 B of inbox tables instead of 115,128, and
+the image at 298,552 of 327,680 B. Per type at the current depth 4 would be
+worse than today, so the depth is the half that makes it pay.
 
 ---
 
@@ -939,7 +938,7 @@ Fetched and registered as a Zephyr module are different things.
 | | |
 | --- | --- |
 | PR #992, issue 1337 | `package.xml` walk descended into build trees. Merged. |
-| PR #1043, issue 1352 | `set_parameters` does not fit its own service inbox. Open. |
+| PR #1043, issue 1352 | parameter-service inboxes sized for the largest service at the action ring depth. Filing merged 2026-09-13; fix planned as phase-461. |
 
 Issue 1337 was found by this migration and is worth recording: two hand-copied
 `package.xml` walks pruned `build` and `target-*` but not `build-*`, while the
@@ -970,11 +969,13 @@ done.
 **The board does not fit, by 53,912 bytes.**
 
 The cause is isolated: the parameter services, 108,096 bytes measured. nano-ros
-#1043 is the fix, and it needs both halves -- per-type inbox sizing *and* a ring
-depth for the parameter family separate from the action path's. Per type at
-depth 1 the same four nodes need 43,344 B instead of 106,272 B; per type at the
-current depth 4 would be worse than today. TCM relocation cannot substitute:
-DTCM has 47,856 B free, 13,752 B short of the overflow.
+phase-461 is the planned fix, and it needs both halves -- a per-family inbox
+*and* a ring depth for the parameter family separate from the action path's.
+Projected: inbox tables 115,128 -> 32,088 B, the image at 91.1% of RAM. Per
+type at the current depth 4 would be worse than today. TCM relocation cannot
+substitute: DTCM has 47,856 B free, 13,752 B short of the overflow. The
+workaround, second: a store-only parameter capability (phase-461 W6), 0
+queryables, `ros2 param` unavailable, projected 273,496 B.
 
 **Reclaimable without waiting for upstream:**
 
@@ -989,8 +990,7 @@ DTCM has 47,856 B free, 13,752 B short of the overflow.
 
 **Never executed on silicon.** The board is blocked on the MCU-Link probe.
 Everything here is from the linker and the map. The boot-time copy that
-populates ITCM is exactly what a linker cannot check, and the `set_parameters`
-drop is exactly what a linker cannot see.
+populates ITCM is exactly what a linker cannot check.
 
 **Scheduling is available and unused.** The tier derivation is complete and
 gated only on components declaring callback groups. Declaring them would put the
