@@ -252,9 +252,30 @@ zephyr-build: sync
     mkdir -p "$(dirname "$caps")"
     "{{NANO_ROS_ROOT}}/packages/cli/target/release/nros" config show \
         --workspace "$PWD" --system {{BRINGUP}} --format cmake > "$caps"
+    # Name the `nros` Zephyr module -- THIS submodule -- on the command line.
+    #
+    # Until nano-ros issue 1379 the store workspace's `nano-ros` manifest
+    # project was a SYMLINK to whichever checkout ran `just zephyr setup`, and
+    # every image built there, ours included, took the nros module (the zpico
+    # shim, the platform sources, the nros-c/nros-cpp headers, the knob
+    # inventory) from THAT tree while codegen and the cmake verbs came from the
+    # one this recipe names with -Dnano_ros_ROOT. The halves agreed here only
+    # because the link happened to point at this submodule. nano-ros now
+    # unbinds the link in `just zephyr setup` (which _zephyr-provision runs)
+    # and every one of its own builds names its module through
+    # scripts/lib/zephyr-module.sh; once the workspace is unbound a build that
+    # does not configures with NO nros module. Use the helper rather than
+    # spell the path: it is the one spelling nano-ros gates, and it names the
+    # checkout ROOT (the directory holding zephyr/module.yml), not
+    # <root>/zephyr, which configure rejects as "not a valid zephyr module".
+    # Naming it while the link still exists is harmless -- Zephyr keys modules
+    # by name, so the same tree listed twice is one module.
+    source "{{NANO_ROS_ROOT}}/scripts/lib/zephyr-module.sh"
+    module_arg="$(nros_zephyr_module_cmake_arg "{{NANO_ROS_ROOT}}")"
     west build -b native_sim/native/64 -d build-zephyr src/zephyr_entry -- \
         -C "$caps" \
         -DCONF_FILE="prj.conf;prj-cyclonedds.conf" \
+        "$module_arg" \
         -Dnano_ros_ROOT={{NANO_ROS_ROOT}} -DCMAKE_PREFIX_PATH={{NANO_ROS_ROOT}}
 
 # Run the Zephyr island (domain 2 baked; host side: `just host-env`).
@@ -508,11 +529,17 @@ board-build: sync
     # FETCHED and REGISTERED AS A ZEPHYR MODULE are different things.
     #
     # The index suggests a downstream manifest that `import:`s nano-ros's. We
-    # do not take that route: nano-ros is already IN this workspace as the
-    # manifest repo (a symlink to our own submodule), so re-rooting the
-    # manifest would clone a SECOND nano-ros at whatever `revision:` we wrote,
-    # free to drift from the submodule pin this tree actually builds. Naming
-    # the module directly keeps one nano-ros and one pin.
+    # do not take that route: re-rooting the manifest would clone a SECOND
+    # nano-ros at whatever `revision:` we wrote, free to drift from the
+    # submodule pin this tree actually builds. Naming the module directly
+    # keeps one nano-ros and one pin.
+    #
+    # This paragraph used to add that nano-ros was "already in this workspace
+    # as the manifest repo (a symlink to our own submodule)". It was, until
+    # nano-ros issue 1379 unbound the store workspace from any checkout; the
+    # nros module is now named on the command line too, beside hal_nxp, for
+    # the reason written above the same line in zephyr-build.
+    # ZEPHYR_EXTRA_MODULES is a cmake LIST: the two entries are `;`-joined.
     hal_nxp="$ISLAND_ZEPHYR_WS/modules/hal/nxp"
     if [ ! -d "$hal_nxp" ]; then
         echo "board-build: hal_nxp is not in the workspace ($hal_nxp)" >&2
@@ -520,10 +547,13 @@ board-build: sync
         exit 1
     fi
 
+    source "{{NANO_ROS_ROOT}}/scripts/lib/zephyr-module.sh"
+    nros_module="$(nros_zephyr_module_root "{{NANO_ROS_ROOT}}")"
+
     west build -b {{BOARD}} -S {{BOARD_RMW}} -S {{BOARD_LINK}} -d {{BOARD_BUILD_DIR}} $PWD/src/zephyr_entry -- \
         -C "$caps" \
         -Dnano_ros_ROOT={{NANO_ROS_ROOT}} \
-        -DZEPHYR_EXTRA_MODULES="$hal_nxp" \
+        -DZEPHYR_EXTRA_MODULES="$nros_module;$hal_nxp" \
         -DCMAKE_PREFIX_PATH={{NANO_ROS_ROOT}} "${EXTRA[@]}"
 
     # A DERIVED value being right is not the question; whether it ARRIVED is.
