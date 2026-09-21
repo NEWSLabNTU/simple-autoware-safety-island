@@ -17,7 +17,7 @@
 [system]
 name = "safety_island_zephyr_entry"
 rmw = "cyclonedds"
-domain_id = 2                       # island domain, as in the bringup
+domain_id = 10                      # the demo domain, as in the bringup and prj-cyclonedds.conf
 
 # The Zephyr family. The concrete board (native_sim, or the MR-CANHUBK344 the
 # board-* recipes pass) is west's `-b` argument, resolved through nano-ros's

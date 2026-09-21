@@ -65,6 +65,7 @@
 #   SS mrm_comfortable_stop_operator /system/mrm/comfortable_stop/operate
 #   SS mrm_emergency_stop_operator   /system/mrm/emergency_stop/operate
 #   SC mrm_handler                   /system/mrm/comfortable_stop/operate
+#   SC mrm_handler                   /system/mrm/emergency_stop/operate
 #
 # Both pairs are INTERNAL -- server and client are both on this board -- so
 # neither needs the `external:` mark that a split pair does.
@@ -114,7 +115,11 @@ nodes:
         trigger: { timer: { rate_hz: 30 } }
         output: [emergency_control_cmd, status]
     sub:
-      control_cmd: { min_rate_hz: 30, qos: { depth: 1 } }
+      # Cached in onControlCommand and read on the timer as the ramp seed: a
+      # read-latest input, not a trigger. `state: true` says so; without it
+      # the checker's state-consistency rule warns that the subscriber is
+      # neither a path trigger nor state.
+      control_cmd: { min_rate_hz: 30, qos: { depth: 1 }, state: true }
     pub:
       emergency_control_cmd: { min_rate_hz: 30 }
       status: { min_rate_hz: 30 }

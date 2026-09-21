@@ -110,9 +110,8 @@ doctor:
 # WHAT A HUMAN AUTHORS, AND WHAT IS GENERATED
 #
 # Authored, in src/{{BRINGUP}}/: system.toml, launch/*.launch.xml, and the
-# launch file's sidecars (<stem>.contract.yaml naming each node's pub/sub sets,
-# <stem>.system.<target>.yaml carrying the scheduling platform). Those are the
-# only files anyone edits.
+# launch file's sidecar (<stem>.contract.yaml naming each node's endpoints,
+# paths, services and parameters). Those are the only files anyone edits.
 #
 # Generated: build/nros/models/{{BRINGUP}}/system_model.yaml. It is a BUILD
 # ARTIFACT -- never committed, never hand-edited, and never named by an entry

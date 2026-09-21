@@ -1,10 +1,11 @@
 # Safety-island system descriptor (nano-ros bringup pkg, schema v0.1).
 #
 # This file is AUTHORED, alongside launch/safety_island.launch.xml and that
-# launch file's two sidecars (safety_island.contract.yaml, which states each
-# node's pub/sub sets, and safety_island.system.posix.yaml, the scheduling
-# platform the contract channel needs to open). Those four are the whole of
-# what a human edits here.
+# launch file's one sidecar, safety_island.contract.yaml, which states each
+# node's endpoints, paths, services and parameters. Those three are the whole
+# of what a human edits here. (A safety_island.system.posix.yaml once sat
+# beside them on the belief that the contract channel needed it; it did not,
+# and commit 2535dd7 deleted it.)
 #
 # `just sync` resolves them into build/nros/models/safety_island_bringup/
 # system_model.yaml -- a BUILD ARTIFACT, gitignored, never hand-edited. The
@@ -14,7 +15,13 @@
 [system]
 name = "safety_island"
 rmw = "cyclonedds"
-domain_id = 2                       # island domain; Autoware is domain 1 (bridged)
+# The demo domain. The Zephyr image bakes CONFIG_NROS_CYCLONE_DOMAIN_ID=10 in
+# src/zephyr_entry/prj-cyclonedds.conf (the rationale is there: the island
+# talks to Autoware directly, no bridge, on a domain the shared host does not
+# use), and the justfile defaults ROS_DOMAIN_ID to the same 10 for the host
+# side. This value names the same choice for the readers that see system.toml
+# before Kconfig runs; the three must agree, and nothing checks it yet.
+domain_id = 10
 default_launch = "safety_island.launch.xml"
 # param_services: the image's parameter store. All four components call
 # declare_parameter, and since nano-ros phase-426 W4 the ONLY store is the one
