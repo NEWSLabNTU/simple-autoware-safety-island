@@ -65,7 +65,18 @@ Status: not started.
 ### island-W2 - the census is a configure gate
 
 Depends on: nano-ros phase-463-W4 (the census runs at RTOS configure and goes
-stale by content), phase-463-W6 (retire the max; flip the island).
+stale by content), phase-463-W6 (retire the max; flip the island), and
+nano-ros issue 1469.
+
+1469 is the hard one and it was invisible until 2026-09-24. All four of this
+workspace's nodes are `unprobeable`, so there is NO source metadata here for
+a census to be built from, and two of the four still carry a `version: 1`
+sidecar recording one node and one callback each, which is both stale and far
+short of what those nodes declare. The probe fails for two independent
+reasons, both in nano-ros and neither the island's to fix: it duplicates a
+shared message type's bindings across consuming packages, and it ignores this
+workspace's field caps. A stale sidecar that nothing refreshes is worse than
+none, because it reads as an observation.
 
 What it does: `just sync` or `just build` produces the native census beside
 the model; `just zephyr-build` and `just board-build` refuse a stale or
@@ -85,11 +96,21 @@ Status: not started.
 
 ### island-W3 - the board image links, and the map says why
 
-Depends on: nano-ros phase-461-W5 (the parameter family's own inbox at depth
-1; user services and actions keep theirs).
+Depends on: nano-ros phase-461-W2b (the BUILTIN families get their own ring
+inside the zenoh shim) and phase-461-W3 (service and action request types are
+priced). Corrected 2026-09-24: this line used to name phase-461-W5 while
+describing W2, and neither is the blocker. W2 alone freed 0 bytes on the
+image, because `nros-node` reaches its backend only through the C vtable in
+`nros-rmw-cffi`, whose `create_service` carries no inbox argument, so the
+storage has to be chosen where the queryable is created. That is W2b. W5 is
+the REPORTING half (`nros image-facts` naming the three inbox families) and
+is wanted for this wave's report, not for the link.
 
 What it does: the pin bump alone should take the image from
-`region 'RAM' overflowed by 56848 bytes` to a link; the projected figure is
+`region 'RAM' overflowed by 56848 bytes` to a link. That overflow is
+MEASURED, not remembered: `just board-build` at pin f0d191c98 on 2026-09-24
+printed exactly that line, which is what makes the after-number mean
+something. The projected figure is
 298,552 of 327,680 B (91.1%), with the inbox tables at 32,088 B instead of
 115,128. `docs/nxp-deployment.md` sections 5 and 8 are rewritten from the
 new map. If the projection is wrong, the fallback is phase-461-W6: the
@@ -98,6 +119,25 @@ services), projected 273,496 B, with `ros2 param` stated as unavailable.
 
 Gate: `just board-build` links; the region report and the seventeen largest
 symbols pasted into the report; `just check-knob-delivery` green.
+
+Two things a dry run against nano-ros main on 2026-09-24 established, so
+whoever takes this wave does not rediscover them:
+
+- The pin jump is about 200 commits and it invalidates the in-tree CLI. The
+  build REFUSES with `in-tree nros CLI is STALE` rather than misplanning
+  silently, which is correct. Run `just setup-cli` inside
+  `third-party/nano-ros` after moving the pin. Do NOT reach for
+  `NROS_SKIP_STALE_CHECK=1`; that override is for deliberate experiments and
+  this is the path the real bump takes.
+- Rebuilding the CLI invalidates the `.unprobeable` markers, so the metadata
+  probe runs again and FAILS the build rather than warning past it. Both
+  reasons are nano-ros issue 1469: the probe duplicates a shared message's
+  bindings across consuming packages, and it does not apply this workspace's
+  `nros-codegen.toml` field caps, so `std_msgs/Header.frame_id` reads as
+  unbounded even though `src/island_interfaces/nros-codegen.toml` caps it at
+  64. Neither is the island's to fix, and until one of them lands this wave
+  may need `nros sync --no-metadata` to reach the link at all. Reaching the
+  LINK is the point of this wave; the census is island-W2's.
 
 Owns: `src/zephyr_entry/boards/mr_canhubk3_s32k344.conf`,
 `src/safety_island_bringup/system.toml` (only if the fallback is taken),
