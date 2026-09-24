@@ -1,0 +1,458 @@
+# Section 8.1's heartbeat row, with its rate changed and nothing else.
+#
+# WHAT THIS IS
+#
+# `stage0-interface.contract.yaml` is design section 8's interface contract,
+# transcribed. This file is that file with ONE number changed:
+#
+#     topics./si/in/heartbeat.rate_hz:   100   ->   10
+#
+# Everything else is byte-identical, including every requirement. The design
+# still asks for what section 8.1 says it asks for; only the channel changed.
+#
+# WHY THIS IS THE ROW TO BREAK
+#
+# Section 8.1's heartbeat row is the tightest on the table: 100 Hz with a
+# 20 ms age limit, two periods. Section 8.5 explains why it is the row that
+# matters -- "the TSN heartbeat (20 ms age limit) is the vehicle-level-
+# independent one", the detector that works whether or not the HPC is an
+# Orin/Thor-class part with an on-SoC FSI line. Section 9.2 then spends
+# 30 ms of a 70 ms fault-reaction budget on three missed periods of it.
+#
+# Three missed periods of a 10 Hz stream is 300 ms. There is no 70 ms budget
+# that survives it, and no arithmetic anywhere in section 9.2 that still
+# closes. None of that is stated here, and none of it has to be: the rate
+# alone is contradicted, and the contradiction is local to one row.
+#
+# WHAT THE TOOL IS ASKED TO NOTICE
+#
+# The two halves of section 8.1's Rate column are declared in two places, as
+# the passing file's header explains -- once as the channel's `rate_hz` and
+# once as the consumer's `min_rate_hz`, because a rate nobody demands is a
+# fact nothing checks. Changing one of the two and not the other is exactly
+# the mistake a table cannot catch and a contract can: the row still reads
+# 10 Hz somewhere and 100 Hz somewhere else, both in the same file, and
+# nothing about either number is wrong on its own.
+#
+# `rate-hierarchy` is the rule that compares them. It is an error, not a
+# warning, so the run exits 1.
+#
+# EVERYTHING BELOW THIS LINE IS THE PASSING FILE
+#
+# Its header is not repeated. Read `stage0-interface.contract.yaml` for the
+# transcription, for the list of what this fixture invents, and for the six
+# things in section 8 that the grammar does not take.
+
+version: 1
+
+nodes:
+  # N1, the ingress E2E verifier. Section 8.4: "N1 verifies on ingress, H1
+  # applies on egress, and a verification failure is a safety event raised to
+  # N8, never a middleware exception." Every row of section 8.1 passes through
+  # here, so every row of section 8.1 is a subscriber here.
+  #
+  # Every `min_rate_hz` below is section 8.1's Rate column and every `max_age`
+  # is its Age limit column. Neither is inferred from the other and neither is
+  # derived from anything: the design states both, per row, and they disagree
+  # about what matters often enough that the pair is load-bearing. The
+  # kinematic-state row wants 50 Hz and 60 ms -- three periods. The refuge row
+  # wants 2 Hz and 2 s -- four. The heartbeat row wants 100 Hz and 20 ms --
+  # two, the tightest ratio on the table, which is why section 9.2 can build a
+  # 30 ms detector out of it.
+  si_e2e_ingress:
+    sub:
+      # Row 1. Trajectory (<=250 pts). SI-E2E/A.
+      trajectory:
+        min_rate_hz: 10
+        max_age: 300ms
+        required: true
+      # Row 2. Drivable corridor, marked "(preferred source)" because section
+      # 8.1's degradation table gives it N14's perceived lane boundaries as an
+      # island-local substitute. SI-E2E/A.
+      corridor:
+        min_rate_hz: 10
+        max_age: 300ms
+        required: true
+      # Row 3. Kinematic state (reference). SI-E2E/A. "(reference)" is section
+      # 8.1's own word: the degradation table says the island cross-checks the
+      # HPC estimate against N4's dead reckoning and, on divergence or loss,
+      # uses N4 alone.
+      kinematic_state:
+        min_rate_hz: 50
+        max_age: 60ms
+        required: true
+      # Row 4. Acceleration (reference). SI-E2E/A. Same rate, same age limit,
+      # same substitute as row 3.
+      acceleration:
+        min_rate_hz: 50
+        max_age: 60ms
+        required: true
+      # Row 5. Operation mode state. SI-E2E/A. The Rate column reads
+      # "10 Hz + on change"; only the 10 is a rate, and the "+ on change" is
+      # in WHAT THE GRAMMAR DOES NOT TAKE.
+      operation_mode_state:
+        min_rate_hz: 10
+        max_age: 300ms
+        required: true
+      # Row 6. Capability vector. SI-E2E/B.
+      capability:
+        min_rate_hz: 10
+        max_age: 300ms
+        required: true
+      # Row 7. ODD status + declared active domain. SI-E2E/B. Section 8.1's
+      # degradation table is explicit that this row's substitute is NOT a
+      # substitute: "A silent `active_odd` is not a satisfied one: silence
+      # past T_ack is exactly the B1 timeout, and escalates by 3.2's takeover
+      # rule rather than being substituted for." That escalation is stage 2's
+      # ladder; here the row is only declared.
+      odd_status:
+        min_rate_hz: 10
+        max_age: 300ms
+        required: true
+      # Row 8. Heartbeat + self-test. SI-E2E/B. The fastest row on the table
+      # and the only one whose age limit section 8.1 sets in bold: 20 ms.
+      # Section 8.5 says why it is here at all -- "the TSN heartbeat (20 ms
+      # age limit) is the vehicle-level-independent one", as against the
+      # sub-millisecond on-SoC FSI path that only exists when the HPC is an
+      # Orin/Thor-class part.
+      heartbeat:
+        min_rate_hz: 100
+        max_age: 20ms
+        required: true
+      # Row 9. Pull-over refuge. SI-E2E/A. The slowest row, and the one with
+      # the longest age limit: 2 Hz and 2 s.
+      refuge:
+        min_rate_hz: 2
+        max_age: 2s
+        required: true
+      # Row 10. Auxiliary commands. SI-E2E/A. One row of section 8.1, written
+      # `/control/command/{gear,turn_indicators,hazard_lights}_cmd`, so three
+      # topics with one rate and one age limit between them.
+      gear_cmd:
+        min_rate_hz: 10
+        max_age: 300ms
+        required: true
+      turn_indicators_cmd:
+        min_rate_hz: 10
+        max_age: 300ms
+        required: true
+      hazard_lights_cmd:
+        min_rate_hz: 10
+        max_age: 300ms
+        required: true
+      # Row 11. Object list. SI-E2E/B. The one optional row, and `required:
+      # false` is the grammar's word for section 8.1's closing sentence:
+      # "the last row is not a dependency of anything at all". Section 3.5 is
+      # written so that "losing it costs information, not capability", and the
+      # degradation table gives it the only substitute on the table that is
+      # absence.
+      #
+      # The rate and age limit are still the design's, and still checked. An
+      # optional input is not an unbounded one: section 8.1 truncates it to a
+      # bounded digest at N20 before anything on the island reads it.
+      objects:
+        min_rate_hz: 10
+        max_age: 300ms
+        required: false
+
+  # The publisher of section 8.2, and an invention -- see WHAT IS INVENTED.
+  # The design's nine outbound rows come from six different nodes; one node is
+  # the smallest thing that gives them all an endpoint.
+  #
+  # There is no `max_age` anywhere below, and that is section 8.2's own shape
+  # rather than an omission: its table has four columns where section 8.1 has
+  # six, and Age limit is one of the two it does not have. The island declares
+  # what it sends and how often; the age limit on the far side is the HPC's to
+  # state, and part 1 does not state it.
+  si_e2e_egress:
+    pub:
+      # Row 1. Island safety state. The fastest outbound row, at 50 Hz, and
+      # the one the failover sequence in section 10.3 is narrated through.
+      state: { min_rate_hz: 50 }
+      # Row 2. Safety world state. 20 Hz. Section 8.2 marks this row
+      # "advisory in this direction" and adds the rule that keeps the
+      # independence argument pointing the right way: "It must never become an
+      # input the HPC's nominal pipeline depends on." Nothing in this grammar
+      # expresses that, and it is in WHAT THE GRAMMAR DOES NOT TAKE.
+      safety_world: { min_rate_hz: 20 }
+      # Row 3. Island sensor health. 5 Hz.
+      sensor_health: { min_rate_hz: 5 }
+      # Row 4. Island ODD verdict + switch demand. Section 8.2's Rate column
+      # reads "2-5 Hz". 2 is the floor of that range and therefore the only
+      # part of it a lower bound can carry; the 5 is in WHAT THE GRAMMAR DOES
+      # NOT TAKE.
+      odd_verdict: { min_rate_hz: 2 }
+      # Row 5. Fallback availability. 2 Hz.
+      fallback_availability: { min_rate_hz: 2 }
+      # Row 6. MRM state. "10 Hz + on change", as row 5 of section 8.1; the
+      # 10 is the rate.
+      mrm_state: { min_rate_hz: 10 }
+      # Row 7. Constraint / veto vector. 50 Hz. Section 8.2: "the mechanism
+      # for graded-reaction steps 1 and 2: the island constrains the HPC
+      # rather than seizing control, and only escalates when the HPC fails to
+      # comply within a declared number of cycles." The declared number of
+      # cycles is stage 2's business; the 50 Hz that makes a cycle 20 ms is
+      # this row.
+      constraints: { min_rate_hz: 50 }
+      # Row 8. Executed control command (echo). 50 Hz.
+      control_cmd: { min_rate_hz: 50 }
+      # Row 9. Vehicle status. Section 8.2's Rate column reads "50-100 Hz",
+      # one range across four topics; 50 is its floor.
+      velocity_status: { min_rate_hz: 50 }
+      steering_status: { min_rate_hz: 50 }
+      gear_status: { min_rate_hz: 50 }
+      control_mode_status: { min_rate_hz: 50 }
+      # Section 8.3, the actuator link: "CAN FD (or deterministic Ethernet) at
+      # 100 Hz, protection profile SI-E2E/B, carrying steering, acceleration /
+      # braking, gear, hazard lamps and the MRM flag". 100 Hz is the only
+      # number in that section.
+      actuator_cmd: { min_rate_hz: 100 }
+    sub:
+      # Section 8.3's return direction: "with actuator feedback returned on
+      # the same bus for N9". The design gives this signal a bus, a consumer
+      # and no rate, so it gets no `min_rate_hz` and no `max_age` here. A row
+      # the design leaves unbounded stays unbounded; the alternative is to
+      # invent a bound and then check against it, which would make the file
+      # agree with itself and with nothing else.
+      actuator_feedback: {}
+
+topics:
+  # ==== SECTION 8.1, HPC -> ISLAND ======================================
+  # TSN/Ethernet, DDS or SOME/IP binding under nano-ros. Eleven rows, ten
+  # required and one optional, in the design's own order. `external: pub`
+  # throughout: the HPC is outside this launch tree, which is the whole point
+  # of the island.
+  #
+  # Every `rate_hz` is section 8.1's Rate column. Nothing here is derived:
+  # there is not a timer in this file, because stage 0 declares the interface
+  # and does not yet run anything through it.
+
+  # Row 1.
+  /planning/scenario_planning/trajectory:
+    type: autoware_planning_msgs/msg/Trajectory
+    external: pub
+    sub: [si_e2e_ingress/trajectory]
+    rate_hz: 10
+
+  # Row 2. Type marked *new* by the design.
+  /si/in/corridor:
+    type: safety_island_msgs/msg/SafetyCorridor
+    external: pub
+    sub: [si_e2e_ingress/corridor]
+    rate_hz: 10
+
+  # Row 3.
+  /localization/kinematic_state:
+    type: nav_msgs/msg/Odometry
+    external: pub
+    sub: [si_e2e_ingress/kinematic_state]
+    rate_hz: 50
+
+  # Row 4.
+  /localization/acceleration:
+    type: geometry_msgs/msg/AccelWithCovarianceStamped
+    external: pub
+    sub: [si_e2e_ingress/acceleration]
+    rate_hz: 50
+
+  # Row 5.
+  /api/operation_mode/state:
+    type: autoware_adapi_v1_msgs/msg/OperationModeState
+    external: pub
+    sub: [si_e2e_ingress/operation_mode_state]
+    rate_hz: 10
+
+  # Row 6. Type marked *new* by the design.
+  /si/in/capability:
+    type: safety_island_msgs/msg/HpcCapability
+    external: pub
+    sub: [si_e2e_ingress/capability]
+    rate_hz: 10
+
+  # Row 7. Type marked *new* by the design, and the design lists its fields:
+  # geofence validity, weather class, roadworks flags, `active_odd` with its
+  # speed / sensing-range / friction bounds, and `odd_switch_state`.
+  /si/in/odd_status:
+    type: safety_island_msgs/msg/OddStatus
+    external: pub
+    sub: [si_e2e_ingress/odd_status]
+    rate_hz: 10
+
+  # Row 8. Type marked *new* by the design. 100 Hz, and section 9.2 turns
+  # three missed periods of it into the island's 30 ms detection stage.
+  # THIS IS THE ROW THE BROKEN COMPANION CHANGES.
+  /si/in/heartbeat:
+    type: safety_island_msgs/msg/HpcHeartbeat
+    external: pub
+    sub: [si_e2e_ingress/heartbeat]
+    rate_hz: 10
+
+  # Row 9. Type marked *new* by the design.
+  /si/in/refuge:
+    type: safety_island_msgs/msg/PullOverRefuge
+    external: pub
+    sub: [si_e2e_ingress/refuge]
+    rate_hz: 2
+
+  # Row 10, expanded. One row of the design, three topics.
+  /control/command/gear_cmd:
+    type: autoware_vehicle_msgs/msg/GearCommand
+    external: pub
+    sub: [si_e2e_ingress/gear_cmd]
+    rate_hz: 10
+  /control/command/turn_indicators_cmd:
+    type: autoware_vehicle_msgs/msg/TurnIndicatorsCommand
+    external: pub
+    sub: [si_e2e_ingress/turn_indicators_cmd]
+    rate_hz: 10
+  /control/command/hazard_lights_cmd:
+    type: autoware_vehicle_msgs/msg/HazardLightsCommand
+    external: pub
+    sub: [si_e2e_ingress/hazard_lights_cmd]
+    rate_hz: 10
+
+  # Row 11, the optional one. The design's Type column says
+  # "autoware_perception_msgs/PredictedObjects, truncated to a bounded digest
+  # at N20", so the type on the wire is the full Autoware message and the
+  # truncation happens on the island, after ingress.
+  /perception/object_recognition/objects:
+    type: autoware_perception_msgs/msg/PredictedObjects
+    external: pub
+    sub: [si_e2e_ingress/objects]
+    rate_hz: 10
+
+  # ==== SECTION 8.2, ISLAND -> HPC ======================================
+  # Nine rows, `external: sub` throughout. Three columns each -- Topic, Type,
+  # Rate -- and all three land.
+
+  /si/out/state:
+    type: safety_island_msgs/msg/IslandState
+    external: sub
+    pub: [si_e2e_egress/state]
+    rate_hz: 50
+
+  /si/out/safety_world:
+    type: safety_island_msgs/msg/SafetyWorldState
+    external: sub
+    pub: [si_e2e_egress/safety_world]
+    rate_hz: 20
+
+  /si/out/sensor_health:
+    type: safety_island_msgs/msg/IslandSensorHealth
+    external: sub
+    pub: [si_e2e_egress/sensor_health]
+    rate_hz: 5
+
+  # "2-5 Hz" in the design; 2 is its floor.
+  /si/out/odd_verdict:
+    type: safety_island_msgs/msg/OddVerdict
+    external: sub
+    pub: [si_e2e_egress/odd_verdict]
+    rate_hz: 2
+
+  /si/out/fallback_availability:
+    type: safety_island_msgs/msg/FallbackAvailability
+    external: sub
+    pub: [si_e2e_egress/fallback_availability]
+    rate_hz: 2
+
+  # The one outbound row with an Autoware type rather than a *new* one, and
+  # the one that leaves the island's own namespace: the MRM state the rest of
+  # Autoware already knows how to read.
+  /system/fail_safe/mrm_state:
+    type: autoware_adapi_v1_msgs/msg/MrmState
+    external: sub
+    pub: [si_e2e_egress/mrm_state]
+    rate_hz: 10
+
+  /si/out/constraints:
+    type: safety_island_msgs/msg/SafetyEnvelopeCommand
+    external: sub
+    pub: [si_e2e_egress/constraints]
+    rate_hz: 50
+
+  /control/command/control_cmd:
+    type: autoware_control_msgs/msg/Control
+    external: sub
+    pub: [si_e2e_egress/control_cmd]
+    rate_hz: 50
+
+  # Row 9, expanded. One row of the design, four topics, "50-100 Hz"; 50 is
+  # its floor.
+  /vehicle/status/velocity_status:
+    type: autoware_vehicle_msgs/msg/VelocityReport
+    external: sub
+    pub: [si_e2e_egress/velocity_status]
+    rate_hz: 50
+  /vehicle/status/steering_status:
+    type: autoware_vehicle_msgs/msg/SteeringReport
+    external: sub
+    pub: [si_e2e_egress/steering_status]
+    rate_hz: 50
+  /vehicle/status/gear_status:
+    type: autoware_vehicle_msgs/msg/GearReport
+    external: sub
+    pub: [si_e2e_egress/gear_status]
+    rate_hz: 50
+  /vehicle/status/control_mode_status:
+    type: autoware_vehicle_msgs/msg/ControlModeReport
+    external: sub
+    pub: [si_e2e_egress/control_mode_status]
+    rate_hz: 50
+
+  # ==== SECTION 8.3, ISLAND -> ACTUATOR GATEWAY =========================
+  # "CAN FD (or deterministic Ethernet) at 100 Hz ... This path shares nothing
+  # with the HPC link (R6, and RFC design principle 3)." The sharing-nothing
+  # claim is about the physical link, and nothing in this grammar expresses
+  # it; what the grammar does carry is that the 100 Hz here is the same number
+  # as the heartbeat's 100 Hz above and an entirely different channel.
+  /si/out/actuator_cmd:
+    type: autoware_control_msgs/msg/Control
+    external: sub
+    pub: [si_e2e_egress/actuator_cmd]
+    rate_hz: 100
+
+  # The return direction of the same bus. No `rate_hz`: the design gives this
+  # signal no rate, and stage 0 does not invent numbers for rows the design
+  # left open.
+  /si/out/actuator_feedback:
+    type: autoware_vehicle_msgs/msg/ActuatorStatusStamped
+    external: pub
+    sub: [si_e2e_egress/actuator_feedback]
+
+# WHAT THE GRAMMAR DOES NOT TAKE
+#
+# Six things in section 8 are stated by the design and are not in this file,
+# because there is no key for them. They are listed rather than dropped.
+#
+#   1. The Protection column. Every row of section 8.1 carries SI-E2E/A or
+#      SI-E2E/B, and section 8.4 spells both profiles out field by field:
+#      16-bit vs 8-bit Data ID, 8-bit vs 4-bit sequence counter, CRC-32 vs
+#      CRC-8, 17 bytes vs 6 bytes of overhead. It is per-row, it is a
+#      property of the channel, and the grammar has no channel-protection
+#      key. Every row above carries its profile in a comment instead, which
+#      is a worse place for it.
+#   2. "+ on change" on the operation-mode row and the MRM-state row.
+#      `min_rate_hz` is a floor on a periodic stream; the design is asking
+#      for a periodic stream AND an aperiodic edge on the same topic, and
+#      only the periodic half has a key.
+#   3. The upper end of the two ranges: the 5 of the ODD verdict's "2-5 Hz"
+#      and the 100 of vehicle status's "50-100 Hz". `max_rate_hz` exists on
+#      an endpoint, but as a REQUIREMENT on a subscriber -- a bound on what
+#      the consumer can drain -- and both of these are published by the
+#      island to a subscriber outside this tree, so there is no endpoint here
+#      to put it on.
+#   4. Section 8.1's degradation table: eleven rows of "island substitute
+#      when it is stale or absent", and the sentence they exist to support,
+#      "No row on this table is a hard dependency of the safety core". That
+#      is the ladder, and it is stage 2's file, not this one. `required:
+#      false` on the object-list row is the one piece of it that fits here,
+#      because absence is that row's whole substitute.
+#   5. Section 8.2's direction rule for SafetyWorldState: "It must never
+#      become an input the HPC's nominal pipeline depends on, or the
+#      independence argument runs backwards." A prohibition on a subscriber
+#      that does not exist in this tree cannot be written in a language whose
+#      subject is this tree.
+#   6. Section 8.3's "This path shares nothing with the HPC link". Two topics
+#      that must not share a physical channel is a deployment fact; the
+#      grammar's subject is the graph.

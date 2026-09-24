@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<!-- Stage 3, variant B: the same partitions, with criticality DERIVED from the
+     design's own hazard instead of labelled by hand.
+
+     stage3-partitions.* writes section 2.2's tiers out as `criticality:`
+     labels. That is not how the checker assigns criticality when a contract
+     declares a hazard: phase 72's derivation takes over, and the label only
+     stands where no hazard reaches the node. Stage 1 (l4_designed.*) already
+     declares the design's ASIL_D `hpc_loss` hazard, so THIS is the
+     configuration the island would actually ship.
+
+     Eleven nodes: the four of section 9.2's reaction chain, wired exactly as
+     stage 1 wires them, plus one representative node from each of the other
+     partitions, each with the rate the design gives it. -->
+<launch>
+  <!-- P0, the reaction chain of section 9.2 -->
+  <node pkg="safety_island_l4" exec="stub" name="n2_hpc_supervisor"/>
+  <node pkg="safety_island_l4" exec="stub" name="n3_state_machine"/>
+  <node pkg="safety_island_l4" exec="stub" name="i1_control_command_gate"/>
+  <node pkg="safety_island_l4" exec="stub" name="i16_vehicle_interface"/>
+  <!-- P0, not on the reaction chain -->
+  <node pkg="safety_island_l4" exec="stub" name="n4_vehicle_state_estimator"/>
+  <!-- P1 -->
+  <node pkg="safety_island_l4" exec="stub" name="i13_pure_pursuit"/>
+  <node pkg="safety_island_l4" exec="stub" name="n12_time_quality_monitor"/>
+  <!-- P2 -->
+  <node pkg="safety_island_l4" exec="stub" name="n16_safety_world_model"/>
+  <node pkg="safety_island_l4" exec="stub" name="n17_sensor_health"/>
+  <!-- P3 -->
+  <node pkg="safety_island_l4" exec="stub" name="i10_mpc_lateral_controller"/>
+  <!-- P4 -->
+  <node pkg="safety_island_l4" exec="stub" name="n11_event_recorder"/>
+</launch>

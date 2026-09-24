@@ -1,0 +1,666 @@
+# The L4 Safety Island's degradation ladder, as a checkable contract.
+#
+# WHAT THIS IS
+#
+# "L4 Safety Island for Autoware - Software Design", version 20260918,
+# Reference Design WG. Section 3 is normative and declares four behaviours
+# with a precedence order; section 3.2 draws them as a state machine; section
+# 8.1 says "every input on this table is now degradable" and gives each one an
+# island-local substitute.
+#
+# This file is section 3's ladder, written in play_launch's contract language,
+# so that the ladder's shape - not only its timings - is checked by a tool.
+#
+# THE SENTENCE THIS STAGE EXISTS FOR
+#
+# Section 3.1, B4's precondition row, verbatim:
+#
+#   "None, and deliberately none. A fallback whose entry can be blocked is
+#    not a fallback."
+#
+# and section 3.2, closing the ladder:
+#
+#   "That is why it carries no precondition. A floor with an entry condition
+#    is a trapdoor."
+#
+# The checker's `ladder-unterminated` rule says:
+#
+#   "the last fallback rung requires [...], which this hazard's own guards can
+#    take away -- there is no floor. The bottom of a ladder must require
+#    nothing the fault can remove"
+#
+# Those are the same sentence. `stage2-noFloor.contract.yaml` is this file
+# with one line changed so that the checker has to say it.
+#
+# THE LADDER THIS FILE ENCODES, AND WHICH EDGES IT IS
+#
+# `modes:` with `fallback:` is an ORDERED list of successors. Section 3.2's
+# ladder is not a list - it is a state machine whose successor is chosen by
+# what the island still HAS. So this file encodes one walk through that state
+# machine: the worst-case descent, in which every edge is taken in turn. Each
+# of the four edges below is drawn in section 3.2's own state diagram:
+#
+#   ADS_ACTIVE -> B1   "Nominal --> B1: ODD margin lost (H4 / N19 / N17)"
+#   B1 -> B2           "B1 --> B2: T_odd expired - HPC lost during the switch"
+#   B2 -> B3           "B2 --> B3: T_hold expired, HPC still lost"
+#   B3 -> B4           "B3 --> B4: T_refuge expired - search inconclusive"
+#
+# Every quotation in this file is transcribed into ASCII: the document's em
+# dashes become hyphens, its bold and italics are dropped or capitalised, and
+# an omission inside a quotation is marked with "...". Nothing else is
+# changed, and no quotation is paraphrased.
+#
+# The hazard that opens it is the one B1 answers: the HPC stops declaring a
+# satisfiable operating domain. Section 8.1's substitute table states the
+# detection rule in so many words -- "A silent `active_odd` is not a satisfied
+# one: silence past `T_ack` is exactly the B1 timeout" -- so the guard is
+# `/si/in/odd_status` and the fault class is omission.
+#
+# WHERE EACH NUMBER LANDS IN THIS FILE, AND WHICH SECTION IT COMES FROM
+#
+#   T_ack = 2 s -> `lease_duration: 2s` on si_odd_monitor's odd_status
+#     subscriber. Section 3.1, B1 deadlines: "Declare a new active domain - or
+#     declare exhaustion - within `T_ack` = 2 s of the demand". The lease is
+#     the only omission MECHANISM the checker counts, and silence past T_ack
+#     is what section 8.1 says the timeout is, so the two are the same fact.
+#     This is the whole of the ladder's detection time: 2000 ms.
+#   T_odd = 10 s -> `ftti: 10s` on the hazard. Section 3.1, B1 deadlines:
+#     "satisfy it within the safety timeout `T_odd` = 10 s (open decision
+#     17)". Reading it as the fault-tolerant time interval is this file's, and
+#     it is argued below.
+#   3 s comply -> `max_latency: 3s` on si_hpc_supervisor's verify_compliance.
+#     Section 3.1, B1 deadlines: "Comply with a restriction within 3 s". It is
+#     not a cycle time; it is the deadline the island waits out before a
+#     compliance verdict exists at all.
+#   T_refuge = 5 s -> `max_latency: 5s` on si_pull_over_manager's two search
+#     paths. Section 3.1, B3 deadlines: "The refuge search is bounded by
+#     `T_refuge` = 5 s from B3 entry".
+#   200 ms -> si_odd_monitor's own publication period. Section 8.2 prints
+#     `/si/out/odd_verdict` at "2-5 Hz"; this file takes the fast end, 5 Hz.
+#   20 ms -> si_safety_gateway's egress cycle. Section 8.2 prints
+#     `/si/out/state` and `/si/out/constraints` at 50 Hz.
+#   10 ms -> one cycle of the 100 Hz P0 partition (section 9.1), for every T0
+#     node on the reaction: N3, I6, I1, I16. Identical to stage 1's hops.
+#   100 ms -> si_mrm_handler's cycle. Section 8.2 prints
+#     `/system/fail_safe/mrm_state` at "10 Hz + on change".
+#   50 ms -> si_safety_world_model's fusion cycle. Section 2.2 puts T1s at
+#     20-50 Hz; this file takes the slow end, 20 Hz, because the staleness
+#     rule in that same section says T0 must never block on T1s.
+#
+# WHY T_odd IS READ AS THE INTERVAL
+#
+# The design puts FTTI derivation out of scope for Part 1 (section 0), so
+# there is no published interval for this hazard to be measured against.
+# T_odd is the nearest thing the document commits to: section 3.1 argues that
+# `T_odd < t_margin - t_pullover`, that "an island that negotiates until the
+# moment the envelope fails has spent the budget the fallback needed", and
+# that the window a behaviour spends waiting "must not consume the budget the
+# behaviour underneath it needs". That is an FTTI argument in prose. This file
+# performs it: every rung, detection included, must fit inside T_odd.
+#
+# WHAT A RUNG'S REACTION PATH MEASURES HERE
+#
+# One rule, applied to all four rungs: the path runs from the guarded fault to
+# the point where the island has COMMITTED that rung and the commitment is
+# observable on one of section 8.2's own topics.
+#
+#   B1 -> `/si/internal/odd_compliance`. B1's object is the HPC's behaviour,
+#     so B1 is not committed when the island shouts; it is committed when the
+#     island has a compliance verdict. That is section 3.3's B1 Assure cell,
+#     "Compliance supervision in N2".
+#   B2 -> `/si/out/state`. Section 3.1's B2 observable output: "N3 mode =
+#     LANE_KEEP_HOLD".
+#   B3 -> `/system/fail_safe/mrm_state`. Section 3.1's B3 observable output:
+#     "`MrmState` = `MRM_OPERATING`, behaviour = `PULL_OVER`", reached only
+#     after the refuge search has concluded.
+#   B4 -> `/si/out/actuator_cmd`. The floor is the one rung whose commitment
+#     IS the command: section 3.1's B4 response row says I6 "publishes the
+#     control command directly". It is also the rung the checker measures the
+#     FTTI against, so it is the one that must be modelled to the actuator.
+#
+# What is NOT in any of these routes is the plant: the deceleration, the
+# lateral displacement, the standstill. Stage 1 left it out for the reason
+# section 9.2 gives ("Actuator response: vehicle-specific") and this file
+# leaves it out for the same one. The checker says so itself, unprompted, in a
+# `reaction-unbudgeted` warning on every run.
+#
+# T_HOLD, WHICH IS NOT IN THIS FILE
+#
+# B2's hold window is open decision 14 - "the starting proposal is 2-5 s",
+# with the shape of the v_hold ramp and v_entry open alongside it. It is
+# therefore not a number, and no number for it appears anywhere here. The
+# consequence is precise and worth stating rather than burying: B2's rung is
+# charged its ENTRY only, and the window the vehicle then spends holding is
+# invisible to the checker. When decision 14 closes, T_hold is added to B3's
+# rung and to the floor beneath it, and the arithmetic below changes. The
+# checker can only add up what the document has decided.
+#
+# WHAT THE GRAMMAR WILL NOT TAKE, AND IS THEREFORE DROPPED
+#
+#   - CAPABILITY-BASED SUCCESSOR SELECTION. Section 3.2's takeover table picks
+#     B4, B2 or B3 at T_odd expiry by what the island still has, tested in
+#     that order. `fallback:` is one fixed ordered list per mode, so this file
+#     encodes the worst-case descent and drops the selection rule. A reader of
+#     section 3.2 should read this ladder as ONE path through the diagram.
+#   - THE TWO EDGES BACK UP. B2 -> B1 (the authority hand-back) and B1 ->
+#     ADS_ACTIVE (the accepted domain, no authority moving) have no vocabulary
+#     here: `fallback:` descends and nothing climbs. Section 3.2 says the
+#     hand-back is what distinguishes a hold from "a one-way MRM with extra
+#     steps", so the thing the grammar drops is exactly what makes B2 a hold.
+#   - HYSTERESIS. "Degrade on ~2 s of consistent evidence; recover only after
+#     ~30 s of clear evidence" (section 3.1, B1) and the asymmetric hysteresis
+#     of section 6.4 have no expression here at all.
+#   - THE IN-LANE STOP. Section 3.2's state diagram carries it as a state of
+#     its own, reached from B2 and from B3, distinct from B4 by fault code. It
+#     is not a fifth behaviour in section 3.1, and it is not a mode here.
+#   - B1's OWN GRADED SUB-LADDER (notify -> demand -> restrict -> request
+#     MRM, cumulative, section 3.1). One mode carries all four rungs, and its
+#     reaction path is charged the 3 s compliance deadline. The MRM-request
+#     rung's own 10 s deadline is what `stage2-rungBudget` changes.
+#   - THE PER-FAULT-CLASS LADDERS. A mode has one `fallback:` list, so the
+#     island cannot declare "from ADS_ACTIVE, an HPC loss goes to B2 and a
+#     blackout goes to B4" in one file. Stage 1's `hpc_loss` hazard is the
+#     other entry, and it is in `l4_designed.contract.yaml`.
+#
+# Nothing above has been papered over with invented vocabulary. Where the
+# grammar stops, this file stops.
+#
+# WHAT IS INVENTED, AND SAID SO
+#
+#   - Message type names. Section 8.1 and 8.2 mark OddStatus, OddVerdict,
+#     SafetyCorridor, PullOverRefuge, IslandState, SafetyWorldState and
+#     SafetyEnvelopeCommand as "new" and give no package;
+#     `safety_island_msgs/msg/...` is this file's guess at where they live.
+#     `MrmRequest`, `OddCompliance` and `EmergencyStopRequest` are not in the
+#     document at all - they are this file's names for internal edges the
+#     design draws but does not name.
+#   - Every `/si/internal/*` topic name. The design names the nodes and the
+#     edges between them; it never names the topics that carry them.
+#   - The severity `ASIL_D`. The HARA is Part 4's (section 0), so the document
+#     assigns no severity to this hazard. ASIL_D matches what stage 1 gives
+#     `hpc_loss` and what section 2.2 puts the T0 safety core at; it is a
+#     placeholder and it changes nothing the checker prints here.
+#   - N13 si_scan_guard is collapsed. The design has the 2D lidar ingest as a
+#     node of its own; here the scan arrives at N16 directly. N13 is not on
+#     any reaction route, so no number is affected.
+#   - The routes past the gate for B2 and B3 are NOT modelled. In the design
+#     the lane-keep hold and the pull-over both steer through I13 and I1 to
+#     I16, the same actuator path B4 uses. They are left off here because the
+#     checker's reaction walk takes the LONGEST branch to a sink, so modelling
+#     them would charge the floor with the slowest behaviour that shares its
+#     actuator path - and mutually exclusive command sources are exactly what
+#     a command gate arbitrates. That is a finding about the tool, not about
+#     the design, and it is reported upstream rather than worked around.
+
+version: 1
+
+# ISO 26262's scale, stated rather than assumed.
+severity_levels: [QM, ASIL_A, ASIL_B, ASIL_C, ASIL_D]
+
+# The preconditions section 3.1 states in prose, named so that modes can
+# require them. Each is a section 8.1 or 8.2 topic, and each is watched by a
+# subscriber that declares what it does when the topic goes quiet - which is
+# section 8.1's degradability rule ("every input on this table is now
+# degradable") expressed as a detector.
+functions:
+  # B1's precondition: "The HPC is alive and responsive." Section 8.1's row
+  # for the ODD status is the channel the declared active domain arrives on.
+  hpc_odd_status: [/si/in/odd_status]
+  # B2's precondition: "A valid corridor exists". Section 8.1's preferred
+  # source; N5 degrades to N14's perceived boundaries when it goes stale.
+  island_corridor: [/si/in/corridor]
+  # B3's precondition: "A refuge exists that the island can verify free ...
+  # verified free against N16's live free space". Section 8.2's safety world
+  # state is where that free space is published.
+  island_free_space: [/si/out/safety_world]
+
+modes:
+  # ADS_ACTIVE, section 3.2: "HPC drives in an accepted ODD, island
+  # supervises". The ladder below it is the worst-case descent named in the
+  # header.
+  ads_active:
+    description: >-
+      the HPC drives inside an operating domain the island has accepted, and
+      the island supervises without taking control
+    requires: [hpc_odd_status]
+    fallback: [b1_degrade_ads, b2_lane_keep_hold, b3_pull_over, b4_emergency_stop]
+
+  # B1. Section 3.1: "require the ADS to move to an operating domain it CAN
+  # satisfy ... before any authority is taken". Cooperative by construction:
+  # every rung of it is executed by the HPC, so it requires the HPC.
+  b1_degrade_ads:
+    description: >-
+      degrade the ADS when the ODD cannot be held; the island constrains and
+      demands a domain switch, the HPC executes, and the island verifies the
+      answer against its own measurements
+    requires: [hpc_odd_status]
+    reaction: island.b1_degrade_ads
+
+  # B2. Section 3.1: "take authority and hold the vehicle in its current lane
+  # ... while the lane is still observable". Its precondition is the corridor,
+  # and section 3.1 says it is "checked continuously, not only on entry".
+  b2_lane_keep_hold:
+    description: >-
+      keep the vehicle in its lane after loss of the HPC, for a bounded
+      window, at a decaying speed the island can itself justify
+    requires: [island_corridor]
+    reaction: island.b2_lane_keep_hold
+
+  # B3. Section 3.1: "bring the vehicle out of the running lane to a
+  # standstill in a refuge". Its precondition is a refuge the island can
+  # verify free, and free space is what verifies it.
+  b3_pull_over:
+    description: >-
+      pull over if the ODD continues to fail; a placed stop, in a refuge
+      nominated by the HPC or, failing that, detected by the island
+    requires: [island_free_space]
+    reaction: island.b3_pull_over
+
+  # B4. Section 3.1's precondition row, in full: "None, and deliberately none.
+  # A fallback whose entry can be blocked is not a fallback. B4 needs only the
+  # proprioceptive channels N4 already requires -- wheel speed, IMU, steering
+  # report -- and the actuation path to I16."
+  #
+  # Section 6.1's N3 row says the same thing about the transition: it "is the
+  # one transition with no guard and no precondition, and its only successor
+  # is SAFE_STOP".
+  #
+  # The `requires:` line below is that sentence, and it is the ONE line the
+  # two stage-2 ladder files differ on: here it is empty, and in
+  # `stage2-noFloor.contract.yaml` it names the very signal the hazard guards.
+  b4_emergency_stop:
+    description: >-
+      emergency stop when the island is blind; no lane keeping, no refuge, no
+      lateral manoeuvre, and nothing required in order to enter
+    requires: []
+    reaction: island.b4_emergency_stop
+
+hazards:
+  odd_unsatisfiable:
+    severity: ASIL_D
+    description: >-
+      the HPC stops declaring an operating domain the island can accept, so
+      the vehicle is being driven in a domain the island has measured as
+      unsatisfiable and nothing on the HPC side is answering the demand to
+      leave it
+    guards: [/si/in/odd_status]
+    on: omission
+    ftti: 10s
+    reaction: ads_active
+
+nodes:
+  # N19, si_odd_monitor. Section 6.4, T1s, 2-5 Hz. "Also raises the ODD switch
+  # demand -- odd_satisfiable = false with the failed dimension and the T_odd
+  # budget -- and runs the two-part acceptance test on the answer."
+  si_odd_monitor:
+    paths:
+      declare_odd_unsatisfiable:
+        trigger: { input: [odd_status] }
+        output: [odd_verdict]
+        # 5 Hz, the fast end of section 8.2's "2-5 Hz" for /si/out/odd_verdict.
+        max_latency: 200ms
+    sub:
+      # THE DETECTOR. Rate and age limit are section 8.1's row for
+      # /si/in/odd_status, verbatim: 10 Hz, 300 ms. The lease is T_ack:
+      # section 8.1 says "silence past T_ack is exactly the B1 timeout".
+      odd_status:
+        min_rate_hz: 10
+        max_age: 300ms
+        qos: { depth: 1, liveliness: manual_by_topic, lease_duration: 2s }
+        on_violation:
+          on: [omission]
+          reaction: declare_odd_unsatisfiable
+          within: 2s
+    pub:
+      odd_verdict: { min_rate_hz: 5 }
+
+  # N3, si_state_machine. Section 6.1, T0, 100 Hz. "Single owner of island
+  # mode." Four paths, one per rung of the ladder, because section 6.1 says
+  # EMERGENCY_STOP "is entered from every other state".
+  si_state_machine:
+    paths:
+      # B1's rung: the demand and the cap, section 3.1's Response row.
+      demand_odd_switch:
+        trigger: { input: [odd_verdict] }
+        output: [constraint_cmd]
+        max_latency: 10ms
+      # B2's rung: the island takes authority, section 3.1's Response row.
+      take_authority:
+        trigger: { input: [odd_verdict] }
+        output: [island_mode]
+        max_latency: 10ms
+      # B3's rung: MRM_PREPARE, section 6.1's N3 row.
+      escalate_pull_over:
+        trigger: { input: [odd_verdict] }
+        output: [mrm_request]
+        max_latency: 10ms
+      # B4's rung: the transition with no guard and no precondition.
+      declare_emergency_stop:
+        trigger: { input: [odd_verdict] }
+        output: [estop_request]
+        max_latency: 10ms
+    sub:
+      odd_verdict: { min_rate_hz: 5, qos: { depth: 1 } }
+      # Read-latest, not triggers: the compliance verdict and the corridor
+      # source in use are state N3 reads, not events it reacts to.
+      odd_compliance: { min_rate_hz: 10, qos: { depth: 1 }, state: true }
+      corridor_source: { min_rate_hz: 10, qos: { depth: 1 }, state: true }
+    pub:
+      constraint_cmd: { min_rate_hz: 50 }
+      island_mode: { min_rate_hz: 50 }
+      mrm_request: {}
+      estop_request: {}
+
+  # N1, si_safety_gateway. Section 6.1, T0, per-message. "Publishes island
+  # state outward." Both of section 8.2's egress rows leave here at 50 Hz.
+  si_safety_gateway:
+    paths:
+      publish_constraints:
+        trigger: { input: [constraint_cmd] }
+        output: [constraints]
+        max_latency: 20ms
+      publish_state:
+        trigger: { input: [island_mode] }
+        output: [state]
+        max_latency: 20ms
+    sub:
+      constraint_cmd: { min_rate_hz: 50, qos: { depth: 1 } }
+      island_mode: { min_rate_hz: 50, qos: { depth: 1 } }
+    pub:
+      constraints: { min_rate_hz: 50 }
+      state: { min_rate_hz: 50 }
+
+  # N2, si_hpc_supervisor. Section 6.1, T0, 100 Hz. Section 3.3 puts
+  # "compliance supervision in N2" in B1's Assure column, and section 3.1
+  # gives it 3 s: "Comply with a restriction within 3 s".
+  si_hpc_supervisor:
+    paths:
+      verify_compliance:
+        trigger: { input: [constraints] }
+        output: [odd_compliance]
+        # NOT a cycle time. This is the deadline the island waits out before
+        # it can say whether the ADS complied; until it expires there is no
+        # verdict, and B1 is not yet committed either way.
+        max_latency: 3s
+    sub:
+      constraints: { min_rate_hz: 50, qos: { depth: 1 } }
+    pub:
+      odd_compliance: { min_rate_hz: 10 }
+
+  # N5, si_corridor_monitor. Section 6.1, T1, 50 Hz. "Prefers the compact
+  # map-derived corridor from H3 while it is fresh, degrades to the island's
+  # own perceived lane boundaries from N14 when it is not." That is section
+  # 8.1's substitute row, and here it is the detector that makes B2's
+  # precondition a thing the island can notice losing.
+  si_corridor_monitor:
+    paths:
+      fall_back_to_perceived:
+        trigger: { input: [corridor] }
+        output: [corridor_source]
+        max_latency: 20ms
+    sub:
+      # Section 8.1's row for /si/in/corridor, verbatim: 10 Hz, 300 ms.
+      corridor:
+        min_rate_hz: 10
+        max_age: 300ms
+        qos: { depth: 1, liveliness: manual_by_topic, lease_duration: 300ms }
+        on_violation:
+          on: [omission]
+          reaction: fall_back_to_perceived
+          within: 300ms
+    pub:
+      corridor_source: { min_rate_hz: 10 }
+
+  # N16, si_safety_world_model. Section 6.2, T1s. "The fusion point", and the
+  # publisher of section 8.2's bounded safety world state.
+  si_safety_world_model:
+    paths:
+      fuse_free_space:
+        trigger: { input: [scan] }
+        output: [safety_world]
+        # 20 Hz, the slow end of section 2.2's T1s band, because that same
+        # section says T0 must never block on T1s.
+        max_latency: 50ms
+    sub:
+      scan: { min_rate_hz: 20, max_age: 100ms, qos: { depth: 1 } }
+    pub:
+      safety_world: { min_rate_hz: 20 }
+
+  # N18, si_pull_over_manager. Section 6.3. "Owns refuge go/no-go", both
+  # sources, and the T_refuge bound on the search.
+  si_pull_over_manager:
+    paths:
+      # Entered from the state machine: the nominated refuge is verified and
+      # the manoeuvre is staged, bounded by T_refuge = 5 s.
+      search_refuge:
+        trigger: { input: [mrm_request] }
+        output: [refuge_plan]
+        max_latency: 5s
+      # Section 8.1's substitute row for the refuge: when the HPC's nomination
+      # goes silent, N18 searches its own free space, "at most T_refuge".
+      search_island_refuge:
+        trigger: { input: [refuge] }
+        output: [refuge_plan]
+        max_latency: 5s
+      # Section 3.1's B3 abort row: a search that cannot conclude is a
+      # statement about the island's capability, "and capability loss goes to
+      # the floor". Losing free space is that loss.
+      abandon_pull_over:
+        trigger: { input: [free_space] }
+        output: [estop_request]
+        max_latency: 10ms
+    sub:
+      mrm_request: { min_rate_hz: 10, qos: { depth: 1 } }
+      # Section 8.1's row for /si/in/refuge, verbatim: 2 Hz, 2 s.
+      refuge:
+        min_rate_hz: 2
+        max_age: 2s
+        qos: { depth: 1, liveliness: manual_by_topic, lease_duration: 2s }
+        on_violation:
+          on: [omission]
+          reaction: search_island_refuge
+          within: 5s
+      free_space:
+        min_rate_hz: 20
+        max_age: 100ms
+        qos: { depth: 1, liveliness: manual_by_topic, lease_duration: 100ms }
+        on_violation:
+          on: [omission]
+          reaction: abandon_pull_over
+          within: 200ms
+    pub:
+      refuge_plan: { min_rate_hz: 10 }
+      estop_request: {}
+
+  # I7, autoware_mrm_handler. Section 4.1, T0. Section 8.2 publishes MrmState
+  # at "10 Hz + on change"; this is B3's observable commitment.
+  si_mrm_handler:
+    paths:
+      declare_pull_over:
+        trigger: { input: [refuge_plan] }
+        output: [mrm_state]
+        max_latency: 100ms
+    sub:
+      refuge_plan: { min_rate_hz: 10, qos: { depth: 1 } }
+    pub:
+      mrm_state: { min_rate_hz: 10 }
+
+  # I6, autoware_mrm_emergency_stop_operator. Section 4.1, T0. Section 3.1's
+  # B4 response row: it "publishes the control command directly. No trajectory
+  # is planned, and none could be: planning needs a world model".
+  si_estop_operator:
+    paths:
+      emergency_stop_command:
+        trigger: { input: [estop_request] }
+        output: [estop_command]
+        max_latency: 10ms
+    sub:
+      estop_request: { min_rate_hz: 100, qos: { depth: 1 } }
+    pub:
+      estop_command: { min_rate_hz: 100 }
+
+  # I1, autoware_control_command_gate. Section 4.1: "The arbiter. Selects
+  # among command sources". T0.
+  si_command_gate:
+    paths:
+      select_mrm_source:
+        trigger: { input: [estop_command] }
+        output: [gated_command]
+        max_latency: 10ms
+    sub:
+      estop_command: { min_rate_hz: 100, qos: { depth: 1 } }
+    pub:
+      gated_command: { min_rate_hz: 100 }
+
+  # I16, the vehicle interface. Section 8.3: CAN FD at 100 Hz. T0, and the end
+  # of the island's share of the reaction.
+  si_actuator_gateway:
+    paths:
+      transmit:
+        trigger: { input: [gated_command] }
+        output: [actuator_cmd]
+        max_latency: 10ms
+        # No `settle`, for stage 1's reason: section 9.2's last row is
+        # "Actuator response: vehicle-specific". The checker warns about it
+        # on every run, which is the correct thing for it to do.
+        safe_state: { emits: actuator_cmd }
+    sub:
+      gated_command: { min_rate_hz: 100, qos: { depth: 1 } }
+    pub:
+      actuator_cmd: { min_rate_hz: 100 }
+
+# The four rungs, as scope paths. Each `max_latency` is the sum of its own
+# route's hops and nothing else; the checker derives the route itself and
+# these numbers are here to be checked against it, not believed.
+paths:
+  # 200 (N19) + 10 (N3) + 20 (N1) + 3000 (N2's compliance deadline) = 3230.
+  island.b1_degrade_ads:
+    trigger: { input: [/si/in/odd_status] }
+    output: [/si/internal/odd_compliance]
+    max_latency: 3230ms
+  # 200 (N19) + 10 (N3) + 20 (N1) = 230. The ENTRY to the hold only: T_hold
+  # is open decision 14 and is not a number anywhere in this file.
+  island.b2_lane_keep_hold:
+    trigger: { input: [/si/in/odd_status] }
+    output: [/si/out/state]
+    max_latency: 230ms
+  # 200 (N19) + 10 (N3) + 5000 (T_refuge) + 100 (I7) = 5310.
+  island.b3_pull_over:
+    trigger: { input: [/si/in/odd_status] }
+    output: [/system/fail_safe/mrm_state]
+    max_latency: 5310ms
+  # 200 (N19) + 10 (N3) + 10 (I6) + 10 (I1) + 10 (I16) = 240. The floor, and
+  # the only route that reaches the actuator.
+  island.b4_emergency_stop:
+    trigger: { input: [/si/in/odd_status] }
+    output: [/si/out/actuator_cmd]
+    max_latency: 240ms
+
+topics:
+  # --- section 8.1, HPC -> island. Rate and age are the design's, verbatim --
+  /si/in/odd_status:
+    type: safety_island_msgs/msg/OddStatus
+    external: pub
+    sub: [si_odd_monitor/odd_status]
+    rate_hz: 10
+  /si/in/corridor:
+    type: safety_island_msgs/msg/SafetyCorridor
+    external: pub
+    sub: [si_corridor_monitor/corridor]
+    rate_hz: 10
+  /si/in/refuge:
+    type: safety_island_msgs/msg/PullOverRefuge
+    external: pub
+    sub: [si_pull_over_manager/refuge]
+    rate_hz: 2
+
+  # --- the island's own sensing, section 6.2. N13's ingest is collapsed -----
+  /si/sensor/scan:
+    type: sensor_msgs/msg/LaserScan
+    external: pub
+    sub: [si_safety_world_model/scan]
+    rate_hz: 20
+
+  # --- section 8.2, island -> HPC ------------------------------------------
+  /si/out/odd_verdict:
+    type: safety_island_msgs/msg/OddVerdict
+    external: sub
+    pub: [si_odd_monitor/odd_verdict]
+    sub: [si_state_machine/odd_verdict]
+    rate_hz: 5
+  /si/out/constraints:
+    type: safety_island_msgs/msg/SafetyEnvelopeCommand
+    external: sub
+    pub: [si_safety_gateway/constraints]
+    sub: [si_hpc_supervisor/constraints]
+    rate_hz: 50
+  /si/out/state:
+    type: safety_island_msgs/msg/IslandState
+    external: sub
+    pub: [si_safety_gateway/state]
+    rate_hz: 50
+  /si/out/safety_world:
+    type: safety_island_msgs/msg/SafetyWorldState
+    external: sub
+    pub: [si_safety_world_model/safety_world]
+    sub: [si_pull_over_manager/free_space]
+    rate_hz: 20
+  /system/fail_safe/mrm_state:
+    type: autoware_adapi_v1_msgs/msg/MrmState
+    external: sub
+    pub: [si_mrm_handler/mrm_state]
+    rate_hz: 10
+
+  # --- internal to the island: the ladder's own wiring, all invented -------
+  /si/internal/constraint_cmd:
+    type: safety_island_msgs/msg/SafetyEnvelopeCommand
+    pub: [si_state_machine/constraint_cmd]
+    sub: [si_safety_gateway/constraint_cmd]
+    rate_hz: 50
+  /si/internal/odd_compliance:
+    type: safety_island_msgs/msg/OddCompliance
+    pub: [si_hpc_supervisor/odd_compliance]
+    sub: [si_state_machine/odd_compliance]
+    rate_hz: 10
+  /si/internal/island_mode:
+    type: safety_island_msgs/msg/IslandState
+    pub: [si_state_machine/island_mode]
+    sub: [si_safety_gateway/island_mode]
+    rate_hz: 50
+  /si/internal/corridor_source:
+    type: safety_island_msgs/msg/SafetyCorridor
+    pub: [si_corridor_monitor/corridor_source]
+    sub: [si_state_machine/corridor_source]
+    rate_hz: 10
+  /si/internal/mrm_request:
+    type: safety_island_msgs/msg/MrmRequest
+    pub: [si_state_machine/mrm_request]
+    sub: [si_pull_over_manager/mrm_request]
+    rate_hz: 10
+  /si/internal/refuge_plan:
+    type: safety_island_msgs/msg/PullOverRefuge
+    pub: [si_pull_over_manager/refuge_plan]
+    sub: [si_mrm_handler/refuge_plan]
+    rate_hz: 10
+  /si/internal/estop_request:
+    type: safety_island_msgs/msg/EmergencyStopRequest
+    pub: [si_state_machine/estop_request, si_pull_over_manager/estop_request]
+    sub: [si_estop_operator/estop_request]
+    rate_hz: 100
+  /si/internal/estop_command:
+    type: autoware_control_msgs/msg/Control
+    pub: [si_estop_operator/estop_command]
+    sub: [si_command_gate/estop_command]
+    rate_hz: 100
+  /si/internal/gated_command:
+    type: autoware_control_msgs/msg/Control
+    pub: [si_command_gate/gated_command]
+    sub: [si_actuator_gateway/gated_command]
+    rate_hz: 100
+
+  # --- section 8.3, island -> actuator gateway over CAN FD at 100 Hz -------
+  /si/out/actuator_cmd:
+    type: autoware_control_msgs/msg/Control
+    external: sub
+    pub: [si_actuator_gateway/actuator_cmd]
+    rate_hz: 100

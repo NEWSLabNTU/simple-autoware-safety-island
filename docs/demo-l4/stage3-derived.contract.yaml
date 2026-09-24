@@ -1,0 +1,217 @@
+# Stage 3, variant B: the same partitions, with criticality DERIVED from the
+# design's own hazard instead of labelled by hand.
+#
+# WHY THIS FILE EXISTS
+#
+# `stage3-partitions.contract.yaml` writes section 2.2's criticality tiers out
+# as `criticality:` labels, one per node. That file answers "can the mapper
+# reproduce section 9.1's bands if it is TOLD section 2.2's tiers".
+#
+# This file answers the question the island actually has to live with. When a
+# contract declares `hazards:` - and stage 1's `l4_designed.contract.yaml`
+# declares exactly the one the design's section 9.2 is about - the checker
+# stops reading the `criticality:` label and derives criticality from the
+# hazard instead. The label stands only where no hazard reaches the node
+# (play_launch, model_builder.rs: "the hazards decide first, the authored
+# label only where no hazard reaches the node").
+#
+# So this file declares NO criticality labels at all. Every criticality in the
+# run comes from the ASIL_D `hpc_loss` hazard below, by the rule the checker
+# implements: the guard topic's publishers and their upstream closure ("feeds"),
+# the subscriber whose `on_violation` detects it ("detects"), and every hop of
+# the reaction walk ("reacts").
+#
+# WHAT IS INVENTED, AND SAID SO
+#
+#   - The node set is a representative slice, one or two nodes per partition,
+#     not all 38. The full set is in stage3-partitions.*; nothing here depends
+#     on the count.
+#   - The reaction chain's wiring, topic names and the 10 ms per-hop split are
+#     stage 1's (`l4_designed.contract.yaml`, phase6-W0), reused unchanged so
+#     the two stages describe the same island. What that file invents, this
+#     file inherits.
+#   - Every rate is the design's own, cited per node, at the fast end of its
+#     range - the same rule as stage3-partitions.contract.yaml.
+
+version: 1
+
+severity_levels: [QM, ASIL_A, ASIL_B, ASIL_C, ASIL_D]
+
+hazards:
+  # Section 9.2's hazard, as stage 1 declares it.
+  hpc_loss:
+    severity: ASIL_D
+    description: >-
+      the HPC stops producing its 100 Hz heartbeat, so nothing outside the
+      island is still planning or deciding
+    guards: [/si/in/heartbeat]
+    on: omission
+    ftti: 70ms
+    reaction: island.mrm_command
+
+nodes:
+
+  # ---- P0, on section 9.2's reaction chain -------------------------------
+  # N2 si_hpc_supervisor (section 6.1, T0 ASIL-D, 100 Hz).
+  n2_hpc_supervisor:
+    paths:
+      declare_hpc_lost:
+        trigger: { input: [heartbeat] }
+        output: [hpc_liveness]
+        max_latency: 10ms
+    sub:
+      heartbeat:
+        min_rate_hz: 100
+        max_age: 20ms
+        qos: { depth: 1, liveliness: manual_by_topic, lease_duration: 30ms }
+        on_violation:
+          on: [omission]
+          reaction: declare_hpc_lost
+          within: 30ms
+    pub:
+      hpc_liveness: { min_rate_hz: 100 }
+
+  # N3 si_state_machine (section 6.1, T0 ASIL-D, 100 Hz).
+  n3_state_machine:
+    paths:
+      escalate:
+        trigger: { input: [hpc_liveness] }
+        output: [island_mode]
+        max_latency: 10ms
+    sub:
+      hpc_liveness: { min_rate_hz: 100, qos: { depth: 1 } }
+    pub:
+      island_mode: { min_rate_hz: 100 }
+
+  # I1 autoware_control_command_gate (section 4.1, T0 ASIL-D). The arbiter:
+  # it is the node section 2.2 says "bounds every command" the QM MPC
+  # produces, so the nominal and fallback commands arrive here.
+  i1_control_command_gate:
+    paths:
+      select_mrm_source:
+        trigger: { input: [island_mode] }
+        output: [gated_command]
+        max_latency: 10ms
+    sub:
+      island_mode: { min_rate_hz: 100, qos: { depth: 1 } }
+      nominal_cmd: { min_rate_hz: 50, qos: { depth: 1 }, state: true }
+      fallback_cmd: { min_rate_hz: 50, qos: { depth: 1 }, state: true }
+    pub:
+      gated_command: { min_rate_hz: 100 }
+
+  # I16 vehicle interface (section 4.1, T0 ASIL-D; section 8.3, 100 Hz).
+  i16_vehicle_interface:
+    paths:
+      transmit:
+        trigger: { input: [gated_command] }
+        output: [actuator_cmd]
+        max_latency: 10ms
+        safe_state: { emits: actuator_cmd }
+    sub:
+      gated_command: { min_rate_hz: 100, qos: { depth: 1 } }
+    pub:
+      actuator_cmd: { min_rate_hz: 100 }
+
+  # ---- P0, NOT on the reaction chain -------------------------------------
+  # N4 si_vehicle_state_estimator (section 6.1, T0 ASIL-D, 100 Hz). Island
+  # odometry. Section 2.2 puts it in the ASIL-D safety core; section 9.2's
+  # reaction route does not pass through it.
+  n4_vehicle_state_estimator:
+    paths: { step: { trigger: { timer: { rate_hz: 100 } } } }
+    pub:
+      island_odom: { min_rate_hz: 100 }
+
+  # ---- P1, supervision and fallback control ------------------------------
+  # I13 autoware_pure_pursuit (section 4.1, T1 ASIL-B(D)). The fallback
+  # lateral controller. Rate is P1's period (section 9.1).
+  i13_pure_pursuit:
+    paths:
+      step:
+        trigger: { timer: { rate_hz: 50 } }
+        output: [fallback_cmd]
+    sub:
+      island_odom: { min_rate_hz: 100, qos: { depth: 1 }, state: true }
+    pub:
+      fallback_cmd: { min_rate_hz: 50 }
+
+  # N12 si_time_quality_monitor (section 6.1, T1 ASIL-B(D), 1 Hz).
+  n12_time_quality_monitor:
+    paths: { step: { trigger: { timer: { rate_hz: 1 } } } }
+
+  # ---- P2, safety sensing ------------------------------------------------
+  # N16 si_safety_world_model (section 6.2, T1s ASIL-B(D), 20-50 Hz -> 50).
+  n16_safety_world_model:
+    paths: { step: { trigger: { timer: { rate_hz: 50 } } } }
+
+  # N17 si_sensor_health (section 6.2, T1s ASIL-B(D), 5-10 Hz -> 10).
+  n17_sensor_health:
+    paths: { step: { trigger: { timer: { rate_hz: 10 } } } }
+
+  # ---- P3, nominal control -----------------------------------------------
+  # I10 autoware_mpc_lateral_controller (section 4.1, T2 QM). The node
+  # section 9.1 says the island sheds FIRST under overload. Rate is the fast
+  # end of P3's 33-50 Hz.
+  i10_mpc_lateral_controller:
+    paths:
+      step:
+        trigger: { timer: { rate_hz: 50 } }
+        output: [nominal_cmd]
+    sub:
+      island_odom: { min_rate_hz: 100, qos: { depth: 1 }, state: true }
+    pub:
+      nominal_cmd: { min_rate_hz: 50 }
+
+  # ---- P4, non-real-time -------------------------------------------------
+  # N11 si_event_recorder (section 6.1, T3 QM, 1-10 Hz -> 10).
+  n11_event_recorder:
+    paths: { step: { trigger: { timer: { rate_hz: 10 } } } }
+
+# Section 9.2's reaction, as stage 1 declares it: guarded heartbeat to the
+# frame on the CAN FD bus, 40ms = the decision stage plus the command stage.
+paths:
+  island.mrm_command:
+    trigger: { input: [/si/in/heartbeat] }
+    output: [/si/out/actuator_cmd]
+    max_latency: 40ms
+
+topics:
+  /si/in/heartbeat:
+    type: safety_island_msgs/msg/HpcHeartbeat
+    external: pub
+    sub: [n2_hpc_supervisor/heartbeat]
+    rate_hz: 100
+  /si/internal/hpc_liveness:
+    type: safety_island_msgs/msg/HpcLiveness
+    pub: [n2_hpc_supervisor/hpc_liveness]
+    sub: [n3_state_machine/hpc_liveness]
+    rate_hz: 100
+  /si/internal/island_mode:
+    type: safety_island_msgs/msg/IslandState
+    pub: [n3_state_machine/island_mode]
+    sub: [i1_control_command_gate/island_mode]
+    rate_hz: 100
+  /si/internal/island_odom:
+    type: nav_msgs/msg/Odometry
+    pub: [n4_vehicle_state_estimator/island_odom]
+    sub: [i10_mpc_lateral_controller/island_odom, i13_pure_pursuit/island_odom]
+    rate_hz: 100
+  /si/internal/nominal_cmd:
+    type: autoware_control_msgs/msg/Control
+    pub: [i10_mpc_lateral_controller/nominal_cmd]
+    sub: [i1_control_command_gate/nominal_cmd]
+    rate_hz: 50
+  /si/internal/fallback_cmd:
+    type: autoware_control_msgs/msg/Control
+    pub: [i13_pure_pursuit/fallback_cmd]
+    sub: [i1_control_command_gate/fallback_cmd]
+    rate_hz: 50
+  /si/internal/gated_command:
+    type: autoware_control_msgs/msg/Control
+    pub: [i1_control_command_gate/gated_command]
+    sub: [i16_vehicle_interface/gated_command]
+    rate_hz: 100
+  /si/out/actuator_cmd:
+    type: autoware_control_msgs/msg/Control
+    external: sub
+    pub: [i16_vehicle_interface/actuator_cmd]
+    rate_hz: 100

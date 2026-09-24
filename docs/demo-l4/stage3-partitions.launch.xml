@@ -1,0 +1,63 @@
+<?xml version="1.0"?>
+<!-- Stage 3: design section 9.1's five execution partitions, as a launch tree.
+
+     DECLARATIVE STAND-INS. None of these nodes has source code anywhere. The
+     question this fixture asks is about the DOCUMENT, not about this port:
+     section 9.1 says the island is organised "following the declarative
+     RT-configuration approach already demonstrated (contract facts -> priority
+     bands, `chain_aware` mapper)", so this feeds that mapper the document's own
+     facts and reads back the order it produces.
+
+     38 nodes: the 18 migrated Autoware nodes of section 4.1 that section 9.1
+     places in a partition (I4 and I17/I18 are excluded by the design itself -
+     I4 is header-only, I17/I18 are the legacy path), the 20 new island nodes of
+     sections 6.1 to 6.4, and section 9.1's unnamed "telemetry egress" in P4. -->
+<launch>
+  <!-- P0 - safety core, 10 ms (100 Hz), priority band 1 - highest -->
+  <node pkg="safety_island_l4" exec="stub" name="i1_control_command_gate"/>
+  <node pkg="safety_island_l4" exec="stub" name="i2_command_mode_decider"/>
+  <node pkg="safety_island_l4" exec="stub" name="i3_command_mode_switcher"/>
+  <node pkg="safety_island_l4" exec="stub" name="i5_stop_mode_operator"/>
+  <node pkg="safety_island_l4" exec="stub" name="i6_mrm_emergency_stop_operator"/>
+  <node pkg="safety_island_l4" exec="stub" name="i7_mrm_handler"/>
+  <node pkg="safety_island_l4" exec="stub" name="i16_vehicle_interface"/>
+  <node pkg="safety_island_l4" exec="stub" name="n1_safety_gateway"/>
+  <node pkg="safety_island_l4" exec="stub" name="n2_hpc_supervisor"/>
+  <node pkg="safety_island_l4" exec="stub" name="n3_state_machine"/>
+  <node pkg="safety_island_l4" exec="stub" name="n4_vehicle_state_estimator"/>
+  <node pkg="safety_island_l4" exec="stub" name="n8_fault_manager"/>
+
+  <!-- P1 - supervision and fallback control, 20 ms (50 Hz), band 2 -->
+  <node pkg="safety_island_l4" exec="stub" name="i8_control_validator"/>
+  <node pkg="safety_island_l4" exec="stub" name="i13_pure_pursuit"/>
+  <node pkg="safety_island_l4" exec="stub" name="n5_corridor_monitor"/>
+  <node pkg="safety_island_l4" exec="stub" name="n7_mrm_planner"/>
+  <node pkg="safety_island_l4" exec="stub" name="n9_actuator_supervisor"/>
+  <node pkg="safety_island_l4" exec="stub" name="n10_envelope_monitor"/>
+  <node pkg="safety_island_l4" exec="stub" name="n12_time_quality_monitor"/>
+  <node pkg="safety_island_l4" exec="stub" name="n18_pull_over_manager"/>
+
+  <!-- P2 - safety sensing, 20-50 ms (20-50 Hz), band 3 -->
+  <node pkg="safety_island_l4" exec="stub" name="i19_autonomous_emergency_braking"/>
+  <node pkg="safety_island_l4" exec="stub" name="i20_collision_detector"/>
+  <node pkg="safety_island_l4" exec="stub" name="n6_radar_guard"/>
+  <node pkg="safety_island_l4" exec="stub" name="n13_scan_guard"/>
+  <node pkg="safety_island_l4" exec="stub" name="n14_vision_guard"/>
+  <node pkg="safety_island_l4" exec="stub" name="n15_proximity_guard"/>
+  <node pkg="safety_island_l4" exec="stub" name="n16_safety_world_model"/>
+  <node pkg="safety_island_l4" exec="stub" name="n17_sensor_health"/>
+  <node pkg="safety_island_l4" exec="stub" name="n19_odd_monitor"/>
+  <node pkg="safety_island_l4" exec="stub" name="n20_object_digest"/>
+
+  <!-- P3 - nominal control, 20-30 ms (33-50 Hz), band 4 -->
+  <node pkg="safety_island_l4" exec="stub" name="i9_trajectory_follower_node"/>
+  <node pkg="safety_island_l4" exec="stub" name="i10_mpc_lateral_controller"/>
+  <node pkg="safety_island_l4" exec="stub" name="i11_pid_longitudinal_controller"/>
+  <node pkg="safety_island_l4" exec="stub" name="i12_trajectory_follower_base"/>
+  <node pkg="safety_island_l4" exec="stub" name="i14_shift_decider"/>
+  <node pkg="safety_island_l4" exec="stub" name="i15_raw_vehicle_cmd_converter"/>
+
+  <!-- P4 - non-real-time, 100-1000 ms, band 5 - lowest -->
+  <node pkg="safety_island_l4" exec="stub" name="n11_event_recorder"/>
+  <node pkg="safety_island_l4" exec="stub" name="telemetry_egress"/>
+</launch>

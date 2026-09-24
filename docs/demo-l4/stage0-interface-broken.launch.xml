@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<!-- The launch tree of stage0-interface.launch.xml, unchanged.
+
+     The same two nodes, the same two names. The whole difference between the
+     passing run and the failing one is one number in the contract sidecar:
+     design section 8.1's heartbeat row drops from 100 Hz to 10 Hz, and the
+     subscriber still asks for the 100 the table promises it.
+
+     This file exists only so that `stage0-interface-broken.contract.yaml` has
+     a launch tree of its own to be read beside. -->
+<launch>
+  <!-- N1, ingress E2E verification (design section 8.4) -->
+  <node pkg="safety_island_l4" exec="si_e2e_ingress" name="si_e2e_ingress"/>
+  <!-- the publisher of design section 8.2, and of section 8.3's CAN FD link -->
+  <node pkg="safety_island_l4" exec="si_e2e_egress" name="si_e2e_egress"/>
+</launch>

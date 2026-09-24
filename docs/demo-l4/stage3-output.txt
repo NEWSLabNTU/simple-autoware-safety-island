@@ -1,0 +1,192 @@
+
+=== stage3-partitions ===
+Parsing launch file: /home/aeon/repos/simple-autoware-safety-island/docs/demo-l4/stage3-partitions.launch.xml
+Parsed: 1 scopes, 38 nodes, 0 containers, 0 composable nodes
+2026-09-24T12:49:59.564422Z  INFO Loaded 1 manifest(s) [0 overlay, 1 provider] (0 scopes without manifests, 0 errors, 0 warnings)
+Scheduling platform file [explicit]: /home/aeon/repos/simple-autoware-safety-island/docs/demo-l4/stage3-partitions.system.posix.yaml
+Scheduling (posix, mapper=chain_aware): 38 tier(s)
+  tier /i16_vehicle_interface prio=80   sched_class=SCHED_FIFO core=-    members=1
+      /i16_vehicle_interface
+  tier /i1_control_command_gate prio=80   sched_class=SCHED_FIFO core=-    members=1
+      /i1_control_command_gate
+  tier /i2_command_mode_decider prio=80   sched_class=SCHED_FIFO core=-    members=1
+      /i2_command_mode_decider
+  tier /i3_command_mode_switcher prio=80   sched_class=SCHED_FIFO core=-    members=1
+      /i3_command_mode_switcher
+  tier /i5_stop_mode_operator prio=80   sched_class=SCHED_FIFO core=-    members=1
+      /i5_stop_mode_operator
+  tier /i6_mrm_emergency_stop_operator prio=80   sched_class=SCHED_FIFO core=-    members=1
+      /i6_mrm_emergency_stop_operator
+  tier /i7_mrm_handler  prio=80   sched_class=SCHED_FIFO core=-    members=1
+      /i7_mrm_handler
+  tier /n2_hpc_supervisor prio=80   sched_class=SCHED_FIFO core=-    members=1
+      /n2_hpc_supervisor
+  tier /n3_state_machine prio=80   sched_class=SCHED_FIFO core=-    members=1
+      /n3_state_machine
+  tier /n4_vehicle_state_estimator prio=80   sched_class=SCHED_FIFO core=-    members=1
+      /n4_vehicle_state_estimator
+  tier /n8_fault_manager prio=80   sched_class=SCHED_FIFO core=-    members=1
+      /n8_fault_manager
+  tier /n9_actuator_supervisor prio=79   sched_class=SCHED_FIFO core=-    members=1
+      /n9_actuator_supervisor
+  tier /i13_pure_pursuit prio=78   sched_class=SCHED_FIFO core=-    members=1
+      /i13_pure_pursuit
+  tier /i19_autonomous_emergency_braking prio=78   sched_class=SCHED_FIFO core=-    members=1
+      /i19_autonomous_emergency_braking
+  tier /i20_collision_detector prio=78   sched_class=SCHED_FIFO core=-    members=1
+      /i20_collision_detector
+  tier /i8_control_validator prio=78   sched_class=SCHED_FIFO core=-    members=1
+      /i8_control_validator
+  tier /n10_envelope_monitor prio=78   sched_class=SCHED_FIFO core=-    members=1
+      /n10_envelope_monitor
+  tier /n16_safety_world_model prio=78   sched_class=SCHED_FIFO core=-    members=1
+      /n16_safety_world_model
+  tier /n5_corridor_monitor prio=78   sched_class=SCHED_FIFO core=-    members=1
+      /n5_corridor_monitor
+  tier /n6_radar_guard  prio=78   sched_class=SCHED_FIFO core=-    members=1
+      /n6_radar_guard
+  tier /n7_mrm_planner  prio=78   sched_class=SCHED_FIFO core=-    members=1
+      /n7_mrm_planner
+  tier /n13_scan_guard  prio=77   sched_class=SCHED_FIFO core=-    members=1
+      /n13_scan_guard
+  tier /n14_vision_guard prio=76   sched_class=SCHED_FIFO core=-    members=1
+      /n14_vision_guard
+  tier /n15_proximity_guard prio=76   sched_class=SCHED_FIFO core=-    members=1
+      /n15_proximity_guard
+  tier /n18_pull_over_manager prio=76   sched_class=SCHED_FIFO core=-    members=1
+      /n18_pull_over_manager
+  tier /n17_sensor_health prio=75   sched_class=SCHED_FIFO core=-    members=1
+      /n17_sensor_health
+  tier /n20_object_digest prio=75   sched_class=SCHED_FIFO core=-    members=1
+      /n20_object_digest
+  tier /n19_odd_monitor prio=74   sched_class=SCHED_FIFO core=-    members=1
+      /n19_odd_monitor
+  tier /n12_time_quality_monitor prio=73   sched_class=SCHED_FIFO core=-    members=1
+      /n12_time_quality_monitor
+  tier /i10_mpc_lateral_controller prio=72   sched_class=SCHED_FIFO core=-    members=1
+      /i10_mpc_lateral_controller
+  tier /i11_pid_longitudinal_controller prio=72   sched_class=SCHED_FIFO core=-    members=1
+      /i11_pid_longitudinal_controller
+  tier /i12_trajectory_follower_base prio=72   sched_class=SCHED_FIFO core=-    members=1
+      /i12_trajectory_follower_base
+  tier /i14_shift_decider prio=72   sched_class=SCHED_FIFO core=-    members=1
+      /i14_shift_decider
+  tier /i15_raw_vehicle_cmd_converter prio=72   sched_class=SCHED_FIFO core=-    members=1
+      /i15_raw_vehicle_cmd_converter
+  tier /i9_trajectory_follower_node prio=72   sched_class=SCHED_FIFO core=-    members=1
+      /i9_trajectory_follower_node
+  tier /n11_event_recorder prio=71   sched_class=SCHED_FIFO core=-    members=1
+      /n11_event_recorder
+  tier /telemetry_egress prio=71   sched_class=SCHED_FIFO core=-    members=1
+      /telemetry_egress
+  tier default          prio=0    sched_class=-          core=-    members=1
+      /n1_safety_gateway
+6 scheduling warning(s)
+  warning[sched:other]: scheduling: /n11_event_recorder, /telemetry_egress share RT priority 71 and SCHED_RR was not derived to time-slice between them, because the platform file does not declare `resources.rr_timeslice`, so the host's slice is unknown — it is not assumed to be the 100ms default. Under SCHED_FIFO whichever runs first holds the CPU until it blocks.
+  warning[sched:other]: scheduling: /i10_mpc_lateral_controller, /i11_pid_longitudinal_controller, /i12_trajectory_follower_base, /i14_shift_decider, /i15_raw_vehicle_cmd_converter, /i9_trajectory_follower_node share RT priority 72 and SCHED_RR was not derived to time-slice between them, because the platform file does not declare `resources.rr_timeslice`, so the host's slice is unknown — it is not assumed to be the 100ms default. Under SCHED_FIFO whichever runs first holds the CPU until it blocks.
+  warning[sched:other]: scheduling: /n17_sensor_health, /n20_object_digest share RT priority 75 and SCHED_RR was not derived to time-slice between them, because the platform file does not declare `resources.rr_timeslice`, so the host's slice is unknown — it is not assumed to be the 100ms default. Under SCHED_FIFO whichever runs first holds the CPU until it blocks.
+  warning[sched:other]: scheduling: /n14_vision_guard, /n15_proximity_guard, /n18_pull_over_manager share RT priority 76 and SCHED_RR was not derived to time-slice between them, because the platform file does not declare `resources.rr_timeslice`, so the host's slice is unknown — it is not assumed to be the 100ms default. Under SCHED_FIFO whichever runs first holds the CPU until it blocks.
+  warning[sched:other]: scheduling: /i13_pure_pursuit, /i19_autonomous_emergency_braking, /i20_collision_detector, /i8_control_validator, /n10_envelope_monitor, /n16_safety_world_model, /n5_corridor_monitor, /n6_radar_guard, /n7_mrm_planner share RT priority 78 and SCHED_RR was not derived to time-slice between them, because the platform file does not declare `resources.rr_timeslice`, so the host's slice is unknown — it is not assumed to be the 100ms default. Under SCHED_FIFO whichever runs first holds the CPU until it blocks.
+  warning[sched:other]: scheduling: /i16_vehicle_interface, /i1_control_command_gate, /i2_command_mode_decider, /i3_command_mode_switcher, /i5_stop_mode_operator, /i6_mrm_emergency_stop_operator, /i7_mrm_handler, /n2_hpc_supervisor, /n3_state_machine, /n4_vehicle_state_estimator, /n8_fault_manager share RT priority 80 and SCHED_RR was not derived to time-slice between them, because the platform file does not declare `resources.rr_timeslice`, so the host's slice is unknown — it is not assumed to be the 100ms default. Under SCHED_FIFO whichever runs first holds the CPU until it blocks.
+FQN                                CLASS        PRIO  CORE  PROVENANCE
+/i16_vehicle_interface             SCHED_FIFO     80     -  derived(chain_aware: non-chain criticality=Some(High) budget_ms=10) -> prio 80
+/i1_control_command_gate           SCHED_FIFO     80     -  derived(chain_aware: non-chain criticality=Some(High) budget_ms=10) -> prio 80
+/i2_command_mode_decider           SCHED_FIFO     80     -  derived(chain_aware: non-chain criticality=Some(High) budget_ms=10) -> prio 80
+/i3_command_mode_switcher          SCHED_FIFO     80     -  derived(chain_aware: non-chain criticality=Some(High) budget_ms=10) -> prio 80
+/i5_stop_mode_operator             SCHED_FIFO     80     -  derived(chain_aware: non-chain criticality=Some(High) budget_ms=10) -> prio 80
+/i6_mrm_emergency_stop_operator    SCHED_FIFO     80     -  derived(chain_aware: non-chain criticality=Some(High) budget_ms=10) -> prio 80
+/i7_mrm_handler                    SCHED_FIFO     80     -  derived(chain_aware: non-chain criticality=Some(High) budget_ms=10) -> prio 80
+/n2_hpc_supervisor                 SCHED_FIFO     80     -  derived(chain_aware: non-chain criticality=Some(High) budget_ms=10) -> prio 80
+/n3_state_machine                  SCHED_FIFO     80     -  derived(chain_aware: non-chain criticality=Some(High) budget_ms=10) -> prio 80
+/n4_vehicle_state_estimator        SCHED_FIFO     80     -  derived(chain_aware: non-chain criticality=Some(High) budget_ms=10) -> prio 80
+/n8_fault_manager                  SCHED_FIFO     80     -  derived(chain_aware: non-chain criticality=Some(High) budget_ms=10) -> prio 80
+/n9_actuator_supervisor            SCHED_FIFO     79     -  derived(chain_aware: non-chain criticality=Some(Medium) budget_ms=10) -> prio 79
+/i13_pure_pursuit                  SCHED_FIFO     78     -  derived(chain_aware: non-chain criticality=Some(Medium) budget_ms=20) -> prio 78
+/i19_autonomous_emergency_braking  SCHED_FIFO     78     -  derived(chain_aware: non-chain criticality=Some(Medium) budget_ms=20) -> prio 78
+/i20_collision_detector            SCHED_FIFO     78     -  derived(chain_aware: non-chain criticality=Some(Medium) budget_ms=20) -> prio 78
+/i8_control_validator              SCHED_FIFO     78     -  derived(chain_aware: non-chain criticality=Some(Medium) budget_ms=20) -> prio 78
+/n10_envelope_monitor              SCHED_FIFO     78     -  derived(chain_aware: non-chain criticality=Some(Medium) budget_ms=20) -> prio 78
+/n16_safety_world_model            SCHED_FIFO     78     -  derived(chain_aware: non-chain criticality=Some(Medium) budget_ms=20) -> prio 78
+/n5_corridor_monitor               SCHED_FIFO     78     -  derived(chain_aware: non-chain criticality=Some(Medium) budget_ms=20) -> prio 78
+/n6_radar_guard                    SCHED_FIFO     78     -  derived(chain_aware: non-chain criticality=Some(Medium) budget_ms=20) -> prio 78
+/n7_mrm_planner                    SCHED_FIFO     78     -  derived(chain_aware: non-chain criticality=Some(Medium) budget_ms=20) -> prio 78
+/n13_scan_guard                    SCHED_FIFO     77     -  derived(chain_aware: non-chain criticality=Some(Medium) budget_ms=25) -> prio 77
+/n14_vision_guard                  SCHED_FIFO     76     -  derived(chain_aware: non-chain criticality=Some(Medium) budget_ms=50) -> prio 76
+/n15_proximity_guard               SCHED_FIFO     76     -  derived(chain_aware: non-chain criticality=Some(Medium) budget_ms=50) -> prio 76
+/n18_pull_over_manager             SCHED_FIFO     76     -  derived(chain_aware: non-chain criticality=Some(Medium) budget_ms=50) -> prio 76
+/n17_sensor_health                 SCHED_FIFO     75     -  derived(chain_aware: non-chain criticality=Some(Medium) budget_ms=100) -> prio 75
+/n20_object_digest                 SCHED_FIFO     75     -  derived(chain_aware: non-chain criticality=Some(Medium) budget_ms=100) -> prio 75
+/n19_odd_monitor                   SCHED_FIFO     74     -  derived(chain_aware: non-chain criticality=Some(Medium) budget_ms=200) -> prio 74
+/n12_time_quality_monitor          SCHED_FIFO     73     -  derived(chain_aware: non-chain criticality=Some(Medium) budget_ms=1000) -> prio 73
+/i10_mpc_lateral_controller        SCHED_FIFO     72     -  derived(chain_aware: non-chain criticality=Some(Low) budget_ms=20) -> prio 72
+/i11_pid_longitudinal_controller   SCHED_FIFO     72     -  derived(chain_aware: non-chain criticality=Some(Low) budget_ms=20) -> prio 72
+/i12_trajectory_follower_base      SCHED_FIFO     72     -  derived(chain_aware: non-chain criticality=Some(Low) budget_ms=20) -> prio 72
+/i14_shift_decider                 SCHED_FIFO     72     -  derived(chain_aware: non-chain criticality=Some(Low) budget_ms=20) -> prio 72
+/i15_raw_vehicle_cmd_converter     SCHED_FIFO     72     -  derived(chain_aware: non-chain criticality=Some(Low) budget_ms=20) -> prio 72
+/i9_trajectory_follower_node       SCHED_FIFO     72     -  derived(chain_aware: non-chain criticality=Some(Low) budget_ms=20) -> prio 72
+/n11_event_recorder                SCHED_FIFO     71     -  derived(chain_aware: non-chain criticality=Some(Low) budget_ms=100) -> prio 71
+/telemetry_egress                  SCHED_FIFO     71     -  derived(chain_aware: non-chain criticality=Some(Low) budget_ms=100) -> prio 71
+/n1_safety_gateway                 SCHED_OTHER     0     -  default (no timing facts)
+system file: explicit(/home/aeon/repos/simple-autoware-safety-island/docs/demo-l4/stage3-partitions.system.posix.yaml)
+contract[scope 0, stage3-partitions.launch.xml]: provider(/home/aeon/repos/simple-autoware-safety-island/docs/demo-l4/stage3-partitions.contract.yaml)
+
+1 manifest(s) checked: 1 clean, 0 with errors (0 errors, 0 warnings)
+1 contract(s): 0 overlay, 1 provider
+
+=== stage3-derived ===
+Parsing launch file: /home/aeon/repos/simple-autoware-safety-island/docs/demo-l4/stage3-derived.launch.xml
+Parsed: 1 scopes, 11 nodes, 0 containers, 0 composable nodes
+2026-09-24T12:49:59.594979Z  INFO Loaded 1 manifest(s) [0 overlay, 1 provider] (0 scopes without manifests, 0 errors, 2 warnings)
+Scheduling platform file [explicit]: /home/aeon/repos/simple-autoware-safety-island/docs/demo-l4/stage3-derived.system.posix.yaml
+Scheduling (posix, mapper=chain_aware): 11 tier(s)
+  tier /i16_vehicle_interface prio=80   sched_class=SCHED_FIFO core=-    members=1
+      /i16_vehicle_interface
+  tier /i1_control_command_gate prio=79   sched_class=SCHED_FIFO core=-    members=1
+      /i1_control_command_gate
+  tier /n3_state_machine prio=78   sched_class=SCHED_FIFO core=-    members=1
+      /n3_state_machine
+  tier /n2_hpc_supervisor prio=77   sched_class=SCHED_FIFO core=-    members=1
+      /n2_hpc_supervisor
+  tier /n4_vehicle_state_estimator prio=76   sched_class=SCHED_FIFO core=-    members=1
+      /n4_vehicle_state_estimator
+  tier /i10_mpc_lateral_controller prio=75   sched_class=SCHED_FIFO core=-    members=1
+      /i10_mpc_lateral_controller
+  tier /i13_pure_pursuit prio=75   sched_class=SCHED_FIFO core=-    members=1
+      /i13_pure_pursuit
+  tier /n16_safety_world_model prio=75   sched_class=SCHED_FIFO core=-    members=1
+      /n16_safety_world_model
+  tier /n11_event_recorder prio=74   sched_class=SCHED_FIFO core=-    members=1
+      /n11_event_recorder
+  tier /n17_sensor_health prio=74   sched_class=SCHED_FIFO core=-    members=1
+      /n17_sensor_health
+  tier /n12_time_quality_monitor prio=73   sched_class=SCHED_FIFO core=-    members=1
+      /n12_time_quality_monitor
+2 scheduling warning(s)
+  warning[sched:other]: scheduling: /n11_event_recorder, /n17_sensor_health share RT priority 74 and SCHED_RR was not derived to time-slice between them, because the platform file does not declare `resources.rr_timeslice`, so the host's slice is unknown — it is not assumed to be the 100ms default. Under SCHED_FIFO whichever runs first holds the CPU until it blocks.
+  warning[sched:other]: scheduling: /i10_mpc_lateral_controller, /i13_pure_pursuit, /n16_safety_world_model share RT priority 75 and SCHED_RR was not derived to time-slice between them, because the platform file does not declare `resources.rr_timeslice`, so the host's slice is unknown — it is not assumed to be the 100ms default. Under SCHED_FIFO whichever runs first holds the CPU until it blocks.
+FQN                          CLASS       PRIO  CORE  PROVENANCE
+/i16_vehicle_interface       SCHED_FIFO    80     -  derived(chain_aware: island.mrm_command segment drain 1/4) -> prio 80
+/i1_control_command_gate     SCHED_FIFO    79     -  derived(chain_aware: island.mrm_command segment drain 2/4) -> prio 79
+/n3_state_machine            SCHED_FIFO    78     -  derived(chain_aware: island.mrm_command segment drain 3/4) -> prio 78
+/n2_hpc_supervisor           SCHED_FIFO    77     -  derived(chain_aware: island.mrm_command segment drain 4/4) -> prio 77
+/n4_vehicle_state_estimator  SCHED_FIFO    76     -  derived(chain_aware: non-chain criticality=None budget_ms=10) -> prio 76
+/i10_mpc_lateral_controller  SCHED_FIFO    75     -  derived(chain_aware: non-chain criticality=None budget_ms=20) -> prio 75
+/i13_pure_pursuit            SCHED_FIFO    75     -  derived(chain_aware: non-chain criticality=None budget_ms=20) -> prio 75
+/n16_safety_world_model      SCHED_FIFO    75     -  derived(chain_aware: non-chain criticality=None budget_ms=20) -> prio 75
+/n11_event_recorder          SCHED_FIFO    74     -  derived(chain_aware: non-chain criticality=None budget_ms=100) -> prio 74
+/n17_sensor_health           SCHED_FIFO    74     -  derived(chain_aware: non-chain criticality=None budget_ms=100) -> prio 74
+/n12_time_quality_monitor    SCHED_FIFO    73     -  derived(chain_aware: non-chain criticality=None budget_ms=1000) -> prio 73
+system file: explicit(/home/aeon/repos/simple-autoware-safety-island/docs/demo-l4/stage3-derived.system.posix.yaml)
+contract[scope 0, stage3-derived.launch.xml]: provider(/home/aeon/repos/simple-autoware-safety-island/docs/demo-l4/stage3-derived.contract.yaml)
+
+── Cross-scope diagnostics ──
+  info[derivable-rate]: topic '/si/internal/fallback_cmd' declares rate_hz 50, which the graph already derives from the timers that drive it. The declaration is redundant and can be deleted
+  info[derivable-rate]: topic '/si/internal/nominal_cmd' declares rate_hz 50, which the graph already derives from the timers that drive it. The declaration is redundant and can be deleted
+  info[derivable-min-rate]: publisher '/i10_mpc_lateral_controller/nominal_cmd' promises min_rate_hz 50, which the graph already derives for '/si/internal/nominal_cmd' from the timers that drive it. The declaration is redundant and can be deleted
+  info[derivable-min-rate]: publisher '/i13_pure_pursuit/fallback_cmd' promises min_rate_hz 50, which the graph already derives for '/si/internal/fallback_cmd' from the timers that drive it. The declaration is redundant and can be deleted
+  info[fault-reaction-budget]: hazard 'hpc_loss': detection 30.00ms (/n2_hpc_supervisor/heartbeat detects within 30.00ms) + reaction 40.00ms (reaction route /n2_hpc_supervisor/declare_hpc_lost → /n3_state_machine/escalate → /i1_control_command_gate/select_mrm_source → /i16_vehicle_interface/transmit = 40.00ms) = 70.00ms fits the fault-tolerant time interval 70.00ms with 0.00ms of slack
+  warning[reaction-unbudgeted]: hazard 'hpc_loss': the reaction reaches /si/out/actuator_cmd but no path there declares a `safe_state` with a settle time — the plant's share of the reaction is unknown, so the FTTI check runs on INCOMPLETE EVIDENCE
+  warning[reaction-unguarded]: hazard 'hpc_loss' reaction 'island.mrm_command' ends at /si/out/actuator_cmd and no subscriber there declares an `on_violation` — a stalled reaction would go unnoticed. Guard it with a second hazard whose guard is this output
+
+1 manifest(s) checked: 1 clean, 0 with errors (0 errors, 2 warnings)
+1 contract(s): 0 overlay, 1 provider

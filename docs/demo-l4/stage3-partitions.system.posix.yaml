@@ -1,0 +1,15 @@
+# The scheduling platform file for stage3-partitions.launch.xml.
+#
+# `mapper: chain_aware` is not a choice made here: section 9.1 of the design
+# names that mapper. This file only declares the band the derived ranking is
+# compressed into.
+#
+# The band is 38 wide for 38 nodes, so NOTHING collapses for want of
+# priorities. Any two nodes that come back on the same priority came back that
+# way because the mapper judged them equal, not because the band ran out. That
+# is the whole point of making it this wide.
+target: posix
+mapper: chain_aware
+
+resources:
+  rt_priority_band: { min: 10, max: 80 }

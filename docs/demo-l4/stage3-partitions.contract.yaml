@@ -1,0 +1,302 @@
+# Design section 9.1's five execution partitions, as contract facts, so that
+# the `chain_aware` mapper section 9.1 names can be asked to produce them.
+#
+# WHAT THIS IS
+#
+# "L4 Safety Island for Autoware - Software Design", version 20260918,
+# Reference Design WG. Section 9.1 assigns every island node to one of five
+# executors with a period and a fixed priority band, and says the island is
+# organised "following the declarative RT-configuration approach already
+# demonstrated (contract facts -> priority bands, `chain_aware` mapper)".
+#
+# This file is the document's own two tables - section 2.2's criticality tiers
+# and the per-node rates of sections 6.1 to 6.4 and 9.1 - written as the facts
+# that mapper ranks by. `play_launch check --sched ... --explain` then prints
+# the order it derives, and that order is compared against section 9.1's table.
+#
+# This unit produces a VERDICT, not a slide. See stage3-verdict.md.
+#
+# WHAT THE MAPPER RANKS BY, AND THEREFORE WHAT THIS FILE CARRIES
+#
+# `chain_aware`'s non-chain path (ros-launch-manifest, sched/src/
+# chain_aware_mapper.rs, algorithm step 4) groups paths by node criticality
+# bucket - High / Medium / Low / None - and orders within each bucket by one
+# ascending "time budget": 1000/rate_hz for a timer-triggered path,
+# max_latency_ms for an input-triggered one. Nothing else. So the only two
+# facts this fixture has to carry are each node's CRITICALITY and each node's
+# RATE, and it carries no chains: section 9.1 is a partition table, not a
+# chain, and declaring one would put the mapper on its chain path instead.
+#
+# CRITICALITY: SECTION 2.2's TIERS, MAPPED ONTO THE LABEL VOCABULARY
+#
+#   T0  ASIL-D     -> high
+#   T1  ASIL-B(D)  -> medium
+#   T1s ASIL-B(D)  -> medium
+#   T2  QM         -> low
+#   T3  QM         -> low
+#
+# The contract's `criticality:` label has exactly three values (high, medium,
+# low: `parse_criticality_label`). Section 2.2 has five tiers but only THREE
+# distinct target integrities, and the mapping above is the faithful one. Note
+# what it costs before any run happens: T1 and T1s share ASIL-B(D), and T2 and
+# T3 share QM, so the label vocabulary cannot tell P1 from P2, or P3 from P4,
+# by criticality at all. Whatever separates those pairs has to come from rate.
+#
+# RATES: THE DOCUMENT'S OWN, AT THE FAST END OF EACH RANGE
+#
+# Every rate below is cited to the section it came from. Where the design
+# gives a range (N13's "10-40 Hz", P2's "20-50 Hz"), this file declares the
+# FASTEST rate in the range, because that is the period the partition has to
+# be sized for. THIS IS AN INVENTED CHOICE and it matters: at the slow end of
+# its range P2 would sort further down. It is named here rather than buried.
+#
+# Where sections 6.1 to 6.4 give a node its OWN rate, that rate is used, not
+# the partition's period from 9.1. Those two disagree in the document, and the
+# disagreement is one of this unit's findings: N9 is a P1 node running at
+# 100 Hz, and N12 is a P1 node running at 1 Hz.
+#
+# WHAT IS INVENTED, AND SAID SO
+#
+#   - The three-value criticality mapping above.
+#   - The fast end of every rate range.
+#   - Rates for I1-I16, I19 and I20. Section 4.1 gives those nodes a TIER but
+#     no rate; the rate used is their partition's period from section 9.1.
+#   - `telemetry_egress` as a node. Section 9.1's P4 row says "N11, telemetry
+#     egress" without naming a node for the second half.
+#   - NOT invented: N1's rate. Section 6.1 gives N1 si_safety_gateway the rate
+#     "per-message", which is an input trigger and not a period, so N1 is
+#     declared here with an input trigger and NO latency budget - because the
+#     design states none. What the mapper does with that is a finding, not a
+#     defect in this file.
+
+version: 1
+
+nodes:
+
+  # ---- P0, safety core. 10 ms (100 Hz), priority band 1 - highest. --------
+  # Section 2.2 T0, ASIL-D. Section 9.1: I1 I2 I3 I5 I6 I7 I16 N1 N2 N3 N4 N8.
+
+  # I1 autoware_control_command_gate. Section 4.1: "The arbiter." Rate is
+  # P0's period (9.1); section 4.1 gives no per-node rate.
+  i1_control_command_gate:
+    criticality: high
+    paths: { step: { trigger: { timer: { rate_hz: 100 } } } }
+
+  # I2 autoware_command_mode_decider (section 4.1, T0).
+  i2_command_mode_decider:
+    criticality: high
+    paths: { step: { trigger: { timer: { rate_hz: 100 } } } }
+
+  # I3 autoware_command_mode_switcher (section 4.1, T0).
+  i3_command_mode_switcher:
+    criticality: high
+    paths: { step: { trigger: { timer: { rate_hz: 100 } } } }
+
+  # I5 autoware_stop_mode_operator (section 4.1, T0).
+  i5_stop_mode_operator:
+    criticality: high
+    paths: { step: { trigger: { timer: { rate_hz: 100 } } } }
+
+  # I6 autoware_mrm_emergency_stop_operator (section 4.1, T0).
+  i6_mrm_emergency_stop_operator:
+    criticality: high
+    paths: { step: { trigger: { timer: { rate_hz: 100 } } } }
+
+  # I7 autoware_mrm_handler (section 4.1, T0).
+  i7_mrm_handler:
+    criticality: high
+    paths: { step: { trigger: { timer: { rate_hz: 100 } } } }
+
+  # I16 vehicle interface, CAN FD TX (section 4.1, T0; section 8.3, 100 Hz).
+  i16_vehicle_interface:
+    criticality: high
+    paths: { step: { trigger: { timer: { rate_hz: 100 } } } }
+
+  # N1 si_safety_gateway (section 6.1, T0). Rate column: "per-message".
+  # The design gives no period and no latency bound, so none is written here.
+  n1_safety_gateway:
+    sub:
+      hpc_frame: { }
+    paths:
+      verify:
+        trigger: { input: [hpc_frame] }
+
+  # N2 si_hpc_supervisor (section 6.1, T0, 100 Hz).
+  n2_hpc_supervisor:
+    criticality: high
+    paths: { step: { trigger: { timer: { rate_hz: 100 } } } }
+
+  # N3 si_state_machine (section 6.1, T0, 100 Hz).
+  n3_state_machine:
+    criticality: high
+    paths: { step: { trigger: { timer: { rate_hz: 100 } } } }
+
+  # N4 si_vehicle_state_estimator (section 6.1, T0, 100 Hz).
+  n4_vehicle_state_estimator:
+    criticality: high
+    paths: { step: { trigger: { timer: { rate_hz: 100 } } } }
+
+  # N8 si_fault_manager (section 6.1, T0, 100 Hz).
+  n8_fault_manager:
+    criticality: high
+    paths: { step: { trigger: { timer: { rate_hz: 100 } } } }
+
+  # ---- P1, supervision and fallback control. 20 ms (50 Hz), band 2. -------
+  # Section 2.2 T1, ASIL-B(D). Section 9.1: I8 I13 N5 N7 N9 N10 N12 N18.
+
+  # I8 autoware_control_validator (section 4.1, T1). Rate is P1's period.
+  i8_control_validator:
+    criticality: medium
+    paths: { step: { trigger: { timer: { rate_hz: 50 } } } }
+
+  # I13 autoware_pure_pursuit, the fallback lateral controller (4.1, T1).
+  i13_pure_pursuit:
+    criticality: medium
+    paths: { step: { trigger: { timer: { rate_hz: 50 } } } }
+
+  # N5 si_corridor_monitor (section 6.1, T1, 50 Hz).
+  n5_corridor_monitor:
+    criticality: medium
+    paths: { step: { trigger: { timer: { rate_hz: 50 } } } }
+
+  # N7 si_mrm_planner (sections 6.1 and 6.3, T1, 50 Hz).
+  n7_mrm_planner:
+    criticality: medium
+    paths: { step: { trigger: { timer: { rate_hz: 50 } } } }
+
+  # N9 si_actuator_supervisor (section 6.1, T1, 100 Hz). NOTE: section 9.1
+  # puts N9 in P1, whose period is 20 ms. Section 6.1 gives N9 100 Hz. The
+  # document's own two tables disagree here; section 6.1's number is used.
+  n9_actuator_supervisor:
+    criticality: medium
+    paths: { step: { trigger: { timer: { rate_hz: 100 } } } }
+
+  # N10 si_envelope_monitor (section 6.1, T1, 50 Hz).
+  n10_envelope_monitor:
+    criticality: medium
+    paths: { step: { trigger: { timer: { rate_hz: 50 } } } }
+
+  # N12 si_time_quality_monitor (section 6.1, T1, 1 Hz). Same disagreement as
+  # N9, in the other direction: a P1 node three orders of magnitude slower
+  # than P1's period.
+  n12_time_quality_monitor:
+    criticality: medium
+    paths: { step: { trigger: { timer: { rate_hz: 1 } } } }
+
+  # N18 si_pull_over_manager (section 6.3, T1, 20 Hz).
+  n18_pull_over_manager:
+    criticality: medium
+    paths: { step: { trigger: { timer: { rate_hz: 20 } } } }
+
+  # ---- P2, safety sensing. 20-50 ms (20-50 Hz), band 3. ------------------
+  # Section 2.2 T1s, ASIL-B(D) - the SAME target integrity as T1.
+  # Section 9.1: I19 I20 N6 N13 N14 N15 N16 N17 N19 N20.
+
+  # I19 autoware_autonomous_emergency_braking (section 4.1, T1s). Rate is the
+  # fast end of P2's 20-50 Hz.
+  i19_autonomous_emergency_braking:
+    criticality: medium
+    paths: { step: { trigger: { timer: { rate_hz: 50 } } } }
+
+  # I20 autoware_collision_detector (section 4.1, T1s). Same.
+  i20_collision_detector:
+    criticality: medium
+    paths: { step: { trigger: { timer: { rate_hz: 50 } } } }
+
+  # N6 si_radar_guard (section 6.1, T1s, 20-50 Hz -> 50).
+  n6_radar_guard:
+    criticality: medium
+    paths: { step: { trigger: { timer: { rate_hz: 50 } } } }
+
+  # N13 si_scan_guard (section 6.2, T1s, 10-40 Hz -> 40).
+  n13_scan_guard:
+    criticality: medium
+    paths: { step: { trigger: { timer: { rate_hz: 40 } } } }
+
+  # N14 si_vision_guard (section 6.2, T1s, 10-20 Hz -> 20).
+  n14_vision_guard:
+    criticality: medium
+    paths: { step: { trigger: { timer: { rate_hz: 20 } } } }
+
+  # N15 si_proximity_guard (section 6.2, T1s, 10-20 Hz -> 20).
+  n15_proximity_guard:
+    criticality: medium
+    paths: { step: { trigger: { timer: { rate_hz: 20 } } } }
+
+  # N16 si_safety_world_model (section 6.2, T1s, 20-50 Hz -> 50).
+  n16_safety_world_model:
+    criticality: medium
+    paths: { step: { trigger: { timer: { rate_hz: 50 } } } }
+
+  # N17 si_sensor_health (section 6.2, T1s, 5-10 Hz -> 10).
+  n17_sensor_health:
+    criticality: medium
+    paths: { step: { trigger: { timer: { rate_hz: 10 } } } }
+
+  # N19 si_odd_monitor (section 6.4, T1s, 2-5 Hz -> 5).
+  n19_odd_monitor:
+    criticality: medium
+    paths: { step: { trigger: { timer: { rate_hz: 5 } } } }
+
+  # N20 si_object_digest, optional (section 6.2, T1s, 10 Hz).
+  n20_object_digest:
+    criticality: medium
+    paths: { step: { trigger: { timer: { rate_hz: 10 } } } }
+
+  # ---- P3, nominal control. 20-30 ms (33-50 Hz), band 4. -----------------
+  # Section 2.2 T2, QM, monitored by T0/T1. Section 9.1: I9 I10 I11 I12 I14 I15.
+  # Rates are the fast end of P3's 33-50 Hz; section 4.1 gives none per node.
+
+  # I9 autoware_trajectory_follower_node (section 4.1, T2).
+  i9_trajectory_follower_node:
+    criticality: low
+    paths: { step: { trigger: { timer: { rate_hz: 50 } } } }
+
+  # I10 autoware_mpc_lateral_controller (section 4.1, T2). THE node section
+  # 9.1 says the island sheds first under overload.
+  i10_mpc_lateral_controller:
+    criticality: low
+    paths: { step: { trigger: { timer: { rate_hz: 50 } } } }
+
+  # I11 autoware_pid_longitudinal_controller (section 4.1, T2).
+  i11_pid_longitudinal_controller:
+    criticality: low
+    paths: { step: { trigger: { timer: { rate_hz: 50 } } } }
+
+  # I12 autoware_trajectory_follower_base (section 4.1, T2).
+  i12_trajectory_follower_base:
+    criticality: low
+    paths: { step: { trigger: { timer: { rate_hz: 50 } } } }
+
+  # I14 autoware_shift_decider (section 4.1, T2).
+  i14_shift_decider:
+    criticality: low
+    paths: { step: { trigger: { timer: { rate_hz: 50 } } } }
+
+  # I15 autoware_raw_vehicle_cmd_converter (section 4.1, T2).
+  i15_raw_vehicle_cmd_converter:
+    criticality: low
+    paths: { step: { trigger: { timer: { rate_hz: 50 } } } }
+
+  # ---- P4, non-real-time. 100-1000 ms, band 5 - lowest. -----------------
+  # Section 2.2 T3, QM - the SAME target integrity as T2.
+
+  # N11 si_event_recorder (section 6.1, T3, 1-10 Hz -> 10).
+  n11_event_recorder:
+    criticality: low
+    paths: { step: { trigger: { timer: { rate_hz: 10 } } } }
+
+  # Section 9.1's P4 row: "N11, telemetry egress". The second half is not a
+  # named node anywhere in the document; the rate is the fast end of P4's
+  # 100-1000 ms.
+  telemetry_egress:
+    criticality: low
+    paths: { step: { trigger: { timer: { rate_hz: 10 } } } }
+
+topics:
+  # N1's only declared input. The design's section 8.1 table is stage 0's
+  # subject, not this unit's; one topic is enough to give N1 an input trigger.
+  /si/in/hpc_frame:
+    type: safety_island_msgs/msg/HpcFrame
+    external: pub
+    sub: [n1_safety_gateway/hpc_frame]

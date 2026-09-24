@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<!-- Section 8's interface contract, as a launch tree.
+
+     Two nodes, because stage 0 claims one thing: that the 11 inbound rows of
+     design section 8.1 and the 9 outbound rows of section 8.2 are consistent
+     as the design declares them. Every row needs an endpoint to hang on, and
+     nothing more.
+
+     si_e2e_ingress is section 8.4's N1, which "verifies on ingress" for every
+     row of section 8.1. si_e2e_egress is this fixture's own invention (the
+     design's outbound rows come from six different nodes) and the contract
+     sidecar says so by name.
+
+     These are DECLARATIVE STAND-INS. Neither has source code in this
+     repository and neither needs any: `play_launch check` reads this file and
+     `stage0-interface.contract.yaml` beside it, and everything stage 0 claims
+     is in those two files. -->
+<launch>
+  <!-- N1, ingress E2E verification (design section 8.4) -->
+  <node pkg="safety_island_l4" exec="si_e2e_ingress" name="si_e2e_ingress"/>
+  <!-- the publisher of design section 8.2, and of section 8.3's CAN FD link -->
+  <node pkg="safety_island_l4" exec="si_e2e_egress" name="si_e2e_egress"/>
+</launch>

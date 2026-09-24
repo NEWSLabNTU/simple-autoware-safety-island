@@ -1,0 +1,232 @@
+# The L4 Safety Island's fault-reaction budget, as a checkable contract.
+#
+# WHAT THIS IS
+#
+# "L4 Safety Island for Autoware - Software Design", version 20260918,
+# Reference Design WG. Section 0 puts "FTTI budget derivation and timing
+# analysis" out of scope for Part 1 and defers it to Parts 2-4. Section 9.2
+# nevertheless prints a preliminary fault-reaction budget, marked "To be
+# reconciled with the FTTI in Part 2", and section 8.1 prints the rates and
+# age limits of every HPC-to-island signal.
+#
+# This file is those two tables, written in play_launch's contract language,
+# so that the arithmetic Part 1 defers is performed by a tool today.
+#
+# SECTION 9.2, VERBATIM
+#
+#   Detection - heartbeat/deadline miss (N2)   <= 30 ms (3 missed 100 Hz heartbeats)
+#   Detection - FSI hardware fault line        <= 1 ms
+#   Decision  - N8 -> N3 -> I2/I3              <= 20 ms (2 cycles)
+#   Command   - I1 -> I16 -> CAN FD            <= 20 ms
+#   Island reaction total                      <= 70 ms
+#   Actuator response                          vehicle-specific
+#
+# WHERE EACH NUMBER LANDS IN THIS FILE
+#
+#   30 ms detection -> NOT what this file declares. See THE ONE CHANGED LINE
+#     below. `lease_duration: 500ms` on si_hpc_supervisor's heartbeat
+#     subscriber. The lease is the only omission MECHANISM the checker counts:
+#     `min_rate_hz: 100` is a requirement, and nothing fires when a period
+#     passes. 3 missed heartbeats of a 100 Hz stream IS a 30 ms lease, so the
+#     design's parenthesis and the QoS setting are the same fact.
+#   20 ms decision -> 10 ms on si_hpc_supervisor's reaction path plus 10 ms on
+#     si_state_machine's. The design says "2 cycles"; P0 runs at 100 Hz
+#     (section 9.1), so a cycle is 10 ms and two of them are these two hops.
+#   20 ms command -> 10 ms on si_command_gate plus 10 ms on si_actuator_gateway,
+#     the same two cycles of the same 100 Hz partition.
+#   70 ms total -> `ftti: 70ms` on the hazard.
+#   vehicle-specific actuator response -> NO `settle` on the safe state. The
+#     design declines to give the number, so this file declines to invent one,
+#     and the checker's total is therefore the ISLAND's reaction only, which
+#     is exactly what the 70 ms row bounds.
+#   1 ms FSI fault line -> NOT declared. It is a discrete GPIO (section 8.5),
+#     not a topic, and there is no vocabulary for it here. The heartbeat path
+#     is the vehicle-level-independent one and it is the slower of the two, so
+#     omitting the faster detector cannot flatter the result.
+#
+# THE ONE CHANGED LINE
+#
+# This file is `l4_designed.contract.yaml` with ONE line different:
+# `lease_duration: 30ms` becomes `lease_duration: 500ms`. Everything else --
+# the four nodes, the four 10 ms hops, the 70 ms FTTI, the topic table -- is
+# byte-identical.
+#
+# 500 ms is not a worse guess. It is what the island actually runs today.
+# Section 9.2 closes: "The 500 ms watchdog used in the current evaluation
+# island is a coarse outer bound; the 30 ms heartbeat detection above is the
+# target for the production interface, with the 500 ms watchdog retained as
+# the independent backstop." Section 1 records the measurement: the 500 ms
+# watchdog tripped in 0.49-0.67 s.
+#
+# THE ONE CLAIM
+#
+# The designed island closes its 70 ms budget with zero slack. The island
+# that exists misses it by an order of magnitude, and the checker says by how
+# much and which term to tighten. The distance between the two is a
+# diagnostic with a number in it, not a paragraph.
+#
+# WHAT IS INVENTED, AND SAID SO
+#
+#   - Message type names. Section 8.1 marks HpcHeartbeat, SafetyCorridor and
+#     friends as "new" and gives no package. `safety_island_msgs/msg/...` is
+#     this file's guess at where they would live.
+#   - The three INTERNAL topic names (/si/internal/*). The design names the
+#     nodes and the edges between them but never the topics that carry them.
+#   - The split of each 20 ms stage into two 10 ms hops. The design gives the
+#     stage totals and says "2 cycles"; the even split across the two named
+#     nodes is this file's reading of that parenthesis.
+#   - N8 (si_fault_manager) and I2/I3 (the command-mode decider and switcher)
+#     are NOT nodes here. The design's decision row is N8 -> N3 -> I2/I3; this
+#     file collapses it to N2 -> N3 so the demo stays at four nodes. The 20 ms
+#     stage total is unchanged, so the budget is not affected, but the route
+#     the checker prints is shorter than the design's route.
+
+version: 1
+
+# ISO 26262's scale, stated rather than assumed.
+severity_levels: [QM, ASIL_A, ASIL_B, ASIL_C, ASIL_D]
+
+hazards:
+  hpc_loss:
+    severity: ASIL_D
+    description: >-
+      the HPC stops producing its 100 Hz heartbeat, so nothing outside the
+      island is still planning or deciding; the island has to reach its own
+      command before the silence becomes a hazardous event
+    guards: [/si/in/heartbeat]
+    on: omission
+    ftti: 70ms
+    reaction: island.mrm_command
+
+nodes:
+  # N2. Section 6.1: "HPC liveness and deadline supervision: heartbeat
+  # timeout, per-topic minimum rate, end-to-end latency against the declared
+  # budget." T0, 100 Hz.
+  si_hpc_supervisor:
+    paths:
+      declare_hpc_lost:
+        trigger: { input: [heartbeat] }
+        output: [hpc_liveness]
+        # One cycle of the 100 Hz P0 partition (section 9.1).
+        max_latency: 10ms
+    sub:
+      # THE DETECTOR. Rate and age limit are section 8.1's row for
+      # /si/in/heartbeat, verbatim: 100 Hz, 20 ms. The lease is section 9.2's
+      # "3 missed 100 Hz heartbeats".
+      heartbeat:
+        min_rate_hz: 100
+        max_age: 20ms
+        qos: { depth: 1, liveliness: manual_by_topic, lease_duration: 500ms }
+        on_violation:
+          on: [omission]
+          reaction: declare_hpc_lost
+          within: 30ms
+      # Two more rows of section 8.1, with their own rates and age limits.
+      # The supervisor reads them for its per-topic rate check; they are
+      # read-latest state, not triggers, so neither can fire a reaction.
+      trajectory:
+        min_rate_hz: 10
+        max_age: 300ms
+        qos: { depth: 1 }
+        state: true
+      operation_mode_state:
+        min_rate_hz: 10
+        max_age: 300ms
+        qos: { depth: 1 }
+        state: true
+    pub:
+      hpc_liveness: { min_rate_hz: 100 }
+
+  # N3. Section 6.1: the island safety state machine, single owner of island
+  # mode. T0, 100 Hz. The second of the decision stage's two cycles.
+  si_state_machine:
+    paths:
+      escalate:
+        trigger: { input: [hpc_liveness] }
+        output: [island_mode]
+        max_latency: 10ms
+    sub:
+      hpc_liveness: { min_rate_hz: 100, qos: { depth: 1 } }
+    pub:
+      island_mode: { min_rate_hz: 100 }
+
+  # I1, autoware_control_command_gate. Section 4.1: "The arbiter. Selects
+  # among command sources". T0. First of the command stage's two cycles.
+  si_command_gate:
+    paths:
+      select_mrm_source:
+        trigger: { input: [island_mode] }
+        output: [gated_command]
+        max_latency: 10ms
+    sub:
+      island_mode: { min_rate_hz: 100, qos: { depth: 1 } }
+    pub:
+      gated_command: { min_rate_hz: 100 }
+
+  # I16, the vehicle interface. Section 8.3: CAN FD at 100 Hz to the actuator
+  # gateway. T0. Second of the command stage's two cycles, and the end of the
+  # island's reaction.
+  si_actuator_gateway:
+    paths:
+      transmit:
+        trigger: { input: [gated_command] }
+        output: [actuator_cmd]
+        max_latency: 10ms
+        # No `settle`. Section 9.2's last row is "Actuator response:
+        # vehicle-specific" -- the design gives no number, so none is
+        # invented, and the checker's total is the island's reaction alone.
+        safe_state: { emits: actuator_cmd }
+    sub:
+      gated_command: { min_rate_hz: 100, qos: { depth: 1 } }
+    pub:
+      actuator_cmd: { min_rate_hz: 100 }
+
+# The reaction, as a scope path: from the guarded heartbeat to the frame on
+# the CAN FD bus. 40ms is section 9.2's decision stage plus its command stage.
+paths:
+  island.mrm_command:
+    trigger: { input: [/si/in/heartbeat] }
+    output: [/si/out/actuator_cmd]
+    max_latency: 40ms
+
+topics:
+  # --- section 8.1, HPC -> island. Rate column is the design's, verbatim ----
+  /si/in/heartbeat:
+    type: safety_island_msgs/msg/HpcHeartbeat
+    external: pub
+    sub: [si_hpc_supervisor/heartbeat]
+    rate_hz: 100
+  /planning/scenario_planning/trajectory:
+    type: autoware_planning_msgs/msg/Trajectory
+    external: pub
+    sub: [si_hpc_supervisor/trajectory]
+    rate_hz: 10
+  /api/operation_mode/state:
+    type: autoware_adapi_v1_msgs/msg/OperationModeState
+    external: pub
+    sub: [si_hpc_supervisor/operation_mode_state]
+    rate_hz: 10
+
+  # --- internal to the island: the reaction chain's own wiring -------------
+  /si/internal/hpc_liveness:
+    type: safety_island_msgs/msg/HpcLiveness
+    pub: [si_hpc_supervisor/hpc_liveness]
+    sub: [si_state_machine/hpc_liveness]
+    rate_hz: 100
+  /si/internal/island_mode:
+    type: safety_island_msgs/msg/IslandState
+    pub: [si_state_machine/island_mode]
+    sub: [si_command_gate/island_mode]
+    rate_hz: 100
+  /si/internal/gated_command:
+    type: autoware_control_msgs/msg/Control
+    pub: [si_command_gate/gated_command]
+    sub: [si_actuator_gateway/gated_command]
+    rate_hz: 100
+
+  # --- section 8.3, island -> actuator gateway over CAN FD at 100 Hz -------
+  /si/out/actuator_cmd:
+    type: autoware_control_msgs/msg/Control
+    external: sub
+    pub: [si_actuator_gateway/actuator_cmd]
+    rate_hz: 100

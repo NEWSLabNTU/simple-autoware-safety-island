@@ -1,0 +1,44 @@
+<?xml version="1.0"?>
+<!-- Stage 2. The four declared behaviours of design section 3.1, as a launch
+     tree: the nodes that section 3.3's traceability table puts in the Detect,
+     Decide and Act columns of B1, B2, B3 and B4.
+
+     These are DECLARATIVE STAND-INS, as stage 1's are. None of them has
+     source code in this repository and none is needed: `play_launch check`
+     reads the launch tree and the contract sidecar beside it, and everything
+     this stage claims is in those two files.
+
+     The node IDs in the comments are the design's own (section 6.1, 6.2, 6.3,
+     6.4 for N*, section 4.1 for I*). -->
+<launch>
+  <!-- N19, si_odd_monitor (section 6.4, T1s, 2-5 Hz). The ODD verdict, the
+       switch demand, and the two-part acceptance test on the answer. -->
+  <node pkg="safety_island_l4" exec="si_odd_monitor" name="si_odd_monitor"/>
+  <!-- N3, si_state_machine (section 6.1, T0, 100 Hz). Single owner of island
+       mode, and the node that selects the successor behaviour. -->
+  <node pkg="safety_island_l4" exec="si_state_machine" name="si_state_machine"/>
+  <!-- N1, si_safety_gateway (section 6.1, T0, per-message). E2E ingress and
+       egress; publishes the island's constraint vector and state outward. -->
+  <node pkg="safety_island_l4" exec="si_safety_gateway" name="si_safety_gateway"/>
+  <!-- N2, si_hpc_supervisor (section 6.1, T0, 100 Hz). Compliance
+       supervision, which is B1's Assure column in section 3.3. -->
+  <node pkg="safety_island_l4" exec="si_hpc_supervisor" name="si_hpc_supervisor"/>
+  <!-- N5, si_corridor_monitor (section 6.1, T1, 50 Hz). Dual-sourced
+       corridor: B2's precondition, and section 8.1's substitute row. -->
+  <node pkg="safety_island_l4" exec="si_corridor_monitor" name="si_corridor_monitor"/>
+  <!-- N16, si_safety_world_model (section 6.2, T1s, 20-50 Hz). The fusion
+       point; its free space is what a refuge is verified against. -->
+  <node pkg="safety_island_l4" exec="si_safety_world_model" name="si_safety_world_model"/>
+  <!-- N18, si_pull_over_manager (section 6.3, T1). Owns both refuge sources
+       and the T_refuge search bound. -->
+  <node pkg="safety_island_l4" exec="si_pull_over_manager" name="si_pull_over_manager"/>
+  <!-- I7, autoware_mrm_handler (section 4.1, T0). Declares the MRM. -->
+  <node pkg="safety_island_l4" exec="si_mrm_handler" name="si_mrm_handler"/>
+  <!-- I6, autoware_mrm_emergency_stop_operator (section 4.1, T0). B4's
+       actuator path: publishes the control command directly. -->
+  <node pkg="safety_island_l4" exec="si_estop_operator" name="si_estop_operator"/>
+  <!-- I1, autoware_control_command_gate (section 4.1, T0). The arbiter. -->
+  <node pkg="safety_island_l4" exec="si_command_gate" name="si_command_gate"/>
+  <!-- I16, vehicle interface / CAN FD TX (section 4.1, section 8.3, T0). -->
+  <node pkg="safety_island_l4" exec="si_actuator_gateway" name="si_actuator_gateway"/>
+</launch>

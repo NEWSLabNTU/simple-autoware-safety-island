@@ -1,0 +1,9 @@
+# The scheduling platform file for stage3-derived.launch.xml. Same mapper and
+# a band wider than the node count, for the same reason as
+# stage3-partitions.system.posix.yaml: nothing may collapse for want of
+# priorities.
+target: posix
+mapper: chain_aware
+
+resources:
+  rt_priority_band: { min: 10, max: 80 }

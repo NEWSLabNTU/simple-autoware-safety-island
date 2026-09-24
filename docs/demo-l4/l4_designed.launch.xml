@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<!-- The four nodes of section 9.2's fault-reaction chain, as a launch tree.
+
+     These are DECLARATIVE STAND-INS. None of them has source code in this
+     repository, and none is needed: `play_launch check` reads the launch tree
+     and the contract sidecar beside it, and everything the demo claims is in
+     those two files. -->
+<launch>
+  <!-- N2, si_hpc_supervisor (design section 6.1, T0, 100 Hz) -->
+  <node pkg="safety_island_l4" exec="si_hpc_supervisor" name="si_hpc_supervisor"/>
+  <!-- N3, si_state_machine (design section 6.1, T0, 100 Hz) -->
+  <node pkg="safety_island_l4" exec="si_state_machine" name="si_state_machine"/>
+  <!-- I1, autoware_control_command_gate (design section 4.1, T0) -->
+  <node pkg="safety_island_l4" exec="si_command_gate" name="si_command_gate"/>
+  <!-- I16, vehicle interface / CAN FD TX (design section 4.1, T0) -->
+  <node pkg="safety_island_l4" exec="si_actuator_gateway" name="si_actuator_gateway"/>
+</launch>
