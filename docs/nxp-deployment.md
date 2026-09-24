@@ -468,6 +468,46 @@ judgement call. Measured against the linker, this campaign removed
 **103,560 B**. Nothing in this section is summed by hand any
 more: every figure comes from the region report or from `nm` over the ELF.
 
+#### 2026-09-25, later: the parameter inbox is real, +21,224 B
+
+phase6-W8b moved the pin past nano-ros phase-467 (W1 the `MAX_MONITORS` rung,
+W2 the inbox sentinel) plus the chore that bumps nano-ros's vendored
+play_launch to phase 82, and deleted `CONFIG_NROS_PARAM_SERVICE_INBOX_BYTES`
+from the board file. The build then derived every number this file used to
+state or work around:
+
+```
+MAX_MONITORS: usize = 14            MAX_AGE_MONITORS: usize = 1
+BUILTIN_INBOX_BYTES: usize = 1016   BUILTIN_INBOX_DEPTH: usize = 1
+DECLARED_APP_QUERYABLES: Option<usize> = Some(2)
+PARAM_SERVICE_INBOX_BYTES: Option<usize> = None      (derive)
+NROS_RESOLVED_NROS_MAX_LIVELINESS = 58   NROS_RESOLVED_NROS_MAX_QUERYABLES = 26
+```
+
+```
+Memory region         Used Size  Region Size  %age Used
+      IVT_HEADER:         256 B        256 B    100.00%
+           FLASH:      623728 B    4144896 B     15.05%
+             RAM:      302608 B       320 KB     92.35%
+            ITCM:       12812 B        64 KB     19.55%
+            DTCM:       84528 B       128 KB     64.49%
+        IDT_LIST:           0 B        32 KB      0.00%
+```
+
+RAM 281,384 -> 302,608, +21,224 B, 25,072 B spare. Section 8's estimate for
+giving the family its geometry was 21,216 B. By symbol (`nm -S` against the
+W7 ELF): `BUILTIN_INBOX` 0 -> 24,672 B, which is 24 parameter-service rings
+of (1016 + 12) B at depth 1, the inbox that section 8 shows did not exist;
+`USER_SERVICE_INBOX` 3,744 -> 288 B, the 24 parameter queryables leaving the
+24-byte user ring (2 rings x 4 x 36 remain); `__nros_age_storage` 0 -> 64 B,
+one age monitor for the `max_age: 500ms` the contract gained; the rest is
+alignment. The monitor table's growth from 8 to 14 rows is inside the
+executor value and does not appear as its own symbol.
+
+This is the first image in which the board file states nothing the contract
+determines. What it still states is the heap, the stacks, the task slots and
+the peer-sized graph cache, which are board facts.
+
 ### The seventeen largest symbols
 
 `arm-zephyr-eabi-nm -S --size-sort` over `zephyr.elf`, filtered to the SRAM
@@ -1182,15 +1222,13 @@ nodes and the parameter server on. Section 8 has the arithmetic.
 
 Two things this did NOT do, which is the honest half:
 
-- **`CONFIG_NROS_PARAM_SERVICE_INBOX_BYTES=1016` is allocated zero times and
-  cannot yet be removed.** `DECLARED_APP_QUERYABLES` is `usize::MAX` in the
-  generated `buffer_config.rs`, which makes `BUILTIN_INBOX_PER_SESSION` zero,
-  so the parameter family gets no inbox and all 26 queryables fall through to
-  a 24-byte user-service ring. Yet the line is the only value that passes the
-  compile-time assert at `parameter_services.rs:1655`, because the Kconfig
-  default 0 arrives as a STATED zero (nano-ros phase-467 W2, the sentinel).
-  phase6-W7 measured both halves on 2026-09-25; the line leaves in phase6-W8
-  with the pin bump.
+- **`CONFIG_NROS_PARAM_SERVICE_INBOX_BYTES=1016` is gone, and the inbox is
+  real.** nano-ros phase-467 W2 (issue 1485) made `-1` the sentinel, made both
+  readers agree, and carried the application-queryable count to the Zephyr
+  road, so the builtin inbox is sized from the declared parameter shapes:
+  1016 B, derived, allocated 24 times (section 5, 2026-09-25 later). The
+  line and its workaround left the board file in phase6-W8b. Issue 1485 can
+  close on this build.
 - **`just check-knob-delivery` is RED on this image on ONE line, upstream.**
   `NROS_DERIVED_SUBSCRIBED_TYPE_BOUNDS` (ten per-type bounds) is derived and
   never reaches the resolver: a loader whitelist drops it at the function

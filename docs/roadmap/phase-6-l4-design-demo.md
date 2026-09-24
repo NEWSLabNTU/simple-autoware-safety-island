@@ -413,8 +413,32 @@ The ASIL_D now lands on the node that acts. The tick is charged once (110 +
 33.33). The slack fell from 356 to 322.67 ms because a real hop stopped being
 invisible, which is the point.
 
-W8b, the pin bump, the inbox-line deletion and the MAX_MONITORS check, waits
-on nano-ros phase-467 (W2 is PR'd; W1 in progress).
+W8b MEASURED 2026-09-25 against nano-ros main plus the chore below, with no
+inbox line in the board file: every knob derived (`MAX_MONITORS 14`,
+`MAX_AGE_MONITORS 1`, `BUILTIN_INBOX_BYTES 1016` at depth 1,
+`DECLARED_APP_QUERYABLES Some(2)`, `PARAM_SERVICE_INBOX_BYTES None`,
+liveliness 58); the image links at RAM 302,608 B of 327,680, +21,224 B, all
+of it the parameter family's inbox finally existing (`BUILTIN_INBOX` 0 ->
+24,672 B, `USER_SERVICE_INBOX` 3,744 -> 288 B, one age monitor +64 B).
+`check-knob-delivery` names 23 pairs over 21 facts and is red only on the
+upstream `SUBSCRIBED_TYPE_BOUNDS` line. The board file now states nothing
+the contract determines. The pin commit follows the chore's merge.
+
+KNOWN BREAK, 2026-09-25, mine: W8a landed ahead of the pin it needs. The
+island's `just sync` runs nano-ros's VENDORED play_launch
+(`packages/cli/third-party/play_launch`, pinned at `9a610488`, before phase
+82), whose walk cannot cross the service edge or the operator's tick, so on
+the committed HEAD it reports `reaction-unreachable`, refuses to emit a
+SystemModel, and `just board-build` fails at sync. The fix is a nano-ros
+chore, not an island one: bump the vendored play_launch to `main`
+(phase 82) and regenerate `nros-launch-resolve`'s lock; then the island's
+pin moves forward once more. Until that lands, `contract-params` HEAD does
+not build. Recorded rather than reverted: W8a is the correct contract.
+
+The chore exists (nano-ros branch `chore/play-launch-phase-82`, two commits:
+the pin and lock, and a `monitor_rows` fix, because a path output that is a
+service client is a call, not a publisher, and the old code refused the
+model for it having no owning topic). The island built against it, above.
 
 ### phase6-W9 - the note to the working group
 
@@ -429,7 +453,13 @@ sections derive different orders.
 
 Owns: nothing in this tree.
 
-Status: not started.
+Status: drafted 2026-09-25 as `~/Downloads/contract-e2e-slides/WG-NOTE.md`
+(outside this repository, beside the deck), awaiting the author's send. It
+reports what reproduces (9.2's budget at 0.00 ms of slack, B4's principle as
+`ladder-unterminated`, P0 by the mapper 9.1 names), proposes one relation,
+`bounded_by:`, so criticality can DECOMPOSE as section 2.2 argues rather
+than propagate by reachability, lists the N1 and N9/N12 errata, and holds
+the "order, not proof" caveat against itself.
 
 ### phase6-W6 - the six slides
 
@@ -438,7 +468,23 @@ Waits on W1 to W4.
 
 Owns: `~/Downloads/contract-e2e-slides/`, which is outside this repository.
 
-Status: not started.
+Status: landed 2026-09-25. The deck (`~/Downloads/contract-e2e-slides/`,
+39 pages) opens on a new act, "The design", of seven slides: the numbers
+are already written (pipeline diagram and the design-to-grammar table); the
+interface table is the contract file (stage 0, with the `rate-hierarchy`
+break); the deferred budget, reconciled (stage 1 run A, 0.00 ms of slack,
+with a budget bar); the evaluation island on the same budget (run B, 540 vs
+70, both bars to one scale); the fallback ladder and its floor (stage 2,
+`ladder-unterminated`, the ladder drawn with and without its floor); in
+prose and as a diagnostic (the six-row table). The island slides carry the
+W8a verdict and a diagram of the route through the operator with the
+33.33 ms tick; slide 32's board figure is W8b's 302,608 B. Revised the same
+evening by instruction into an academic register, with every checker
+excerpt coloured by severity and every timing figure emphasised, and YAML
+highlighted. Every page checked as a render. Stage 3 is deliberately not a
+slide (W3's verdict) and is the substance of W9 instead. The pptx twin
+(`scripts/build_pptx_contracts.py`) still carries the previous 26 slides
+and is an open question with the author.
 
 ## 5. Order
 
