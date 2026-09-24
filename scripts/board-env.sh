@@ -57,8 +57,20 @@ _island_zephyr_env() {
         return 1
     fi
     # The tarball carries a top-level zephyr-sdk-<ver>/ and is unpacked without
-    # --strip-components, so the SDK root is one level below the store prefix.
+    # --strip-components, so the SDK root sits one level below the store
+    # prefix. `nros sdk-path` has returned BOTH levels across pins: at
+    # f0d191c98 it gave the store prefix and this script appended the
+    # directory, and by 5e09e377a it returns the SDK root itself, which turned
+    # the append into `.../zephyr-sdk-1.0.1/zephyr-sdk-1.0.1` and reported a
+    # provisioned SDK as "unpacked but its installer never ran".
+    #
+    # Accept either shape rather than pick a side. Which one `sdk-path` OUGHT
+    # to return is nano-ros's call, and a consumer that survives both does not
+    # have to be right about it to keep working.
     sdk="$prefix/zephyr-sdk-$sdk_ver"
+    if [ "$(basename "$prefix")" = "zephyr-sdk-$sdk_ver" ]; then
+        sdk="$prefix"
+    fi
     # `nros setup --tool` unpacks the bundle; the SDK's own installer fetches the
     # toolchains. 0.16.x keeps them at the top level, 1.x under gnu/.
     if ! compgen -G "$sdk/*-zephyr-*" >/dev/null && ! compgen -G "$sdk/gnu/*-zephyr-*" >/dev/null; then
