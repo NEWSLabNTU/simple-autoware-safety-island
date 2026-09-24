@@ -584,7 +584,10 @@ board-build: sync
         echo ""
         echo "board-build: REFUSING this image -- a resolved knob did not reach the compile."
         echo "  The fragments on disk are correct and the delivered value is one pass behind."
-        echo "  Run `just board-build` again; the second pass converges."
+        # (single quotes: inside a double-quoted string the backticks were a
+        # command substitution, so every refusal RAN another full board build
+        # to print this line, recursively, until killed; found 2026-09-25)
+        echo '  Run `just board-build` again; the second pass converges.'
         exit 1
     fi
     # Pass the build dir through: a nested `just` starts a FRESH invocation and

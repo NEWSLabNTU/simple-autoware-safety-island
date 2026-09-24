@@ -323,33 +323,67 @@ determines, and both are wrong today:
   "nano-ros issue 1471", which is now the MAX_MONITORS issue. The sentinel it
   worked around is phase-467 W2.
 
-What it does: delete both lines and their comments; where the file lists
-"what is derived and what is stated", move liveliness to the derived column
-and record the rule (board facts only). Try reverting the temporary
-`nros sync --no-metadata` in `justfile` (island-W3 experiment, issue 1470);
-keep it only if the build refuses without it, and say which. Then
-`just board-build` and read `check-knob-delivery`.
+What it does: delete the liveliness line and its comment; where the file
+lists what is derived and what is stated, move liveliness to the derived
+column and record the rule (board facts only). Revert the temporary
+`nros sync --no-metadata` in `justfile` if the build passes without it.
+Then `just board-build` and read `check-knob-delivery`.
+
+CORRECTED 2026-09-25, on the first attempt: the inbox line does NOT come out
+here. It is allocated zero times, but on the current pin it is also the only
+value that passes `parameter_services.rs:1655`'s compile-time assert
+("NROS_PARAM_SERVICE_INBOX_BYTES is smaller than the largest parameter
+request ... Raise it, or drop the override and let it derive"), because the
+Kconfig default 0 arrives as a STATED zero (the sentinel bug phase-467 W2
+fixes). Deleting it fails the build at compile, before the link. So W7 is
+liveliness only, and the inbox line leaves in W8 with the pin bump. The
+line's comment now says exactly that and names phase-467 W2 rather than the
+issue number it used to cite.
 
 Gate: the image still links; `check-knob-delivery` no longer reports
 liveliness (`NROS_RESOLVED_NROS_MAX_LIVELINESS` = 58); the remaining red,
 `NROS_DERIVED_SUBSCRIBED_TYPE_BOUNDS` never reaching the resolver, is named
 as upstream and left; the region report before and after is pasted into
-`docs/nxp-deployment.md` section 5 with the delta explained (58 tokens versus
-32 costs something; the inbox line cost nothing because it did nothing).
+`docs/nxp-deployment.md` section 5 with the delta of 58 tokens versus 32
+explained.
 
 Owns: `src/zephyr_entry/boards/mr_canhubk3_s32k344.conf`, `justfile`,
 `docs/nxp-deployment.md` sections 5 and 10 (the two figures).
 
-Status: claimed 2026-09-25.
+Status: claimed 2026-09-25; first build attempt found the sequencing error
+above; second attempt in progress.
 
 ### phase6-W8 - consume phase-467 and phase-82
 
 When nano-ros phase-467 W1 and W2 and play_launch phase-82 land: bump the
-nano-ros pin forward; confirm the emitted config carries a derived
-`MAX_MONITORS` of 14 (rate) and 0 (age) and a derived builtin inbox of
-1016 B with no inbox line in the board file; confirm the island's own
-hazard now routes through `/mrm_emergency_stop_operator/on_timer` with a
-33.33 ms sampling hop and derives `reacts` for the operator. Then W6's
+nano-ros pin forward; DELETE `CONFIG_NROS_PARAM_SERVICE_INBOX_BYTES=1016`
+from the board file (it could not leave in W7, see above); confirm the
+emitted config carries a derived `MAX_MONITORS` of 14 (rate) and 0 (age) and
+a derived builtin inbox of 1016 B with no inbox line in the board file; then make the island's own
+hazard route through the operator. play_launch phase-82 W4 measured
+(2026-09-25) that this takes THREE contract edits, not the one line W5
+predicted: the hazard's sink is the scope path's output, and `call_mrm`'s
+`safe_state` emits `mrm_state`, so the walk correctly ends at the handler
+however the client endpoint is named.
+
+1. `mrm_handler.paths.call_mrm.output: [mrm_state, emergency_stop_operate]`
+2. `paths.island.emergency_stop.output: [/system/emergency/control_cmd]`,
+   so the braking command is the sink, not the handler's state report
+3. move `safe_state: { emits: emergency_control_cmd, settle: 2034ms }` onto
+   the operator's `on_timer` and off `call_mrm`, or the settle is lost and
+   `reaction-unbudgeted` fires
+
+And one correction: the operator's `on_timer` declares `max_latency: 33ms`
+because the island meant that number to be the unseen tick. The walk now
+charges the tick itself (the period plus the path's own `max_latency`, the
+same quantity as `traversal_latency_ms`), so 33 ms there counts the clock
+TWICE. That field becomes the callback's execution budget, a few
+milliseconds; the tick is the walk's to charge.
+
+Measured on a scratch copy against the W4 binary with all four edits:
+`reaction route /mrm_handler/call_mrm -> /mrm_emergency_stop_operator/on_timer
+(+33.33ms sampling)`, `node_criticality` carrying both `/mrm_handler` and
+`/mrm_emergency_stop_operator` as `high`, budget still inside 3 s. Then W6's
 "open" column loses three lines.
 
 Owns: `third-party/nano-ros` (the pin), `docs/nxp-deployment.md`.

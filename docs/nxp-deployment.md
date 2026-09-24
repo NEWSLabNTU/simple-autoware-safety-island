@@ -13,7 +13,7 @@ The hardware is in section 0; the software provenance is:
 | RMW | zenoh (`-S nros-zenoh`), serial link (`-S island-serial`) |
 | nano-ros pin | `f8655e9b7` |
 | Island commits | `07ffdb7`, `20bc6d9`, `368b766` |
-| Status | configures and compiles; **does not link -- over RAM budget by 53,912 B with the parameter server on** |
+| Status | configures, compiles and **links**: 280,968 B of 327,680 RAM (85.74%), **46,712 B spare**, with the parameter server on |
 
 The same four nodes and the same contract also build for `native_sim` over
 CycloneDDS, and that image is verified end to end:
@@ -399,69 +399,149 @@ largest message a node can receive. Zero-copy eligibility is computed as a
 
 ## 5. Memory layout
 
-The regions are in section 0. What matters here is that of the five, this image
-uses three: SRAM for everything by default, DTCM and ITCM for what is moved
-into them deliberately, and `dflash` not at all.
+The regions are in section 0. Of the five, this image uses three: SRAM for
+everything by default, DTCM and ITCM for what is moved into them deliberately,
+and `dflash` not at all.
 
-### The image's memory map
+### The region report
 
-Laid out by address, from the map file of the real derived configuration:
+From `just board-build` on 2026-09-24, and re-derived afterwards from
+`build-board/zephyr/zephyr.elf` with `arm-zephyr-eabi-objdump -h` (Zephyr SDK
+1.0.1, binutils 2.43.1) by summing each region's allocated sections against the
+map file's `Memory Configuration`. The two agree byte for byte, which is why
+this section can be read without the build log that produced it.
 
 ```
-RAM   0x20400000  datas       3,448   initialised data, copied from flash at boot
-      0x20400ef0  bss       310,811   zero-filled at boot
-      0x2044cd10  noinit     66,952   stacks and heaps, not touched at boot
-      0x2045d298  end
-                          ---------
-                            381,592   needed
-                            327,680   available        OVER BY 53,912
-
-DTCM  0x20000000  .dtcm_bss_reloc   83,216 of 131,072    63.5%
-ITCM  0x00000000  .itcm_text_reloc  13,052 of  65,536    19.9%
-FLASH 0x00400100  text + rodata    582,020 of 4,144,896  14.0%
+Memory region         Used Size  Region Size  %age Used
+      IVT_HEADER:         256 B        256 B    100.00%
+           FLASH:      620316 B    4144896 B     14.97%
+             RAM:      280968 B       320 KB     85.74%
+            ITCM:       12524 B        64 KB     19.11%
+            DTCM:       84368 B       128 KB     64.37%
+        IDT_LIST:           0 B        32 KB      0.00%
 ```
 
-Seventeen symbols account for 97% of that RAM. Grouped by what owns them:
+#### 2026-09-25: liveliness derived, +416 B
 
-| owner | bytes | what |
-| --- | ---: | --- |
-| **RMW (zenoh)** | **196,112** | |
-| | 115,128 | service inbox table -- 26 queryables x 4,428 |
-| | 38,720 | subscriber slots -- 11 x 3,520 |
-| | 24,992 | zenoh-pico session pool |
-| | 11,264 | cffi subscription-handle registry |
-| | 3,584 | message info table |
-| | 2,424 | subscriber auxiliary state |
-| **Heap** | **95,928** | 94,208 arena + 1,720 TLSF metadata and slab |
-| **Stacks** | **63,488** | |
-| | 40,960 | nano-ros task stacks -- 5 slots x 8,192 |
-| | 16,384 | Zephyr `main` |
-| | 4,096 | system work queue |
-| | 2,048 | interrupt stacks |
-| **Kernel heap** | **8,268** | `CONFIG_HEAP_MEM_POOL_SIZE=8192` at the time of this measurement; now 0, which Zephyr floors at 512, so the figure is **572** -- see section 6 |
-| **Other** | **12,168** | POSIX thread pool 5,120; three action stashes 4,488; shell 2,560 |
+phase6-W7 deleted `CONFIG_NROS_MAX_LIVELINESS=32` from the board file and let
+the derivation run (Kconfig default `-1`; nano-ros phase-412 knob table row
+192, corrected 2026-09-08: liveliness is declared by THIS session, one token
+per node name plus one per publisher, subscriber, service server and client,
+so it IS derivable). The derivation says 58: 1 session + 4 names + 14 pubs +
+11 subs + 2 servers + 2 clients + 24 parameter services. The stated 32 had
+been right at 29 tokens and went 26 short, silently, the day `params:` was
+declared.
 
-The remaining ~11.6 KiB is spread across many small symbols, plus section
-alignment.
+```
+Memory region         Used Size  Region Size  %age Used
+      IVT_HEADER:         256 B        256 B    100.00%
+           FLASH:      620316 B    4144896 B     14.97%
+             RAM:      281384 B       320 KB     85.87%
+            ITCM:       12524 B        64 KB     19.11%
+            DTCM:       84368 B       128 KB     64.37%
+        IDT_LIST:           0 B        32 KB      0.00%
+```
+
+RAM 280,968 -> 281,384, +416 B, 46,296 B spare. The whole delta is one
+symbol: `g_sessions` 25,248 -> 25,664, the zenoh-pico session struct whose
+`liveliness_entry_t liveliness[ZPICO_MAX_LIVELINESS]` (`zpico.c:531`, an
+owned token plus a flag, 16 B) grew by 26 entries. Nothing else in SRAM moved
+(`nm -S` diff of the two ELFs; the only other size changes are same-named
+locals reordered between objects, net zero). ITCM, DTCM and FLASH are
+unchanged. `CONFIG_NROS_PARAM_SERVICE_INBOX_BYTES=1016` was tried removed in
+the same unit and put back: it is allocated zero times (section 8) but it is
+the only value that passes `parameter_services.rs:1655`'s compile-time
+assert on this pin, so it leaves with the phase-467 W2 pin bump (phase6-W8).
+
+**The image links and it fits.** RAM is 280,968 B of 327,680, with **46,712 B
+spare**.
+
+CORRECTED 2026-09-24, twice over. The previous revision of this section
+published a hand-summed address table -- `datas` + `bss` + `noinit` = 381,592 B
+needed, "OVER BY 53,912" -- and both of those numbers were wrong. It named
+three symbols and none of the RAM region's seven other allocated sections
+(`nocache`, `device_states`, `log_msg_ptr_area`, `log_dynamic_area`,
+`k_heap_area`, `k_mutex_area`, `k_sem_area`), so it under-counted. The linker's
+own message on the last failing link was `region 'RAM' overflowed by 56848
+bytes`, which is 384,528 B needed. Which of the two is authoritative is not a
+judgement call. Measured against the linker, this campaign removed
+**103,560 B**. Nothing in this section is summed by hand any
+more: every figure comes from the region report or from `nm` over the ELF.
+
+### The seventeen largest symbols
+
+`arm-zephyr-eabi-nm -S --size-sort` over `zephyr.elf`, filtered to the SRAM
+region (`0x20400000` to `0x20450000`) and demangled. They are 265,036 B,
+**94.33%** of the 280,968 B the region report states. Every one traces to a
+knob, which is this document's standing rule:
+
+| bytes | symbol | traces to |
+| ---: | --- | --- |
+| 95,928 | `nros_platform::zephyr_heap::HEAP` | `CONFIG_NROS_ZEPHYR_HEAP_SIZE` 94,208 + 1,720 of rlsf control and slab, itemised in section 6 |
+| 40,960 | `nros_thread_stacks` | `CONFIG_NROS_ZEPHYR_TASK_SLOTS` 5 x `CONFIG_NROS_ZEPHYR_TASK_STACK_SIZE` 8,192, exact |
+| 38,720 | `nros_rmw_zenoh::shim::subscriber::SMALL_PAYLOADS` | 11 subscriber slots x `SUBSCRIBER_RING_DEPTH` 4 x `NROS_SUBSCRIBER_BUFFER_SIZE` 880, exact |
+| 25,248 | `g_sessions` | the C shim's session pool at `ZPICO_MAX_SESSIONS` 1; a SUM of per-session tables, not a product -- see below |
+| 16,384 | `z_main_stack` | `CONFIG_MAIN_STACK_SIZE`, exact |
+| 11,264 | `nros_rmw_cffi::rust_adapter::static_subscriber_storage::SLOTS` | `NROS_RMW_SUBSCRIBER_SLOTS` 11 x 1024, the crate's own `// nros-pool:` formula, exact |
+| 7,800 | `nros_rmw_zenoh::shim::service::SERVICE_BUFFERS` | `MAX_QUERYABLES` 26 x a 300 B `ServiceBuffer` header (a 256-byte reply keyexpr, two cursors, a waker, a session pointer, a ring handle) |
+| 5,120 | `posix_thread_pool` | `CONFIG_POSIX_THREAD_THREADS_MAX` 16 x 320, exact |
+| 4,096 | `sys_work_q_stack` | `CONFIG_SYSTEM_WORKQUEUE_STACK_SIZE`, exact |
+| 3,744 | `nros_rmw_zenoh::shim::service::USER_SERVICE_INBOX` | 26 rings x `NROS_SERVICE_INBOX_DEPTH` 4 x (`NROS_SERVICE_INBOX_BYTES` 24 + a 12-byte `InboxEntry`), exact |
+| 3,584 | `nros_rmw_cffi::MESSAGE_INFO_TABLE` | `NROS_RMW_MESSAGE_INFO_SLOTS` 64 -- the crate default, nothing in this tree states it -- x 56 |
+| 2,680 | `nros_rmw_zenoh::shim::publisher::transient_local::TL_SLOTS` | `ZPICO_MAX_TL_PUBLISHERS` 2 x (`TL_RETAIN_BYTES` 1,024 + `KEYEXPR_BUFFER_SIZE` 257 + 59 of header) |
+| 2,420 | `nros_rmw_zenoh::shim::subscriber::SUBSCRIBER_BUFFERS` | 11 subscriber slots x 220 of auxiliary state |
+| 2,048 | `z_interrupt_stacks` | `CONFIG_ISR_STACK_SIZE` 2,048 x `CONFIG_MP_MAX_NUM_CPUS` 1, exact |
+| 2,048 | `shell_uart_stack` | `CONFIG_SHELL_STACK_SIZE`, exact |
+| 1,496 | `nros_cpp::action::nros_cpp_action_client_get_result::BLOCKING_RESULT_BUF` | `NROS_SUBSCRIPTION_BUFFER_SIZE` 1,496, derived over the LINKED closure (section 4) |
+| 1,496 | `nros_cpp::action::FEEDBACK_STASH` | the same knob |
+
+The eighteenth symbol is `nros_cpp::action::RESULT_STASH` at 1,496 B, tied with
+the seventeenth. The three action stashes are 4,488 B together, and this image
+instantiates no action entity: they are the cost of linking `nros_cpp`'s action
+path, not of using it.
+
+Two figures in that table are deliberately MEASURED rather than computed, and
+nano-ros states why in the source: `g_sessions` and `SMALL_PAYLOADS` are a sum
+with struct-sized terms and a knob with a computed default, so no product
+written in a comment would survive the next appended field. The rule nano-ros
+applies there is the one this section applies everywhere -- **the size is known
+to the compiler, so read it from the compiler's output.**
+
+DTCM's 84,368 B is four symbols and change:
+`rclcpp::Node::GlobalStorageHolder<0>::storage` at 68,112 B, and the four
+`__nros_comp_buf_*` per-node component buffers at 6,688, 3,736, 2,856 and 2,064.
+
+### What this answers for the L4 design
+
+Rule R4 of the L4 Safety Island design (section 2.1) requires island nodes to
+have static memory, bounded WCET and no dynamic discovery. The first clause is
+the one this image can answer with a number rather than an assertion: 280,968 B
+is reserved at link time on a 320 KiB part, 94.33% of it in seventeen named
+symbols, each one the product of a declared knob. Nothing in that figure is
+discovered at run time. This is four Autoware MRM nodes and not the design's
+eighteen, so it prices a fraction of one partition and says nothing directly
+about section 9.1's sizing note on P2.
 
 ### What is NOT in the map
 
 **The executor arena.** It is the largest single allocation in the image and it
 never appears as a symbol, because it is carved out of the TLSF heap at runtime
 rather than reserved in `.bss`. `CONFIG_NROS_EXECUTOR_ARENA_SIZE=0` means
-derive, and the derivation sizes it from the *subscribed* bound and the declared
-depths:
+derive, and `nros-node`'s build script derived it for this image:
 
 ```
-buffered_region(depth=1, bound=880)  =  3 x 880          (triple buffer)
-pubsub_entry                          =  region + 1024
+build-board/nros-rust/.../nros-node-*/out/nros_node_config.rs
+    pub const MAX_CBS: usize = 19;
+    pub const ARENA_SIZE: usize = 50640;
+    pub const ARENA_ACTION_CLIENTS: usize = 0;
 ```
 
-At the delivered `NROS_SUBSCRIBER_BUFFER_SIZE=880` that lands near 46 KiB; at
-the stale 1496 it was 70,296, and this tree has shipped the latter by accident.
-Because the arena comes out of the heap, cmake gates the two against each other
-at configure time -- `arena + 24576 <= NROS_ZEPHYR_HEAP_SIZE` -- which at
-94,208 leaves roughly 23 KiB of margin over the current arena.
+50,640 B, from 19 callback slots and the SUBSCRIBED payload class of 880 -- not
+the 1,496 linked-closure bound, which would bill three receive buffers per
+subscription at 616 B more each. Because the arena comes out of the heap, cmake
+gates the two against each other at configure time --
+`arena + 24576 <= NROS_ZEPHYR_HEAP_SIZE` -- which at 94,208 leaves
+**18,992 B** of margin over the derived arena.
 
 That relationship is the one to hold onto: **the heap number is not free space,
 it is mostly the arena.** Raising a buffer bound raises the arena, which eats
@@ -471,7 +551,7 @@ allocation.
 **The parameter store.** Sized by `NROS_MAX_PARAMETERS=25` and owned by the
 executor, not embedded per node. It does not appear as a large symbol, and the
 A/B in section 8 shows varying its sizing moves the image by 0 bytes -- the
-parameter cost is entirely in the 24 service queryables above, not in the store.
+parameter cost is in the 24 service queryables, not in the store.
 
 ### What is relocated, and why
 
@@ -501,23 +581,8 @@ Both relocations depend on `patches/zephyr/0001-gen_relocate_app-fix-source-to-o
 Stock Zephyr 4.4 cannot relocate a source generated into the build root: on no
 match it writes an empty fragment, prints nothing, and exits 0. Without the
 patch these lines link fine and relocate nothing. **Verify by the region
-report, never by the build succeeding.**
-
-### Every figure traces to a stated knob
-
-
-
-```
-nros_thread_stacks  40,960 = TASK_SLOTS 5 x TASK_STACK_SIZE 8192   exact
-z_main_stack        16,384 = CONFIG_MAIN_STACK_SIZE                exact
-system_work_q        4,096 = CONFIG_SYSTEM_WORKQUEUE_STACK_SIZE    exact
-kheap__system_heap   8,268 = CONFIG_HEAP_MEM_POOL_SIZE 8192 + 76   (now 572:
-                             the symbol is 0, Zephyr floors K_HEAP_MEM_POOL_SIZE
-                             at 512 for POSIX threads + semaphores, + 60)
-zephyr_heap HEAP    95,928 = CONFIG_NROS_ZEPHYR_HEAP_SIZE 94208 + 1720
-service table      115,128 = MAX_QUERYABLES 26 x (4 x 1024 + 332)  exact
-subscriber table    38,720 = MAX_SUBSCRIBERS 11 x 3,520            exact
-```
+report, never by the build succeeding.** The report above is that verification:
+12,524 B in ITCM and 84,368 B in DTCM are not zero, so both relocations ran.
 
 ---
 
@@ -587,9 +652,13 @@ bound scales with the ratio of largest to smallest block, so a heap holding both
 that holds only *infrastructure* -- sessions, key expressions, Rust `String` and
 `Vec` churn -- has a narrow spread, and the bound is cheap to defend.
 
-The consequence is visible in this image: the 115,128 B service inbox table and
-the 38,720 B subscriber slots are static `.bss` symbols, and together they are
-larger than the heap itself.
+The consequence is visible in this image: the 38,720 B subscriber payload pool
+and the 11,544 B service inbox tables are static `.bss` symbols, outside the
+heap entirely. CORRECTED 2026-09-24: this paragraph used to say those two were
+"together larger than the heap itself", on the pre-phase-461 inbox of
+115,128 B. They are now 50,264 B against the heap's 95,928, so the claim is
+retired; the ARGUMENT is unchanged, and stronger -- the payloads stayed out of
+the heap, which is why its block-size spread is still narrow.
 
 ### What allocates, and when
 
@@ -628,8 +697,12 @@ Two things are unfinished on this island specifically:
 
 1. **The second arena is down to 572 B, and W3's endgame is not reachable
    here.** `mr_canhubk3_s32k344.conf` now sets `CONFIG_HEAP_MEM_POOL_SIZE=0`.
-   Measured over the rebuild: `kheap_buf__system_heap` 8,268 B -> 572 B, RAM
-   region overflow 61,608 B -> 53,912 B, so 7,696 B recovered.
+   Measured over the rebuild: `kheap_buf__system_heap` 8,268 B -> 572 B, so
+   **7,696 B recovered**. The two overflow figures this line used to carry
+   (61,608 B -> 53,912 B) came from the hand-summed address table section 5
+   has since retired, and both under-count; the 7,696 is a difference between
+   two measured symbols and is unaffected by that. The linker's own overflow
+   on the last failing link was 56,848 B.
 
    W3's endgame was "set that pool to 0, at which point `k_malloc` and
    `sys_heap_*` garbage-collect out of the link, which is simultaneously the
@@ -833,24 +906,103 @@ features = ["param_services"]
 ```
 
 With it on, every node gets the six ROS 2 parameter services, so the 4 nodes
-contribute 24 of the image's 26 queryables. Each queryable gets the same inbox:
-a ring of 4 slots of `SERVICE_BUFFER_SIZE` (1024) bytes, 4,428 bytes all in.
+contribute 24 of the image's 26 queryables. That has not changed. What changed
+is what a queryable costs.
 
-| | as shipped | queryables forced to 2 |
+### CORRECTED 2026-09-24: the services no longer cost 108,096 bytes
+
+| | when this section was written | this image |
 | --- | ---: | ---: |
-| Queryables | 26 | 2 |
-| Service inbox table | 115,128 B | 8,856 B |
-| RAM | **overflows by 53,912 B** | 281,192 B of 320 KiB (85.81%) |
-| ITCM | -- | 13,052 B (19.92%) |
-| DTCM | -- | 83,216 B (63.49%) |
-| FLASH | -- | 582,020 B (14.04%) |
-| Links? | **no** | yes |
+| Queryables | 26 | 26 |
+| Per-queryable header | 4,428 B, ring inline | 300 B |
+| Per-queryable ring | (inline, above) | 144 B |
+| Inbox storage, total | **115,128 B** | **11,544 B** |
+| RAM | `overflowed by 56848 bytes` | 280,968 B of 327,680 (85.74%) |
+| ITCM | -- | 12,524 B (19.11%) |
+| DTCM | -- | 84,368 B (64.37%) |
+| FLASH | -- | 620,316 B (14.97%) |
+| Links? | **no** | **yes**, 46,712 B spare |
 
-The right column is a control that forces `MAX_QUERYABLES=2`. It shrinks the
-inbox table without removing the parameter machinery, so read it as an upper
-bound on what the services cost, not as a supported configuration. Turning the
-capability off properly (`features = []`) is a separate exercise: it collapses
-every derived knob to its crate default, which is a different image again.
+The right-hand column used to be a control that forced `MAX_QUERYABLES=2` and
+reported 281,192 B of RAM. That control is retired: the shipped image, at the
+full 26 queryables, is now 224 B SMALLER than the control was, so there is
+nothing left for it to bound. Three of its other figures are superseded in
+passing -- ITCM fell 13,052 -> 12,524 B, DTCM rose 83,216 -> 84,368 B, and
+FLASH rose 582,020 -> 620,316 B over the same period, the last of these from
+work unrelated to the inbox.
+
+### Where the 103,560 bytes went
+
+Almost all of it is this one table. Before nano-ros phase-461, a queryable's
+request ring lived INSIDE `ServiceBuffer` as four inline slots of
+`SERVICE_BUFFER_SIZE` = 1,024, so each of the 26 headers cost 4,428 B whether
+it was a user service or a parameter service. phase-461 W1 lifted the ring out
+of the header into per-family tables, and W3 priced the families from the
+contract's own declared request types:
+
+```
+header   SERVICE_BUFFERS      26 x 300                          =  7,800 B
+ring     USER_SERVICE_INBOX   26 x 4 x (24 + 12)                =  3,744 B
+                                                                  --------
+                                                                    11,544 B
+```
+
+`24` is `NROS_DERIVED_SERVICE_INBOX_BYTES`, the serialized bound of
+`tier4_system_msgs/srv/OperateMrm_Request`, which is the only user-service
+request type this image declares -- from `build-board/nros/entity_inventory.cmake`:
+
+```
+set(NROS_ENTITY_SERVICE_REQUEST_TYPES "tier4_system_msgs/srv/OperateMrm_Request")
+set(NROS_ENTITY_SERVICE_REQUEST_TYPE_COUNTS "tier4_system_msgs/srv/OperateMrm_Request=4")
+set(NROS_DERIVED_SERVICE_INBOX_BYTES 24)
+```
+
+115,128 - 11,544 = 103,584, against a region that moved 103,560 B. The 24 B
+difference is net growth elsewhere in the image over the same pin bump, and it
+is stated rather than attributed: the failing image's ELF is gone, so nothing
+here can decompose it further than the region totals.
+
+The projection this island planned against was 32,088 B of inbox tables and an
+image at 298,552 B. The measurement beat it: 11,544 B and 280,968 B. The
+projection assumed the parameter family would draw its own 1,016-byte ring,
+which is exactly what the next subsection says does not happen.
+
+### The slot the parameter services actually draw, and why that is still open
+
+The board file states the derived parameter slot, and the derivation is right:
+
+```
+CONFIG_NROS_PARAM_SERVICE_INBOX_BYTES=1016
+CONFIG_NROS_PARAM_SERVICE_INBOX_DEPTH=1        (nano-ros default)
+```
+
+But **`BUILTIN_INBOX` is not in the ELF at all.** The generated
+`buffer_config.rs` for this build ends its builtin block with
+
+```
+pub const DECLARED_APP_QUERYABLES: usize = usize::MAX;
+```
+
+and the shim reads `usize::MAX` as "this image's own declaration attributed no
+queryables to the application", which makes `BUILTIN_INBOX_PER_SESSION` zero
+and the builtin table empty. `inbox_for()` still routes a name ending in
+`set_parameters` to `ShimFamily::Builtin`; `draw_shim_ring` finds that table
+spent on the first draw and falls back to the user-service table. So all 26
+queryables, the 24 parameter services included, draw a ring of four 24-byte
+slots, and the 1,016-byte slot this board file states is allocated **zero
+times**.
+
+That is read from the ELF and from the generated constants, not observed: the
+board has still never been flashed (section 0). On the face of the code a
+`set_parameters` request larger than 24 bytes does not fit the ring it lands
+in. It is listed in section 10 as an open item rather than reported as a
+failure, because this island cannot yet run it.
+
+The saving is not contingent on it. Giving the 24 parameter queryables the
+geometry the board file asks for would cost
+`24 x 1 x (1,016 + 12) = 24,672 B` of `BUILTIN_INBOX` and hand back
+`24 x 144 = 3,456 B` of user rings, a net **21,216 B** -- which the 46,712 B of
+spare RAM covers with 25,496 B still free.
 
 ### The cost is the services, not the store
 
@@ -858,42 +1010,67 @@ Measured, not inferred:
 
 - Varying the parameter **store** knobs (`MAX_PARAMETERS` 25 -> 32,
   `MAX_PARAM_NAME_LEN` 35 -> 64, `PARAM_SERVICE_BUFFER_SIZE` derived -> 4096)
-  changes the overflow by **0 bytes**. (Measured when the overflow was
-  61,608; the kernel-heap change since moved it to 53,912 without touching
-  that result.)
-- Removing the service queryables changes it by **108,096 bytes**.
+  changes the image by **0 bytes**, byte-identical across both configurations.
+  Measured 2026-09-18, when the image was still overflowing; the geometry
+  change since does not touch the result, because the store was never in the
+  inbox.
+- Removing the service queryables was **108,096 bytes** at the old geometry.
+  That control has not been re-run at the new one, and the figure it would
+  produce is now `24 x (300 + 144) = 10,656 B`, which is arithmetic from the
+  per-queryable cost above rather than a control run. Stated as arithmetic on
+  purpose.
 
-So phase-446's contract-declared parameter sizing is free. The services are
-what the board cannot afford.
+So phase-446's contract-declared parameter sizing is free, and the services are
+no longer what the board cannot afford. They cost about a tenth of what they
+did.
 
-### The request sizes, and a correction
+### The request sizes, and two corrections
 
-Computed from the `rcl_interfaces` definitions at this image's capacities
-(`MAX_STRING_VALUE_LEN=0`, `MAX_ARRAY_LEN=0`, `MAX_BYTE_ARRAY_LEN=0` collapse
-every `ParameterValue` arm to its empty-sequence header, giving
-`ParameterValue` = 56 B and `Parameter` = 96 B), a `set_parameters` request
-naming 25 parameters is 2,408 B, and the earlier revision of this section
-concluded that it does not fit the 1,024 B slot and is dropped.
+CORRECTED 2026-09-24. The **669 B** figure this section carried is stale. It
+was derived against per-node shapes of mrm_comfortable_stop_operator 4
+parameters / 40 name bytes, mrm_emergency_stop_operator 6 / 69, mrm_handler
+8 / 170, stop_mode_operator 7 / 103. This system now declares, from
+`build-board/nros/entity_inventory.cmake`:
 
-CORRECTED 2026-09-21 (nano-ros phase-461 planning, which re-derived the bound
-from `nros-node`'s per-node shape): 25 is `NROS_MAX_PARAMETERS`, the executor
-store across all FOUR nodes. No node declares 25. The per-node shapes are
-mrm_comfortable_stop_operator 4 parameters / 40 name bytes,
-mrm_emergency_stop_operator 6 / 69, mrm_handler 8 / 170, stop_mode_operator
-7 / 103, and the worst well-formed request against any of them is **669 B**,
-which fits. A request is dropped only when a client names parameters the node
-never declared, which is a malformed request, not a capacity defect. The RAM
-half of the finding stands unchanged: the inbox table is 26 x 4,428 B because
-the slot is sized for the largest service in the image at the action path's
-ring depth, not for the parameter family's own bound.
+```
+set(NROS_PARAM_SERVICE_SHAPE "5:55:0:0:0:0:0:0:0,4:53:0:0:0:0:0:0:0,12:272:2:37:0:0:0:0:0,4:57:0:0:0:0:0:0:0")
+set(NROS_PARAM_DECLARED_COUNT 21)
+set(NROS_DERIVED_MAX_PARAMETERS 25)
+```
 
-Filed upstream as nano-ros issue 1352; the fix is planned as nano-ros
-phase-461 (service inbox per family): the parameter family gets its own
-static inbox at depth 1, sized by the declared shape, with a const assert
-that the worst request fits; user services and actions keep their tables.
-Projected for this island: 32,088 B of inbox tables instead of 115,128, and
-the image at 298,552 of 327,680 B. Per type at the current depth 4 would be
-worse than today, so the depth is the half that makes it pay.
+as `params:name_bytes:prefixes:prefix_bytes:` and five value-type counts, all
+zero here. The worst node is the third, 12 parameters over 272 name bytes. With
+`CDR_HEADER` 4, `CDR_SEQ` 7, `CDR_STR` 8, `CDR_VALUE_BASE` 53, and this build's
+wire caps all zero (`MAX_STRING_VALUE_LEN`, `MAX_ARRAY_LEN` and
+`MAX_BYTE_ARRAY_LEN` all derive to 0):
+
+```
+head   = 4 + 7                        =   11
+names  = 272 + 12 * 8                 =  368
+values = 12 * 53                      =  636
+set_parameters request                = 1,015   rounded to 1,016 for alignment
+```
+
+The earlier correction's point still stands and is worth keeping: 25 is
+`NROS_MAX_PARAMETERS`, the executor store across all FOUR nodes, and no node
+declares 25. What moved is the per-node shapes -- a declaration grew, so the
+bound grew from 669 to 1,015 B. That is precisely why this number wants to be
+derived rather than written into a board file, and why
+`CONFIG_NROS_PARAM_SERVICE_INBOX_BYTES=1016` in
+`mr_canhubk3_s32k344.conf` names nano-ros issue 1471 and says to delete the
+line once the sentinel is fixed.
+
+The second correction is the RAM half. The earlier revision said "the inbox
+table is 26 x 4,428 B because the slot is sized for the largest service in the
+image at the action path's ring depth". That was true and is no longer: the
+families are priced apart, the action family's depth 4 no longer reaches the
+parameter family, and the table is 26 x 444 B.
+
+Filed upstream as nano-ros issue 1352. The fix LANDED as phase-461 -- W1 the
+per-family split, W2b the builtin family, W3 the request-type pricing -- and
+this image is the measurement of it. What issue 1352 asked for is done; what
+remains is the empty builtin table above, which is a sentinel question
+(issue 1471) and not a sizing one.
 
 ---
 
@@ -947,17 +1124,34 @@ directories, 98.7% of every open it made, to read a single file** -- 242 MB of
 physical reads for 27 KB of answers. After the fix and a cleanup of 82 stale
 build trees, the same command runs in 0.95 s.
 
-**Measurements taken, not assumed:**
+**Measurements taken, not assumed** (list corrected 2026-09-24, because three
+of its five entries had gone stale):
 
 - `native_sim` demo to VERDICT PASS, twice, with the MRM chain exercised end to
   end.
-- The board image linked, and its region report recorded.
+- **The board image links.** Its region report is in section 5, and it was
+  re-derived from `zephyr.elf` afterwards with `arm-zephyr-eabi-objdump -h`;
+  the two agree byte for byte. 280,968 B of 327,680, 46,712 B spare.
+- The seventeen largest SRAM symbols, from `arm-zephyr-eabi-nm -S --size-sort`
+  over the same ELF: 265,036 B, 94.33% of the region, every one traced to a
+  knob in section 5.
 - An A/B proving the parameter *store* sizing costs 0 bytes, byte-identical
-  across both configurations.
-- A control proving the parameter *services* cost 108,096 bytes.
-- The `set_parameters` overflow computed from the `rcl_interfaces` definitions
-  at this image's capacities, and cross-checked against the map: the model
-  predicts 4,428 bytes per service slot and the map measures 4,428.
+  across both configurations. Measured 2026-09-18 at the old inbox geometry;
+  the store was never in the inbox, so it still holds.
+- A control proving the parameter *services* cost 108,096 bytes. **Measured at
+  the pre-phase-461 geometry and now superseded** -- at this image's geometry
+  the same 24 queryables cost 10,656 B, which is arithmetic from the measured
+  per-queryable 444 B and not a re-run control.
+- The `set_parameters` bound computed from the `rcl_interfaces` definitions at
+  this image's declared shapes: 1,015 B, rounded to 1,016. **The 669 B this
+  list used to imply is stale** -- a declaration grew from 8 parameters / 170
+  name bytes to 12 / 272. See section 8.
+- The per-queryable inbox cost cross-checked against the map: the model
+  predicts 300 B of header plus 4 x (24 + 12) of ring, and `nm` measures
+  `SERVICE_BUFFERS` 7,800 = 26 x 300 and `USER_SERVICE_INBOX` 3,744 = 26 x 144.
+
+**Measurements NOT taken:** nothing here has run on silicon, and
+`just check-knob-delivery` is red on this image (section 10).
 
 ---
 
@@ -966,23 +1160,52 @@ build trees, the same command runs in 0.95 s.
 Nothing below is blocked on a decision; each is work that was scoped and not
 done.
 
-**The board does not fit, by 53,912 bytes.**
+**CORRECTED 2026-09-24: the board fits, with 46,712 bytes spare.**
 
-The cause is isolated: the parameter services, 108,096 bytes measured. nano-ros
-phase-461 is the planned fix, and it needs both halves -- a per-family inbox
-*and* a ring depth for the parameter family separate from the action path's.
-Projected: inbox tables 115,128 -> 32,088 B, the image at 91.1% of RAM. Per
-type at the current depth 4 would be worse than today. TCM relocation cannot
-substitute: DTCM has 47,856 B free, 13,752 B short of the overflow. The
-workaround, second: a store-only parameter capability (phase-461 W6), 0
-queryables, `ros2 param` unavailable, projected 273,496 B.
+This block used to open "The board does not fit, by 53,912 bytes." It was wrong
+twice. The overflow was never 53,912 -- that came from a hand-summed address
+table that named three symbols and omitted seven of the RAM region's other
+allocated sections; the linker's own last word on the failing image was
+`region 'RAM' overflowed by 56848 bytes`. And the image now links: 280,968 B of 327,680, 85.74%, a reduction of
+103,560 B from the 384,528 B it wanted.
 
-**Reclaimable without waiting for upstream:**
+What the fix actually was: **not** anything in this tree. The island moved its
+nano-ros pin and nano-ros phase-461 did the work, in three parts. W1 lifted the
+request ring out of `ServiceBuffer` into per-family tables, so a queryable's
+header no longer carries four inline 1,024-byte slots. W2b gave the parameter
+and lifecycle services a family of their own. W3 priced each family from the
+contract's declared request types, which made this image's user-service slot 24
+bytes -- the bound of `tier4_system_msgs/srv/OperateMrm_Request` -- instead of
+the 1,024-byte floor. Inbox storage went 115,128 B -> 11,544 B. Nothing was
+removed from the image to achieve it: it still has all 26 queryables, all four
+nodes and the parameter server on. Section 8 has the arithmetic.
 
+Two things this did NOT do, which is the honest half:
+
+- **`CONFIG_NROS_PARAM_SERVICE_INBOX_BYTES=1016` is allocated zero times and
+  cannot yet be removed.** `DECLARED_APP_QUERYABLES` is `usize::MAX` in the
+  generated `buffer_config.rs`, which makes `BUILTIN_INBOX_PER_SESSION` zero,
+  so the parameter family gets no inbox and all 26 queryables fall through to
+  a 24-byte user-service ring. Yet the line is the only value that passes the
+  compile-time assert at `parameter_services.rs:1655`, because the Kconfig
+  default 0 arrives as a STATED zero (nano-ros phase-467 W2, the sentinel).
+  phase6-W7 measured both halves on 2026-09-25; the line leaves in phase6-W8
+  with the pin bump.
+- **`just check-knob-delivery` is RED on this image on ONE line, upstream.**
+  `NROS_DERIVED_SUBSCRIBED_TYPE_BOUNDS` (ten per-type bounds) is derived and
+  never reaches the resolver: a loader whitelist drops it at the function
+  boundary (phase-412 W4's own diagnosis). The liveliness line this bullet
+  used to carry is gone: with the stated 32 deleted, the derivation delivers
+  `NROS_RESOLVED_NROS_MAX_LIVELINESS=58` (2026-09-25). One thing to know
+  about the recipe: on a refusal it printed its advice with backticks inside
+  a double-quoted `echo`, which is a command substitution, so every refusal
+  RAN another full board build, recursively; 32 were found nested on
+  2026-09-25 and killed. Fixed in the justfile the same day.
 - ~~`CONFIG_HEAP_MEM_POOL_SIZE=8192` is still set~~ DONE 2026-09-18: set to 0,
   which Zephyr floors at 512. Recovered **7,696 B** (`kheap_buf__system_heap`
-  8,268 -> 572; overflow 61,608 -> 53,912). The link test it doubles as came
-  back negative -- `k_malloc` still has three callers, see section 6.
+  8,268 -> 572). The two overflow figures this line carried are withdrawn with
+  the hand-summed table they came from; see section 6. The link test it doubles
+  as came back negative -- `k_malloc` still has three callers, see section 6.
 - `CONFIG_NROS_ZEPHYR_HEAP_SIZE=94208` was chosen without a measurement.
   `nros_zephyr_heap_peak()` exists to replace it with a number, and the board
   conf now carries the procedure for reading it; it is blocked on a run, not
