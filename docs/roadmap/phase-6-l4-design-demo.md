@@ -5,8 +5,10 @@ design in the contract language, stage by stage, so that the timing analysis
 it defers to Part 2 is performed today from Part 1's own tables, and every
 claim on the conference deck is a real diagnostic from a real run.
 
-**Status (2026-09-24): W0 to W5 landed, W6 open. W5's play_launch half is on
-a branch awaiting review; W4's gate is two-thirds met and says so.**
+**Status (2026-09-25): W0 to W5 landed, W6 to W9 open; W7 claimed.** W5's
+play_launch half is on `main` as `c1474126`; its nano-ros half is PR #1262,
+auto-merge armed. The upstream fixes this phase found are nano-ros phase-467
+and play_launch phase-82.
 
 ---
 
@@ -100,7 +102,19 @@ place a slide could mislead.
 Owns: `docs/demo-l4/l4_designed.*`, `docs/demo-l4/l4_current.*`,
 `docs/demo-l4/run.sh`.
 
-Status: landed 2026-09-24, uncommitted.
+Status: landed 2026-09-24, pushed as `dd749ad`.
+
+RETRACTION, 2026-09-25: this document's protocol said the 0.10.0 binary
+"loads only part of an overlay tree". It does not. The login shell on the
+build machine has the island's `demo/host_ws/install` ahead of
+`/opt/autoware/1.5.0` in AMENT_PREFIX_PATH, and that demo copy of
+`tier4_system_launch` has the MRM handler and operator DISABLED because the
+island provides them. Re-sourcing `/opt/autoware` does not move it forward.
+From `env -i` the stock tree parses as 169 scopes / 34 nodes / 15
+containers / 70 composable nodes, all four MRM contracts attach, and the
+1944 ms / 56 ms verdict, the 1.5 s failure and the comfortable-stop rung
+error are produced live. Every Autoware run for the deck starts from `env -i`
+and confirms `ros2 pkg prefix tier4_system_launch` first.
 
 ### phase6-W1 - stage 0, the interface declared
 
@@ -263,8 +277,15 @@ evidence.
 
 Owns: nothing in this tree.
 
-Status: items 2 and 3 landed 2026-09-24; item 1 is on a branch awaiting
-review.
+Status: landed. Item 1 is play_launch `main` `c1474126` (215 tests, the
+snapshot gate included, re-run against rlm v0.1.41 after a rebase). Item 2 is
+nano-ros PR #1262, auto-merge armed. Item 3 is play_launch issue #0046, now
+being ruled on by play_launch phase-82 W3.
+
+The diagnosis of item 1 is worth keeping: the existing Autoware fixtures only
+reached the stop operator by declaring the service as a TOPIC with
+`type: tier4_system_msgs/msg/OperateMrm`, `msg/` where `srv/` belongs. The
+phase-71 flagship result existed because its author worked around the gap.
 
 Item 2 is nano-ros issue 1471, on branch `issues-monitors-and-age`. The
 island's own count is 14 monitor rows against a hard-coded 8, and nano-ros's
@@ -282,6 +303,74 @@ and omitting the hazard's `on:` entirely counts every mechanism and buys
 more harshly than one that declines to. That inversion is reproduced
 independently.
 
+### phase6-W7 - the board file states board facts
+
+The island's own half of nano-ros phase-467. Two lines in
+`src/zephyr_entry/boards/mr_canhubk3_s32k344.conf` state counts the contract
+determines, and both are wrong today:
+
+- `CONFIG_NROS_MAX_LIVELINESS=32`, with a comment that says liveliness is
+  "sized by the PEER graph ... probably never derivable". That is the
+  PRE-correction text of nano-ros phase-412's knob table; row 192 of that
+  table was corrected on 2026-09-08 ("not remote peers, and it IS
+  derivable"), the Kconfig default has been `-1 = derive` since, and the
+  derivation says 58: 1 session + 4 names + 14 pubs + 11 subs + 2 servers +
+  2 clients + 24 parameter services. The 32 was right at 29 tokens and went
+  silently 26 short when `params:` was declared. Liveliness exhaustion is
+  not a boot failure; the entity is simply invisible to `ros2 node list`.
+- `CONFIG_NROS_PARAM_SERVICE_INBOX_BYTES=1016`, hand-derived on 2026-09-24
+  as a workaround, is allocated ZERO times (see W4), and its comment cites
+  "nano-ros issue 1471", which is now the MAX_MONITORS issue. The sentinel it
+  worked around is phase-467 W2.
+
+What it does: delete both lines and their comments; where the file lists
+"what is derived and what is stated", move liveliness to the derived column
+and record the rule (board facts only). Try reverting the temporary
+`nros sync --no-metadata` in `justfile` (island-W3 experiment, issue 1470);
+keep it only if the build refuses without it, and say which. Then
+`just board-build` and read `check-knob-delivery`.
+
+Gate: the image still links; `check-knob-delivery` no longer reports
+liveliness (`NROS_RESOLVED_NROS_MAX_LIVELINESS` = 58); the remaining red,
+`NROS_DERIVED_SUBSCRIBED_TYPE_BOUNDS` never reaching the resolver, is named
+as upstream and left; the region report before and after is pasted into
+`docs/nxp-deployment.md` section 5 with the delta explained (58 tokens versus
+32 costs something; the inbox line cost nothing because it did nothing).
+
+Owns: `src/zephyr_entry/boards/mr_canhubk3_s32k344.conf`, `justfile`,
+`docs/nxp-deployment.md` sections 5 and 10 (the two figures).
+
+Status: claimed 2026-09-25.
+
+### phase6-W8 - consume phase-467 and phase-82
+
+When nano-ros phase-467 W1 and W2 and play_launch phase-82 land: bump the
+nano-ros pin forward; confirm the emitted config carries a derived
+`MAX_MONITORS` of 14 (rate) and 0 (age) and a derived builtin inbox of
+1016 B with no inbox line in the board file; confirm the island's own
+hazard now routes through `/mrm_emergency_stop_operator/on_timer` with a
+33.33 ms sampling hop and derives `reacts` for the operator. Then W6's
+"open" column loses three lines.
+
+Owns: `third-party/nano-ros` (the pin), `docs/nxp-deployment.md`.
+
+Status: not started; waits on upstream.
+
+### phase6-W9 - the note to the working group
+
+After W6. Not a question but a proposal: a `bounded_by:` relation from which
+criticality DECOMPOSES rather than propagates (X may be QM while Y is ASIL-D
+exactly when Y bounds every command X produces), which is section 2.2's own
+argument and the R6 mitigation-barrier rule play_launch reviewed and did not
+implement. Attached: stage 3's run B. Separately and briefly, two errata: N1
+is given a "per-message" rate in section 6.1 and a 10 ms partition in 9.1;
+N9 (100 Hz in 6.1, P1 at 50 Hz in 9.1) and N12 (1 Hz, P1) make the two
+sections derive different orders.
+
+Owns: nothing in this tree.
+
+Status: not started.
+
 ### phase6-W6 - the six slides
 
 One per stage, plus the prose-to-diagnostic table that ties them together.
@@ -293,7 +382,8 @@ Status: not started.
 
 ## 5. Order
 
-W1 first, because W2 and W3 build on its file. W0 is done. W2, W3, W4 and W5 are then
+W1 first, because W2 and W3 build on its file. W0 is done. W7 is independent
+of everything and unblocks silicon; W8 waits on upstream; W6 and W9 last. W2, W3, W4 and W5 are then
 independent of one another. W6 last.
 
 ## 6. What this phase is not
