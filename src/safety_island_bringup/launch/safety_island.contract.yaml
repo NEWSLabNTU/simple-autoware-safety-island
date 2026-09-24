@@ -254,15 +254,19 @@ nodes:
       on_timer:
         trigger: { timer: { rate_hz: 30 } }
         output: [emergency_control_cmd, status]
-        # One tick of `update_rate: 30`. This node IS the second half of the
-        # island's reaction, and its 33 ms is the hop the fault-reaction walk
-        # cannot see, because mrm_handler reaches it over the
-        # /system/mrm/emergency_stop/operate SERVICE and the walk follows
-        # topic edges. Declared anyway: the number is a fact about the node
-        # whether or not a rule consumes it today, and it is what makes the
-        # claim "the missing hop is 33 ms, inside the slack" checkable by a
-        # human reading this file.
-        max_latency: 33ms
+        # This node IS the second half of the island's reaction: mrm_handler
+        # reaches it over the /system/mrm/emergency_stop/operate SERVICE, the
+        # service callback only latches `status_.state = OPERATING`, and the
+        # braking command leaves on the next tick of `update_rate: 30`. Since
+        # play_launch phase 82 the reaction walk crosses both: the service
+        # edge, and the tick as a SAMPLING hop of one period (33.33 ms). So
+        # no `max_latency` is declared here: the walk charges the period
+        # itself, and a number here would be the callback's own execution
+        # budget, which nobody has measured. The safe state moved here from
+        # call_mrm: the plant is commanded by THIS node's output, and the
+        # settle (arithmetic at the top of this file, one assumed input, the
+        # 3.0 m/s entry speed) is charged on top of it.
+        safe_state: { emits: emergency_control_cmd, settle: 2034ms }
     sub:
       # Cached in onControlCommand and read on the timer as the ramp seed: a
       # read-latest input, not a trigger. `state: true` says so; without it
@@ -317,14 +321,12 @@ nodes:
       # rather than hidden by the declaration.
       call_mrm:
         trigger: { input: [operation_mode_availability] }
-        output: [mrm_state]
+        output: [mrm_state, emergency_stop_operate]
         max_latency: 110ms
-        # The safe state: the island has commanded the manoeuvre, and the
-        # plant needs `settle` on top of that to actually be stopped. The
-        # settle is the one term software cannot derive; its arithmetic is at
-        # the top of this file, and its one assumed input (3.0 m/s entry
-        # speed) is named there.
-        safe_state: { emits: mrm_state, settle: 2034ms }
+        # The client call to the emergency-stop operator is named in `output`
+        # so the reaction walk can follow the service edge (phase 82). The
+        # safe state is declared on the operator, whose output commands the
+        # plant; it used to be here, on the handler's own state report.
     sub:
       # `lease_duration` is `timeout_operation_mode_availability: 0.5` from
       # this node's own parameter file, restated as the middleware fact it
@@ -333,9 +335,16 @@ nodes:
       # hazard above has nothing watching its guard, and the checker says so.
       operation_mode_availability:
         min_rate_hz: 10
+        # `timeout_operation_mode_availability: 0.5` is a STALENESS bound the
+        # handler evaluates itself on its 10 Hz tick, not a DDS lease: so the
+        # mechanism is `application`, and `max_age` is the same 500 ms. The
+        # lease stays declared because it is the same fact in QoS terms and
+        # nano-ros's inventory reads it; both give a 500 ms detection.
+        max_age: 500ms
         qos: { depth: 1, liveliness: manual_by_topic, lease_duration: 500ms }
         on_violation:
           on: [omission]
+          mechanism: application
           reaction: call_mrm
           within: 110ms
       kinematic_state: { min_rate_hz: 10, qos: { depth: 1 } }
@@ -389,7 +398,7 @@ nodes:
 paths:
   island.emergency_stop:
     trigger: { input: [/system/operation_mode/availability] }
-    output: [/system/fail_safe/mrm_state]
+    output: [/system/emergency/control_cmd]
     max_latency: 210ms
 
 topics:

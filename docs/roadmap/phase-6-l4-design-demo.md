@@ -390,9 +390,31 @@ Measured on a scratch copy against the W4 binary with all four edits:
 `/mrm_emergency_stop_operator` as `high`, budget still inside 3 s. Then W6's
 "open" column loses three lines.
 
-Owns: `third-party/nano-ros` (the pin), `docs/nxp-deployment.md`.
+Owns: `third-party/nano-ros` (the pin), `docs/nxp-deployment.md`, and for
+W8a the island contract.
 
-Status: not started; waits on upstream.
+Status: SPLIT 2026-09-25. W8a, the contract edits, depended only on play_launch
+phase 82 and LANDED the same day: all four edits above plus, for the newer
+nano-ros CLI, which refuses an `on_violation` without `max_age`, the
+availability subscriber gained `max_age: 500ms` with `mechanism:
+application`, because `timeout_operation_mode_availability` is a staleness
+bound the handler evaluates on its own tick, not a DDS lease. Measured on the
+merged checker (play_launch `1c27ba5c`):
+
+```
+detection 500.00ms + reaction 2177.33ms (reaction route /mrm_handler/call_mrm
+-> /mrm_emergency_stop_operator/on_timer (+33.33ms sampling) = 143.33ms +
+settle 2034.00ms) = 2677.33ms fits the fault-tolerant time interval
+3000.00ms with 322.67ms of slack
+node_criticality: /mrm_emergency_stop_operator: high, /mrm_handler: high
+```
+
+The ASIL_D now lands on the node that acts. The tick is charged once (110 +
+33.33). The slack fell from 356 to 322.67 ms because a real hop stopped being
+invisible, which is the point.
+
+W8b, the pin bump, the inbox-line deletion and the MAX_MONITORS check, waits
+on nano-ros phase-467 (W2 is PR'd; W1 in progress).
 
 ### phase6-W9 - the note to the working group
 
