@@ -80,6 +80,146 @@
 
 version: 1
 
+# ---------------------------------------------------------------------------
+# WHAT HAPPENS WHEN THE INPUT STOPS
+#
+# Everything above this line is structure and rate: how many endpoints, how
+# fast each one runs, how big the pools have to be. None of it says what the
+# island is FOR. The island is a minimum-risk-manoeuvre controller. It exists
+# because /system/operation_mode/availability can stop arriving, and when it
+# does the vehicle has to be brought to a stop before the absence of that
+# stream becomes a hazardous event. Until now that sentence lived in the
+# README and in nobody's tooling.
+#
+# ISO 26262 gives the sentence a number. The fault-tolerant time interval is
+# the time from the fault to the hazardous event when nothing reacts, and it
+# has to cover detection plus reaction:
+#
+#   FTTI >= FDTI (fault -> detected) + FRTI (detected -> safe state reached)
+#
+# FDTI and FRTI are NOT authored here. They are derived from numbers this
+# repository already ships in its own parameter files. `ftti` is the one
+# genuinely new requirement, because it comes from physics and a hazard
+# analysis rather than from code.
+#
+# THE ISLAND'S THREE TERMS, AND WHERE EACH ONE COMES FROM
+#
+#   FDTI = 500 ms.
+#     mrm_handler's `timeout_operation_mode_availability: 0.5`, in
+#     src/autoware_mrm_handler/config/mrm_handler.param.yaml. That parameter
+#     IS the detector: the handler treats the availability stream as lost
+#     once it has been silent for half a second. It is restated below as
+#     `lease_duration: 500ms` on the subscriber, which is the same fact in
+#     the vocabulary FDTI is derived from. Note what does NOT count: the
+#     `min_rate_hz: 10` already declared on that subscriber is a requirement,
+#     not a mechanism -- nothing fires when a period passes -- so the 10 Hz
+#     floor buys no detection on its own.
+#
+#   reaction route = 110 ms.
+#     `update_rate: 10` gives a 100 ms tick and `timeout_call_mrm_behavior:
+#     0.01` gives 10 ms to get the behaviour called. 100 + 10 = 110. Both
+#     numbers come from the same parameter file. The handler notices the
+#     stale stamp on a tick, so the tick period is genuinely the first term
+#     and not a padding allowance.
+#
+#   settle = 2034 ms.
+#     The plant's share: how long the vehicle takes to actually stop once the
+#     emergency stop has been commanded. From
+#     src/autoware_mrm_emergency_stop_operator/config/mrm_emergency_stop_operator.param.yaml,
+#     target_jerk -1.5 m/s^3 and target_acceleration -2.5 m/s^2, with an
+#     ASSUMED entry speed of 3.0 m/s. No parameter in this repository states
+#     an entry speed; 3.0 m/s is the single invented input in this whole
+#     block, and it is named here rather than buried so that anyone reading
+#     the budget knows which term is a reading and which is an assumption.
+#       ramp to full braking:   t1 = 2.5 / 1.5              = 1.667 s
+#       speed lost in the ramp: 0.5 * 1.5 * 1.667^2         = 2.083 m/s
+#       the rest at -2.5:       (3.000 - 2.083) / 2.5       = 0.367 s
+#       settle = 1.667 + 0.367                              = 2.034 s
+#
+#   500 + 110 + 2034 = 2644 ms, against `ftti: 3s`. 356 ms of slack.
+#
+# WHY THE FTTI IS 3 s
+#
+# It is the one number here that is a judgement rather than a reading, and it
+# is deliberately round. What matters is that it is now written down and
+# checked: set it to 2.5s and the checker rejects the contract and names the
+# terms that no longer fit inside it. The arithmetic above is implied by the
+# parameter files today and performed by nothing.
+#
+# WHERE THE CHAIN OUTRUNS THE CHECKER
+#
+# The island's real reaction crosses a SERVICE. mrm_handler calls
+# /system/mrm/emergency_stop/operate, and it is mrm_emergency_stop_operator
+# that publishes /system/emergency/control_cmd. The reaction walk follows
+# TOPIC edges only, so it cannot step across that service call: a reaction
+# declared as ending at /system/emergency/control_cmd comes back as
+# unreachable, because no chain of topic hops leads there. So the declared
+# reaction ends where mrm_handler's own output ends -- /system/fail_safe/
+# mrm_state, the island announcing that the manoeuvre is running -- and the
+# operator's contribution is carried in the settle term instead of as a route
+# hop. That is a real limitation, stated rather than papered over. The 30 Hz
+# operator tick is 33 ms, which is well inside the 356 ms of slack, so the
+# verdict does not turn on it; but this budget is a model of the chain and
+# not a trace of it, and the two internal status topics are the only place
+# the island's own wiring closes a loop the walk can see.
+#
+# WHY THERE IS NO comfortable_stop RUNG
+#
+# The graded ladder -- comfortable stop first, emergency stop as the floor --
+# is Autoware's shape, and the island does ship both operators. It is not the
+# island's CONFIGURED ladder: mrm_handler.param.yaml sets
+# `use_comfortable_stop: false` and `use_pull_over: false`, so the handler as
+# configured here has exactly one rung. Declaring `modes:` with a graded
+# reaction that the parameters disable would be writing down a promise the
+# image does not keep, so the ladder stays out and the hazard's reaction is
+# the single scope path below. If those parameters are ever turned on, the
+# rung belongs here and `ladder-rung-budget` will check it in its own right.
+
+# WHAT THE CHECKER STILL COMPLAINS ABOUT, AND WHY IT IS LEFT ALONE
+#
+# Two diagnostics survive this block on purpose. Neither is an error and both
+# are true.
+#
+#   warning[reaction-unguarded]: the reaction ends at /system/fail_safe/
+#     mrm_state and nothing subscribes to it with an `on_violation`. Correct,
+#     and not fixable from inside the island: that topic is `external: sub`,
+#     so the only thing that could notice a STALLED manoeuvre is Autoware
+#     proper. Who watches the watcher is a real open question here, and the
+#     honest answer is "something outside this image, and it is not declared
+#     anywhere yet". Silencing it would be worse than carrying it.
+#
+#   info[path-exclusion]: `on_timer` may wait up to 110 ms for `call_mrm`,
+#     because every path of a node is assumed to serialise unless the node
+#     declares otherwise. For mrm_handler that assumption is exactly right --
+#     the two paths ARE the same callback body -- so there is nothing to
+#     declare and nothing to fix.
+#
+# One more thing worth knowing, because it is invisible in the output: the
+# hazard makes the checker DERIVE mrm_handler's criticality (ASIL_D, role
+# `detects`), which is what carries the safety requirement into scheduling.
+# It derives it for mrm_handler and for no other node on the island -- and
+# the reason is the same service boundary as above. mrm_emergency_stop_
+# operator, the node that actually performs the stop, is reached over
+# /system/mrm/emergency_stop/operate, so the `reacts` walk never gets to it
+# and the hazard's severity never lands on it.
+
+# ISO 26262's scale, stated rather than assumed. It happens to be the
+# checker's default; writing it out is what makes `severity: ASIL_D` below a
+# reference to a named scale rather than a string nobody validates.
+severity_levels: [QM, ASIL_A, ASIL_B, ASIL_C, ASIL_D]
+
+hazards:
+  operation_mode_unavailable:
+    severity: ASIL_D
+    description: >-
+      the operation-mode availability stream stops, so nothing upstream is
+      still deciding whether the vehicle may drive; the island has to bring
+      it to a stop before the silence becomes a hazardous event
+    guards: [/system/operation_mode/availability]
+    on: omission
+    ftti: 3s
+    reaction: island.emergency_stop
+
 nodes:
   mrm_comfortable_stop_operator:
     params:
@@ -114,6 +254,15 @@ nodes:
       on_timer:
         trigger: { timer: { rate_hz: 30 } }
         output: [emergency_control_cmd, status]
+        # One tick of `update_rate: 30`. This node IS the second half of the
+        # island's reaction, and its 33 ms is the hop the fault-reaction walk
+        # cannot see, because mrm_handler reaches it over the
+        # /system/mrm/emergency_stop/operate SERVICE and the walk follows
+        # topic edges. Declared anyway: the number is a fact about the node
+        # whether or not a rule consumes it today, and it is what makes the
+        # claim "the missing hop is 33 ms, inside the slack" checkable by a
+        # human reading this file.
+        max_latency: 33ms
     sub:
       # Cached in onControlCommand and read on the timer as the ramp seed: a
       # read-latest input, not a trigger. `state: true` says so; without it
@@ -153,8 +302,42 @@ nodes:
           - hazard_lights_cmd
           - gear_cmd_out
           - emergency_holding
+        # One tick of `update_rate: 10`. A timer callback that has not
+        # finished when the next tick is due is late by any definition, so
+        # the period is the budget; it is not a new number.
+        max_latency: 100ms
+      # THE REACTION. This is the same callback body as `on_timer` -- the
+      # handler notices the stale availability stamp on a tick and calls the
+      # MRM behaviour from there; there is no separate subscription callback
+      # in the code. It is declared as an input-triggered path because that
+      # is the shape a detector reaction has: it is caused by the fault on
+      # `operation_mode_availability`, not by the clock. The 110 ms is the
+      # tick it waits for (100 ms) plus `timeout_call_mrm_behavior` (10 ms),
+      # so the periodic implementation is accounted for inside the number
+      # rather than hidden by the declaration.
+      call_mrm:
+        trigger: { input: [operation_mode_availability] }
+        output: [mrm_state]
+        max_latency: 110ms
+        # The safe state: the island has commanded the manoeuvre, and the
+        # plant needs `settle` on top of that to actually be stopped. The
+        # settle is the one term software cannot derive; its arithmetic is at
+        # the top of this file, and its one assumed input (3.0 m/s entry
+        # speed) is named there.
+        safe_state: { emits: mrm_state, settle: 2034ms }
     sub:
-      operation_mode_availability: { min_rate_hz: 10, qos: { depth: 1 } }
+      # `lease_duration` is `timeout_operation_mode_availability: 0.5` from
+      # this node's own parameter file, restated as the middleware fact it
+      # is. `on_violation` is what makes this subscriber a DETECTOR rather
+      # than a consumer that happens to have a rate wish: without it the
+      # hazard above has nothing watching its guard, and the checker says so.
+      operation_mode_availability:
+        min_rate_hz: 10
+        qos: { depth: 1, liveliness: manual_by_topic, lease_duration: 500ms }
+        on_violation:
+          on: [omission]
+          reaction: call_mrm
+          within: 110ms
       kinematic_state: { min_rate_hz: 10, qos: { depth: 1 } }
       control_mode: { min_rate_hz: 10, qos: { depth: 1 } }
       comfortable_stop_status: { min_rate_hz: 10, qos: { depth: 1 } }
@@ -188,6 +371,26 @@ nodes:
       gear: { min_rate_hz: 30 }
       hazard_lights: { min_rate_hz: 30 }
       turn_indicators: { min_rate_hz: 30 }
+
+# The reaction, as a scope path: from the guarded input to the island's own
+# announcement that the manoeuvre is running. mrm_handler is the only hop the
+# topic graph can see -- see WHERE THE CHAIN OUTRUNS THE CHECKER at the top of
+# this file.
+#
+# 210 ms, not the 110 ms of the reaction route, and the difference is not
+# slack. A scope path's budget is checked against the NOMINAL traversal, and
+# the nominal traversal of a 10 Hz node is one sampling wait (100 ms, because
+# an arriving message waits for the next tick) plus the tick's own budget
+# (100 ms). The fault route is shorter than the nominal route here, which is
+# the right way round and worth saying out loud: the handler does not have to
+# wait for fresh data to react to its absence. Declaring 110 ms here instead
+# makes `scope-budget` reject the file against a 200 ms critical path, which
+# is the checker being correct about a different question.
+paths:
+  island.emergency_stop:
+    trigger: { input: [/system/operation_mode/availability] }
+    output: [/system/fail_safe/mrm_state]
+    max_latency: 210ms
 
 topics:
   # --- internal to the island: both sides are components in this image -------
