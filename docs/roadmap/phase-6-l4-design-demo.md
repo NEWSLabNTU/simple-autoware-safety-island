@@ -350,8 +350,12 @@ explained.
 Owns: `src/zephyr_entry/boards/mr_canhubk3_s32k344.conf`, `justfile`,
 `docs/nxp-deployment.md` sections 5 and 10 (the two figures).
 
-Status: claimed 2026-09-25; first build attempt found the sequencing error
-above; second attempt in progress.
+Status: landed 2026-09-25 as `607501f`. Liveliness delivered as 58; image
+links at 281,384 B, +416 B, all of it `g_sessions` (26 entries of 16 B);
+`check-knob-delivery` red on the one upstream line only. The temporary
+`--no-metadata` is reverted. Also fixed in passing: the recipe's refusal
+advice ran another board build to print itself (backticks in a double-quoted
+echo); 32 were found nested and killed.
 
 ### phase6-W8 - consume phase-467 and phase-82
 
