@@ -347,6 +347,35 @@ differently placed, not differently sized.
 
 ## What is proven on this board, and what is not
 
+**Z0, 2026-09-25 (phase-7 W6):** `samples/hello_world` built with hal_nxp
+named on the command line (`-DZEPHYR_EXTRA_MODULES=$ISLAND_ZEPHYR_WS/modules/hal/nxp`,
+now what `just board-hello` does), Zephyr 4.4.0, SDK 1.0.1: FLASH 50,584 B,
+RAM 6,624 B; pyocd 0.44.0 over the MCU-LINK erased and programmed 57,344 B
+(7 sectors) at 44.67 kB/s; after `pyocd reset` the console (`/dev/ttyUSB0`,
+115200) printed, verbatim:
+
+```
+*** Booting Zephyr OS build v4.4.0 ***
+Hello World! mr_canhubk3/s32k344
+```
+
+So the IVT header, the FS26 watchdog handling, the flash chain and the console
+are all good on this kit; a later failure is ours.
+
+**Z1a, 2026-09-25 (phase-7 W6), partial:** the island image itself
+(`build-board/zephyr/zephyr.hex`, sha256 `be0a3afa...47ed6`, the phase-6 W8b
+build with every pool derived) flashed with `pyocd flash -t s32k344`: 630,784 B
+erased and programmed (77 sectors) at 61.34 kB/s. After `pyocd reset` the core
+reads `Sleeping` (idle, not halted and not faulted) and the UART carries, in
+35 s, 24 identical 9-byte COBS frames (`02 01 01 01 01 01 01 01 00`, decoding
+to `01 00 00 00 00 00 00 00`): the zenoh serial link's open attempts, since
+this image's locator is `serial/uart@40330000#baudrate=115200` and no peer
+answers. This is the first time the island image has run on the board. What
+it does NOT give: the boot report, because the only wired UART is the
+transport's (see "Reading a board whose only UART is taken"); the table sizes
+and the trace buffer are to be read over SWD once phase-7 W1's tracing block
+is in the image.
+
 **Proven:** flashing and boot; console; the ECC init path executes; ROS 2 interop
 over serial end to end (`ros2 node list`, `topic echo` with real data); the
 receive path (board logs `I heard:` from a host publisher); service registration.

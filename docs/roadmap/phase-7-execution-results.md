@@ -157,7 +157,11 @@ Gate: the two console captures in `docs/board-facts.md`; the buffer read.
 
 Owns: `docs/board-facts.md`, `docs/board-bringup-triage.md` (status lines).
 
-Status: claimed 2026-09-25; Z0 authorised.
+Status: Z0 passed 2026-09-25 (the recipe needed hal_nxp named; fixed).
+Z1a in part the same day: the W8b island image runs on the board (core
+idle, serial-link frames on the UART), first ever; the boot report waits on
+the SWD trace read that needs W1's block in the image. Captures in
+`docs/board-facts.md`.
 
 ## 5. Order
 

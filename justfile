@@ -437,7 +437,16 @@ board-hello:
     source scripts/board-env.sh "{{NANO_ROS_ROOT}}"
     # Build output stays with this project, never inside the shared store
     # workspace (nano-ros RFC-0095 D2).
-    west build -b {{BOARD}} -d build-hello "$ZEPHYR_BASE/samples/hello_world" --pristine=auto
+    # hal_nxp is not in nano-ros's west-4.4 allowlist (see board-build); the
+    # board's pinctrl headers live there, so the sample needs it named too.
+    # Without it: `fatal error: nxp/s32/S32K344-172MQFP-pinctrl.h`.
+    hal_nxp="$ISLAND_ZEPHYR_WS/modules/hal/nxp"
+    if [ ! -d "$hal_nxp" ]; then
+        echo "board-hello: hal_nxp is not in the workspace ($hal_nxp); run just board-setup" >&2
+        exit 1
+    fi
+    west build -b {{BOARD}} -d build-hello "$ZEPHYR_BASE/samples/hello_world" --pristine=auto \
+        -- -DZEPHYR_EXTRA_MODULES="$hal_nxp"
     # -r pyocd explicitly: the board lists jlink FIRST in board.cmake, so west
     # picks it by default and dies on `JLinkExe not found`. We flash with an
     # MCU-Link (CMSIS-DAP), which is pyocd's job.
