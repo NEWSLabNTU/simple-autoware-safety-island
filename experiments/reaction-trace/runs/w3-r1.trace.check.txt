@@ -1,0 +1,41 @@
+ok   decode: 593407 records, 12374058 bytes, no unknown event id
+ok   provenance: marker table bd6e59bbd17e, contract 3879cbf4e701, zephyr 3.7.0, board native_sim
+
+ id  marker                                                     count
+  1  PATH_MRM_COMFORTABLE_STOP_OPERATOR_ON_TIMER_ENTRY            548
+  2  PATH_MRM_COMFORTABLE_STOP_OPERATOR_ON_TIMER_EXIT             548
+  3  PATH_MRM_EMERGENCY_STOP_OPERATOR_ON_TIMER_ENTRY             1659
+  4  PATH_MRM_EMERGENCY_STOP_OPERATOR_ON_TIMER_EXIT              1659
+  5  PATH_MRM_HANDLER_CALL_MRM_ENTRY                              107
+  6  PATH_MRM_HANDLER_CALL_MRM_EXIT                               107
+  7  PATH_MRM_HANDLER_ON_TIMER_ENTRY                              548
+  8  PATH_MRM_HANDLER_ON_TIMER_EXIT                               548
+  9  PATH_STOP_MODE_OPERATOR_ON_TIMER_ENTRY                      1659
+ 10  PATH_STOP_MODE_OPERATOR_ON_TIMER_EXIT                       1659
+ 11  TAKE_MRM_HANDLER_OPERATION_MODE_AVAILABILITY                 433
+ 12  CALL_MRM_HANDLER_COMFORTABLE_STOP_OPERATE                      0  unreachable: /mrm_handler use_comfortable_stop=False (unreachable.yaml)
+ 13  CALL_MRM_HANDLER_EMERGENCY_STOP_OPERATE                        2
+ 14  SERVE_MRM_COMFORTABLE_STOP_OPERATOR_OPERATE_ENTRY              0  unreachable: /mrm_handler use_comfortable_stop=False (unreachable.yaml)
+ 15  SERVE_MRM_COMFORTABLE_STOP_OPERATOR_OPERATE_EXIT               0  unreachable: /mrm_handler use_comfortable_stop=False (unreachable.yaml)
+ 16  SERVE_MRM_EMERGENCY_STOP_OPERATOR_OPERATE_ENTRY                2
+ 17  SERVE_MRM_EMERGENCY_STOP_OPERATOR_OPERATE_EXIT                 2
+ 18  PUB_MRM_COMFORTABLE_STOP_OPERATOR_CLEAR_VELOCITY_LIMIT         0  unreachable: /mrm_handler use_comfortable_stop=False (unreachable.yaml)
+ 19  PUB_MRM_COMFORTABLE_STOP_OPERATOR_MAX_VELOCITY_CANDIDATES       0  unreachable: /mrm_handler use_comfortable_stop=False (unreachable.yaml)
+ 20  PUB_MRM_COMFORTABLE_STOP_OPERATOR_STATUS                     548
+ 21  PUB_MRM_EMERGENCY_STOP_OPERATOR_EMERGENCY_CONTROL_CMD       1659
+ 22  PUB_MRM_EMERGENCY_STOP_OPERATOR_STATUS                      1659
+ 23  PUB_MRM_HANDLER_EMERGENCY_HOLDING                            548
+ 24  PUB_MRM_HANDLER_GEAR_CMD_OUT                                 548
+ 25  PUB_MRM_HANDLER_HAZARD_LIGHTS_CMD                            548
+ 26  PUB_MRM_HANDLER_MRM_STATE                                    548
+ 27  PUB_MRM_HANDLER_TURN_INDICATORS_CMD                          548
+ 28  PUB_STOP_MODE_OPERATOR_CONTROL                              1659
+ 29  PUB_STOP_MODE_OPERATOR_GEAR                                 1659
+ 30  PUB_STOP_MODE_OPERATOR_HAZARD_LIGHTS                        1659
+ 31  PUB_STOP_MODE_OPERATOR_TURN_INDICATORS                      1659
+
+ok   markers: 26 of 31 seen at least once; 5 unreachable under the configured parameters
+ok   heartbeat: seq 0..548 contiguous (549 records)
+ok   complete: last heartbeat recorded is the last emitted (549); buffer 12374058 of 67108864 B
+
+trace-check: PASS

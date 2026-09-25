@@ -106,7 +106,13 @@ that produced each; the table in `docs/emulation.md`.
 
 Owns: a new `src/qemu_entry/`, `just/emulation.just`, `docs/emulation.md`.
 
-Status: claimed 2026-09-25.
+Status: landed 2026-09-25 (uncommitted), gate met with a failing boot.
+`just qemu-run` boots the QEMU image to its boot report, and it fails on
+entity registration. `just renode-run` runs the unmodified S32K344 board image
+on Renode's S32K3 and fails at the same point. In both, stop_mode_operator's
+create_publisher returns -100 because the transient-local retention pool is 2
+and the island has 5 such publishers. The FVP rung was not run: the nano-ros
+model is AArch64 v8-R and cannot run a Cortex-M image. See docs/emulation.md.
 
 ### phase7-W3 - the reaction trace
 
@@ -133,8 +139,18 @@ rung named; the declared-versus-observed table.
 
 Owns: `docs/reaction-trace.md`, `experiments/reaction-trace/`.
 
-Status: ready to start on W1's native_sim trace (2026-09-25); the board
-half waits on W6's SWD read.
+Status: native_sim half landed 2026-09-25 (`docs/reaction-trace.md`,
+`experiments/reaction-trace/`); the board half waits on W6's SWD read.
+Over 7 traces the island stays inside its terms: last availability sample
+to the first braking command at most 607.99 ms of simulated time, against
+500 + 110 + 33.33 = 643.33. One sampling wait was 33.98 ms against the
+declared 33.33, because the operator's timer period is an integer 33 ms and
+it jitters under load. The vehicle does NOT stop inside the FTTI. From the
+last sample to standstill took 3196-3293 ms in all 4 runs with a velocity
+log. The settle took 2666-2685 ms against the declared 2034, because the
+demo brakes from 4.2 m/s and the settle term assumes 3.0 m/s. Board:
+cutting `TRACING_THREAD` makes 16 KiB hold 3.3 s of markers, but the buffer
+is one-shot from boot, so it also needs re-arming at injection.
 
 ### phase7-W4 - execution times per callback, as the `[wcet]` profile
 
@@ -205,10 +221,44 @@ silicon durations are therefore blocked behind the same peer; the tracing's
 own cost (DWT CYCCNT) can still be measured once a marker fires. Captures in
 `docs/board-facts.md`.
 
+### phase7-W7 - a transport peer on the serial link, and the first markers on silicon
+
+W6 showed the traced image waiting in the zenoh serial session's open-retry
+loop. `experiments/serial-interop/` already has the host side: a
+`rmw_zenohd` router listening on `serial//dev/ttyUSB0#baudrate=115200`
+(with `router-serial.json5`, which fixes the keepalive that otherwise
+expires the board every 20 s) bridging to TCP. With that peer up the
+session opens, the executor starts, the four nodes' timers run, and the
+markers fire on silicon; with no availability publisher anywhere, the
+handler's `on_violation` (max_age 500 ms) is the natural fault, so the
+reaction route may be observable without Autoware at all, if the handler's
+readiness gate lets it (native_sim with no Autoware left 11 handler
+markers missing, so it may not; say which).
+
+Deliver: the router recipe (`just board-peer`), the trace read with markers
+present, per-marker-pair durations on silicon for every timer path that
+ran (cycle-counter time, N ticks, distribution and maximum), the tracing's
+own cost bracketed with DWT `CYCCNT` if it can be added without a rebuild
+that changes the region report by more than the counter code, and the
+reaction timeline if it fires. Every number qualified: silicon, this image
+sha, this run. This is W4's silicon source and W6's Z1b-over-serial.
+
+Gate: `trace-check` on a board read with the timer-path markers present;
+the duration table in `docs/wcet.md` (the silicon section) with its
+provenance; the serial-link caveats (4-byte RX FIFO, one run in three)
+restated from what actually happened.
+
+Owns: `just/board-peer.just` (one import line in the justfile),
+`experiments/serial-interop/` (additions), `docs/wcet.md` (silicon
+section), `docs/board-facts.md` (a Z1b-serial paragraph).
+
+Status: claimed 2026-09-25.
+
 ## 5. Order
 
 W1 and W2 in parallel now. W3 when W1 lands (on native_sim; again on W2's
-best rung when it lands). W4 after W3, W5 after W4. W6 independent.
+best rung when it lands). W4 after W3, W5 after W4. W6 independent; W7
+after W6, and it feeds W4's silicon column.
 
 ## 6. What this phase is not
 

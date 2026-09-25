@@ -136,7 +136,20 @@ version: 1
 #       the rest at -2.5:       (3.000 - 2.083) / 2.5       = 0.367 s
 #       settle = 1.667 + 0.367                              = 2.034 s
 #
-#   500 + 110 + 2034 = 2644 ms, against `ftti: 3s`. 356 ms of slack.
+#     MEASURED, phase7-W3 (docs/reaction-trace.md, native_sim, 4 runs with a
+#     velocity log): the island meets its own terms (last sample to first
+#     braking command at most 608 ms against 643.33), but the demo brakes
+#     from 4.21-4.23 m/s, not 3.0, and the same formula at that speed gives
+#     2517-2527 ms; the vehicle stood still 2666-2685 ms after the first
+#     braking command and 3196-3293 ms after the last sample, past the 3 s
+#     FTTI in every run. The one assumed input above is the one that was
+#     wrong; the 2034 stays declared until the entry speed is decided.
+#
+#   500 + 110 + 33.33 + 2034 = 2677.33 ms, against `ftti: 3s`. 322.67 ms of
+#   slack; the 33.33 is the operator's 30 Hz tick, charged as one sampling
+#   hop since the walk crosses the service edge (play_launch phase 82). The
+#   operator's timer is NROS_CREATE_WALL_TIMER(1000 / update_rate), integer
+#   ms, so its real period is 33 ms.
 #
 # WHY THE FTTI IS 3 s
 #
@@ -146,7 +159,8 @@ version: 1
 # terms that no longer fit inside it. The arithmetic above is implied by the
 # parameter files today and performed by nothing.
 #
-# WHERE THE CHAIN OUTRUNS THE CHECKER
+# WHERE THE CHAIN OUTRAN THE CHECKER (history: fixed by play_launch phase 82,
+# and the hazard below now routes through the operator, phase6-W8a)
 #
 # The island's real reaction crosses a SERVICE. mrm_handler calls
 # /system/mrm/emergency_stop/operate, and it is mrm_emergency_stop_operator

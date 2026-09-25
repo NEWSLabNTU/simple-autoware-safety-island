@@ -1,0 +1,4 @@
+image=build-zephyr/zephyr/zephyr.exe
+image_sha256=070baae6f877da022cfe7a3bcf35233b211321ab48c0c598fd45a7af01cf5223
+git_rev=59f52320c9e6954169866014f51f7aee4a297b46-dirty
+captured=2026-09-25T08:12:33Z

@@ -1,0 +1,16 @@
+interval,declared_ms,kind,run r1,run r5,run r6,run r7,run w1-demo,run w1-demo2,run w1-demo3,max
+last take -> last fresh tick,-,wait (tick phase),416.99,459.99,472.99,477.99,445.99,442.00,426.99,477.99
+last take -> call_mrm tick,500 + tick<=100,wait (staleness + tick phase),517.98,560.99,573.99,577.99,546.00,542.00,527.00,577.99
+  of which past the 500 ms bound,<=100 (tick in the 110),wait (tick phase),17.98,60.99,73.99,77.99,46.00,42.00,27.00,77.99
+call_mrm entry -> CALL,(inside the 110),zero-time artefact,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00
+CALL -> operate callback entry,10 (timeout_call_mrm_behavior),wait (executor turn),0.01,0.01,0.01,0.01,0.01,0.01,0.01,0.01
+operate callback entry -> exit,-,zero-time artefact,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00
+operate exit -> first braking PUB,33.33 (sampling),wait (30 Hz tick phase),11.99,20.99,29.99,29.99,1.98,14.99,33.98,33.98
+call_mrm tick -> first braking PUB,110 + 33.33 = 143.33,wait,12.00,21.00,30.00,30.00,1.99,15.00,33.98,33.98
+last take -> first braking PUB,500 + 143.33 = 643.33,wait,529.98,581.99,603.99,607.99,547.99,557.00,560.99,607.99
+first braking PUB -> v < 0.001 (odom stamp),"2034 (settle, at 3.0 m/s)",plant (host wall clock),2666.29,2684.62,2678.85,2685.23,-,-,-,2685.23
+first braking PUB -> MRM_SUCCEEDED pub,2034 + odom + tick,plant + wait,2688.00,2778.00,2770.00,2771.00,2698.03,2784.00,2766.01,2784.00
+last take -> v < 0.001 (odom stamp),2677.33 (FTTI 3000),whole budget,3196.27,3266.61,3282.84,3293.21,-,-,-,3293.21
+v at fault (m/s),-,context,4.25,4.25,4.25,4.27,-,-,-,-
+SIGSTOP after last take (ms),-,context,81.67,17.69,9.96,28.39,-,-,-,-
+alignment disagreement (ms),-,context,1.78,1.08,0.98,0.21,-,-,-,-

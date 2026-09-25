@@ -1,0 +1,7 @@
+image=build-zephyr/zephyr/zephyr.exe
+image_sha256=070baae6f877da022cfe7a3bcf35233b211321ab48c0c598fd45a7af01cf5223
+git_rev=9b0654287779f9bb3d420578cc849e8d45f3308e
+captured=2026-09-25T08:44:28Z
+loadavg_start=18.15 18.59 21.01
+loadavg_end=34.39 24.87 22.97
+wall_secs=140
