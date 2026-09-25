@@ -1,0 +1,4 @@
+image=build-board/zephyr/zephyr.elf
+image_sha256=715e30473250dc473f6a2d7fb5029dd788536e9ebb994d7c357e20685d85b01e
+git_rev=9b0654287779f9bb3d420578cc849e8d45f3308e
+captured=2026-09-25T08:42:48Z

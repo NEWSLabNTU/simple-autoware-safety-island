@@ -412,6 +412,50 @@ On this kit, with no serial peer and no T1 link, the island boots and waits;
 the reaction cannot be traced on silicon until a transport peer exists (a
 host on the serial link, or the T1 media converter).
 
+**Z1b over serial, 2026-09-25 (phase-7 W7): the session opens, but the
+executor does not start.** A host `rmw_zenohd` listened on
+`serial//dev/ttyUSB0#baudrate=115200` with `router-serial.json5`
+(`just board-peer`, `just/board-peer.just`; it runs under `env -i` with ROS 2
+sourced fresh, and on TCP port 7449, not 7447). The board then opened a zenoh
+session on every boot, 6 of 6, each within a second of reset, and began
+registering entities (the router log shows the island's liveliness tokens on
+`@ros2_lv/10/...`). The "one run in three" flakiness recorded for the talker
+in `experiments/serial-interop/README.md` did not appear with this image and
+router. Registration then failed in `stop_mode_operator`'s `gear` publisher, the
+image's third TRANSIENT_LOCAL publisher. nano-ros's retention pool is 2 when
+the contract states no durability. The component object read over SWD holds
+`create_publisher_in` / `-100` (TransportError). Every entity was undeclared
+within 0.25 s, and the router expired the link 10 s later. So no node timer
+ran and no marker fired. `ros2 node list` through the router
+(`RMW_IMPLEMENTATION=rmw_zenoh_cpp`, `ROS_DOMAIN_ID=10`), run 1, verbatim. It
+was taken after the board's session had already expired. The nodes exist for
+about 0.6 s per boot, so a CLI query cannot catch them; the router log is the
+record that they were declared.
+
+```
+== ros2 node list (rmw_zenoh_cpp, domain 10, router tcp/127.0.0.1:7447)
+== ros2 topic list
+/parameter_events
+/rosout
+```
+
+Two trace reads, both in `experiments/serial-interop/w7/`:
+
+- The W1 image (thread switches on) filled its 16 KiB buffer 31 ms after
+  boot, before the first heartbeat. In that window `main` is woken once per
+  received byte, and pend/ready repeats every 87 us, one byte at 115200 baud.
+  That came to 173 switch pairs and 16,381 B.
+- With `CONFIG_TRACING_THREAD=n` (the board conf since W7), the buffer held
+  1,114 contiguous heartbeats (111 s) and 0 markers.
+
+The boot report reads `stage 4 RegisteringEntities`, arena 9,800 of 50,640 B,
+heap peak 57,024 of 94,720 B. It records no error, so on this board it does
+not capture a constructor failure. Also seen: `pyocd reset -t s32k344` booted
+the image every time (see the Lockup note under "Probe and flashing"). pyocd's
+Python API reset only when connected in `halt` mode; in `attach` mode it left
+the core running. Details and the numbers are in `docs/wcet.md` ("Silicon
+(W7)").
+
 **Proven:** flashing and boot; console; the ECC init path executes; ROS 2 interop
 over serial end to end (`ros2 node list`, `topic echo` with real data); the
 receive path (board logs `I heard:` from a host publisher); service registration.

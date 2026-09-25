@@ -252,7 +252,38 @@ Owns: `just/board-peer.just` (one import line in the justfile),
 `experiments/serial-interop/` (additions), `docs/wcet.md` (silicon
 section), `docs/board-facts.md` (a Z1b-serial paragraph).
 
-Status: claimed 2026-09-25.
+Status: 2026-09-25, recipe landed; gate not met, blocked on the image.
+Details are in `docs/wcet.md` ("Silicon (W7)") and in `docs/board-facts.md`
+(Z1b over serial). Data is in `experiments/serial-interop/w7/`.
+
+- `just board-peer` works. The serial session opened on every boot, 6 of 6.
+  The "one run in three" did not reproduce.
+- The executor never starts. The image has five TRANSIENT_LOCAL publishers
+  and a retention pool of 2, because the contract stated no durability. So
+  `stop_mode_operator` fails at `create_publisher_in` (-100), the same as W2
+  on QEMU and Renode. Everything is torn down about 0.6 s after the session
+  opens. No marker fired, so the duration table in `docs/wcet.md` is empty.
+- `CONFIG_TRACING_THREAD=n` on the board. With a serial peer, thread
+  switches filled the buffer 31 ms after boot, at one wake per received
+  byte.
+- DWT `CYCCNT` now brackets `island_trace_marker` on the M7 and is live on
+  the board. Its count is 0 because no marker has run.
+- Heads-up for the contract fix. A 5-slot pool at 1,024 B did not fit the
+  board's RAM (overflowed by 3,352 B); 256 B per slot fits, with 488 B left.
+  `mrm_handler`'s `/api/operation_mode/state` subscription is
+  TRANSIENT_LOCAL, which the zenoh shim refuses on subscriptions, so the
+  handler will fail next. W2's 5-slot QEMU image showed the handler failing
+  after `stop_mode_operator` had registered.
+- The reaction will not fire by itself. `isDataReady()` needs one
+  availability sample before the timeout can ever be seen.
+
+Corrections to this unit's text above:
+
+- "the session opens, the executor starts, the four nodes' timers run" is
+  wrong for this image: only the first of the three happens.
+- "if it can be added without a rebuild" cannot hold: the DWT bracket is
+  code, so it needed a rebuild, and it shared the one that cut
+  `TRACING_THREAD`.
 
 ## 5. Order
 

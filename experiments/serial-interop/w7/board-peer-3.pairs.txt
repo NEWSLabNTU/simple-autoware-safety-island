@@ -1,0 +1,8 @@
+trace: experiments/serial-interop/w7/board-peer-3.bin: 1115 records, 16371 B used of the buffer, 0 markers, 1114 heartbeats
+heartbeats: seq 0..1113, uptime 100..111400 ms
+
+pair (ENTRY->EXIT)                                       N     min us  median us     max us
+
+period (ENTRY->next ENTRY)                               N     min ms  median ms     max ms
+
+marker counts:

@@ -1,0 +1,7 @@
+trace: experiments/serial-interop/w7/board-peer-1.bin: 524 records, 16381 B used of the buffer, 0 markers, 0 heartbeats
+
+pair (ENTRY->EXIT)                                       N     min us  median us     max us
+
+period (ENTRY->next ENTRY)                               N     min ms  median ms     max ms
+
+marker counts:

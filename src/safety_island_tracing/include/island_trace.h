@@ -76,10 +76,50 @@ static inline uint32_t island_trace_ts(void)
 	return (uint32_t)k_cyc_to_ns_floor64(cyc);
 }
 
+/* phase7-W7: the marker's OWN cost on the board, bracketed with DWT CYCCNT
+ * (ARMv7-M, the core clock: 160 MHz here). From just before irq_lock() to just
+ * before irq_unlock(), i.e. the whole locked write plus the lock itself; the
+ * statistics are updated under the same lock, after the second read, so they
+ * are not in the measured span. Read over SWD by name: island_trace_cost_*.
+ * `island_trace_cost_empty` is the bracket with nothing inside it, measured
+ * once at start, to subtract. Board (Cortex-M7) only: native_sim has no DWT,
+ * and QEMU does not model its cycle counter. */
+#if defined(CONFIG_CPU_CORTEX_M7)
+#define ISLAND_TRACE_SELF_COST 1
+#define ISLAND_TRACE_DWT_CYCCNT (*(volatile uint32_t *)0xE0001004u)
+#ifdef __cplusplus
+extern "C" {
+#endif
+extern volatile uint32_t island_trace_cost_n;
+extern volatile uint32_t island_trace_cost_min;
+extern volatile uint32_t island_trace_cost_max;
+extern volatile uint64_t island_trace_cost_sum;
+extern volatile uint32_t island_trace_cost_empty;
+#ifdef __cplusplus
+}
+#endif
+static inline void island_trace_cost_note(uint32_t d)
+{
+	island_trace_cost_n = island_trace_cost_n + 1u;
+	island_trace_cost_sum = island_trace_cost_sum + d;
+	if (d < island_trace_cost_min) {
+		island_trace_cost_min = d;
+	}
+	if (d > island_trace_cost_max) {
+		island_trace_cost_max = d;
+	}
+}
+#else
+#define ISLAND_TRACE_SELF_COST 0
+#endif
+
 static inline void island_trace_marker(uint16_t marker, uint32_t arg)
 {
 	const island_trace_evid_t id = (island_trace_evid_t)ISLAND_TRACE_EV_MARKER;
 	uint8_t pkt[sizeof(uint32_t) + sizeof(island_trace_evid_t) + sizeof(uint16_t) + sizeof(uint32_t)];
+#if ISLAND_TRACE_SELF_COST
+	const uint32_t c0 = ISLAND_TRACE_DWT_CYCCNT;
+#endif
 	/* Same shape as 4.x CTF_EVENT: timestamp and write under one lock, so
 	 * records are in timestamp order in the buffer. */
 	const unsigned int key = irq_lock();
@@ -94,6 +134,9 @@ static inline void island_trace_marker(uint16_t marker, uint32_t arg)
 	p += sizeof(marker);
 	memcpy(p, &arg, sizeof(arg));
 	tracing_format_raw_data(pkt, sizeof(pkt));
+#if ISLAND_TRACE_SELF_COST
+	island_trace_cost_note(ISLAND_TRACE_DWT_CYCCNT - c0);
+#endif
 	irq_unlock(key);
 }
 
@@ -115,6 +158,13 @@ extern "C" {
 #endif
 volatile uint32_t island_trace_hb_seq;
 volatile uint32_t island_trace_hb_last_uptime_ms;
+#if ISLAND_TRACE_SELF_COST
+volatile uint32_t island_trace_cost_n;
+volatile uint32_t island_trace_cost_min = 0xFFFFFFFFu;
+volatile uint32_t island_trace_cost_max;
+volatile uint64_t island_trace_cost_sum;
+volatile uint32_t island_trace_cost_empty;
+#endif
 #ifdef __cplusplus
 }
 #endif
@@ -177,6 +227,19 @@ static int island_trace_start(void)
 	tracing_format_raw_data(pkt, (uint32_t)(p - pkt));
 	irq_unlock(key);
 
+#if ISLAND_TRACE_SELF_COST
+	/* DEMCR.TRCENA, the DWT lock access register (the M7 has one), CTRL.CYCCNTENA. */
+	*(volatile uint32_t *)0xE000EDFCu |= (1u << 24);
+	*(volatile uint32_t *)0xE0001FB0u = 0xC5ACCE55u;
+	*(volatile uint32_t *)0xE0001000u |= 1u;
+	{
+		const unsigned int k2 = irq_lock();
+		const uint32_t e0 = ISLAND_TRACE_DWT_CYCCNT;
+
+		island_trace_cost_empty = ISLAND_TRACE_DWT_CYCCNT - e0;
+		irq_unlock(k2);
+	}
+#endif
 	k_timer_init(&island_trace_hb_timer, island_trace_heartbeat, NULL);
 	k_timer_start(&island_trace_hb_timer, K_MSEC(ISLAND_TRACE_HEARTBEAT_MS),
 		      K_MSEC(ISLAND_TRACE_HEARTBEAT_MS));

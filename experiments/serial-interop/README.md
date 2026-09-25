@@ -281,3 +281,36 @@ independent bug. Not chased.
 Order of work this implies: fix the transport flake first. Two entity kinds are
 proven (publish, receive) and the third registers; none of that can be extended
 while two runs in three have no link at all.
+
+## The island image on this link (phase-7 W7, 2026-09-25)
+
+`just board-peer` (`just/board-peer.just`) is the router command above, as a
+recipe. It runs under `env -i` with ROS 2 sourced fresh, which avoids the
+inherited LD_LIBRARY_PATH trap and the demo overlay. It checks with `fuser`
+that nothing else holds the tty, and it serves TCP on 7449, not 7447:
+7447 is the port every rmw_zenoh process on the host dials by default, and
+another session's QEMU island joined a router there. The router runs under
+its own name, because a name-based cleanup of `rmw_zenohd` elsewhere closed
+it twice. `just board-peer-nodes` is the CLI side, with
+`RMW_IMPLEMENTATION=rmw_zenoh_cpp`, domain 10 and no daemon.
+
+With the island image, the session opened on 6 of 6 boots. The island
+declared its entities and then tore them all down about 0.6 s later: a
+TRANSIENT_LOCAL retention pool of 2 against five such publishers. See
+`docs/wcet.md` ("Silicon (W7)") and `docs/board-facts.md` (Z1b over serial).
+
+`w7/` holds the raw data:
+
+- `board-peer-{1,3}.bin` (+ `.meta`): `ram_tracing` reads.
+- `*.markers.csv`, `*.pairs.csv`, `*.pairs.txt`: output of `../w7_pairs.py`,
+  which pairs ENTRY/EXIT markers once a run has any.
+- `boot-report-run*.bin`: the nano-ros boot record. Decode it with
+  `third-party/nano-ros/scripts/read-boot-report.py`.
+- `router-*.log`: the router logs with ANSI codes stripped. The
+  `Register resource` / `Unregister resource` lines are removed from runs 2-4
+  for size.
+- `poll-*.py`: the SWD pollers behind the table-occupancy numbers.
+
+A trap found here: `just board-flash` is `west flash`, and it rebuilds first
+in its own environment. A board built with triage env vars (`ZPICO_*`) is
+flashed without them unless the same vars are set for `board-flash` too.
