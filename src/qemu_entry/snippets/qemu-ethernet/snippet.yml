@@ -1,0 +1,4 @@
+# Transport: zenoh over TCP via QEMU SLIRP (LAN9118). See ethernet.conf.
+name: qemu-ethernet
+append:
+  EXTRA_CONF_FILE: ethernet.conf

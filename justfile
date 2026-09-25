@@ -956,4 +956,5 @@ topics:
     timeout 30 ros2 node list
     echo "== topics (domain $ROS_DOMAIN_ID) =="
     timeout 30 ros2 topic list
+import 'just/emulation.just'
 import 'just/tracing.just'

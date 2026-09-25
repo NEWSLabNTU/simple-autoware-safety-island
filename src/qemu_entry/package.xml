@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>qemu_entry</name>
+  <version>0.1.0</version>
+  <description>Entry pkg -- boots the safety-island topology on QEMU mps2/an385 (Cortex-M3), the emulation rung of phase 7.</description>
+  <maintainer email="jerry73204@gmail.com">Hsiang-Jui Lin</maintainer>
+  <license>Apache-2.0</license>
+  <exec_depend>safety_island_bringup</exec_depend>
+  <export>
+    <build_type>cmake</build_type>
+    <!-- The deployment (board, rmw, domain) is in system.toml beside this
+         file, as for src/zephyr_entry and src/native_sim_entry. -->
+  </export>
+</package>

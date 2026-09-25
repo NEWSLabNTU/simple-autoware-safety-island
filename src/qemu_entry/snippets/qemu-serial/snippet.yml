@@ -1,0 +1,7 @@
+# Transport: zenoh over UART1 (uart@40005000) to a host PTY, with no IP stack
+# -- the island-serial transport of the board entry, on this board's UART.
+# Console stays on UART0, so no overlay is needed (the board needs one because
+# it has to move its console off the wired LPUART).
+name: qemu-serial
+append:
+  EXTRA_CONF_FILE: serial.conf

@@ -1,0 +1,34 @@
+# What this entry deploys to (nano-ros RFC-0098 D3/D5): the island's four
+# nodes on QEMU `mps2/an385` (ARM MPS2 FPGA image AN385, Cortex-M3), zenoh to
+# a router on the host -- over UART1 and a host PTY by default (the board's
+# island-serial transport), or over the emulated LAN9118 (snippets/).
+# phase7-W2; docs/emulation.md says what this rung can and cannot measure.
+#
+# The TOPOLOGY is not here. Like src/zephyr_entry and src/native_sim_entry,
+# this package is an entry: components, launch and contract live in
+# safety_island_bringup, named by `BRINGUP ../safety_island_bringup` in the
+# CMakeLists. This file states only where THIS image is built for.
+#
+# A THIRD entry package, not a third way to build src/zephyr_entry, for the
+# reason those two already give: nano-ros resolves an image from its entry
+# package (`nros image-facts --for-entry`, first match), and board-only policy
+# (the S32K344's TCM relocation, its snippets, its board conf) must not leak
+# into an image for a part that has no TCM and no LPUART.
+#
+# `rmw` is CHECKED against Kconfig (cmake/NanoRosImageAgreement.cmake); the
+# `-S nros-zenoh` snippet `just qemu-build` passes is what satisfies it. The
+# transport snippet (`-S qemu-serial` / `-S qemu-ethernet`) does not change
+# the RMW, so both builds are this one image declaration.
+
+[system]
+name = "safety_island_qemu_entry"
+rmw = "zenoh"
+domain_id = 10                      # the demo domain, as in the bringup
+
+# The Zephyr family; the concrete board is west's `-b mps2/an385`
+# (`just qemu-build`), resolved through nano-ros's board catalog.
+[image.qemu]
+board = "zephyr"
+# RFC-0085 D4: a Zephyr image NAMES its entry package, which keeps the two
+# other entries from ever being a candidate for this block.
+entry = "qemu_entry"
