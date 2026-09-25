@@ -252,8 +252,13 @@ nodes:
         trigger: { timer: { rate_hz: 10 } }
         output: [status]
     pub:
-      max_velocity_candidates: { min_rate_hz: 10 }
-      clear_velocity_limit: { min_rate_hz: 10 }
+      # Both are TRANSIENT_LOCAL in the source (QoS(1).transient_local()): a
+      # velocity limit is latched so a late planner still sees it. Stated
+      # here because the image's retention pool derives from this fact; left
+      # unstated (until phase7-W2) it fell to a default of 2 for five such
+      # publishers and the third one failed to construct at boot (code -100).
+      max_velocity_candidates: { min_rate_hz: 10, qos: { depth: 1, durability: transient_local } }
+      clear_velocity_limit: { min_rate_hz: 10, qos: { depth: 1, durability: transient_local } }
       status: { min_rate_hz: 10 }
 
   mrm_emergency_stop_operator:
@@ -391,9 +396,12 @@ nodes:
       route_state: { min_rate_hz: 30, qos: { depth: 1 } }
     pub:
       control: { min_rate_hz: 30 }
-      gear: { min_rate_hz: 30 }
-      hazard_lights: { min_rate_hz: 30 }
-      turn_indicators: { min_rate_hz: 30 }
+      # The three below are TRANSIENT_LOCAL in the source (durable_qos): a
+      # gear or light command is latched. Same reason as the comfortable-stop
+      # operator's: the retention pool is derived from stated durability.
+      gear: { min_rate_hz: 30, qos: { depth: 1, durability: transient_local } }
+      hazard_lights: { min_rate_hz: 30, qos: { depth: 1, durability: transient_local } }
+      turn_indicators: { min_rate_hz: 30, qos: { depth: 1, durability: transient_local } }
 
 # The reaction, as a scope path: from the guarded input to the island's own
 # announcement that the manoeuvre is running. mrm_handler is the only hop the
