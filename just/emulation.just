@@ -43,10 +43,16 @@ qemu-build: sync
     EXTRA=()
     for k in CONFIG_NROS_ZEPHYR_HEAP_SIZE CONFIG_MAIN_STACK_SIZE \
              CONFIG_NROS_ZEPHYR_TASK_STACK_SIZE CONFIG_NROS_ZEPHYR_TASK_SLOTS \
-             CONFIG_MAX_PTHREAD_MUTEX_COUNT; do
+             CONFIG_MAX_PTHREAD_MUTEX_COUNT CONFIG_MAX_PTHREAD_COND_COUNT; do
         [ -n "${!k:-}" ] && EXTRA+=("-D${k}=${!k}")
     done
     [ ${#EXTRA[@]} -gt 0 ] && echo "qemu-build: env overrides -> ${EXTRA[*]}"
+    # nano_ros_DIR is named, not left to the CMakeLists default (the
+    # submodule): with NANO_ROS_ALLOW_EXTERNAL_ROOT=1 NANO_ROS_ROOT=<clone>
+    # the cmake package, the Zephyr module and the CLI then all come from ONE
+    # tree. Without it an external root got the submodule's cmake modules and
+    # the clone's Zephyr module (phase7-W8, testing a nano-ros change before
+    # it merged). With the default root the value is the default, unchanged.
     # Snippet form, so src/qemu_entry/boards/mps2_an385.conf is applied. No
     # hal_nxp: this SoC is an ARM CMSDK part, not an NXP one.
     # The build log is kept: the linker's region table is in it, and
@@ -56,6 +62,7 @@ qemu-build: sync
     west build -b {{QEMU_BOARD}} -S nros-zenoh -S {{QEMU_LINK}} -d {{QEMU_BUILD_DIR}} $PWD/src/qemu_entry -- \
         -C "$caps" \
         -Dnano_ros_ROOT={{NANO_ROS_ROOT}} \
+        -Dnano_ros_DIR={{NANO_ROS_ROOT}} \
         -DZEPHYR_EXTRA_MODULES="$nros_module" \
         -DCMAKE_PREFIX_PATH={{NANO_ROS_ROOT}} "${EXTRA[@]}" 2>&1 | tee {{QEMU_LOG_DIR}}/{{QEMU_BUILD_DIR}}.build.log
     # Same refusal as board-build, for the same reason (see the note there):

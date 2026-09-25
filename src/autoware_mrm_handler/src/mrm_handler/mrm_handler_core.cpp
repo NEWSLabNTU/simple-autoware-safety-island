@@ -101,12 +101,21 @@ MrmHandler::MrmHandler(::nros::NodeHandle handle)
   NROS_SUBSCRIBE(
     tier4_system_msgs::msg::MrmBehaviorStatus, onEmergencyStopStatus,
     "/system/mrm/emergency_stop/status", ::nros::QoS(1));
-  // transient_local: the topic is latched at source; a volatile sub misses
-  // the current mode on late join -> handler stuck "emergency" (deadlocks
-  // engage once mrm_state is honestly bridged back to Autoware).
+  // VOLATILE, not the upstream transient_local (phase7-W8, docs/boot-through.md).
+  // The zenoh backend the board and QEMU images run refuses a transient-local
+  // SUBSCRIPTION by design: nano-ros nros-rmw-zenoh src/shim/qos.rs `admit`
+  // serves "publisher-side retention only; a subscription cannot query a
+  // peer's cache on match yet" (phase-455 W5, issue 1341), so asking for it
+  // failed create_subscription_in and the whole node (phase7-W2 finding F3).
+  // Latching buys nothing here: safety_island.contract.yaml declares this
+  // subscription `operation_mode_state: { min_rate_hz: 10 }`, so the mode is
+  // republished every 100 ms and a late joiner has it within one period. The
+  // concern the upstream QoS answers -- a late joiner stuck "emergency" until
+  // the mode next CHANGES -- holds only if that rate claim is false. A
+  // VOLATILE reader is RxO-compatible with the latched writer.
   create_subscription_in<autoware_adapi_v1_msgs::msg::OperationModeState, MrmHandler,
                          &MrmHandler::onOperationModeState>(
-    "/api/operation_mode/state", ::nros::QoS(1).transient_local());
+    "/api/operation_mode/state", ::nros::QoS(1));
   NROS_SUBSCRIBE(autoware_vehicle_msgs::msg::GearCommand, onGearCmd, "/control/command/gear_cmd", ::nros::QoS(1));
 
   // Publisher

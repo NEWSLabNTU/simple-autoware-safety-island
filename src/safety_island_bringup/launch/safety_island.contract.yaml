@@ -259,7 +259,7 @@ nodes:
       # publishers and the third one failed to construct at boot (code -100).
       max_velocity_candidates: { min_rate_hz: 10, qos: { depth: 1, durability: transient_local } }
       clear_velocity_limit: { min_rate_hz: 10, qos: { depth: 1, durability: transient_local } }
-      status: { min_rate_hz: 10 }
+      status: { min_rate_hz: 10, qos: { durability: volatile } }
 
   mrm_emergency_stop_operator:
     params:
@@ -293,8 +293,11 @@ nodes:
       # neither a path trigger nor state.
       control_cmd: { min_rate_hz: 30, qos: { depth: 1 }, state: true }
     pub:
-      emergency_control_cmd: { min_rate_hz: 30 }
-      status: { min_rate_hz: 30 }
+      # VOLATILE, stated: the source uses the default profile. See the note
+      # on mrm_handler's pub block for why an unstated durability is not read
+      # as volatile.
+      emergency_control_cmd: { min_rate_hz: 30, qos: { durability: volatile } }
+      status: { min_rate_hz: 30, qos: { durability: volatile } }
 
   # The arbiter. Seven subscriptions -- `operation_mode_state` is the one the
   # CMakeLists list omitted.
@@ -373,11 +376,19 @@ nodes:
       gear_cmd_in: { min_rate_hz: 10, qos: { depth: 1 } }
       operation_mode_state: { min_rate_hz: 10, qos: { depth: 1 } }
     pub:
-      mrm_state: { min_rate_hz: 10 }
-      gear_cmd_out: { min_rate_hz: 10 }
-      hazard_lights_cmd: { min_rate_hz: 10 }
-      turn_indicators_cmd: { min_rate_hz: 10 }
-      emergency_holding: { min_rate_hz: 10 }
+      # VOLATILE, stated on every publisher of the island (phase7-W8). The
+      # source creates these with the default profile, which is volatile; but
+      # nano-ros counts the transient-local retention pool (and one queryable
+      # per such publisher) only when EVERY publisher states its durability --
+      # nros-sizing-descriptor `transient_local_publishers_over`: "a count over
+      # the rows that answered is not a bound on the row that did not" -- and
+      # otherwise contributes zero. With 5 of 14 stated the queryable table
+      # stayed at 26 and the pool at 2 (docs/boot-through.md, iteration 1).
+      mrm_state: { min_rate_hz: 10, qos: { durability: volatile } }
+      gear_cmd_out: { min_rate_hz: 10, qos: { durability: volatile } }
+      hazard_lights_cmd: { min_rate_hz: 10, qos: { durability: volatile } }
+      turn_indicators_cmd: { min_rate_hz: 10, qos: { durability: volatile } }
+      emergency_holding: { min_rate_hz: 10, qos: { durability: volatile } }
 
   stop_mode_operator:
     params:
@@ -395,7 +406,7 @@ nodes:
       velocity_status: { min_rate_hz: 30, qos: { depth: 1 } }
       route_state: { min_rate_hz: 30, qos: { depth: 1 } }
     pub:
-      control: { min_rate_hz: 30 }
+      control: { min_rate_hz: 30, qos: { durability: volatile } }   # QoS(5), volatile
       # The three below are TRANSIENT_LOCAL in the source (durable_qos): a
       # gear or light command is latched. Same reason as the comfortable-stop
       # operator's: the retention pool is derived from stated durability.

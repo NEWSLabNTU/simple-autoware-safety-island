@@ -114,6 +114,9 @@ create_publisher returns -100 because the transient-local retention pool is 2
 and the island has 5 such publishers. The FVP rung was not run: the nano-ros
 model is AArch64 v8-R and cannot run a Cortex-M image. See docs/emulation.md.
 
+W8 follow-up (2026-09-25). F1, F2 and F3 are resolved, and the QEMU image
+reaches FirstSpin. See phase7-W8 below and `docs/boot-through.md`.
+
 ### phase7-W3 - the reaction trace
 
 With W1's tracing and W2's cheapest rung: stop publishing
@@ -284,6 +287,47 @@ Corrections to this unit's text above:
 - "if it can be added without a rebuild" cannot hold: the DWT bracket is
   code, so it needed a rebuild, and it shared the one that cut
   `TRACING_THREAD`.
+
+### phase7-W8 - boot through registration
+
+Take the QEMU island image from W2's stage-4 failure to the executor's first
+spin, with every pool derived from the contract, and build the board image
+with the same fixes (not flashed).
+
+Gate: the QEMU console at FirstSpin and the host's `ros2 node list` showing
+the four nodes; the board image's region report.
+
+Owns: `docs/boot-through.md`, and the fixes:
+- the contract's durability rows;
+- `mrm_handler_core.cpp` (the operation-mode QoS);
+- `src/qemu_entry/`;
+- `just/emulation.just`;
+- the pthread block of the board conf;
+- nano-ros PR #1311.
+
+Status: 2026-09-25. QEMU reaches stage 6, FirstSpin, and the host lists all
+four nodes. Two board facts had to be raised through the env lever, not in
+any conf: the heap (peak 190,216 B, against 94,720) and the main stack
+(21,464 B used, against 16,384).
+
+Six causes, in order:
+1. The contract stated durability on 5 of 14 publishers, so nano-ros refused
+   to count the transient-local ones.
+2. On the Zephyr road the retention pool never received the count. nano-ros
+   PR #1311 fixes this, and derives the slot size too: 105 B, not 1,024 B.
+3. The zenoh-pico cond pool was at 16. This was F2, and it is what left four
+   of the handler's subscriptions without a token.
+4. The mutex floor counted subscribers only. It now counts queryables, and
+   the pools are 70 mutexes and 48 conds.
+5. The heap and the main stack.
+6. The parameter services' heap at the first spin.
+
+F3 is fixed on the island side, by a volatile operation-mode subscription.
+
+The board image links at 323,112 of 327,680 B RAM on the merged pin 91a9a1edc, with nothing cut. It cannot
+reach FirstSpin while `param_services` is on: its heap is short by more than
+100 KB. That waits on nano-ros phase-461 W6 (a parameter store without the
+services).
 
 ## 5. Order
 

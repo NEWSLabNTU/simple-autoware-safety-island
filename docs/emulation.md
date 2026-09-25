@@ -11,7 +11,7 @@ excerpts below come from those captures.
 | rung | what it measures | what it cannot | cost to run | status 2026-09-25 |
 | --- | --- | --- | --- | --- |
 | native_sim (`just zephyr-build`, existing) | The island's logic and its ROS graph against real Autoware, over Cyclone DDS. | The zenoh image. The RTOS network stack (NSOS uses host sockets). 32-bit pointers. The board's pools. Any duration: they are host durations. | The demo's own build. No emulator. | Runs. The demo and phase7-W3 use it. |
-| QEMU `mps2/an385`, Cortex-M3 (`just qemu-build`, `just qemu-run`) | The island's zenoh image on a 32-bit Cortex-M. Zephyr 4.4 in-kernel IP stack over the emulated LAN9118. Entity registration against the pools the contract derives, which are the same pools the board derives. The boot report read out of RAM, as a debugger reads it on the board. The graph as a host `ros2` sees it. | The M7: no FPU, caches or TCM, and a different ISA subset (ARMv7-M, not ARMv7E-M). The S32K344 memory limits: this part has 4 MiB, so the region report shows use, not fit. The S32K344 peripherals. The board's serial transport (blocked by a gap, finding F5). Time: icount is off, so the guest clock runs at host pace. With icount on, time would be instruction count, which is still not cycles. | Cold build about 11 min. Incremental build 7 min. A run takes the bound, 40 s by default. QEMU 11.0.0 comes from the nros store; nothing is downloaded. | Boots to its boot report. Stops at stage 4 (RegisteringEntities): `stop_mode_operator` create_publisher returns -100 (F1). |
+| QEMU `mps2/an385`, Cortex-M3 (`just qemu-build`, `just qemu-run`) | The island's zenoh image on a 32-bit Cortex-M. Zephyr 4.4 in-kernel IP stack over the emulated LAN9118. Entity registration against the pools the contract derives, which are the same pools the board derives. The boot report read out of RAM, as a debugger reads it on the board. The graph as a host `ros2` sees it. | The M7: no FPU, caches or TCM, and a different ISA subset (ARMv7-M, not ARMv7E-M). The S32K344 memory limits: this part has 4 MiB, so the region report shows use, not fit. The S32K344 peripherals. The board's serial transport (blocked by a gap, finding F5). Time: icount is off, so the guest clock runs at host pace. With icount on, time would be instruction count, which is still not cycles. | Cold build about 11 min. Incremental build 7 min. A run takes the bound, 40 s by default. QEMU 11.0.0 comes from the nros store; nothing is downloaded. | Boots to its boot report. Stops at stage 4 (RegisteringEntities): `stop_mode_operator` create_publisher returns -100 (F1). phase7-W8: reaches stage 6 FirstSpin with four nodes in the host graph. That needs a heap and a main stack above the board's values (`docs/boot-through.md`). |
 | Renode 1.16.0, `nxp-s32k388` plus an S32K344 delta (`just renode-run`) | The unmodified S32K344 board ELF, the one that would be flashed. That includes the DTCM `.bss` and the ITCM copy of the MRM node code, which no silicon has executed yet (docs/tcm-relocation.md). It also includes the island-serial zenoh link on LPUART2, over a host PTY to a real `rmw_zenohd`, and the boot report. | Cycle timing: Renode is instruction-level and its time is virtual. The FS26 PMIC and watchdog: LPSPI3 has no device ("No device is connected to LPSPI_PCS[0]"). The GMAC path, which was not tried. Anywhere the S32K388 model differs from the S32K344 beyond the TCM sizes and clock patched here. | 76 MB portable download, once (`just renode-setup`), into `build/emulation`. About 10 s to start, then the bound. | Runs the board image. It stops at the same stage 4 failure as QEMU (F1), with heap peak 57,024 B of 94,720. |
 | Arm FVP (`just fvp-check`) | Nothing yet for this island. | nano-ros drives only `FVP_BaseR_AEMv8R` (phase-217). That model is an AArch64 Armv8-R envelope and cannot execute a Thumb Cortex-M7 image. FVPs are programmer's-view models, not cycle-accurate. | BaseR: 68 MB via `nros setup --tool arm-fvp`. An M-profile FVP is not provisioned by nano-ros. | Not run. The verdict and its reasons are below. |
 
@@ -315,6 +315,17 @@ publishers' durability, so that the pool and the queryable table derive 5 and
 `ZPICO_MAX_QUERYABLES=31`) gets past `stop_mode_operator`. See F2 and F3 for
 what comes next.
 
+Resolution (phase7-W8, `docs/boot-through.md` iterations 1-2). There were two
+gaps, and both are fixed.
+- The contract now states `durability` on all fourteen publishers. nano-ros
+  refuses to count while any publisher states none.
+- The Zephyr road now delivers the count to the retention pool (nano-ros PR
+  #1311, issue 1498), and the slot size derives from the latched types:
+  105 B, not 1,024 B.
+
+On QEMU the pool derives 5 and the queryable table 31, and all three of
+`stop_mode_operator`'s latched publishers register.
+
 **F2: after F1, mrm_handler's subscriptions fail in zenoh-pico.** The
 diagnostic build is `build-qemu-tl`. It was built with
 `ZPICO_MAX_TL_PUBLISHERS=5 ZPICO_MAX_QUERYABLES=31` and, for diagnosis only,
@@ -343,12 +354,28 @@ more observations:
 - The serial board image never reached this node, so the heap question for
   the board is open.
 
+Resolution (phase7-W8, iterations 3 and 5). The failing table was not
+zenoh-pico's. It was Zephyr's static POSIX COND pool, at 16 of 16. Every
+declared subscriber and queryable takes one cond and one mutex for its sync
+group. The mutex pool, which W2 doubled, is the next to fill: with 31
+queryables it needs 70.
+
+nano-ros now floors both pools for a derived table and refuses the configure
+below the floor (issue 1498). Both confs state 70/48. The heap question is
+answered in `docs/boot-through.md`: a 190,216 B peak at FirstSpin, which the
+board cannot hold while `param_services` is on.
+
 **F3: mrm_handler subscribes TRANSIENT_LOCAL, which the zenoh backend refuses
 for subscriptions.** The subscription is `/api/operation_mode/state`,
 `mrm_handler_core.cpp:109`. The refusal is in `nros-rmw-zenoh/src/shim/qos.rs`,
 `admit`: "the shim serves publisher-side retention only". The cyclone
 native_sim image does not hit this. It is predicted by code reading, and was
 not yet reached at runtime, because F2 stops registration first.
+
+Resolution (phase7-W8). nano-ros's rule is deliberate (phase-455 W5, issue
+1341). The island drops `.transient_local()` on that one subscription
+(`mrm_handler_core.cpp:104-118`). The contract declares it at
+`min_rate_hz: 10`, so latching buys nothing.
 
 **F4: `zpico.c:894` calls `k_cycle_get_64()` unguarded.** On a SysTick at or
 below 60 MHz (an385 runs at 25 MHz) with `CONFIG_ASSERT=y`, boot panics:
@@ -375,9 +402,19 @@ QEMU boot declared `@ros2_lv/0/...`. The board gets 10 only because
 `island-serial/serial.conf` states it. `island-ethernet/ethernet.conf` does
 not, so the board's Ethernet image would join domain 0.
 
+Resolution (phase7-W8): recorded, not changed. nano-ros's rule is
+deliberate: Kconfig is what the image bakes (RFC-0049). The check that
+refuses a disagreement with `system.toml` (phase-460 W4) runs only in
+`nros_system_generate`, not on the `nano_ros_add_executable` road these
+entries use. So the snippets state the domain and nothing checks them. See
+`docs/boot-through.md`, F6.
+
 **F7: the nano-ros log facade printed nothing on the Zephyr C++ entry.** Its
 refusal lines (F1's pool message, qos refusals) never reached the console. The
 zpico C `printk` lines did.
+
+Status (phase7-W8): unchanged. Every refusal W8 met reached the console
+through zpico's `printk`, and was read with gdb.
 
 ## What the phase doc got wrong
 
