@@ -372,9 +372,45 @@ to `01 00 00 00 00 00 00 00`): the zenoh serial link's open attempts, since
 this image's locator is `serial/uart@40330000#baudrate=115200` and no peer
 answers. This is the first time the island image has run on the board. What
 it does NOT give: the boot report, because the only wired UART is the
-transport's (see "Reading a board whose only UART is taken"); the table sizes
-and the trace buffer are to be read over SWD once phase-7 W1's tracing block
-is in the image.
+transport's (see "Reading a board whose only UART is taken").
+
+**Z1a, the trace read, same day, later:** the phase-7 W1 image with tracing
+(sha256 `6122d68b...e0e35a`, FLASH 632,788 B, RAM 319,904 B of 327,680,
+97.63%) flashed (565,248 B programmed, 9 pages unchanged) and, 6 s after
+`pyocd reset`, `just trace-board` read `ram_tracing` (16 KiB) over SWD.
+`island_trace.py decode --zephyr 4.4`, verbatim except the label:
+
+```
+event                            count       bytes  B/event
+heartbeat                          223        3122     14.0
+thread_switched_out                 76        2280     30.0
+thread_switched_in                  76        2280     30.0
+thread_sched_ready                  37        1110     30.0
+provenance                           1         775    775.0
+thread_sched_pend                   19         570     30.0
+k_sleep_exit                        19         266     14.0
+k_sleep_enter                       20         200     10.0
+thread_sched_lock                    1           6      6.0
+thread_sched_unlock                  1           6      6.0
+total                              473       10615
+provenance: island-trace/1;zephyr=4.4.0;board=mr_canhubk3;contract_sha256=3879cbf4...;markers=31;table_sha256=bd6e59bb...;entities=pub=14,sub=11,srv=2,cli=2,timer=4;heartbeat_ms=100;...;MAIN_STACK_SIZE=16384;NROS_ZEPHYR_HEAP_SIZE=94208;NROS_ZEPHYR_TASK_SLOTS=5;...;SYS_CLOCK_HW_CYCLES_PER_SEC=160000000;...
+      99.496 ms  heartbeat seq=0 uptime=100 ms
+     199.495 ms  heartbeat seq=1 uptime=200 ms
+ok   heartbeat: seq 0..222 contiguous (223 records)
+```
+
+So the provenance record, the contract's digest and the delivered knob
+values are readable from silicon; the heartbeat ran 22.3 s at a measured
+99.999 ms period from the 160 MHz cycle counter with no gap, which is the
+boot report's job done by other means. And the finding: **no marker ever
+fired**. The only threads that ran are `main`, `idle` and `shell_uart`, and
+`main` slept 20 times in 22 s. The image sits in the zenoh serial session's
+open-retry loop (the UART frames above, about one a second) and never
+reaches the executor, so no node timer runs and the contracted paths are
+never entered. `trace-check` says so: `FAIL markers: 26 of 31 never seen`.
+On this kit, with no serial peer and no T1 link, the island boots and waits;
+the reaction cannot be traced on silicon until a transport peer exists (a
+host on the serial link, or the T1 media converter).
 
 **Proven:** flashing and boot; console; the ECC init path executes; ROS 2 interop
 over serial end to end (`ros2 node list`, `topic echo` with real data); the

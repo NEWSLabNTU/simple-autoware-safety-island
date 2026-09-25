@@ -193,9 +193,16 @@ Gate: the two console captures in `docs/board-facts.md`; the buffer read.
 Owns: `docs/board-facts.md`, `docs/board-bringup-triage.md` (status lines).
 
 Status: Z0 passed 2026-09-25 (the recipe needed hal_nxp named; fixed).
-Z1a in part the same day: the W8b island image runs on the board (core
-idle, serial-link frames on the UART), first ever; the boot report waits on
-the SWD trace read that needs W1's block in the image. Captures in
+Z1a the same day, in two steps: the W8b island image runs on the board
+(core idle, serial-link frames on the UART), first ever; then the W1 traced
+image's buffer read over SWD with `just trace-board` gave the provenance
+(contract and marker-table digests, delivered knobs) and a contiguous 22 s
+heartbeat at a measured 99.999 ms, and showed that no marker ever fires:
+`main` waits in the zenoh serial open-retry loop with no peer, so no node
+starts. The reaction cannot be traced on silicon until a transport peer
+exists (Z1b: the T1 media converter, or a host on the serial link). W4's
+silicon durations are therefore blocked behind the same peer; the tracing's
+own cost (DWT CYCCNT) can still be measured once a marker fires. Captures in
 `docs/board-facts.md`.
 
 ## 5. Order

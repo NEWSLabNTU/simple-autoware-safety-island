@@ -38,7 +38,7 @@ pyocd, the probe, and — importantly — that `patches/zephyr/0001` is still ap
 | stage | command | what it proves |
 | --- | --- | --- |
 | **Z0** | `just board-hello` | IVT header, FS26 watchdog, flash chain, console. **Zero nano-ros** — a failure here is board or probe, never our stack. **Passed 2026-09-25** (capture in `board-facts.md`). |
-| **Z1** | `just board-build && just board-flash` | boots, IP comes up, ping across T1. **Z1a passed in part 2026-09-25**: the island image runs (core idle, serial link frames on the UART); the boot report needs RTT or the SWD trace read; Z1b (T1 link) blocked on the media converter. |
+| **Z1** | `just board-build && just board-flash` | boots, IP comes up, ping across T1. **Z1a done 2026-09-25**: the island image runs; its trace buffer read over SWD (`just trace-board`) gives the provenance, the delivered knobs and a contiguous 22 s heartbeat; no node ever starts because `main` waits in the zenoh serial open-retry loop with no peer. Z1b (a transport peer: T1 media converter, or a host on the serial link) blocked. |
 | **Z3** | console + `ros2 node list` from the host | zenoh session joins, the graph is visible |
 | **Z4** | the phase-2 demo | 3.90 → 0.00 m/s with the island on real silicon |
 

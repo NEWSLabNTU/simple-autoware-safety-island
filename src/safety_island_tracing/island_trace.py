@@ -185,7 +185,9 @@ def summarize(tr, out=sys.stdout):
               file=out)
     if recs:
         span = recs[-1]["t_ns"] - recs[0]["t_ns"]
-        print(f"span : {len(recs)} records over {span / 1e9:.3f} s (host time on native_sim)", file=out)
+        unit = ("simulated time on native_sim" if getattr(tr, "header", None)
+                else f"cycle-counter time, zephyr {tr.zephyr}")
+        print(f"span : {len(recs)} records over {span / 1e9:.3f} s ({unit})", file=out)
     print(f"{'event':<28}{'count':>10}{'bytes':>12}{'B/event':>9}", file=out)
     for k, n in sorted(kinds.items(), key=lambda x: -tr.bytes_by_kind[x[0]]):
         b = tr.bytes_by_kind[k]
