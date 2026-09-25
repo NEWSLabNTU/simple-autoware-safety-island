@@ -15,6 +15,11 @@
 
 #include <cstdio>
 
+// phase7-W1 trace markers (no-op unless the image enables CTF tracing); this
+// TU also carries the tracing runtime (heartbeat, provenance, native_sim dump).
+#define ISLAND_TRACE_DEFINE_RUNTIME
+#include "../../../safety_island_tracing/include/island_trace.h"
+
 // nano-ros port: platform monotonic stamps (porting-notes 05); RCLCPP_* logs →
 // printf (porting-notes 01). <cmath> avoided — Zephyr minimal libcpp
 // (porting-notes 18).
@@ -140,6 +145,7 @@ MrmHandler::MrmHandler(::nros::NodeHandle handle)
 void MrmHandler::onOperationModeAvailability(
   const tier4_system_msgs::msg::OperationModeAvailability & msg)
 {
+  ISLAND_TRACE(ISLAND_MK_TAKE_MRM_HANDLER_OPERATION_MODE_AVAILABILITY, msg.autonomous);
   stamp_operation_mode_availability_ = now_sec();
   operation_mode_availability_ = msg;
   has_operation_mode_availability_ = true;
@@ -211,6 +217,7 @@ void MrmHandler::publishTurnIndicatorCmd()
     msg.command = TurnIndicatorsCommand::NO_COMMAND;
   }
 
+  ISLAND_TRACE(ISLAND_MK_PUB_MRM_HANDLER_TURN_INDICATORS_CMD, msg.command);
   pub_turn_indicator_cmd_.publish(msg);
 }
 
@@ -226,6 +233,7 @@ void MrmHandler::publishHazardCmd()
     msg.command = HazardLightsCommand::NO_COMMAND;
   }
 
+  ISLAND_TRACE(ISLAND_MK_PUB_MRM_HANDLER_HAZARD_LIGHTS_CMD, msg.command);
   pub_hazard_cmd_.publish(msg);
 }
 
@@ -243,12 +251,14 @@ void MrmHandler::publishGearCmd()
     last_gear_command_ = msg.command;
   }
 
+  ISLAND_TRACE(ISLAND_MK_PUB_MRM_HANDLER_GEAR_CMD_OUT, msg.command);
   pub_gear_cmd_.publish(msg);
 }
 
 void MrmHandler::publishMrmState()
 {
   mrm_state_.stamp = now_stamp();
+  ISLAND_TRACE(ISLAND_MK_PUB_MRM_HANDLER_MRM_STATE, (mrm_state_.state << 16) | mrm_state_.behavior);
   pub_mrm_state_.publish(mrm_state_);
 }
 
@@ -257,6 +267,7 @@ void MrmHandler::publishEmergencyHolding()
   tier4_system_msgs::msg::EmergencyHoldingState msg{};
   msg.stamp = now_stamp();
   msg.is_holding = is_emergency_holding_;
+  ISLAND_TRACE(ISLAND_MK_PUB_MRM_HANDLER_EMERGENCY_HOLDING, msg.is_holding);
   pub_emergency_holding_.publish(msg);
 }
 
@@ -342,9 +353,11 @@ bool MrmHandler::requestMrmBehavior(uint16_t mrm_behavior, RequestType request_t
       return false;
     case MrmState::COMFORTABLE_STOP:
       client_storage = client_mrm_comfortable_stop_.bytes;
+      ISLAND_TRACE(ISLAND_MK_CALL_MRM_HANDLER_COMFORTABLE_STOP_OPERATE, request.operate);
       break;
     case MrmState::EMERGENCY_STOP:
       client_storage = client_mrm_emergency_stop_.bytes;
+      ISLAND_TRACE(ISLAND_MK_CALL_MRM_HANDLER_EMERGENCY_STOP_OPERATE, request.operate);
       break;
     default:
       std::printf("[mrm_handler] ERROR: invalid behavior: %d\n", mrm_behavior);
@@ -410,21 +423,32 @@ void MrmHandler::checkOperationModeAvailabilityTimeout()
 
 void MrmHandler::onTimer()
 {
+  ISLAND_TRACE(ISLAND_MK_PATH_MRM_HANDLER_ON_TIMER_ENTRY, mrm_state_.state);
   drainMrmClientReplies();
 
   if (!isDataReady()) {
+    ISLAND_TRACE(ISLAND_MK_PATH_MRM_HANDLER_ON_TIMER_EXIT, 0);
     return;
   }
 
   checkOperationModeAvailabilityTimeout();
+  // call_mrm is this same body on a tick where the availability stream has
+  // gone stale (the contract's comment on `call_mrm` says so).
+  if (is_operation_mode_availability_timeout) {
+    ISLAND_TRACE(ISLAND_MK_PATH_MRM_HANDLER_CALL_MRM_ENTRY, mrm_state_.state);
+  }
   updateMrmState();
   operateMrm();
 
   publishMrmState();
+  if (is_operation_mode_availability_timeout) {
+    ISLAND_TRACE(ISLAND_MK_PATH_MRM_HANDLER_CALL_MRM_EXIT, mrm_state_.state);
+  }
   publishTurnIndicatorCmd();
   publishHazardCmd();
   publishGearCmd();
   publishEmergencyHolding();
+  ISLAND_TRACE(ISLAND_MK_PATH_MRM_HANDLER_ON_TIMER_EXIT, 1);
 }
 
 void MrmHandler::transitionTo(const int new_state)

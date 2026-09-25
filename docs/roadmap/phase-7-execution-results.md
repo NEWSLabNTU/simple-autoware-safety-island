@@ -75,7 +75,21 @@ Owns: `src/native_sim_entry/*.conf`, `src/zephyr_entry/boards/*.conf` (the
 tracing block only), a new `src/safety_island_tracing/` (marker generation
 and header), `just/tracing.just`, `docs/tracing.md`.
 
-Status: claimed 2026-09-25.
+Status: landed 2026-09-25. Details are in
+`docs/tracing.md`.
+
+- The traced native_sim demo gives `VERDICT: PASS` and `trace-check: PASS`.
+  26 of the 31 generated markers fire; the other 5 are unreachable under
+  `use_comfortable_stop: false`. Heartbeats are contiguous and the buffer did
+  not fill.
+- The board image links: RAM +17,296 B, 7,776 B left.
+- The interrupts-off cost is an estimate, 2-5 us per marker, to be measured
+  in W6.
+- Tonbandgeraet cannot decode CTF, so a CTF decoder reading the pinned TSDL
+  replaces it.
+- native_sim time is simulated: execution takes zero time, so section 3's
+  "host durations" understates the limit. W4 cannot take a WCET from
+  native_sim.
 
 ### phase7-W2 - the emulation ladder
 
@@ -103,12 +117,24 @@ request -> operator latches -> operator tick -> braking command), overlay
 the contract's declared terms (500 / 110 / 33.33 / settle). Native_sim first
 for structure; QEMU for order; durations qualified per section 3.
 
+Correction from W1 (2026-09-25): native_sim executes code in zero simulated
+time, so every marker inside one callback carries the same timestamp. A
+native_sim trace gives order and WAITS (tick phases, the 500 ms detection,
+the service round trip across callbacks), never a duration inside a
+callback. The timeline W3 draws from native_sim is therefore made of waits
+between callbacks, which are real in simulated time, and says so. Also from
+W1: the board's 16 KiB RAM buffer holds well under a second at the
+native_sim switch rate (thread switches are 90% of the bytes); W3 decides,
+with a measured board switch rate, whether `TRACING_THREAD` is cut on the
+board so the buffer covers the whole reaction.
+
 Gate: the timeline figure and its numbers, from a real trace, with the
 rung named; the declared-versus-observed table.
 
 Owns: `docs/reaction-trace.md`, `experiments/reaction-trace/`.
 
-Status: waits on W1.
+Status: ready to start on W1's native_sim trace (2026-09-25); the board
+half waits on W6's SWD read.
 
 ### phase7-W4 - execution times per callback, as the `[wcet]` profile
 
@@ -118,13 +144,22 @@ declares; written as the `[wcet]` profile in `system.toml` in the shape
 phase-357 / RFC-0078 define. The profile records its provenance (rung, N,
 trace SHA).
 
+Correction from W1: no execution time can come from native_sim (zero
+simulated time inside a callback) and none worth the name from QEMU
+(instruction count, no pipeline, no flash wait states). The `[wcet]` profile
+is filled from silicon: W6's trace buffer read with the marker pairs, and
+DWT `CYCCNT` around `island_trace_marker` for the tracing's own cost. FVP is
+the fallback if the SWD read fails, qualified as a model of a Cortex-R. Until
+one of those lands, W4 delivers the table with the "measured" column empty
+and the profile absent, never a number from a rung that cannot produce one.
+
 Gate: the table; the profile parses (`nros` validates it today, which is all
 anything does with it).
 
 Owns: `src/safety_island_bringup/system.toml` (the `[wcet]` section),
 `docs/wcet.md`.
 
-Status: waits on W3.
+Status: waits on W3 for the marker pairs and on W6 for silicon durations.
 
 ### phase7-W5 - derive with the WCETs
 

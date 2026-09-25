@@ -1,0 +1,36 @@
+# Markers the island's CONFIGURED parameters make unreachable (phase7-W1).
+#
+# `just trace-check` requires every generated marker at least once, except the
+# ones listed here. An entry is not a free pass: it names the node parameter
+# whose value makes the code path dead, and the check reads that parameter
+# from the resolved model (the node's param file, as `just sync` folded it
+# in). If the parameter no longer has the stated value, the exemption lapses
+# and the marker is required again.
+#
+# All five are the comfortable-stop rung. mrm_handler.param.yaml sets
+# `use_comfortable_stop: false` (the contract's "WHY THERE IS NO
+# comfortable_stop RUNG"), so getCurrentMrmBehavior() never returns
+# COMFORTABLE_STOP, requestMrmBehavior() never reaches the comfortable-stop
+# client, the operator's operate callback never runs, and the two velocity
+# publishers it drives never publish.
+
+- marker: CALL_MRM_HANDLER_COMFORTABLE_STOP_OPERATE
+  node: /mrm_handler
+  param: use_comfortable_stop
+  value: false
+- marker: SERVE_MRM_COMFORTABLE_STOP_OPERATOR_OPERATE_ENTRY
+  node: /mrm_handler
+  param: use_comfortable_stop
+  value: false
+- marker: SERVE_MRM_COMFORTABLE_STOP_OPERATOR_OPERATE_EXIT
+  node: /mrm_handler
+  param: use_comfortable_stop
+  value: false
+- marker: PUB_MRM_COMFORTABLE_STOP_OPERATOR_MAX_VELOCITY_CANDIDATES
+  node: /mrm_handler
+  param: use_comfortable_stop
+  value: false
+- marker: PUB_MRM_COMFORTABLE_STOP_OPERATOR_CLEAR_VELOCITY_LIMIT
+  node: /mrm_handler
+  param: use_comfortable_stop
+  value: false

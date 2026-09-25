@@ -14,6 +14,9 @@
 
 #include "autoware/mrm_emergency_stop_operator/mrm_emergency_stop_operator_core.hpp"
 
+// phase7-W1 trace markers (no-op unless the image enables CTF tracing).
+#include "../../../safety_island_tracing/include/island_trace.h"
+
 
 // nano-ros port: no rclcpp::Clock — stamps come from the platform monotonic
 // clock (nros_cpp_time_ns), and dt is computed from message stamps
@@ -100,6 +103,7 @@ OperateMrm::Response MrmEmergencyStopOperator::operateEmergencyStop(
   // (no zeroing ctor, unlike rosidl C++ which zero-initializes); a default
   // init here leaked stack garbage into response.code (porting-notes 09).
   OperateMrm::Response response{};
+  ISLAND_TRACE(ISLAND_MK_SERVE_MRM_EMERGENCY_STOP_OPERATOR_OPERATE_ENTRY, request.operate);
   if (request.operate == true) {
     status_.state = MrmBehaviorStatus::OPERATING;
     response.response.success = true;
@@ -107,6 +111,7 @@ OperateMrm::Response MrmEmergencyStopOperator::operateEmergencyStop(
     status_.state = MrmBehaviorStatus::AVAILABLE;
     response.response.success = true;
   }
+  ISLAND_TRACE(ISLAND_MK_SERVE_MRM_EMERGENCY_STOP_OPERATOR_OPERATE_EXIT, status_.state);
   return response;
 }
 
@@ -114,16 +119,19 @@ void MrmEmergencyStopOperator::publishStatus()
 {
   auto status = status_;
   status.stamp = now_stamp();
+  ISLAND_TRACE(ISLAND_MK_PUB_MRM_EMERGENCY_STOP_OPERATOR_STATUS, status.state);
   pub_status_.publish(status);
 }
 
 void MrmEmergencyStopOperator::publishControlCommand(const Control & command)
 {
+  ISLAND_TRACE(ISLAND_MK_PUB_MRM_EMERGENCY_STOP_OPERATOR_EMERGENCY_CONTROL_CMD, status_.state);
   pub_control_cmd_.publish(command);
 }
 
 void MrmEmergencyStopOperator::onTimer()
 {
+  ISLAND_TRACE(ISLAND_MK_PATH_MRM_EMERGENCY_STOP_OPERATOR_ON_TIMER_ENTRY, status_.state);
   if (status_.state == MrmBehaviorStatus::OPERATING) {
     auto control_cmd = calcTargetAcceleration(prev_control_cmd_);
     publishControlCommand(control_cmd);
@@ -132,6 +140,7 @@ void MrmEmergencyStopOperator::onTimer()
     publishControlCommand(prev_control_cmd_);
   }
   publishStatus();
+  ISLAND_TRACE(ISLAND_MK_PATH_MRM_EMERGENCY_STOP_OPERATOR_ON_TIMER_EXIT, status_.state);
 }
 
 Control MrmEmergencyStopOperator::calcTargetAcceleration(const Control & prev_control_cmd) const

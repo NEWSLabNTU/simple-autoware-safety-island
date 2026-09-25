@@ -1,0 +1,302 @@
+{
+ "generator": "src/safety_island_tracing/gen_markers.py",
+ "contract_sha256": "3879cbf4e701e79063ea59c32514c180932e64530024852b50427b77199f1123",
+ "table_sha256": "bd6e59bbd17e692fb5884f4f5bd1ac4228b6337596b2deb6929467778f6a3e6b",
+ "entities": {
+  "pub": 14,
+  "sub": 11,
+  "srv": 2,
+  "cli": 2,
+  "timer": 4
+ },
+ "knobs": [
+  "CONFIG_COMMON_LIBC_MALLOC_ARENA_SIZE",
+  "CONFIG_DYNAMIC_THREAD_STACK_SIZE",
+  "CONFIG_HEAP_MEM_POOL_SIZE",
+  "CONFIG_LOG_DEFAULT_LEVEL",
+  "CONFIG_MAIN_STACK_SIZE",
+  "CONFIG_MAX_PTHREAD_COND_COUNT",
+  "CONFIG_MAX_PTHREAD_MUTEX_COUNT",
+  "CONFIG_NET_BUF_RX_COUNT",
+  "CONFIG_NET_BUF_TX_COUNT",
+  "CONFIG_NET_MAX_CONTEXTS",
+  "CONFIG_NET_PKT_RX_COUNT",
+  "CONFIG_NET_PKT_TX_COUNT",
+  "CONFIG_NET_SOCKETS_POLL_MAX",
+  "CONFIG_NROS_CYCLONE_DOMAIN_ID",
+  "CONFIG_NROS_GRAPH_CACHE_SIZE",
+  "CONFIG_NROS_ZEPHYR_HEAP_SIZE",
+  "CONFIG_NROS_ZEPHYR_TASK_SLOTS",
+  "CONFIG_NROS_ZEPHYR_TASK_STACK_SIZE",
+  "CONFIG_POSIX_THREAD_THREADS_MAX",
+  "CONFIG_RAM_TRACING_BUFFER_SIZE",
+  "CONFIG_SYSTEM_WORKQUEUE_STACK_SIZE",
+  "CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC",
+  "CONFIG_SYS_CLOCK_TICKS_PER_SEC",
+  "CONFIG_THREAD_MAX_NAME_LEN",
+  "CONFIG_TRACING_BUFFER_SIZE",
+  "CONFIG_TRACING_PACKET_MAX_SIZE"
+ ],
+ "markers": [
+  {
+   "id": 1,
+   "name": "PATH_MRM_COMFORTABLE_STOP_OPERATOR_ON_TIMER_ENTRY",
+   "kind": "path_entry",
+   "element": "/mrm_comfortable_stop_operator/on_timer",
+   "node": "mrm_comfortable_stop_operator",
+   "trigger": "timer",
+   "rate_hz": 10.0
+  },
+  {
+   "id": 2,
+   "name": "PATH_MRM_COMFORTABLE_STOP_OPERATOR_ON_TIMER_EXIT",
+   "kind": "path_exit",
+   "element": "/mrm_comfortable_stop_operator/on_timer",
+   "node": "mrm_comfortable_stop_operator",
+   "trigger": "timer",
+   "rate_hz": 10.0
+  },
+  {
+   "id": 3,
+   "name": "PATH_MRM_EMERGENCY_STOP_OPERATOR_ON_TIMER_ENTRY",
+   "kind": "path_entry",
+   "element": "/mrm_emergency_stop_operator/on_timer",
+   "node": "mrm_emergency_stop_operator",
+   "trigger": "timer",
+   "rate_hz": 30.0
+  },
+  {
+   "id": 4,
+   "name": "PATH_MRM_EMERGENCY_STOP_OPERATOR_ON_TIMER_EXIT",
+   "kind": "path_exit",
+   "element": "/mrm_emergency_stop_operator/on_timer",
+   "node": "mrm_emergency_stop_operator",
+   "trigger": "timer",
+   "rate_hz": 30.0
+  },
+  {
+   "id": 5,
+   "name": "PATH_MRM_HANDLER_CALL_MRM_ENTRY",
+   "kind": "path_entry",
+   "element": "/mrm_handler/call_mrm",
+   "node": "mrm_handler",
+   "trigger": "input",
+   "max_latency_ms": 110.0
+  },
+  {
+   "id": 6,
+   "name": "PATH_MRM_HANDLER_CALL_MRM_EXIT",
+   "kind": "path_exit",
+   "element": "/mrm_handler/call_mrm",
+   "node": "mrm_handler",
+   "trigger": "input",
+   "max_latency_ms": 110.0
+  },
+  {
+   "id": 7,
+   "name": "PATH_MRM_HANDLER_ON_TIMER_ENTRY",
+   "kind": "path_entry",
+   "element": "/mrm_handler/on_timer",
+   "node": "mrm_handler",
+   "trigger": "timer",
+   "max_latency_ms": 100.0,
+   "rate_hz": 10.0
+  },
+  {
+   "id": 8,
+   "name": "PATH_MRM_HANDLER_ON_TIMER_EXIT",
+   "kind": "path_exit",
+   "element": "/mrm_handler/on_timer",
+   "node": "mrm_handler",
+   "trigger": "timer",
+   "max_latency_ms": 100.0,
+   "rate_hz": 10.0
+  },
+  {
+   "id": 9,
+   "name": "PATH_STOP_MODE_OPERATOR_ON_TIMER_ENTRY",
+   "kind": "path_entry",
+   "element": "/stop_mode_operator/on_timer",
+   "node": "stop_mode_operator",
+   "trigger": "timer",
+   "rate_hz": 30.0
+  },
+  {
+   "id": 10,
+   "name": "PATH_STOP_MODE_OPERATOR_ON_TIMER_EXIT",
+   "kind": "path_exit",
+   "element": "/stop_mode_operator/on_timer",
+   "node": "stop_mode_operator",
+   "trigger": "timer",
+   "rate_hz": 30.0
+  },
+  {
+   "id": 11,
+   "name": "TAKE_MRM_HANDLER_OPERATION_MODE_AVAILABILITY",
+   "kind": "take",
+   "element": "/mrm_handler/operation_mode_availability",
+   "node": "mrm_handler",
+   "triggers": "/mrm_handler/call_mrm"
+  },
+  {
+   "id": 12,
+   "name": "CALL_MRM_HANDLER_COMFORTABLE_STOP_OPERATE",
+   "kind": "service_call",
+   "element": "/mrm_handler/comfortable_stop_operate",
+   "node": "mrm_handler",
+   "service": "/system/mrm/comfortable_stop/operate"
+  },
+  {
+   "id": 13,
+   "name": "CALL_MRM_HANDLER_EMERGENCY_STOP_OPERATE",
+   "kind": "service_call",
+   "element": "/mrm_handler/emergency_stop_operate",
+   "node": "mrm_handler",
+   "service": "/system/mrm/emergency_stop/operate"
+  },
+  {
+   "id": 14,
+   "name": "SERVE_MRM_COMFORTABLE_STOP_OPERATOR_OPERATE_ENTRY",
+   "kind": "service_serve_entry",
+   "element": "/mrm_comfortable_stop_operator/operate",
+   "node": "mrm_comfortable_stop_operator",
+   "service": "/system/mrm/comfortable_stop/operate"
+  },
+  {
+   "id": 15,
+   "name": "SERVE_MRM_COMFORTABLE_STOP_OPERATOR_OPERATE_EXIT",
+   "kind": "service_serve_exit",
+   "element": "/mrm_comfortable_stop_operator/operate",
+   "node": "mrm_comfortable_stop_operator",
+   "service": "/system/mrm/comfortable_stop/operate"
+  },
+  {
+   "id": 16,
+   "name": "SERVE_MRM_EMERGENCY_STOP_OPERATOR_OPERATE_ENTRY",
+   "kind": "service_serve_entry",
+   "element": "/mrm_emergency_stop_operator/operate",
+   "node": "mrm_emergency_stop_operator",
+   "service": "/system/mrm/emergency_stop/operate"
+  },
+  {
+   "id": 17,
+   "name": "SERVE_MRM_EMERGENCY_STOP_OPERATOR_OPERATE_EXIT",
+   "kind": "service_serve_exit",
+   "element": "/mrm_emergency_stop_operator/operate",
+   "node": "mrm_emergency_stop_operator",
+   "service": "/system/mrm/emergency_stop/operate"
+  },
+  {
+   "id": 18,
+   "name": "PUB_MRM_COMFORTABLE_STOP_OPERATOR_CLEAR_VELOCITY_LIMIT",
+   "kind": "publish",
+   "element": "/mrm_comfortable_stop_operator/clear_velocity_limit",
+   "node": "mrm_comfortable_stop_operator",
+   "topic": "/planning/scenario_planning/clear_velocity_limit"
+  },
+  {
+   "id": 19,
+   "name": "PUB_MRM_COMFORTABLE_STOP_OPERATOR_MAX_VELOCITY_CANDIDATES",
+   "kind": "publish",
+   "element": "/mrm_comfortable_stop_operator/max_velocity_candidates",
+   "node": "mrm_comfortable_stop_operator",
+   "topic": "/planning/scenario_planning/max_velocity_candidates"
+  },
+  {
+   "id": 20,
+   "name": "PUB_MRM_COMFORTABLE_STOP_OPERATOR_STATUS",
+   "kind": "publish",
+   "element": "/mrm_comfortable_stop_operator/status",
+   "node": "mrm_comfortable_stop_operator",
+   "topic": "/system/mrm/comfortable_stop/status"
+  },
+  {
+   "id": 21,
+   "name": "PUB_MRM_EMERGENCY_STOP_OPERATOR_EMERGENCY_CONTROL_CMD",
+   "kind": "publish",
+   "element": "/mrm_emergency_stop_operator/emergency_control_cmd",
+   "node": "mrm_emergency_stop_operator",
+   "topic": "/system/emergency/control_cmd"
+  },
+  {
+   "id": 22,
+   "name": "PUB_MRM_EMERGENCY_STOP_OPERATOR_STATUS",
+   "kind": "publish",
+   "element": "/mrm_emergency_stop_operator/status",
+   "node": "mrm_emergency_stop_operator",
+   "topic": "/system/mrm/emergency_stop/status"
+  },
+  {
+   "id": 23,
+   "name": "PUB_MRM_HANDLER_EMERGENCY_HOLDING",
+   "kind": "publish",
+   "element": "/mrm_handler/emergency_holding",
+   "node": "mrm_handler",
+   "topic": "/system/fail_safe/emergency_holding"
+  },
+  {
+   "id": 24,
+   "name": "PUB_MRM_HANDLER_GEAR_CMD_OUT",
+   "kind": "publish",
+   "element": "/mrm_handler/gear_cmd_out",
+   "node": "mrm_handler",
+   "topic": "/system/emergency/gear_cmd"
+  },
+  {
+   "id": 25,
+   "name": "PUB_MRM_HANDLER_HAZARD_LIGHTS_CMD",
+   "kind": "publish",
+   "element": "/mrm_handler/hazard_lights_cmd",
+   "node": "mrm_handler",
+   "topic": "/system/emergency/hazard_lights_cmd"
+  },
+  {
+   "id": 26,
+   "name": "PUB_MRM_HANDLER_MRM_STATE",
+   "kind": "publish",
+   "element": "/mrm_handler/mrm_state",
+   "node": "mrm_handler",
+   "topic": "/system/fail_safe/mrm_state"
+  },
+  {
+   "id": 27,
+   "name": "PUB_MRM_HANDLER_TURN_INDICATORS_CMD",
+   "kind": "publish",
+   "element": "/mrm_handler/turn_indicators_cmd",
+   "node": "mrm_handler",
+   "topic": "/system/emergency/turn_indicators_cmd"
+  },
+  {
+   "id": 28,
+   "name": "PUB_STOP_MODE_OPERATOR_CONTROL",
+   "kind": "publish",
+   "element": "/stop_mode_operator/control",
+   "node": "stop_mode_operator",
+   "topic": "/system/stop_mode/control"
+  },
+  {
+   "id": 29,
+   "name": "PUB_STOP_MODE_OPERATOR_GEAR",
+   "kind": "publish",
+   "element": "/stop_mode_operator/gear",
+   "node": "stop_mode_operator",
+   "topic": "/system/stop_mode/gear"
+  },
+  {
+   "id": 30,
+   "name": "PUB_STOP_MODE_OPERATOR_HAZARD_LIGHTS",
+   "kind": "publish",
+   "element": "/stop_mode_operator/hazard_lights",
+   "node": "stop_mode_operator",
+   "topic": "/system/stop_mode/hazard_lights"
+  },
+  {
+   "id": 31,
+   "name": "PUB_STOP_MODE_OPERATOR_TURN_INDICATORS",
+   "kind": "publish",
+   "element": "/stop_mode_operator/turn_indicators",
+   "node": "stop_mode_operator",
+   "topic": "/system/stop_mode/turn_indicators"
+  }
+ ]
+}

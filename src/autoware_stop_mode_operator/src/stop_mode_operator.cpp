@@ -14,6 +14,9 @@
 
 #include "stop_mode_operator.hpp"
 
+// phase7-W1 trace markers (no-op unless the image enables CTF tracing).
+#include "../../safety_island_tracing/include/island_trace.h"
+
 // nano-ros port: platform monotonic clock in seconds (porting-notes 05).
 // <cmath> avoided — Zephyr minimal libcpp (porting-notes 18).
 namespace
@@ -89,12 +92,14 @@ void StopModeOperator::on_route_state(const RouteState & msg)
 
 void StopModeOperator::on_timer()
 {
+  ISLAND_TRACE(ISLAND_MK_PATH_STOP_MODE_OPERATOR_ON_TIMER_ENTRY, 0);
   vehicle_stop_check_.update_timeout(now_sec(), vehicle_stop_timeout_);
 
   publish_control_command();
   publish_gear_command();
   publish_turn_indicators_command();
   publish_hazard_lights_command();
+  ISLAND_TRACE(ISLAND_MK_PATH_STOP_MODE_OPERATOR_ON_TIMER_EXIT, 0);
 }
 
 void StopModeOperator::publish_control_command()
@@ -106,6 +111,7 @@ void StopModeOperator::publish_control_command()
   control.lateral.steering_tire_rotation_rate = 0.0;
   control.longitudinal.velocity = 0.0;
   control.longitudinal.acceleration = static_cast<float>(stop_hold_acceleration_);
+  ISLAND_TRACE(ISLAND_MK_PUB_STOP_MODE_OPERATOR_CONTROL, 0);
   pub_control_.publish(control);
 }
 
@@ -123,6 +129,7 @@ void StopModeOperator::publish_gear_command()
   GearCommand gear{};
   gear.stamp = now_stamp();
   gear.command = parking ? GearCommand::PARK : GearCommand::NONE;
+  ISLAND_TRACE(ISLAND_MK_PUB_STOP_MODE_OPERATOR_GEAR, gear.command);
   pub_gear_.publish(gear);
 }
 
@@ -131,6 +138,7 @@ void StopModeOperator::publish_turn_indicators_command()
   TurnIndicatorsCommand turn_indicators{};
   turn_indicators.stamp = now_stamp();
   turn_indicators.command = TurnIndicatorsCommand::DISABLE;
+  ISLAND_TRACE(ISLAND_MK_PUB_STOP_MODE_OPERATOR_TURN_INDICATORS, turn_indicators.command);
   pub_turn_indicators_.publish(turn_indicators);
 }
 
@@ -139,6 +147,7 @@ void StopModeOperator::publish_hazard_lights_command()
   HazardLightsCommand hazard_lights{};
   hazard_lights.stamp = now_stamp();
   hazard_lights.command = HazardLightsCommand::DISABLE;
+  ISLAND_TRACE(ISLAND_MK_PUB_STOP_MODE_OPERATOR_HAZARD_LIGHTS, hazard_lights.command);
   pub_hazard_lights_.publish(hazard_lights);
 }
 

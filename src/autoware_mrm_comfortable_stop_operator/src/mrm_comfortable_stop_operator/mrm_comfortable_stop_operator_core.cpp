@@ -16,6 +16,9 @@
 
 #include <cstring>
 
+// phase7-W1 trace markers (no-op unless the image enables CTF tracing).
+#include "../../../safety_island_tracing/include/island_trace.h"
+
 // nano-ros port: platform monotonic stamps (porting-notes 05).
 namespace
 {
@@ -75,6 +78,7 @@ tier4_system_msgs::srv::OperateMrm::Response MrmComfortableStopOperator::operate
 {
   // nano-ros port: value-init — generated structs are PODs (porting-notes 09).
   tier4_system_msgs::srv::OperateMrm::Response response{};
+  ISLAND_TRACE(ISLAND_MK_SERVE_MRM_COMFORTABLE_STOP_OPERATOR_OPERATE_ENTRY, request.operate);
   if (request.operate == true) {
     publishVelocityLimit();
     status_.state = tier4_system_msgs::msg::MrmBehaviorStatus::OPERATING;
@@ -84,6 +88,7 @@ tier4_system_msgs::srv::OperateMrm::Response MrmComfortableStopOperator::operate
     status_.state = tier4_system_msgs::msg::MrmBehaviorStatus::AVAILABLE;
     response.response.success = true;
   }
+  ISLAND_TRACE(ISLAND_MK_SERVE_MRM_COMFORTABLE_STOP_OPERATOR_OPERATE_EXIT, status_.state);
   return response;
 }
 
@@ -91,6 +96,7 @@ void MrmComfortableStopOperator::publishStatus()
 {
   auto status = status_;
   status.stamp = now_stamp();
+  ISLAND_TRACE(ISLAND_MK_PUB_MRM_COMFORTABLE_STOP_OPERATOR_STATUS, status.state);
   pub_status_.publish(status);
 }
 
@@ -107,6 +113,7 @@ void MrmComfortableStopOperator::publishVelocityLimit()
   velocity_limit.constraints.min_jerk = static_cast<float>(params_.min_jerk);
   velocity_limit.sender = "mrm_comfortable_stop_operator";
 
+  ISLAND_TRACE(ISLAND_MK_PUB_MRM_COMFORTABLE_STOP_OPERATOR_MAX_VELOCITY_CANDIDATES, 0);
   pub_velocity_limit_.publish(velocity_limit);
 }
 
@@ -118,12 +125,15 @@ void MrmComfortableStopOperator::publishVelocityLimitClearCommand()
   velocity_limit_clear_command.command = true;
   velocity_limit_clear_command.sender = "mrm_comfortable_stop_operator";
 
+  ISLAND_TRACE(ISLAND_MK_PUB_MRM_COMFORTABLE_STOP_OPERATOR_CLEAR_VELOCITY_LIMIT, 0);
   pub_velocity_limit_clear_command_.publish(velocity_limit_clear_command);
 }
 
 void MrmComfortableStopOperator::onTimer()
 {
+  ISLAND_TRACE(ISLAND_MK_PATH_MRM_COMFORTABLE_STOP_OPERATOR_ON_TIMER_ENTRY, status_.state);
   publishStatus();
+  ISLAND_TRACE(ISLAND_MK_PATH_MRM_COMFORTABLE_STOP_OPERATOR_ON_TIMER_EXIT, status_.state);
 }
 
 }  // namespace autoware::mrm_comfortable_stop_operator
