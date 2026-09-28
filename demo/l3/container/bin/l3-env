@@ -1,0 +1,31 @@
+# shellcheck shell=bash
+# Source me: the L3 demo's ROS environment, in the container and on the host.
+#
+#   source l3-env
+#
+# In the image the paths are the image's (/opt/demo_ws/install); on the host
+# the just recipes run this under `env -i` with L3_WS pointing at the host
+# build of the same overlay (build/l3-host-ws/install), because the login
+# shell on this machine carries demo/host_ws/install ahead of /opt/autoware
+# and re-sourcing does not reorder AMENT_PREFIX_PATH.
+#
+# Order matters, and the RMW is exported LAST:
+#   * /opt/autoware/1.5.0/setup.bash on a 1.5.0-1 config (this host) itself
+#     exports RMW_IMPLEMENTATION=rmw_cyclonedds_cpp and a CYCLONEDDS_URI;
+#     on 1.5.0-2 (the image) it is pure ament and the Cyclone lines moved to
+#     autoware-env.bash, which is NEVER sourced here.
+#   * the overlay last, so its tier4_system_launch (stock MRM off) and
+#     takeover_demo win.
+set +u
+source /opt/ros/humble/setup.bash
+source /opt/autoware/1.5.0/setup.bash >/dev/null 2>&1
+L3_WS="${L3_WS:-/opt/demo_ws/install}"
+if [ -f "$L3_WS/setup.bash" ]; then
+    source "$L3_WS/setup.bash"
+else
+    echo "l3-env: no overlay at $L3_WS (tier4_system_launch would be the stock one, WITH its MRM)" >&2
+fi
+export RMW_IMPLEMENTATION=rmw_zenoh_cpp
+export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-10}"
+unset CYCLONEDDS_URI ROS_LOCALHOST_ONLY
+export L3_MAP="${L3_MAP:-/opt/demo/map/sample-map-planning}"

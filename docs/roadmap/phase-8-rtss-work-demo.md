@@ -309,6 +309,22 @@ the others by fast-forward push once implementation starts.
   shows the island joining; `ros2 node list` shows all four island nodes
   beside Autoware's. Gate: an engaged drive with the island in the loop,
   MRM disabled on the host, on the sample map.
+  Status (2026-09-28): gate MET in emulation, demo/l3/README.md. Image
+  `sai-l3-autoware:1.5.0` 5.29 GB (autoware-ros-packages, 456 packages: the
+  launch closure installs 249 and misses components the simulator loads by
+  plugin name; a TensorRT stub; rmw_zenoh_cpp 0.1.9 pinned), cold build
+  about 7.7 min. Autoware 1.5.0 on rmw_zenoh_cpp
+  starts on the host and in the container (stock component containers);
+  with the QEMU island (1 MiB heap) behind W2's liveliness ACL on TCP,
+  `ros2 node list` reads 140 nodes including the four island nodes, and an
+  engaged drive passes at 4.1 m/s with the island's heartbeat at 10.0 Hz,
+  largest gap 119 ms. HPC loss: MRM announced 0.64 s after the last sample,
+  no braking (G5). ODD exit: MRM at 0.18 s (the 10 s rung is W7's); a
+  driver response gives MANUAL 22 ms later. `takeover_demo` (six nodes,
+  contract clean), `.github/workflows/check.yml` (14 contracts, pinned
+  play_launch 0.12.0). Open: an rmw_wait hang in component containers (6 of
+  19 container starts completed), G3 kills an unfiltered island even at
+  1 MiB, G4, G5.
 - **W4 - zenoh gaps in nano-ros.** G3 as D9 (discovery off on the island,
   data first) and G4 (transient-local subscriber); revert the phase-7
   volatile change and fix the contract's rate claim. Gate: a late-joining

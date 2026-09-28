@@ -1,0 +1,42 @@
+<?xml version="1.0"?>
+<!-- phase8-W3: the host side of the L3 takeover demo, beside Autoware 1.5.0
+     on rmw_zenoh_cpp (domain 10). Contract: takeover.contract.yaml, the
+     provider sidecar `play_launch check` reads next to this file.
+
+     Autoware must be launched with
+       operation_mode_availability_topic:=/system/operation_mode/availability_raw
+     (the demo/host_ws overlay's argument), so that availability_gate, not the
+     stock converter, is the publisher of the topic the island guards. -->
+<launch>
+  <arg name="max_speed_kmh" default="30.0" description="ODD speed bound (phase-8 decision 2)"/>
+  <arg name="segment_polygon" default="" description="ODD segment in map coordinates, x,y;x,y;... (empty: none)"/>
+  <arg name="takeover_request_timeout" default="10.0" description="takeover window, s (phase-8 decision 3)"/>
+  <arg name="driver_button" default="true" description="false when the button runs in its own terminal (ros2 run)"/>
+  <arg name="graph_watcher" default="true"/>
+
+  <node pkg="takeover_demo" exec="odd_monitor" name="odd_monitor" output="screen">
+    <param name="max_speed_kmh" value="$(var max_speed_kmh)"/>
+    <param name="segment_polygon" value="$(var segment_polygon)" type="str"/>
+    <param name="rate_hz" value="10.0"/>
+  </node>
+
+  <node pkg="takeover_demo" exec="availability_gate" name="availability_gate" output="screen">
+    <param name="odd_timeout_s" value="1.0"/>
+  </node>
+
+  <node pkg="takeover_demo" exec="takeover_hmi" name="takeover_hmi" output="screen">
+    <param name="takeover_request_timeout" value="$(var takeover_request_timeout)"/>
+    <param name="rate_hz" value="10.0"/>
+  </node>
+
+  <node pkg="takeover_demo" exec="hazard_relay" name="hazard_relay" output="screen">
+    <param name="rate_hz" value="10.0"/>
+    <param name="input_timeout_s" value="1.0"/>
+  </node>
+
+  <node if="$(var driver_button)" pkg="takeover_demo" exec="driver_button" name="driver_button" output="screen"/>
+
+  <node if="$(var graph_watcher)" pkg="takeover_demo" exec="graph_watcher" name="graph_watcher" output="screen">
+    <param name="period_s" value="0.1"/>
+  </node>
+</launch>

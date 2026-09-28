@@ -187,3 +187,50 @@ not in the build.
   A fix for the second would be to gate `== 5. cut the heartbeat ==` on the
   vehicle actually reaching a threshold speed rather than on `DRIVE_SECS`
   elapsing.
+
+## Phase 8 (L3 takeover demo): Autoware on rmw_zenoh_cpp, in a container
+
+Added 2026-09-28 (phase8-W3). Everything above is the phase-2..7 demo on
+CycloneDDS and is unchanged by this section; `just autoware` still runs it,
+because the overlay's new argument defaults to the stock topic.
+
+Prerequisites beyond the table at the top:
+
+| Thing | Where | Notes |
+| --- | --- | --- |
+| Docker with BuildKit | `docker buildx version` | 29.2.1 here; root dir on the NVMe (`/ext_sys/docker`) |
+| `ros-humble-rmw-zenoh-cpp` 0.1.9 | ROS apt | the host's router and host-side tools |
+| the image `sai-l3-autoware:1.5.0` | `just l3-container` | 5.29 GB; a cold build is about 7.7 min (180 s of it the localrepo download) |
+| the host overlay | `just l3-host-ws` | only for `where=host` runs and `just l3-rviz` |
+
+Run (one terminal each; `demo/l3/README.md` has the measurements and the
+traps):
+
+```sh
+just l3-router        # stock rmw_zenohd, 7447
+just l3-autoware      # Autoware in the container, stock MRM off
+just l3-takeover      # the takeover nodes, same container
+just l3-peer          # the island gateway (W2); then reset the board
+just l3-run hpc       # or: drive | odd | odd-respond
+```
+
+What to expect, and what not to believe:
+
+* `l3-autoware` prints `Startup complete ... (nodes 31/31, containers 13/13,
+  composable 68/68)` within seconds. If it prints `N composable(s) still
+  constructing` for a minute instead, a container's executor is asleep in
+  `rmw_wait` (demo/l3/README.md, trap 2): Ctrl-C, wait 10 s, start again.
+* Start the island before engaging. A late-joining island reads the
+  operation mode as UNKNOWN and starts an MRM (G4); the next mode change
+  clears it.
+* The island needs the gateway's liveliness ACL on ANY link, not only
+  serial: unfiltered, Autoware's graph exhausts its heap in seconds (G3).
+* Today's island announces the HPC-loss MRM in about 0.6 s but does not
+  brake: its `operate` request does not reach its own operator (G5, W5).
+* Use `ros2 ... --no-daemon` (or the `l3-nodes` recipe) on this machine; a
+  daemon started under Cyclone answers for the wrong RMW.
+* `just l3-check` runs `play_launch check` on every contract with the
+  pinned, published play_launch (the CI job, `.github/workflows/check.yml`).
+  The `play_launch` on PATH here is a newer source build that calls itself
+  0.12.0; it passed the island contract where the published 0.12.0 did not,
+  so do not read a verdict from it as the CI's.

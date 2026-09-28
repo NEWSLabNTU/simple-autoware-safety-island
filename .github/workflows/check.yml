@@ -1,0 +1,35 @@
+# phase8-W3: `play_launch check` on every contract in the repository, each
+# against the verdict it is meant to give (.github/check-contracts.sh).
+# Builds nothing: `check` reads launch files and their contract sidecars.
+# play_launch is installed the way the runbook installs it (pip, from the
+# package index), pinned to the version the demo host runs.
+name: check
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  contracts:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    # ROS 2 Humble userland: the launch parser resolves $(find-pkg-share) and
+    # friends through it, and the wheel is built for jammy (manylinux_2_35).
+    container: ros:humble-ros-base-jammy
+    env:
+      PLAY_LAUNCH_VERSION: "0.12.0"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - name: Install play_launch ${{ env.PLAY_LAUNCH_VERSION }}
+        run: |
+          apt-get update -qq && apt-get install -y -qq --no-install-recommends python3-pip >/dev/null
+          pip3 install --no-cache-dir "play_launch==${PLAY_LAUNCH_VERSION}"
+          play_launch --version
+      - name: play_launch check on every contract
+        shell: bash
+        run: |
+          source /opt/ros/humble/setup.bash
+          .github/check-contracts.sh

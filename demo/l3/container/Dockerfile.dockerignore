@@ -1,0 +1,11 @@
+# The build context is the repository root (tens of GB on a spinning disk:
+# build trees, third-party, emulation logs). Send only what the Dockerfile
+# COPYs; everything else is excluded first.
+*
+!demo/host_ws/src/
+!demo/l3/takeover_demo/
+!demo/l3/container/entrypoint.sh
+!demo/l3/container/bin/
+!demo/map/sample-map-planning/
+**/__pycache__
+**/*.pyc

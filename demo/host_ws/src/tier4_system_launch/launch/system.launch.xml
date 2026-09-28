@@ -34,6 +34,12 @@
   <arg name="mrm_state_topic" default="/system/fail_safe/mrm_state"/>
   <arg name="change_operation_mode_srv" default="/system/operation_mode/change_operation_mode"/>
   <arg name="change_autoware_control_srv" default="/system/operation_mode/change_autoware_control"/>
+  <!-- phase8-W3: where the availability converter publishes. The stock value
+       keeps the Cyclone demo (`just autoware`) unchanged. The L3 demo passes
+       /system/operation_mode/availability_raw, and takeover_demo's
+       availability_gate republishes it on the stock name with
+       `autonomous &= !odd_exit`, so the island reads the GATE's stream. -->
+  <arg name="operation_mode_availability_topic" default="/system/operation_mode/availability"/>
 
   <let name="sensor_launch_pkg" value="$(find-pkg-share $(var sensor_model)_launch)"/>
 
@@ -116,20 +122,45 @@
          (simple-autoware-safety-island phase-2 demo overlay). -->
 
     <!-- Diagnostic Graph Aggregator -->
+    <!-- phase8-W3: the two nodes of the stock
+         autoware_diagnostic_graph_aggregator/launch/aggregator.launch.xml,
+         inlined, because that file HARD-CODES the converter's output remap
+         (`~/operation_mode/availability` -> /system/operation_mode/availability)
+         and so cannot be pointed elsewhere by an argument. Identical to it
+         except that one remap reads $(var operation_mode_availability_topic).
+         The node names, parameters and every other remap are the stock ones. -->
     <group>
-      <include file="$(find-pkg-share autoware_diagnostic_graph_aggregator)/launch/aggregator.launch.xml">
-        <arg name="param_file" value="$(var diagnostic_graph_aggregator_param_path)"/>
-        <arg name="graph_file" value="$(var diagnostic_graph_aggregator_graph_path)"/>
-        <arg name="~/struct" value="$(var diag_struct_topic)"/>
-        <arg name="~/status" value="$(var diag_status_topic)"/>
-        <arg name="~/reset" value="$(var diag_reset_srv)"/>
-        <arg name="converter_param_file" value="$(var availability_converter_param_path)"/>
-      </include>
+      <node pkg="autoware_diagnostic_graph_aggregator" exec="aggregator_node">
+        <param from="$(var diagnostic_graph_aggregator_param_path)"/>
+        <param name="graph_file" value="$(var diagnostic_graph_aggregator_graph_path)"/>
+        <remap from="~/struct" to="$(var diag_struct_topic)"/>
+        <remap from="~/status" to="$(var diag_status_topic)"/>
+        <remap from="~/unknowns" to="/diagnostics_graph/unknowns"/>
+        <remap from="~/reset" to="$(var diag_reset_srv)"/>
+        <remap from="~/availability" to="/system/command_mode/availability"/>
+      </node>
+      <node pkg="autoware_diagnostic_graph_aggregator" exec="converter_node">
+        <param from="$(var availability_converter_param_path)"/>
+        <remap from="~/command_mode/availability" to="/system/command_mode/availability"/>
+        <remap from="~/operation_mode/availability" to="$(var operation_mode_availability_topic)"/>
+      </node>
     </group>
 
     <!-- Hazard Status Converter -->
+    <!-- phase8-W3 (gap G10): the stock
+         autoware_hazard_status_converter/launch/hazard_status_converter.launch.xml,
+         inlined, because it hard-codes `~/input/emergency_holding` ->
+         /system/emergency_holding, which is where the STOCK mrm_handler
+         publishes. The island's handler publishes
+         /system/fail_safe/emergency_holding, so with the stock MRM off nothing
+         reached the converter and hazard_status.emergency_holding read false
+         whatever the island held. Identical otherwise. -->
     <group>
-      <include file="$(find-pkg-share autoware_hazard_status_converter)/launch/hazard_status_converter.launch.xml"/>
+      <node pkg="autoware_hazard_status_converter" exec="autoware_hazard_status_converter_node" name="hazard_status_converter">
+        <remap from="~/diagnostics_graph" to="/diagnostics_graph"/>
+        <remap from="~/hazard_status" to="/system/emergency/hazard_status"/>
+        <remap from="~/input/emergency_holding" to="/system/fail_safe/emergency_holding"/>
+      </node>
     </group>
 
     <!-- MRM Handler — DISABLED: provided by the safety island. -->

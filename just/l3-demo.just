@@ -152,9 +152,11 @@ l3-nodes where="host":
     exec env -i HOME="$HOME" USER="$USER" PATH=/usr/bin:/bin ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-10}" L3_WS=/nonexistent bash -c \
         'source demo/l3/container/bin/l3-env 2>/dev/null; echo "== ros2 node list (RMW $RMW_IMPLEMENTATION, domain $ROS_DOMAIN_ID) $(date -Is) =="; timeout 20 ros2 node list --no-daemon'
 
-# RViz on the host, over zenoh, with Autoware's config (blocks). phase8-W3
+# RViz on the host, over zenoh, with Autoware's config (blocks). The vehicle
+# parameters are what autoware.launch.xml sets globally; without them the
+# config fails to load ("Statically typed parameter 'wheel_radius'"). phase8-W3
 l3-rviz config="/opt/autoware/1.5.0/share/autoware_launch/rviz/autoware.rviz":
-    just _l3-host 'source demo/l3/container/bin/l3-env; exec rviz2 -d {{config}}'
+    just _l3-host 'source demo/l3/container/bin/l3-env; export QT_QPA_PLATFORMTHEME=qt5ct; exec rviz2 -d {{config}} --ros-args --params-file $(ros2 pkg prefix sample_vehicle_description)/share/sample_vehicle_description/config/vehicle_info.param.yaml'
 
 # The QEMU island (an existing image; default build-qemu) into a router on the
 # host: guestfwd 10.0.2.100:7447 -> {{host}}:{{port}} (bounded). phase8-W3

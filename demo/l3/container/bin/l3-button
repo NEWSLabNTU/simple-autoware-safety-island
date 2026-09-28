@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# The booth keyboard: SPACE/t take over, o ODD exit, c clear, q quit.
+source "$(dirname "$(readlink -f "$0")")/l3-env"
+exec ros2 run takeover_demo driver_button

@@ -1,0 +1,228 @@
+# Node interface contract for takeover.launch.xml (phase8-W3).
+#
+# The host side of the L3 demo, stated in the same vocabulary as the
+# island's safety_island.contract.yaml, so that `play_launch check` covers
+# both halves of the demo and the four keys W6 adds (when:, window:, exit:,
+# settle:) have a host-side contract to land in.
+#
+# `nodes:` names each node's endpoints by LOCAL name (a label, not a path);
+# `topics:` wires absolute topic names to those endpoints. `external: pub`
+# means the publisher is outside this launch file (Autoware, the planning
+# simulator, the island); `external: sub` means the consumer is.
+#
+# Rates on timer-driven outputs are not written: the checker derives them
+# from the timers (`rate_hz: 10` in the launch file). Other rates are the
+# nodes' own parameters (`rate_hz: 10` in the launch file) or,
+# for the gate, the converter's: the gate publishes one sample per raw
+# sample, so its output rate IS the aggregator's 10 Hz (diagnostic graph
+# `rate: 10.0`), which is what the island's contract requires on the same
+# topic (min_rate_hz 10, max_age 500 ms).
+
+version: 1
+
+nodes:
+  odd_monitor:
+    params:
+      max_speed_kmh: { type: double }
+      segment_polygon: { type: string }
+      rate_hz: { type: double }
+    srv:
+      inject_exit: {}
+      clear: {}
+    paths:
+      on_timer:
+        trigger: { timer: { rate_hz: 10 } }
+        output: [odd_exit, odd_reason]
+    sub:
+      # Read-latest inputs: the speed and pose are checked on arrival and
+      # LATCH an exit; the timer publishes the latch. State, not a trigger.
+      kinematic_state: { min_rate_hz: 10, qos: { depth: 1 }, state: true }
+      odd_inject: { qos: { depth: 1 }, state: true }
+    pub:
+      odd_exit: { qos: { depth: 1, durability: volatile } }
+      odd_reason: { qos: { depth: 1, durability: volatile } }
+
+  availability_gate:
+    params:
+      odd_timeout_s: { type: double }
+    paths:
+      # One raw sample in, one sample out, in the subscription callback. The
+      # 20 ms is brief D's budget for this hop (section 2); unmeasured.
+      republish:
+        trigger: { input: [availability_raw] }
+        output: [availability]
+        max_latency: 20ms
+    sub:
+      availability_raw: { min_rate_hz: 10, qos: { depth: 1 } }
+      # Read-latest; silent for more than odd_timeout_s reads as "ODD left".
+      odd_exit: { min_rate_hz: 10, max_age: 1s, qos: { depth: 1 }, state: true }
+    pub:
+      availability: { min_rate_hz: 10, qos: { depth: 1, durability: volatile } }
+
+  takeover_hmi:
+    params:
+      takeover_request_timeout: { type: double }
+      rate_hz: { type: double }
+    cli:
+      control_mode_request: {}
+    paths:
+      on_timer:
+        trigger: { timer: { rate_hz: 10 } }
+        output: [takeover_state, takeover_remaining]
+      # The driver's response -> MANUAL, requested from the VEHICLE over
+      # control_mode_request. Not declared as a path: the checker wires a
+      # path output only to a topic or to a service whose SERVER is in this
+      # launch tree (play_launch 0.12.0 warns `wiring` otherwise), and this
+      # server is the simulator's.
+    sub:
+      odd_exit: { min_rate_hz: 10, qos: { depth: 1 }, state: true }
+      # Latched and published on change only at the source (default_adapi),
+      # hence transient_local here and no rate claim (brief C, M2).
+      operation_mode_state: { qos: { depth: 1, durability: transient_local }, state: true }
+      control_mode: { min_rate_hz: 10, qos: { depth: 1 }, state: true }
+      mrm_state: { min_rate_hz: 10, qos: { depth: 1 }, state: true }
+      # An event: its callback issues the MANUAL request (see above), which
+      # the checker cannot follow into the simulator; marked `state` so the
+      # state-consistency rule does not ask for a path it cannot wire.
+      driver_response: { qos: { depth: 1 }, state: true }
+    pub:
+      takeover_state: { qos: { depth: 1, durability: volatile } }
+      takeover_remaining: { qos: { depth: 1, durability: volatile } }
+
+  hazard_relay:
+    params:
+      rate_hz: { type: double }
+      input_timeout_s: { type: double }
+    paths:
+      on_timer:
+        trigger: { timer: { rate_hz: 10 } }
+        output: [system_hazard_lights_cmd]
+    sub:
+      mrm_state: { min_rate_hz: 10, qos: { depth: 1 }, state: true }
+      emergency_hazard_lights_cmd: { min_rate_hz: 10, qos: { depth: 1 }, state: true }
+    pub:
+      system_hazard_lights_cmd: { qos: { depth: 1, durability: volatile } }
+
+  driver_button:
+    srv:
+      take_over: {}
+      odd_exit: {}
+      odd_clear: {}
+    pub:
+      driver_response: { qos: { depth: 1, durability: volatile } }
+      odd_inject: { qos: { depth: 1, durability: volatile } }
+
+  graph_watcher:
+    params:
+      island_nodes: { type: string_array }
+      period_s: { type: double }
+    paths:
+      on_timer:
+        trigger: { timer: { rate_hz: 10 } }
+        output: [graph_event]
+    pub:
+      graph_event: { qos: { depth: 10, durability: volatile } }
+
+topics:
+  # --- from Autoware / the simulator ------------------------------------------
+  /system/operation_mode/availability_raw:
+    type: tier4_system_msgs/msg/OperationModeAvailability
+    external: pub
+    sub: [availability_gate/availability_raw]
+    rate_hz: 10
+  /localization/kinematic_state:
+    type: nav_msgs/msg/Odometry
+    external: pub
+    sub: [odd_monitor/kinematic_state]
+    rate_hz: 40
+  /api/operation_mode/state:
+    type: autoware_adapi_v1_msgs/msg/OperationModeState
+    external: pub
+    sub: [takeover_hmi/operation_mode_state]
+  /vehicle/status/control_mode:
+    type: autoware_vehicle_msgs/msg/ControlModeReport
+    external: pub
+    sub: [takeover_hmi/control_mode]
+    rate_hz: 40
+
+  # --- from the island --------------------------------------------------------
+  /system/fail_safe/mrm_state:
+    type: autoware_adapi_v1_msgs/msg/MrmState
+    external: pub
+    sub: [takeover_hmi/mrm_state, hazard_relay/mrm_state]
+    rate_hz: 10
+  /system/emergency/hazard_lights_cmd:
+    type: autoware_vehicle_msgs/msg/HazardLightsCommand
+    external: pub
+    sub: [hazard_relay/emergency_hazard_lights_cmd]
+    rate_hz: 10
+
+  # --- to the island and to Autoware -----------------------------------------
+  /system/operation_mode/availability:
+    type: tier4_system_msgs/msg/OperationModeAvailability
+    pub: [availability_gate/availability]
+    external: sub
+    rate_hz: 10
+  /system/hazard_lights_cmd:
+    type: autoware_vehicle_msgs/msg/HazardLightsCommand
+    pub: [hazard_relay/system_hazard_lights_cmd]
+    external: sub
+
+  # --- internal to the demo ----------------------------------------------------
+  /demo/odd/exit:
+    type: std_msgs/msg/Bool
+    pub: [odd_monitor/odd_exit]
+    sub: [availability_gate/odd_exit, takeover_hmi/odd_exit]
+  /demo/odd/reason:
+    type: std_msgs/msg/String
+    pub: [odd_monitor/odd_reason]
+    external: sub
+  /demo/odd/inject:
+    type: std_msgs/msg/Bool
+    pub: [driver_button/odd_inject]
+    sub: [odd_monitor/odd_inject]
+  /demo/driver/response:
+    type: std_msgs/msg/Empty
+    pub: [driver_button/driver_response]
+    sub: [takeover_hmi/driver_response]
+  /demo/takeover/state:
+    type: std_msgs/msg/String
+    pub: [takeover_hmi/takeover_state]
+    external: sub
+  /demo/takeover/remaining:
+    type: std_msgs/msg/Float32
+    pub: [takeover_hmi/takeover_remaining]
+    external: sub
+  /demo/graph/event:
+    type: std_msgs/msg/String
+    pub: [graph_watcher/graph_event]
+    external: sub
+
+services:
+  # Served by the planning simulator (simple_planning_simulator's
+  # input/control_mode_request): the takeover is vehicle-sensed, not an
+  # ADAPI request through the HPC.
+  /control/control_mode_request:
+    type: autoware_vehicle_msgs/srv/ControlModeCommand
+    external: server
+    client: [takeover_hmi/control_mode_request]
+  /odd_monitor/inject_exit:
+    type: std_srvs/srv/Trigger
+    server: [odd_monitor/inject_exit]
+    external: client
+  /odd_monitor/clear:
+    type: std_srvs/srv/Trigger
+    server: [odd_monitor/clear]
+    external: client
+  /driver_button/take_over:
+    type: std_srvs/srv/Trigger
+    server: [driver_button/take_over]
+    external: client
+  /driver_button/odd_exit:
+    type: std_srvs/srv/Trigger
+    server: [driver_button/odd_exit]
+    external: client
+  /driver_button/odd_clear:
+    type: std_srvs/srv/Trigger
+    server: [driver_button/odd_clear]
+    external: client

@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# One scripted act: drive | hpc | odd | odd-respond (takeover_demo scenario).
+source "$(dirname "$(readlink -f "$0")")/l3-env"
+exec ros2 run takeover_demo scenario "$@"

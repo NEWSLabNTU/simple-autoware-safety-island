@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# The domain's node list as rmw_zenoh_cpp sees it (no daemon: a daemon started
+# under another RMW or domain answers for itself).
+source "$(dirname "$(readlink -f "$0")")/l3-env"
+echo "== ros2 node list (RMW $RMW_IMPLEMENTATION, domain $ROS_DOMAIN_ID) $(date -Is) =="
+timeout "${L3_NODES_TIMEOUT:-20}" ros2 node list --no-daemon "$@"
