@@ -338,19 +338,17 @@ the schedule risk.
 6. Grammar scope creep: four keys, no transition language; anything more is
    a working-group proposal, not a demo item.
 
-## 7. Open questions for the user
+## 7. Decisions taken by the user (2026-09-28)
 
-1. Link: raise the baud on the existing DCD-LZ cable, or buy the T1 media
-   converter now and make Ethernet the primary road (then the UART is the
-   fallback and downsampling disappears)?
-2. ODD speed bound for the demo: 60 km/h (needs a longer straight than the
-   sample map has) or 30 km/h on the sample map?
-3. The takeover window: 10 s as Drive Pilot, and is the 30 s interval for
-   the ODD-exit hazard an acceptable declared judgement, or should the
-   demo state it differently?
-4. Whether W6's four keys go to rlm as one PR with the checker rules, or as
-   a proposal to the working group first (they are the same vocabulary the
-   deck's `bounded_by:` note asks the group to judge).
-5. Parameter store: wait for nano-ros phase-461 W6 as designed, or land the
-   minimal form now (defaults on Unsupported, no seeds) and replace it
-   later?
+1. Link: the UART at 921,600 baud on the existing DCD-LZ cable is primary
+   (D1 as written); T1 Ethernet stays the upgrade path.
+2. ODD speed bound: 30 km/h on the sample map. The settle derives from it.
+3. Takeover window 10 s (Drive Pilot's figure); the ODD-exit hazard's
+   interval is declared as 30 s, a stated judgement like phase 6's 3 s.
+4. The four contract keys land as rlm and play_launch changes now (W6),
+   versioned, with their checker rules; the working-group note reports
+   them once measured.
+5. Parameter store: the minimal form now (seeds compile without the
+   feature; `declare_parameter` returns the compiled default instead of
+   halting), replaced by nano-ros phase-461 W6 when it lands.
+6. Implementation starts: W0, then W1, W2, W3, W6 in parallel.
