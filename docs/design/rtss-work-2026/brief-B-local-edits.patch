@@ -1,0 +1,146 @@
+diff --git a/src/autoware_mrm_comfortable_stop_operator/include/autoware/mrm_comfortable_stop_operator/mrm_comfortable_stop_operator_core.hpp b/src/autoware_mrm_comfortable_stop_operator/include/autoware/mrm_comfortable_stop_operator/mrm_comfortable_stop_operator_core.hpp
+index eb57e71..3df08cf 100644
+--- a/src/autoware_mrm_comfortable_stop_operator/include/autoware/mrm_comfortable_stop_operator/mrm_comfortable_stop_operator_core.hpp
++++ b/src/autoware_mrm_comfortable_stop_operator/include/autoware/mrm_comfortable_stop_operator/mrm_comfortable_stop_operator_core.hpp
+@@ -66,6 +66,12 @@ private:
+     const ::nros::Result r = ::nros::detail::node_param_declare(h, name, default_value);
+     // A launch-seeded parameter is declared before this ctor runs, so a
+     // re-declare adopts the override instead of failing.
++    // D8-B experiment (local, not committed): with param_services off the
++    // C++ store entry points are stubs answering Unsupported (-16); run on
++    // the compiled-in default instead of halting boot.
++    if (r.code() == ::nros::ErrorCode::Unsupported) {
++      return default_value;
++    }
+     if (!r.ok() && r.code() != ::nros::ErrorCode::AlreadyExists) {
+       set_error("declare_parameter", r.raw());
+       return default_value;
+diff --git a/src/autoware_mrm_emergency_stop_operator/include/autoware/mrm_emergency_stop_operator/mrm_emergency_stop_operator_core.hpp b/src/autoware_mrm_emergency_stop_operator/include/autoware/mrm_emergency_stop_operator/mrm_emergency_stop_operator_core.hpp
+index 5670656..5830f70 100644
+--- a/src/autoware_mrm_emergency_stop_operator/include/autoware/mrm_emergency_stop_operator/mrm_emergency_stop_operator_core.hpp
++++ b/src/autoware_mrm_emergency_stop_operator/include/autoware/mrm_emergency_stop_operator/mrm_emergency_stop_operator_core.hpp
+@@ -68,6 +68,12 @@ private:
+     const ::nros::Result r = ::nros::detail::node_param_declare(h, name, default_value);
+     // A launch-seeded parameter is declared before this ctor runs, so a
+     // re-declare adopts the override instead of failing.
++    // D8-B experiment (local, not committed): with param_services off the
++    // C++ store entry points are stubs answering Unsupported (-16); run on
++    // the compiled-in default instead of halting boot.
++    if (r.code() == ::nros::ErrorCode::Unsupported) {
++      return default_value;
++    }
+     if (!r.ok() && r.code() != ::nros::ErrorCode::AlreadyExists) {
+       set_error("declare_parameter", r.raw());
+       return default_value;
+diff --git a/src/autoware_mrm_handler/include/autoware/mrm_handler/mrm_handler_core.hpp b/src/autoware_mrm_handler/include/autoware/mrm_handler/mrm_handler_core.hpp
+index 3f7b15c..e23d19e 100644
+--- a/src/autoware_mrm_handler/include/autoware/mrm_handler/mrm_handler_core.hpp
++++ b/src/autoware_mrm_handler/include/autoware/mrm_handler/mrm_handler_core.hpp
+@@ -89,6 +89,12 @@ private:
+     const ::nros::Result r = ::nros::detail::node_param_declare(h, name, default_value);
+     // A launch-seeded parameter is declared before this ctor runs, so a
+     // re-declare adopts the override instead of failing.
++    // D8-B experiment (local, not committed): with param_services off the
++    // C++ store entry points are stubs answering Unsupported (-16); run on
++    // the compiled-in default instead of halting boot.
++    if (r.code() == ::nros::ErrorCode::Unsupported) {
++      return default_value;
++    }
+     if (!r.ok() && r.code() != ::nros::ErrorCode::AlreadyExists) {
+       set_error("declare_parameter", r.raw());
+       return default_value;
+diff --git a/src/autoware_stop_mode_operator/src/stop_mode_operator.hpp b/src/autoware_stop_mode_operator/src/stop_mode_operator.hpp
+index 5b9caf7..816b24a 100644
+--- a/src/autoware_stop_mode_operator/src/stop_mode_operator.hpp
++++ b/src/autoware_stop_mode_operator/src/stop_mode_operator.hpp
+@@ -69,6 +69,12 @@ private:
+     const ::nros::Result r = ::nros::detail::node_param_declare(h, name, default_value);
+     // A launch-seeded parameter is declared before this ctor runs, so a
+     // re-declare adopts the override instead of failing.
++    // D8-B experiment (local, not committed): with param_services off the
++    // C++ store entry points are stubs answering Unsupported (-16); run on
++    // the compiled-in default instead of halting boot.
++    if (r.code() == ::nros::ErrorCode::Unsupported) {
++      return default_value;
++    }
+     if (!r.ok() && r.code() != ::nros::ErrorCode::AlreadyExists) {
+       set_error("declare_parameter", r.raw());
+       return default_value;
+diff --git a/src/safety_island_bringup/launch/safety_island.launch.xml b/src/safety_island_bringup/launch/safety_island.launch.xml
+index 42e1c34..47905fa 100644
+--- a/src/safety_island_bringup/launch/safety_island.launch.xml
++++ b/src/safety_island_bringup/launch/safety_island.launch.xml
+@@ -12,15 +12,15 @@
+        relative because these packages are built into the image, not
+        installed into an ament share directory. -->
+   <node pkg="autoware_mrm_emergency_stop_operator" exec="mrm_emergency_stop_operator" name="mrm_emergency_stop_operator">
+-    <param from="$(dirname)/../../autoware_mrm_emergency_stop_operator/config/mrm_emergency_stop_operator.param.yaml"/>
++    <!-- D8-B experiment (local, param_services off): param from="$(dirname)/../../autoware_mrm_emergency_stop_operator/config/mrm_emergency_stop_operator.param.yaml" -->
+   </node>
+   <node pkg="autoware_mrm_comfortable_stop_operator" exec="mrm_comfortable_stop_operator" name="mrm_comfortable_stop_operator">
+-    <param from="$(dirname)/../../autoware_mrm_comfortable_stop_operator/config/mrm_comfortable_stop_operator.param.yaml"/>
++    <!-- D8-B experiment (local, param_services off): param from="$(dirname)/../../autoware_mrm_comfortable_stop_operator/config/mrm_comfortable_stop_operator.param.yaml" -->
+   </node>
+   <node pkg="autoware_stop_mode_operator" exec="stop_mode_operator" name="stop_mode_operator">
+-    <param from="$(dirname)/../../autoware_stop_mode_operator/config/default.param.yaml"/>
++    <!-- D8-B experiment (local, param_services off): param from="$(dirname)/../../autoware_stop_mode_operator/config/default.param.yaml" -->
+   </node>
+   <node pkg="autoware_mrm_handler" exec="mrm_handler" name="mrm_handler">
+-    <param from="$(dirname)/../../autoware_mrm_handler/config/mrm_handler.param.yaml"/>
++    <!-- D8-B experiment (local, param_services off): param from="$(dirname)/../../autoware_mrm_handler/config/mrm_handler.param.yaml" -->
+   </node>
+ </launch>
+diff --git a/src/safety_island_bringup/system.toml b/src/safety_island_bringup/system.toml
+index 0cadf84..8c44e13 100644
+--- a/src/safety_island_bringup/system.toml
++++ b/src/safety_island_bringup/system.toml
+@@ -33,7 +33,7 @@ default_launch = "safety_island.launch.xml"
+ # capability (no queryables, no `ros2 param`) is planned as nano-ros
+ # phase-461 W6 and would be the workaround here.
+ # P4 adds the E2E integrity layer (nano-ros RFC-0028): "safety".
+-features = ["param_services"]
++features = []  # D8-B experiment (local): was ["param_services"]
+ 
+ # ── Components — uncommented as ports land ─────────────────────────────────
+ [[component]]
+diff --git a/src/zephyr_entry/CMakeLists.txt b/src/zephyr_entry/CMakeLists.txt
+index d7c055b..858dbe6 100644
+--- a/src/zephyr_entry/CMakeLists.txt
++++ b/src/zephyr_entry/CMakeLists.txt
+@@ -147,6 +147,12 @@ add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../autoware_mrm_handler" autoware_
+ # Verify by the DTCM line of the region report, never by the build succeeding.
+ zephyr_code_relocate(LIBRARY app LOCATION DTCM_BSS)
+ 
++# D8-B experiment (local, not committed): the island calls its OWN operate
++# services (mrm_handler -> the two operators) in one zenoh-pico session; with
++# Z_FEATURE_LOCAL_QUERYABLE=0 (zenoh-pico default) that query goes to the router,
++# which never routes it back to the session it came from.
++zephyr_compile_definitions(Z_FEATURE_LOCAL_QUERYABLE=1)
++
+ # ---------------------------------------------------------------------------
+ # ITCM: the safety application's own code.
+ #
+diff --git a/src/zephyr_entry/boards/mr_canhubk3_s32k344.conf b/src/zephyr_entry/boards/mr_canhubk3_s32k344.conf
+index 1b51cc4..373938a 100644
+--- a/src/zephyr_entry/boards/mr_canhubk3_s32k344.conf
++++ b/src/zephyr_entry/boards/mr_canhubk3_s32k344.conf
+@@ -265,7 +265,8 @@ CONFIG_CODE_DATA_RELOCATION=y
+ # it is Zephyr 3.7 LTS over CycloneDDS (`just zephyr-build`), a different RMW
+ # with a different allocation profile, and -DCONF_FILE= there suppresses this
+ # file entirely. The number has to come off this board.
+-CONFIG_NROS_ZEPHYR_HEAP_SIZE=94208
++# D8-B experiment (local): was 94208; params-off FirstSpin peak 95,216 on QEMU
++CONFIG_NROS_ZEPHYR_HEAP_SIZE=122880
+ 
+ # zenoh payload classes. LARGE defaults to 2 x 4 x 16384 = 128 KiB, provisioned
+ # for image-scale messages; the largest subscribed type here is nav_msgs/Odometry
+@@ -600,7 +601,8 @@ CONFIG_TRACING_BACKEND_RAM=y
+ # One-shot, not a ring: `ram_tracing[]` fills from boot and latches full.
+ # 16 KiB of the 25,072 B of RAM the phase-6 image left spare; read it over
+ # SWD from the ELF symbol `ram_tracing` (`just trace-board`).
+-CONFIG_RAM_TRACING_BUFFER_SIZE=16384
++# D8-B experiment (local): was 16384
++CONFIG_RAM_TRACING_BUFFER_SIZE=24576
+ # The CUT event set: application markers + thread switches. TRACING_THREAD
+ # is the only Kconfig carrying switched_in/out; on 4.4 it also brings the
+ # thread create/start/wakeup/sleep/yield/sched_lock events, which no Kconfig
