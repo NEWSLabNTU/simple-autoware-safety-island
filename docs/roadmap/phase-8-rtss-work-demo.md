@@ -196,11 +196,18 @@ reaction is seen only as `vehicle_cmd_gate`'s take (label it
 through a service callback that publishes (the comfortable-stop operator
 does).
 
-Expected verdicts, worked by hand with a 300 ms planner hop as placeholder
-(D): ODD exit via comfortable stop 29,007 ms against a 30 s interval;
-HPC loss via emergency stop 8,157 ms against 10 s. Two one-line variants
-each fail only the comfortable-stop rung (a 12 s window; a speed bound
-10 km/h higher), which is the "break a fact" act of the demo.
+Verdicts, from the checker on the demo contract (W6, rlm v0.1.46,
+`demo/l3/contracts/`, the 300 ms planner hop still a placeholder): at the
+decided 30 km/h (8.33 m/s), ODD exit via comfortable stop 20,636.67 ms
+against 30,000 (fits); via the floor 14,538.67 ms; HPC loss via emergency
+stop 4,808.67 ms against 10,000 (fits). Brief D's variants were computed at
+60 km/h and do not fail at 30: the thresholds are a window above 19.36 s or
+a bound above 63.7 km/h, so the two "break a fact" variants are a 20 s
+window (30,636.67 ms, error) and a 65 km/h bound (30,366.67 ms, error).
+The HPC-loss interval is declared as 10 s, not the island's 3 s: at 30 km/h
+the emergency stop alone takes 4,165 ms to standstill. The exit function
+`driver_took_over` is `not_equals: MANUAL` (a function's `when:` names the
+predicate that LOSES it).
 
 ### D9. Graph discovery is off on the island; data and service traffic come first
 
@@ -357,7 +364,8 @@ the schedule risk.
    (D1 as written); T1 Ethernet stays the upgrade path.
 2. ODD speed bound: 30 km/h on the sample map. The settle derives from it.
 3. Takeover window 10 s (Drive Pilot's figure); the ODD-exit hazard's
-   interval is declared as 30 s, a stated judgement like phase 6's 3 s.
+   interval is declared as 30 s, a stated judgement like phase 6's 3 s;
+   the HPC-loss interval becomes 10 s (W6: 3 s cannot be met at 30 km/h).
 4. The four contract keys land as rlm and play_launch changes now (W6),
    versioned, with their checker rules; the working-group note reports
    them once measured.

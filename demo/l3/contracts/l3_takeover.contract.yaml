@@ -1,0 +1,401 @@
+# The takeover scenario's contract: phase 8, decision D6, and the four keys
+# of ros-launch-manifest v0.1.45 (`when:`, `window:`, `exit:`, `entry_speed`
+# with a braking-profile `settle:`).
+#
+# WHAT IT STATES
+#
+# Two hazards on one input, /system/operation_mode/availability, and one
+# ladder for both:
+#
+#   odd_exit   the vehicle leaves its operating domain. A VALUE fault: the
+#              availability gate clears `autonomous`. ASIL_B, 30 s interval.
+#   hpc_loss   the HPC stops. A SILENCE fault: the stream stops. ASIL_D,
+#              10 s interval.
+#
+#   l3_engaged -> takeover_request (10 s window; the driver's MANUAL ends it)
+#              -> comfortable_stop (the HPC's planner brakes, in lane)
+#              -> emergency_stop   (the island brakes, the floor)
+#
+# odd_exit removes only `hpc_in_odd`, so it lands on the takeover request,
+# waits the window out and takes the comfortable stop. hpc_loss removes both
+# functions, so the checker skips the two rungs that need the HPC and charges
+# neither: the floor is reached straight away.
+#
+# WHERE EACH NUMBER COMES FROM
+#
+#   ODD speed bound 8.33 m/s   30 km/h, decision 2 of the phase-8 doc. It is
+#                               `entry_speed` on both hazards (one YAML
+#                               anchor, so it is one line): whichever fault
+#                               occurs, the vehicle is at most here.
+#   window 10 s                 decision 3 (Drive Pilot's figure), bound to
+#                               mrm_handler's `takeover_request_timeout`,
+#                               set to 10.0 in l3_takeover.launch.xml.
+#   odd_exit interval 30 s      decision 3, a stated judgement like the 3 s
+#                               of the island contract.
+#   hpc_loss interval 10 s      NOT the island's 3 s. At 30 km/h the
+#                               emergency stop alone takes 4165.33 ms to
+#                               standstill, so 3 s cannot be met by any
+#                               island; 3 s was chosen for the 3.0 m/s the
+#                               island contract assumed. 10 s is the brief's
+#                               figure and leaves the floor 5191.33 ms.
+#   odd_exit detection 120 ms   the availability gate's 10 Hz period plus its
+#                               20 ms path (declared, not measured).
+#   hpc_loss detection 500 ms   mrm_handler's
+#                               `timeout_operation_mode_availability: 0.5`.
+#   handler reaction 110 ms     tick 100 ms + `timeout_call_mrm_behavior`.
+#   operator tick 33.33 ms      the emergency operator's 30 Hz timer, walked
+#                               as a sampling hop across the operate service.
+#   planner hop 300 ms          PLACEHOLDER, see `planning_hop` below.
+#   settles                     DERIVED, not written: `settle-derived` prints
+#                               the arithmetic from each operator's own
+#                               parameter file and the 8.33 m/s bound.
+#                               emergency: a 2.5, j 1.5 -> 4165.33 ms
+#                               comfortable: a 1.0, j 0.3 -> 9996.67 ms
+#
+# `play_launch check --explain` prints every term; the verdicts are quoted in
+# README.md beside this file, with the two one-line variants that break the
+# comfortable-stop rung and nothing else: l3_takeover_window20.* (a 20 s
+# window) and l3_takeover_65kmh.* (a 65 km/h bound).
+
+version: 1
+
+severity_levels: [QM, ASIL_A, ASIL_B, ASIL_C, ASIL_D]
+
+functions:
+  # Lost by silence: the HPC is alive while the stream arrives.
+  hpc_alive: [/system/operation_mode/availability]
+  # Lost by value OR by silence: the HPC says the vehicle is in its domain.
+  # `when:` on a function is the predicate that LOSES it.
+  hpc_in_odd:
+    of: [/system/operation_mode/availability]
+    when: { field: autonomous, equals: false }
+  # The driver's answer. Lost while the control mode is anything but MANUAL
+  # (or silent), so it HOLDS exactly when the vehicle reports MANUAL. The
+  # constant is the message's own (ControlModeReport.MANUAL = 4), resolved
+  # through the ament index.
+  driver_took_over:
+    of: [/vehicle/status/control_mode]
+    when: { field: mode, not_equals: MANUAL }
+
+hazards:
+  odd_exit:
+    severity: ASIL_B        # illustrative; HARA-owned
+    description: >-
+      the vehicle leaves its operating domain (speed bound or weather) while
+      the ADS drives; the driver must take over within the takeover window
+      or the vehicle must be stopped in lane
+    guards: [/system/operation_mode/availability]
+    on: reported
+    when: { field: autonomous, equals: false }
+    # The ODD speed bound, once: both hazards read it through the anchor,
+    # so changing it is one line.
+    entry_speed: &odd_speed_bound 8.33   # m/s = 30 km/h
+    ftti: 30s
+    reaction: l3_engaged
+  hpc_loss:
+    severity: ASIL_D
+    description: >-
+      the HPC stops; the availability stream goes silent and only the island
+      is left to stop the vehicle
+    guards: [/system/operation_mode/availability]
+    on: omission
+    entry_speed: *odd_speed_bound
+    ftti: 10s
+    reaction: l3_engaged
+
+modes:
+  l3_engaged:
+    description: the ADS drives, inside its operating domain
+    requires: [hpc_alive, hpc_in_odd]
+    fallback: [takeover_request, comfortable_stop, emergency_stop]
+  takeover_request:
+    description: the driver is asked to take over; the ADS keeps driving
+    requires: [hpc_alive]
+    reaction: island.tor
+    window: { duration: 10s, param: mrm_handler.takeover_request_timeout }
+    exit: { on: driver_took_over, to: manual }
+  comfortable_stop:
+    description: in-lane stop by the HPC's planner at the operator's request
+    requires: [hpc_alive]   # the HPC's planner executes the stop
+    reaction: island.comfortable_stop
+  emergency_stop:
+    description: the island brakes the vehicle itself
+    requires: []
+    reaction: island.emergency_stop
+  manual:
+    description: the driver drives; the ADS no longer commands the vehicle
+    requires: []
+
+# The reactions, as scope paths from the guarded input to the topic that
+# commits each rung. What each rung costs is the REACTION walk the hazards
+# take, which the checker derives; a scope path's own `max_latency` is the
+# NOMINAL traversal, and only island.tor declares one: 210 ms, one sampling
+# wait of the 10 Hz handler plus the tick's budget, the island contract's
+# argument. The other two cross an operate service, which the nominal graph
+# does not walk, so a budget there would be checked against a flat sum of
+# every node in this file (the planner placeholder included) and say nothing.
+paths:
+  island.tor:
+    trigger: { input: [/system/operation_mode/availability] }
+    output: [/system/takeover_request/state]
+    max_latency: 210ms
+  island.comfortable_stop:
+    trigger: { input: [/system/operation_mode/availability] }
+    output: [/control/trajectory_follower/control_cmd]
+  island.emergency_stop:
+    trigger: { input: [/system/operation_mode/availability] }
+    output: [/system/emergency/control_cmd]
+
+nodes:
+  # ---- the island (the island contract, plus the takeover deltas) ----------
+  mrm_handler:
+    params:
+      update_rate: { type: integer }
+      timeout_operation_mode_availability: { type: double }
+      timeout_call_mrm_behavior: { type: double }
+      timeout_cancel_mrm_behavior: { type: double }
+      use_emergency_holding: { type: bool }
+      timeout_emergency_recovery: { type: double }
+      use_parking_after_stopped: { type: bool }
+      use_pull_over: { type: bool }
+      use_comfortable_stop: { type: bool }
+      turning_hazard_on.emergency: { type: bool }
+      turning_indicator_on.emergency: { type: bool }
+      # unit W7's two parameters
+      use_takeover_request: { type: bool }
+      takeover_request_timeout: { type: double }
+    cli:
+      comfortable_stop_operate: {}
+      emergency_stop_operate: {}
+    paths:
+      on_timer:
+        trigger: { timer: { rate_hz: 10 } }
+        output:
+          - mrm_state
+          - takeover_request_state
+          - turn_indicators_cmd
+          - hazard_lights_cmd
+          - gear_cmd_out
+          - emergency_holding
+        max_latency: 100ms
+      # The reaction: the value fault and the silence fault both start it.
+      # It enters the takeover request, calls an operator, or both, and the
+      # outputs name all three so the walk can follow each rung.
+      call_mrm:
+        trigger: { input: [operation_mode_availability] }
+        output:
+          - mrm_state
+          - takeover_request_state
+          - comfortable_stop_operate
+          - emergency_stop_operate
+        max_latency: 110ms
+      # The exit: the driver's MANUAL, taken on the handler's own input and
+      # answered on the takeover-request state. Declaring it is what makes
+      # the image trace the take (TAKE_MRM_HANDLER_CONTROL_MODE).
+      driver_exit:
+        trigger: { input: [control_mode] }
+        output: [takeover_request_state]
+        max_latency: 100ms
+    sub:
+      operation_mode_availability:
+        min_rate_hz: 10
+        max_age: 500ms
+        qos: { depth: 1, liveliness: manual_by_topic, lease_duration: 500ms }
+        on_violation:
+          on: [omission, reported]
+          mechanism: application
+          reaction: call_mrm
+          within: 110ms
+      kinematic_state: { min_rate_hz: 10, qos: { depth: 1 } }
+      control_mode: { min_rate_hz: 10, qos: { depth: 1 } }
+      comfortable_stop_status: { min_rate_hz: 10, qos: { depth: 1 } }
+      emergency_stop_status: { min_rate_hz: 10, qos: { depth: 1 } }
+      gear_cmd_in: { min_rate_hz: 10, qos: { depth: 1 } }
+      operation_mode_state: { min_rate_hz: 10, qos: { depth: 1 } }
+    pub:
+      mrm_state: { min_rate_hz: 10, qos: { durability: volatile } }
+      # MrmBehaviorStatus reused: AVAILABLE = idle, OPERATING = request on.
+      takeover_request_state: { min_rate_hz: 10, qos: { durability: volatile } }
+      gear_cmd_out: { min_rate_hz: 10, qos: { durability: volatile } }
+      hazard_lights_cmd: { min_rate_hz: 10, qos: { durability: volatile } }
+      turn_indicators_cmd: { min_rate_hz: 10, qos: { durability: volatile } }
+      emergency_holding: { min_rate_hz: 10, qos: { durability: volatile } }
+
+  mrm_comfortable_stop_operator:
+    params:
+      update_rate: { type: integer }
+      min_acceleration: { type: double }
+      max_jerk: { type: double }
+      min_jerk: { type: double }
+    srv:
+      operate: {}
+    paths:
+      on_timer:
+        trigger: { timer: { rate_hz: 10 } }
+        output: [status]
+      # The operate callback publishes the velocity limit itself (brief D
+      # F3: a service callback that publishes). The limit is the stop the
+      # planner then executes, so the braking profile is this node's: the
+      # settle is derived from its own `min_acceleration` and `min_jerk`.
+      operate:
+        trigger: { input: [operate] }
+        output: [max_velocity_candidates]
+        safe_state:
+          emits: max_velocity_candidates
+          settle: { decel: min_acceleration, jerk: min_jerk }
+    pub:
+      max_velocity_candidates: { qos: { depth: 1, durability: transient_local } }
+      clear_velocity_limit: { qos: { depth: 1, durability: transient_local } }
+      status: { min_rate_hz: 10, qos: { durability: volatile } }
+
+  mrm_emergency_stop_operator:
+    params:
+      update_rate: { type: integer }
+      target_acceleration: { type: double }
+      target_jerk: { type: double }
+    srv:
+      operate: {}
+    paths:
+      on_timer:
+        trigger: { timer: { rate_hz: 30 } }
+        output: [emergency_control_cmd, status]
+        # The settle is derived from this node's parameter file and the
+        # hazard's entry speed; the island contract's literal 2034ms assumed
+        # 3.0 m/s.
+        safe_state:
+          emits: emergency_control_cmd
+          settle: { decel: target_acceleration, jerk: target_jerk }
+    sub:
+      control_cmd: { min_rate_hz: 30, qos: { depth: 1 }, state: true }
+    pub:
+      emergency_control_cmd: { min_rate_hz: 30, qos: { durability: volatile } }
+      status: { min_rate_hz: 30, qos: { durability: volatile } }
+
+  # ---- the HPC side (takeover_demo stand-ins) --------------------------------
+  availability_gate:
+    paths:
+      # Republishes Autoware's availability with the ODD verdict folded
+      # into `autonomous`. 20 ms is declared, not measured.
+      gate:
+        trigger: { input: [availability_raw] }
+        output: [availability]
+        max_latency: 20ms
+    sub:
+      availability_raw: { min_rate_hz: 10, qos: { depth: 1 } }
+    pub:
+      availability: { min_rate_hz: 10, qos: { depth: 1, liveliness: manual_by_topic, lease_duration: 500ms } }
+
+  planning_hop:
+    paths:
+      # PLACEHOLDER. Autoware's external_velocity_limit_selector, velocity
+      # smoother, planner and trajectory follower, from the operator's
+      # velocity limit to the follower's control command, as one hop. 300 ms
+      # is the brief's placeholder until the hop is measured on the planning
+      # simulator; the comfortable-stop rung's verdict depends on it.
+      follow_limit:
+        trigger: { input: [max_velocity_candidates] }
+        output: [control_cmd]
+        max_latency: 300ms
+    sub:
+      max_velocity_candidates: { qos: { depth: 1, durability: transient_local } }
+    pub:
+      control_cmd: { min_rate_hz: 30 }
+
+topics:
+  # ---- the guard, and the HPC side of it -----------------------------------
+  /system/operation_mode/availability_raw:
+    type: tier4_system_msgs/msg/OperationModeAvailability
+    external: pub
+    sub: [availability_gate/availability_raw]
+    rate_hz: 10
+  /system/operation_mode/availability:
+    type: tier4_system_msgs/msg/OperationModeAvailability
+    pub: [availability_gate/availability]
+    sub: [mrm_handler/operation_mode_availability]
+    rate_hz: 10
+  # ---- the takeover request and the driver's answer ------------------------
+  /system/takeover_request/state:
+    type: tier4_system_msgs/msg/MrmBehaviorStatus
+    external: sub
+    pub: [mrm_handler/takeover_request_state]
+  /vehicle/status/control_mode:
+    type: autoware_vehicle_msgs/msg/ControlModeReport
+    external: pub
+    sub: [mrm_handler/control_mode]
+    rate_hz: 10
+  # ---- the comfortable stop: the operator's limit, through the planner -----
+  /planning/scenario_planning/max_velocity_candidates:
+    type: autoware_internal_planning_msgs/msg/VelocityLimit
+    pub: [mrm_comfortable_stop_operator/max_velocity_candidates]
+    sub: [planning_hop/max_velocity_candidates]
+  /planning/scenario_planning/clear_velocity_limit:
+    type: autoware_internal_planning_msgs/msg/VelocityLimitClearCommand
+    external: sub
+    pub: [mrm_comfortable_stop_operator/clear_velocity_limit]
+  /control/trajectory_follower/control_cmd:
+    type: autoware_control_msgs/msg/Control
+    external: sub
+    pub: [planning_hop/control_cmd]
+  # ---- the island's other inputs and outputs (as the island contract) ------
+  /system/mrm/comfortable_stop/status:
+    type: tier4_system_msgs/msg/MrmBehaviorStatus
+    pub: [mrm_comfortable_stop_operator/status]
+    sub: [mrm_handler/comfortable_stop_status]
+  /system/mrm/emergency_stop/status:
+    type: tier4_system_msgs/msg/MrmBehaviorStatus
+    pub: [mrm_emergency_stop_operator/status]
+    sub: [mrm_handler/emergency_stop_status]
+  /control/command/control_cmd:
+    type: autoware_control_msgs/msg/Control
+    external: pub
+    sub: [mrm_emergency_stop_operator/control_cmd]
+    rate_hz: 30
+  /localization/kinematic_state:
+    type: nav_msgs/msg/Odometry
+    external: pub
+    sub: [mrm_handler/kinematic_state]
+    rate_hz: 10
+  /control/command/gear_cmd:
+    type: autoware_vehicle_msgs/msg/GearCommand
+    external: pub
+    sub: [mrm_handler/gear_cmd_in]
+    rate_hz: 10
+  /api/operation_mode/state:
+    type: autoware_adapi_v1_msgs/msg/OperationModeState
+    external: pub
+    sub: [mrm_handler/operation_mode_state]
+    rate_hz: 10
+  /system/emergency/control_cmd:
+    type: autoware_control_msgs/msg/Control
+    external: sub
+    pub: [mrm_emergency_stop_operator/emergency_control_cmd]
+  /system/fail_safe/mrm_state:
+    type: autoware_adapi_v1_msgs/msg/MrmState
+    external: sub
+    pub: [mrm_handler/mrm_state]
+  /system/emergency/gear_cmd:
+    type: autoware_vehicle_msgs/msg/GearCommand
+    external: sub
+    pub: [mrm_handler/gear_cmd_out]
+  /system/emergency/hazard_lights_cmd:
+    type: autoware_vehicle_msgs/msg/HazardLightsCommand
+    external: sub
+    pub: [mrm_handler/hazard_lights_cmd]
+  /system/emergency/turn_indicators_cmd:
+    type: autoware_vehicle_msgs/msg/TurnIndicatorsCommand
+    external: sub
+    pub: [mrm_handler/turn_indicators_cmd]
+  /system/fail_safe/emergency_holding:
+    type: tier4_system_msgs/msg/EmergencyHoldingState
+    external: sub
+    pub: [mrm_handler/emergency_holding]
+
+services:
+  /system/mrm/comfortable_stop/operate:
+    type: tier4_system_msgs/srv/OperateMrm
+    server: [mrm_comfortable_stop_operator/operate]
+    client: [mrm_handler/comfortable_stop_operate]
+  /system/mrm/emergency_stop/operate:
+    type: tier4_system_msgs/srv/OperateMrm
+    server: [mrm_emergency_stop_operator/operate]
+    client: [mrm_handler/emergency_stop_operate]

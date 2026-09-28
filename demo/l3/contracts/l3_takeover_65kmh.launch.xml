@@ -1,0 +1,39 @@
+<?xml version="1.0"?>
+<!-- VARIANT of l3_takeover.launch.xml, identical to it: the one change is
+     the ODD speed bound in l3_takeover_65kmh.contract.yaml, 65 km/h instead
+     of 30. Expected: ladder-rung-budget on the comfortable-stop rung, exit 1;
+     both floors still fit.
+
+     The takeover scenario of phase 8 (docs/roadmap/phase-8-rtss-work-demo.md,
+     D6), as a launch tree the contract checker can read.
+
+     The three island nodes are the real ones, with the real parameter files
+     from src/*/config, plus the two parameters the handler's takeover-request
+     change (unit W7) adds. stop_mode_operator is left out, as decision D4
+     leaves it out of the demo image.
+
+     The two HPC-side nodes are DECLARATIVE STAND-INS: `play_launch check`
+     reads the launch tree and the contract sidecar beside it, and needs no
+     executable. `availability_gate` is the takeover_demo node that republishes
+     Autoware's availability with the ODD verdict folded in (D5).
+     `planning_hop` is a PLACEHOLDER for Autoware's planning and control path
+     from the velocity limit to the trajectory follower's command; its 300 ms
+     is a placeholder until it is measured. -->
+<launch>
+  <node pkg="autoware_mrm_handler" exec="mrm_handler" name="mrm_handler">
+    <param from="$(dirname)/../../../src/autoware_mrm_handler/config/mrm_handler.param.yaml"/>
+    <!-- The demo's overrides (decision D4: the comfortable stop is on), and
+         the two takeover-request parameters unit W7 adds. -->
+    <param name="use_comfortable_stop" value="true"/>
+    <param name="use_takeover_request" value="true"/>
+    <param name="takeover_request_timeout" value="10.0"/>
+  </node>
+  <node pkg="autoware_mrm_comfortable_stop_operator" exec="mrm_comfortable_stop_operator" name="mrm_comfortable_stop_operator">
+    <param from="$(dirname)/../../../src/autoware_mrm_comfortable_stop_operator/config/mrm_comfortable_stop_operator.param.yaml"/>
+  </node>
+  <node pkg="autoware_mrm_emergency_stop_operator" exec="mrm_emergency_stop_operator" name="mrm_emergency_stop_operator">
+    <param from="$(dirname)/../../../src/autoware_mrm_emergency_stop_operator/config/mrm_emergency_stop_operator.param.yaml"/>
+  </node>
+  <node pkg="takeover_demo" exec="availability_gate" name="availability_gate"/>
+  <node pkg="takeover_demo" exec="planning_hop" name="planning_hop"/>
+</launch>
