@@ -10,7 +10,16 @@
     timeout_emergency_recovery: 5.0
     use_parking_after_stopped: false
     use_pull_over: false
-    use_comfortable_stop: false
+    # true for the phase-8 demo (phase8-W7): the takeover request falls to
+    # the comfortable stop, with the emergency stop as the floor. It is also
+    # the source default.
+    use_comfortable_stop: true
+    # phase8-W7, a demo extension (not upstream): on availability.autonomous
+    # == false while AUTONOMOUS, ask the driver to take over and wait this
+    # long before the MRM. The contract's takeover_request window is bound to
+    # it (`window-param`).
+    use_takeover_request: true
+    takeover_request_timeout: 10.0
 
     # setting whether to turn hazard lamp on for each situation
     turning_hazard_on:

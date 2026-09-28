@@ -32,9 +32,11 @@ declare -A EXPECT=(
     # a source-built wheel that also calls itself 0.12.0 (file://.../
     # play_launch/dist, 2026-09-25), passes it. Measured 2026-09-28 in a
     # clean ros:humble container. Since 20:45 the same day the file also
-    # carries W6's `entry_speed` key, which 0.12.0 refuses to parse; either
-    # way the pinned verdict is exit 1. Flip to 0 with the pin, when the next
-    # play_launch release is on the package index.
+    # carries W6's `entry_speed` key, and since phase8-W7 the takeover
+    # (`when:`, `window:`, `exit:`, settle by parameters), which 0.12.0
+    # refuses to parse; either way the pinned verdict is exit 1. play_launch
+    # 92043c82 (nano-ros's vendored pin from PR 1394) passes it. Flip to 0
+    # with the pin, when the next play_launch release is on the package index.
     [src/safety_island_bringup/launch/safety_island]=1
 )
 

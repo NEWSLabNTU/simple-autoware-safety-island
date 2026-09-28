@@ -72,39 +72,69 @@
 
 # PARAMETERS ARE DECLARED HERE, name and type, one entry per
 # `declare_parameter<T>` call in the node's code (phase 446 in nano-ros). The
-# sizes of the image's parameter store follow from this list: 21 parameters
-# plus one `use_sim_time` per node gives 25 slots, and since every one is a
-# scalar the string and array capacities are zero. Values stay in each
-# package's `config/*.param.yaml`, loaded by the launch file. Capacities for a
-# string or array parameter would be a board fact, never stated here.
+# sizes of the image's parameter store follow from this list: 23 parameters
+# (21 until phase8-W7 added mrm_handler's two takeover parameters) plus one
+# `use_sim_time` per node gives 27 slots, and since every one is a scalar the
+# string and array capacities are zero. Values stay in each package's
+# `config/*.param.yaml`, loaded by the launch file. Capacities for a string or
+# array parameter would be a board fact, never stated here.
 
 version: 1
 
 # ---------------------------------------------------------------------------
-# WHAT HAPPENS WHEN THE INPUT STOPS
+# WHAT HAPPENS WHEN THE INPUT STOPS, AND WHEN IT SAYS "NOT HERE"
 #
 # Everything above this line is structure and rate: how many endpoints, how
 # fast each one runs, how big the pools have to be. None of it says what the
 # island is FOR. The island is a minimum-risk-manoeuvre controller. It exists
 # because /system/operation_mode/availability can stop arriving, and when it
 # does the vehicle has to be brought to a stop before the absence of that
-# stream becomes a hazardous event. Until now that sentence lived in the
-# README and in nobody's tooling.
+# stream becomes a hazardous event. Since phase 8 it exists for a second
+# reason on the same stream: the stream can keep arriving and say that the
+# vehicle has left the domain it may drive itself in, and then the driver has
+# to be asked to take over, and the vehicle stopped if nobody does.
 #
-# ISO 26262 gives the sentence a number. The fault-tolerant time interval is
+# ISO 26262 gives both sentences a number. The fault-tolerant time interval is
 # the time from the fault to the hazardous event when nothing reacts, and it
 # has to cover detection plus reaction:
 #
 #   FTTI >= FDTI (fault -> detected) + FRTI (detected -> safe state reached)
 #
 # FDTI and FRTI are NOT authored here. They are derived from numbers this
-# repository already ships in its own parameter files. `ftti` is the one
-# genuinely new requirement, because it comes from physics and a hazard
-# analysis rather than from code.
+# repository already ships in its own parameter files. `ftti` and
+# `entry_speed` are the genuinely new requirements, because they come from
+# physics and a hazard analysis rather than from code.
 #
-# THE ISLAND'S THREE TERMS, AND WHERE EACH ONE COMES FROM
+# THE TWO HAZARDS (phase8-W7, from the phase-8 demo contract of W6,
+# demo/l3/contracts/l3_takeover.contract.yaml, and the user's decisions in
+# docs/roadmap/phase-8-rtss-work-demo.md section 7)
 #
-#   FDTI = 500 ms.
+#   hpc_loss   the HPC stops: the availability stream goes SILENT. ASIL_D,
+#              10 s. This is the hazard this file called
+#              `operation_mode_unavailable` with a 3 s interval until
+#              phase8-W7; the guard, the detector and the reaction are the
+#              same, the name says which fault it is now that there are two,
+#              and the interval moved for the reason under "WHY THE
+#              INTERVALS" below.
+#   odd_exit   the vehicle leaves its operating domain (ODD): the stream keeps
+#              arriving with `autonomous: false`. A VALUE fault, ASIL_B, 30 s.
+#
+# One ladder serves both (`modes:` below):
+#
+#   l3_engaged -> takeover_request (10 s window; the driver's MANUAL ends it)
+#              -> comfortable_stop (the HPC's planner brakes, in lane)
+#              -> emergency_stop   (the island brakes, the floor)
+#
+# odd_exit removes only `hpc_in_odd`, so it lands on the takeover request,
+# waits the window out and takes the comfortable stop. hpc_loss removes both
+# functions (silence also means "not known to be in the domain"), so the
+# checker skips the two rungs that need the HPC and charges neither: the floor
+# is reached straight away, which is what mrm_handler does (an availability
+# timeout forces EMERGENCY_STOP at any rung, getCurrentMrmBehavior()).
+#
+# WHERE EACH NUMBER COMES FROM
+#
+#   FDTI, hpc_loss = 500 ms.
 #     mrm_handler's `timeout_operation_mode_availability: 0.5`, in
 #     src/autoware_mrm_handler/config/mrm_handler.param.yaml. That parameter
 #     IS the detector: the handler treats the availability stream as lost
@@ -115,124 +145,215 @@ version: 1
 #     not a mechanism -- nothing fires when a period passes -- so the 10 Hz
 #     floor buys no detection on its own.
 #
+#   FDTI, odd_exit = 100 ms.
+#     A reported fault is detected by whoever publishes the verdict: the
+#     demo's availability gate on the HPC, which republishes Autoware's
+#     availability with the ODD folded into `autonomous`. It is outside this
+#     image, named on the guard topic below by its absolute FQN, so the
+#     checker charges its 10 Hz period and none of its own latency (the demo
+#     composition declares 20 ms for it and reads 120 ms). The value is read
+#     on the handler's next tick, which is the first term of the route below.
+#
 #   reaction route = 110 ms.
 #     `update_rate: 10` gives a 100 ms tick and `timeout_call_mrm_behavior:
 #     0.01` gives 10 ms to get the behaviour called. 100 + 10 = 110. Both
 #     numbers come from the same parameter file. The handler notices the
-#     stale stamp on a tick, so the tick period is genuinely the first term
-#     and not a padding allowance.
+#     stale stamp, or the cleared `autonomous`, on a tick, so the tick period
+#     is genuinely the first term and not a padding allowance. The emergency
+#     operator adds its 30 Hz tick as a sampling hop across the operate
+#     service (33.33 ms, play_launch phase 82); the comfortable operator
+#     publishes its velocity limit inside the operate callback itself.
 #
-#   settle = 2034 ms.
-#     The plant's share: how long the vehicle takes to actually stop once the
-#     emergency stop has been commanded. From
-#     src/autoware_mrm_emergency_stop_operator/config/mrm_emergency_stop_operator.param.yaml,
-#     target_jerk -1.5 m/s^3 and target_acceleration -2.5 m/s^2, with an
-#     ASSUMED entry speed of 3.0 m/s. No parameter in this repository states
-#     an entry speed; 3.0 m/s is the single invented input in this whole
-#     block, and it is named here rather than buried so that anyone reading
-#     the budget knows which term is a reading and which is an assumption.
-#       ramp to full braking:   t1 = 2.5 / 1.5              = 1.667 s
-#       speed lost in the ramp: 0.5 * 1.5 * 1.667^2         = 2.083 m/s
-#       the rest at -2.5:       (3.000 - 2.083) / 2.5       = 0.367 s
-#       settle = 1.667 + 0.367                              = 2.034 s
+#   window = 10 s.
+#     Decision 3 of the phase-8 doc (Drive Pilot's figure), bound to
+#     mrm_handler's `takeover_request_timeout: 10.0` in its parameter file;
+#     `window-param` refuses the file if the two ever differ. The handler
+#     notices expiry on its 10 Hz tick, so the next rung's route starts with
+#     the same 110 ms and there is no new term.
 #
-#     MEASURED, phase7-W3 (docs/reaction-trace.md, native_sim, 4 runs with a
-#     velocity log): the island meets its own terms (last sample to first
-#     braking command at most 608 ms against 643.33), but the demo brakes
-#     from 4.21-4.23 m/s, not 3.0, and the same formula at that speed gives
-#     2517-2527 ms; the vehicle stood still 2666-2685 ms after the first
-#     braking command and 3196-3293 ms after the last sample, past the 3 s
-#     FTTI in every run. The one assumed input above is the one that was
-#     wrong; the 2034 stays declared until the entry speed is decided.
+#   entry_speed = 8.33 m/s.
+#     30 km/h, decision 2: the ODD speed bound. One YAML anchor, read by both
+#     hazards: whichever fault occurs, the vehicle is at most here.
 #
-#   500 + 110 + 33.33 + 2034 = 2677.33 ms, against `ftti: 3s`. 322.67 ms of
-#   slack; the 33.33 is the operator's 30 Hz tick, charged as one sampling
-#   hop since the walk crosses the service edge (play_launch phase 82). The
-#   operator's timer is NROS_CREATE_WALL_TIMER(1000 / update_rate), integer
-#   ms, so its real period is 33 ms.
+#   settle, DERIVED, not written: `settle-derived` prints the arithmetic from
+#     each operator's own parameter file and the entry speed.
+#       emergency: target_acceleration -2.5, target_jerk -1.5 -> 4165.33 ms
+#       comfortable: min_acceleration -1.0, min_jerk -0.3     -> 9996.67 ms
+#     With a = |decel|, j = |jerk|: v_r = a^2/(2j); t = a/j + (v0 - v_r)/a
+#     above v_r, sqrt(2 v0 / j) below it.
 #
-# WHY THE FTTI IS 3 s
+#     This replaces the literal 2034 ms this file carried until phase8-W7,
+#     derived by hand from an ASSUMED 3.0 m/s. MEASURED, phase7-W3
+#     (docs/reaction-trace.md, native_sim, 4 runs with a velocity log): the
+#     island met its own terms (last sample to first braking command at most
+#     608 ms against 643.33), but the demo braked from 4.21-4.23 m/s, the same
+#     formula at that speed gives 2517-2527 ms, and the vehicle missed the old
+#     3 s interval in every run. The assumed input was the one that was wrong;
+#     it is now the ODD bound, stated once, and the settle follows it.
 #
-# It is the one number here that is a judgement rather than a reading, and it
-# is deliberately round. What matters is that it is now written down and
-# checked: set it to 2.5s and the checker rejects the contract and names the
-# terms that no longer fit inside it. The arithmetic above is implied by the
-# parameter files today and performed by nothing.
+# WHY THE INTERVALS ARE 10 s AND 30 s
+#
+# They are the numbers here that are judgements rather than readings. What
+# matters is that they are written down and checked. The old 3 s cannot be
+# met at the decided bound by any island: from 8.33 m/s the emergency stop
+# alone takes 4165.33 ms to standstill; 3 s was chosen for the 3.0 m/s the
+# old settle assumed. 10 s (brief D's figure) leaves the floor 5191.33 ms of
+# slack. odd_exit's 30 s is decision 3, a stated judgement like the old 3 s:
+# the takeover window is 10 s of it, and the comfortable stop at the bound
+# fits the rest with 9683.33 ms to spare (the demo composition, with its
+# 20 ms gate path and the 300 ms planner placeholder, reads 9363.33).
+# `play_launch check --explain` prints every term; docs/takeover-trace.md
+# sets the observed runs against them.
+#
+# THE PLANNER HOP IS NOT IN THIS FILE
+#
+# The comfortable stop is executed by the HPC's planner: the operator
+# publishes a velocity limit and Autoware's velocity smoother, planner and
+# trajectory follower turn it into braking. This file describes the island
+# image, so the comfortable rung's reaction ends at the island's own output,
+# /planning/scenario_planning/max_velocity_candidates, and the planner's
+# share is not charged here. The phase-8 demo contract
+# (demo/l3/contracts/l3_takeover.contract.yaml) states it as a 300 ms
+# PLACEHOLDER stand-in node; docs/takeover-trace.md reports the hop as
+# observed, with no declared number beside it.
 #
 # WHERE THE CHAIN OUTRAN THE CHECKER (history: fixed by play_launch phase 82,
 # and the hazard below now routes through the operator, phase6-W8a)
 #
 # The island's real reaction crosses a SERVICE. mrm_handler calls
 # /system/mrm/emergency_stop/operate, and it is mrm_emergency_stop_operator
-# that publishes /system/emergency/control_cmd. The reaction walk follows
-# TOPIC edges only, so it cannot step across that service call: a reaction
-# declared as ending at /system/emergency/control_cmd comes back as
-# unreachable, because no chain of topic hops leads there. So the declared
-# reaction ends where mrm_handler's own output ends -- /system/fail_safe/
-# mrm_state, the island announcing that the manoeuvre is running -- and the
-# operator's contribution is carried in the settle term instead of as a route
-# hop. That is a real limitation, stated rather than papered over. The 30 Hz
-# operator tick is 33 ms, which is well inside the 356 ms of slack, so the
-# verdict does not turn on it; but this budget is a model of the chain and
-# not a trace of it, and the two internal status topics are the only place
-# the island's own wiring closes a loop the walk can see.
+# that publishes /system/emergency/control_cmd. The reaction walk once
+# followed TOPIC edges only, so a reaction declared as ending at
+# /system/emergency/control_cmd came back unreachable, and the declared
+# reaction ended at /system/fail_safe/mrm_state with the operator's share
+# carried in the settle. Since phase 82 the walk crosses the service edge and
+# charges the operator's tick as a sampling hop, and since phase 83 it also
+# carries a settle declared upstream of the sink (the comfortable operator's
+# velocity limit).
 #
-# WHY THERE IS NO comfortable_stop RUNG
+# THE LADDER, AND WHY IT IS HERE NOW
 #
 # The graded ladder -- comfortable stop first, emergency stop as the floor --
-# is Autoware's shape, and the island does ship both operators. It is not the
-# island's CONFIGURED ladder: mrm_handler.param.yaml sets
-# `use_comfortable_stop: false` and `use_pull_over: false`, so the handler as
-# configured here has exactly one rung. Declaring `modes:` with a graded
-# reaction that the parameters disable would be writing down a promise the
-# image does not keep, so the ladder stays out and the hazard's reaction is
-# the single scope path below. If those parameters are ever turned on, the
-# rung belongs here and `ladder-rung-budget` will check it in its own right.
-
+# is Autoware's shape, and the island ships both operators. Until phase8-W7
+# it was not the island's CONFIGURED ladder: mrm_handler.param.yaml set
+# `use_comfortable_stop: false`, and a graded reaction the parameters disable
+# would have been a promise the image does not keep, so this file declared
+# one rung. The demo turns it on (`use_comfortable_stop: true`, which is also
+# the source default), so the rung is here and `ladder-rung-budget` checks it
+# in its own right, as this paragraph used to say it would. `use_pull_over`
+# stays false: there is no pull-over operator on the island.
+#
+# THE TAKEOVER REQUEST IS A DEMO EXTENSION, NOT UPSTREAM
+#
+# Autoware 1.5.0 has no takeover-request concept. mrm_handler gains one
+# (brief D section 1.5; ~40 lines, docs/porting-notes): on the value fault
+# while the vehicle is AUTONOMOUS it enters the request, publishes
+# /system/takeover_request/state (tier4_system_msgs/MrmBehaviorStatus
+# reused: AVAILABLE = idle, OPERATING = request on, NOT_AVAILABLE = the
+# feature is off; no new message package on the island), and waits
+# `takeover_request_timeout`. The driver's MANUAL on
+# /vehicle/status/control_mode ends it (the `exit:`); expiry calls the MRM
+# the existing selection picks; an availability timeout skips the wait.
+#
 # WHAT THE CHECKER STILL COMPLAINS ABOUT, AND WHY IT IS LEFT ALONE
 #
-# Two diagnostics survive this block on purpose. Neither is an error and both
-# are true.
+# Diagnostics survive this block on purpose. None is an error and all are
+# true.
 #
-#   warning[reaction-unguarded]: the reaction ends at /system/fail_safe/
-#     mrm_state and nothing subscribes to it with an `on_violation`. Correct,
-#     and not fixable from inside the island: that topic is `external: sub`,
-#     so the only thing that could notice a STALLED manoeuvre is Autoware
-#     proper. Who watches the watcher is a real open question here, and the
-#     honest answer is "something outside this image, and it is not declared
-#     anywhere yet". Silencing it would be worse than carrying it.
+#   warning[reaction-unguarded], once per hazard: each reaction ends at an
+#     `external: sub` topic and nothing subscribes to it with an
+#     `on_violation`. Not fixable from inside the island: the only thing that
+#     could notice a STALLED manoeuvre is Autoware proper. Who watches the
+#     watcher is a real open question here, and the honest answer is
+#     "something outside this image, and it is not declared anywhere yet".
+#     Silencing it would be worse than carrying it.
 #
-#   info[path-exclusion]: `on_timer` may wait up to 110 ms for `call_mrm`,
-#     because every path of a node is assumed to serialise unless the node
-#     declares otherwise. For mrm_handler that assumption is exactly right --
-#     the two paths ARE the same callback body -- so there is nothing to
-#     declare and nothing to fix.
+#   info[path-exclusion]: `on_timer` may wait up to 110 ms for `call_mrm` and
+#     `driver_exit`, because every path of a node is assumed to serialise
+#     unless the node declares otherwise. For mrm_handler that assumption is
+#     exactly right -- the three paths ARE the same callback body -- so there
+#     is nothing to declare and nothing to fix.
 #
 # One more thing worth knowing, because it is invisible in the output: the
-# hazard makes the checker DERIVE mrm_handler's criticality (ASIL_D, role
-# `detects`), which is what carries the safety requirement into scheduling.
-# It derives it for mrm_handler and for no other node on the island -- and
-# the reason is the same service boundary as above. mrm_emergency_stop_
-# operator, the node that actually performs the stop, is reached over
-# /system/mrm/emergency_stop/operate, so the `reacts` walk never gets to it
-# and the hazard's severity never lands on it.
+# hazards make the checker DERIVE criticality, which is what carries the
+# safety requirement into scheduling: mrm_handler keeps ASIL_D (the max of
+# the two hazards, never the sum), and the comfortable-stop operator, now on
+# odd_exit's reaction walk, derives ASIL_B, the first time it derives
+# anything.
 
 # ISO 26262's scale, stated rather than assumed. It happens to be the
 # checker's default; writing it out is what makes `severity: ASIL_D` below a
 # reference to a named scale rather than a string nobody validates.
 severity_levels: [QM, ASIL_A, ASIL_B, ASIL_C, ASIL_D]
 
+# What each rung needs from outside the island. A function is lost by
+# silence on its topics, and, with `when:`, also by value: `when:` names the
+# predicate that LOSES it (ros-launch-manifest v0.1.46).
+functions:
+  # Lost by silence: the HPC is alive while the stream arrives.
+  hpc_alive: [/system/operation_mode/availability]
+  # Lost by value OR by silence: the HPC says the vehicle is in its domain.
+  # The handler's own predicate is isAvailableCurrentOperationMode(), which
+  # in AUTONOMOUS reads exactly this field.
+  hpc_in_odd:
+    of: [/system/operation_mode/availability]
+    when: { field: autonomous, equals: false }
+  # The driver's answer. Lost while the control mode is anything but MANUAL
+  # (or silent), so it HOLDS exactly when the vehicle reports MANUAL. The
+  # constant is the message's own (ControlModeReport.MANUAL = 4), resolved
+  # through the ament index.
+  driver_took_over:
+    of: [/vehicle/status/control_mode]
+    when: { field: mode, not_equals: MANUAL }
+
 hazards:
-  operation_mode_unavailable:
+  hpc_loss:
     severity: ASIL_D
     description: >-
-      the operation-mode availability stream stops, so nothing upstream is
-      still deciding whether the vehicle may drive; the island has to bring
-      it to a stop before the silence becomes a hazardous event
+      the operation-mode availability stream stops (the HPC is lost), so
+      nothing upstream is still deciding whether the vehicle may drive; the
+      island alone has to bring it to a stop before the silence becomes a
+      hazardous event
     guards: [/system/operation_mode/availability]
     on: omission
-    ftti: 3s
+    entry_speed: &odd_speed_bound 8.33   # m/s = 30 km/h, the ODD speed bound
+    ftti: 10s
+    reaction: l3_engaged
+  odd_exit:
+    severity: ASIL_B        # illustrative; HARA-owned
+    description: >-
+      the vehicle leaves its operating domain (speed bound or weather) while
+      the ADS drives; the driver must take over within the takeover window
+      or the vehicle must be stopped in lane
+    guards: [/system/operation_mode/availability]
+    on: reported
+    when: { field: autonomous, equals: false }
+    entry_speed: *odd_speed_bound
+    ftti: 30s
+    reaction: l3_engaged
+
+modes:
+  l3_engaged:
+    description: the ADS drives, inside its operating domain
+    requires: [hpc_alive, hpc_in_odd]
+    fallback: [takeover_request, comfortable_stop, emergency_stop]
+  takeover_request:
+    description: the driver is asked to take over; the ADS keeps driving
+    requires: [hpc_alive]
+    reaction: island.tor
+    window: { duration: 10s, param: mrm_handler.takeover_request_timeout }
+    exit: { on: driver_took_over, to: manual }
+  comfortable_stop:
+    description: in-lane stop by the HPC's planner at the operator's request
+    requires: [hpc_alive]   # the HPC's planner executes the stop
+    reaction: island.comfortable_stop
+  emergency_stop:
+    description: the island brakes the vehicle itself
+    requires: []
     reaction: island.emergency_stop
+  manual:
+    description: the driver drives; the ADS no longer commands the vehicle
+    requires: []
 
 nodes:
   mrm_comfortable_stop_operator:
@@ -251,6 +372,18 @@ nodes:
       on_timer:
         trigger: { timer: { rate_hz: 10 } }
         output: [status]
+      # `onOperate` -> `publishVelocityLimit()` (phase8-W7): the service
+      # callback publishes the limit itself, so the comfortable rung's walk
+      # crosses the operate service edge and continues here (play_launch
+      # phase 83, F3). The limit IS the stop the planner then executes, so
+      # the braking profile is this node's: the settle is derived from its
+      # own `min_acceleration` and `min_jerk` and the hazard's entry speed.
+      operate:
+        trigger: { input: [operate] }
+        output: [max_velocity_candidates]
+        safe_state:
+          emits: max_velocity_candidates
+          settle: { decel: min_acceleration, jerk: min_jerk }
     pub:
       # Both are TRANSIENT_LOCAL in the source (QoS(1).transient_local()): a
       # velocity limit is latched so a late planner still sees it. Stated
@@ -281,11 +414,12 @@ nodes:
         # edge, and the tick as a SAMPLING hop of one period (33.33 ms). So
         # no `max_latency` is declared here: the walk charges the period
         # itself, and a number here would be the callback's own execution
-        # budget, which nobody has measured. The safe state moved here from
-        # call_mrm: the plant is commanded by THIS node's output, and the
-        # settle (arithmetic at the top of this file, one assumed input, the
-        # 3.0 m/s entry speed) is charged on top of it.
-        safe_state: { emits: emergency_control_cmd, settle: 2034ms }
+        # budget, which nobody has measured. The settle is DERIVED (phase8-W7)
+        # from this node's braking profile and the hazard's entry speed; it
+        # was a literal 2034ms computed by hand at an assumed 3.0 m/s.
+        safe_state:
+          emits: emergency_control_cmd
+          settle: { decel: target_acceleration, jerk: target_jerk }
     sub:
       # Cached in onControlCommand and read on the timer as the ramp seed: a
       # read-latest input, not a trigger. `state: true` says so; without it
@@ -314,16 +448,21 @@ nodes:
       use_comfortable_stop: { type: bool }
       turning_hazard_on.emergency: { type: bool }
       turning_indicator_on.emergency: { type: bool }
+      # phase8-W7, the takeover request (a demo extension, not upstream).
+      use_takeover_request: { type: bool }
+      takeover_request_timeout: { type: double }
     cli:
       comfortable_stop_operate: {}
       emergency_stop_operate: {}
     paths:
-      # `onTimer` -> publishMrmState / TurnIndicatorCmd / HazardCmd / GearCmd /
-      # EmergencyHolding, in that order.
+      # `onTimer` -> publishMrmState / TakeoverRequestState /
+      # TurnIndicatorCmd / HazardCmd / GearCmd / EmergencyHolding, in that
+      # order.
       on_timer:
         trigger: { timer: { rate_hz: 10 } }
         output:
           - mrm_state
+          - takeover_request_state
           - turn_indicators_cmd
           - hazard_lights_cmd
           - gear_cmd_out
@@ -333,28 +472,44 @@ nodes:
         # the period is the budget; it is not a new number.
         max_latency: 100ms
       # THE REACTION. This is the same callback body as `on_timer` -- the
-      # handler notices the stale availability stamp on a tick and calls the
-      # MRM behaviour from there; there is no separate subscription callback
-      # in the code. It is declared as an input-triggered path because that
-      # is the shape a detector reaction has: it is caused by the fault on
-      # `operation_mode_availability`, not by the clock. The 110 ms is the
-      # tick it waits for (100 ms) plus `timeout_call_mrm_behavior` (10 ms),
-      # so the periodic implementation is accounted for inside the number
-      # rather than hidden by the declaration.
+      # handler notices the stale availability stamp, or the cleared
+      # `autonomous`, on a tick and reacts from there; there is no separate
+      # subscription callback in the code. It is declared as an
+      # input-triggered path because that is the shape a detector reaction
+      # has: it is caused by the fault on `operation_mode_availability`, not
+      # by the clock. The 110 ms is the tick it waits for (100 ms) plus
+      # `timeout_call_mrm_behavior` (10 ms), so the periodic implementation is
+      # accounted for inside the number rather than hidden by the
+      # declaration. Both faults start it; it enters the takeover request,
+      # calls an operator, or both in turn, and the outputs name all three so
+      # the walk can follow each rung (phase8-W7).
       call_mrm:
         trigger: { input: [operation_mode_availability] }
-        output: [mrm_state, emergency_stop_operate]
+        output:
+          - mrm_state
+          - takeover_request_state
+          - comfortable_stop_operate
+          - emergency_stop_operate
         max_latency: 110ms
-        # The client call to the emergency-stop operator is named in `output`
-        # so the reaction walk can follow the service edge (phase 82). The
-        # safe state is declared on the operator, whose output commands the
-        # plant; it used to be here, on the handler's own state report.
+        # The client calls to the operators are named in `output` so the
+        # reaction walk can follow the service edges (phase 82). The safe
+        # states are declared on the operators, whose outputs command the
+        # plant.
+      # THE EXIT (phase8-W7). The driver's MANUAL, taken on the handler's own
+      # control_mode input and answered on the takeover-request state, again
+      # on a tick. Declaring it is what makes the image trace the take
+      # (TAKE_MRM_HANDLER_CONTROL_MODE) and what `mode-exit-unwired` checks.
+      driver_exit:
+        trigger: { input: [control_mode] }
+        output: [takeover_request_state]
+        max_latency: 100ms
     sub:
       # `lease_duration` is `timeout_operation_mode_availability: 0.5` from
       # this node's own parameter file, restated as the middleware fact it
       # is. `on_violation` is what makes this subscriber a DETECTOR rather
       # than a consumer that happens to have a rate wish: without it the
-      # hazard above has nothing watching its guard, and the checker says so.
+      # hazards above have nothing watching their guard, and the checker
+      # says so.
       operation_mode_availability:
         min_rate_hz: 10
         # `timeout_operation_mode_availability: 0.5` is a STALENESS bound the
@@ -365,7 +520,9 @@ nodes:
         max_age: 500ms
         qos: { depth: 1, liveliness: manual_by_topic, lease_duration: 500ms }
         on_violation:
-          on: [omission]
+          # `reported` since phase8-W7: the handler also reacts to the VALUE
+          # (isAvailableCurrentOperationMode()), which is odd_exit.
+          on: [omission, reported]
           mechanism: application
           reaction: call_mrm
           within: 110ms
@@ -385,6 +542,9 @@ nodes:
       # otherwise contributes zero. With 5 of 14 stated the queryable table
       # stayed at 26 and the pool at 2 (docs/boot-through.md, iteration 1).
       mrm_state: { min_rate_hz: 10, qos: { durability: volatile } }
+      # phase8-W7: MrmBehaviorStatus reused. AVAILABLE = idle, OPERATING =
+      # the request is on, NOT_AVAILABLE = use_takeover_request is false.
+      takeover_request_state: { min_rate_hz: 10, qos: { durability: volatile } }
       gear_cmd_out: { min_rate_hz: 10, qos: { durability: volatile } }
       hazard_lights_cmd: { min_rate_hz: 10, qos: { durability: volatile } }
       turn_indicators_cmd: { min_rate_hz: 10, qos: { durability: volatile } }
@@ -414,10 +574,10 @@ nodes:
       hazard_lights: { min_rate_hz: 30, qos: { depth: 1, durability: transient_local } }
       turn_indicators: { min_rate_hz: 30, qos: { depth: 1, durability: transient_local } }
 
-# The reaction, as a scope path: from the guarded input to the island's own
-# announcement that the manoeuvre is running. mrm_handler is the only hop the
-# topic graph can see -- see WHERE THE CHAIN OUTRUNS THE CHECKER at the top of
-# this file.
+# The reactions, as scope paths from the guarded input to the topic that
+# commits each rung. What each rung COSTS is the reaction walk the hazards
+# take, which the checker derives; a scope path's own `max_latency` is the
+# NOMINAL traversal.
 #
 # 210 ms, not the 110 ms of the reaction route, and the difference is not
 # slack. A scope path's budget is checked against the NOMINAL traversal, and
@@ -427,8 +587,17 @@ nodes:
 # the right way round and worth saying out loud: the handler does not have to
 # wait for fresh data to react to its absence. Declaring 110 ms here instead
 # makes `scope-budget` reject the file against a 200 ms critical path, which
-# is the checker being correct about a different question.
+# is the checker being correct about a different question. island.tor has
+# the same shape and the same 210 ms. island.comfortable_stop declares none:
+# it crosses the operate service, which the nominal graph does not walk.
 paths:
+  island.tor:
+    trigger: { input: [/system/operation_mode/availability] }
+    output: [/system/takeover_request/state]
+    max_latency: 210ms
+  island.comfortable_stop:
+    trigger: { input: [/system/operation_mode/availability] }
+    output: [/planning/scenario_planning/max_velocity_candidates]
   island.emergency_stop:
     trigger: { input: [/system/operation_mode/availability] }
     output: [/system/emergency/control_cmd]
@@ -453,9 +622,21 @@ topics:
     external: pub
     sub: [mrm_emergency_stop_operator/control_cmd]
     rate_hz: 30
+  # The guard. Its publisher is OUTSIDE this image and outside this launch
+  # tree, and is named anyway (phase8-W7), by its absolute FQN so that it is
+  # not qualified against this scope: odd_exit is a REPORTED fault, and the
+  # checker derives a reported fault's detection from the publisher of the
+  # verdict (its period plus its declared path latency). With no publisher
+  # named, odd_exit is `hazard-unguarded` and `just sync` refuses the file.
+  # The name is the demo's: takeover_demo's availability_gate republishes
+  # Autoware's availability with the ODD verdict folded into `autonomous`
+  # (phase-8 doc D5). Its own 20 ms path is declared in the demo composition
+  # (demo/l3/contracts/l3_takeover.contract.yaml), not here, so this file
+  # charges the 100 ms period alone.
   /system/operation_mode/availability:
     type: tier4_system_msgs/msg/OperationModeAvailability
     external: pub
+    pub: [/availability_gate/availability]
     sub: [mrm_handler/operation_mode_availability]
     rate_hz: 10
   /localization/kinematic_state:
@@ -514,6 +695,13 @@ topics:
     type: autoware_adapi_v1_msgs/msg/MrmState
     external: sub
     pub: [mrm_handler/mrm_state]
+    rate_hz: 10
+  # phase8-W7: the takeover request, the takeover_request rung's reaction
+  # output. Read on the host by the HMI and the timeline probe.
+  /system/takeover_request/state:
+    type: tier4_system_msgs/msg/MrmBehaviorStatus
+    external: sub
+    pub: [mrm_handler/takeover_request_state]
     rate_hz: 10
   /system/emergency/gear_cmd:
     type: autoware_vehicle_msgs/msg/GearCommand

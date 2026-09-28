@@ -79,10 +79,16 @@ tier4_system_msgs::srv::OperateMrm::Response MrmComfortableStopOperator::operate
   // nano-ros port: value-init — generated structs are PODs (porting-notes 09).
   tier4_system_msgs::srv::OperateMrm::Response response{};
   ISLAND_TRACE(ISLAND_MK_SERVE_MRM_COMFORTABLE_STOP_OPERATOR_OPERATE_ENTRY, request.operate);
+  // phase8-W7: the contract's `operate` path (a service callback that
+  // publishes the velocity limit, the comfortable rung's safe state) is this
+  // callback taking an operate=1 request.
+  ISLAND_TRACE(ISLAND_MK_TAKE_MRM_COMFORTABLE_STOP_OPERATOR_OPERATE, request.operate);
   if (request.operate == true) {
+    ISLAND_TRACE(ISLAND_MK_PATH_MRM_COMFORTABLE_STOP_OPERATOR_OPERATE_ENTRY, status_.state);
     publishVelocityLimit();
     status_.state = tier4_system_msgs::msg::MrmBehaviorStatus::OPERATING;
     response.response.success = true;
+    ISLAND_TRACE(ISLAND_MK_PATH_MRM_COMFORTABLE_STOP_OPERATOR_OPERATE_EXIT, status_.state);
   } else {
     publishVelocityLimitClearCommand();
     status_.state = tier4_system_msgs::msg::MrmBehaviorStatus::AVAILABLE;

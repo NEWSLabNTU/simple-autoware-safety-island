@@ -8,42 +8,49 @@
 #ifndef ISLAND_TRACE_MARKERS_H
 #define ISLAND_TRACE_MARKERS_H
 
-#define ISLAND_TRACE_CONTRACT_SHA256 "3879cbf4e701e79063ea59c32514c180932e64530024852b50427b77199f1123"
-#define ISLAND_TRACE_TABLE_SHA256 "bd6e59bbd17e692fb5884f4f5bd1ac4228b6337596b2deb6929467778f6a3e6b"
-#define ISLAND_TRACE_MARKER_COUNT 31
-#define ISLAND_TRACE_ENTITIES "pub=14,sub=11,srv=2,cli=2,timer=4"
+#define ISLAND_TRACE_CONTRACT_SHA256 "77f0913663f56b7bceb90ec612a1f0a672b474cae37ce7a9c5c752aece507460"
+#define ISLAND_TRACE_TABLE_SHA256 "b54335f3431b01b7ab1d463b25b2bd97d4ad897995ae218c85f0f5020897630a"
+#define ISLAND_TRACE_MARKER_COUNT 38
+#define ISLAND_TRACE_ENTITIES "pub=15,sub=11,srv=2,cli=2,timer=4"
 
 #define ISLAND_MK_PATH_MRM_COMFORTABLE_STOP_OPERATOR_ON_TIMER_ENTRY           1 /* path_entry           /mrm_comfortable_stop_operator/on_timer */
 #define ISLAND_MK_PATH_MRM_COMFORTABLE_STOP_OPERATOR_ON_TIMER_EXIT            2 /* path_exit            /mrm_comfortable_stop_operator/on_timer */
-#define ISLAND_MK_PATH_MRM_EMERGENCY_STOP_OPERATOR_ON_TIMER_ENTRY             3 /* path_entry           /mrm_emergency_stop_operator/on_timer */
-#define ISLAND_MK_PATH_MRM_EMERGENCY_STOP_OPERATOR_ON_TIMER_EXIT              4 /* path_exit            /mrm_emergency_stop_operator/on_timer */
-#define ISLAND_MK_PATH_MRM_HANDLER_CALL_MRM_ENTRY                             5 /* path_entry           /mrm_handler/call_mrm */
-#define ISLAND_MK_PATH_MRM_HANDLER_CALL_MRM_EXIT                              6 /* path_exit            /mrm_handler/call_mrm */
-#define ISLAND_MK_PATH_MRM_HANDLER_ON_TIMER_ENTRY                             7 /* path_entry           /mrm_handler/on_timer */
-#define ISLAND_MK_PATH_MRM_HANDLER_ON_TIMER_EXIT                              8 /* path_exit            /mrm_handler/on_timer */
-#define ISLAND_MK_PATH_STOP_MODE_OPERATOR_ON_TIMER_ENTRY                      9 /* path_entry           /stop_mode_operator/on_timer */
-#define ISLAND_MK_PATH_STOP_MODE_OPERATOR_ON_TIMER_EXIT                      10 /* path_exit            /stop_mode_operator/on_timer */
-#define ISLAND_MK_TAKE_MRM_HANDLER_OPERATION_MODE_AVAILABILITY               11 /* take                 /mrm_handler/operation_mode_availability */
-#define ISLAND_MK_CALL_MRM_HANDLER_COMFORTABLE_STOP_OPERATE                  12 /* service_call         /mrm_handler/comfortable_stop_operate */
-#define ISLAND_MK_CALL_MRM_HANDLER_EMERGENCY_STOP_OPERATE                    13 /* service_call         /mrm_handler/emergency_stop_operate */
-#define ISLAND_MK_SERVE_MRM_COMFORTABLE_STOP_OPERATOR_OPERATE_ENTRY          14 /* service_serve_entry  /mrm_comfortable_stop_operator/operate */
-#define ISLAND_MK_SERVE_MRM_COMFORTABLE_STOP_OPERATOR_OPERATE_EXIT           15 /* service_serve_exit   /mrm_comfortable_stop_operator/operate */
-#define ISLAND_MK_SERVE_MRM_EMERGENCY_STOP_OPERATOR_OPERATE_ENTRY            16 /* service_serve_entry  /mrm_emergency_stop_operator/operate */
-#define ISLAND_MK_SERVE_MRM_EMERGENCY_STOP_OPERATOR_OPERATE_EXIT             17 /* service_serve_exit   /mrm_emergency_stop_operator/operate */
-#define ISLAND_MK_PUB_MRM_COMFORTABLE_STOP_OPERATOR_CLEAR_VELOCITY_LIMIT     18 /* publish              /mrm_comfortable_stop_operator/clear_velocity_limit */
-#define ISLAND_MK_PUB_MRM_COMFORTABLE_STOP_OPERATOR_MAX_VELOCITY_CANDIDATES  19 /* publish              /mrm_comfortable_stop_operator/max_velocity_candidates */
-#define ISLAND_MK_PUB_MRM_COMFORTABLE_STOP_OPERATOR_STATUS                   20 /* publish              /mrm_comfortable_stop_operator/status */
-#define ISLAND_MK_PUB_MRM_EMERGENCY_STOP_OPERATOR_EMERGENCY_CONTROL_CMD      21 /* publish              /mrm_emergency_stop_operator/emergency_control_cmd */
-#define ISLAND_MK_PUB_MRM_EMERGENCY_STOP_OPERATOR_STATUS                     22 /* publish              /mrm_emergency_stop_operator/status */
-#define ISLAND_MK_PUB_MRM_HANDLER_EMERGENCY_HOLDING                          23 /* publish              /mrm_handler/emergency_holding */
-#define ISLAND_MK_PUB_MRM_HANDLER_GEAR_CMD_OUT                               24 /* publish              /mrm_handler/gear_cmd_out */
-#define ISLAND_MK_PUB_MRM_HANDLER_HAZARD_LIGHTS_CMD                          25 /* publish              /mrm_handler/hazard_lights_cmd */
-#define ISLAND_MK_PUB_MRM_HANDLER_MRM_STATE                                  26 /* publish              /mrm_handler/mrm_state */
-#define ISLAND_MK_PUB_MRM_HANDLER_TURN_INDICATORS_CMD                        27 /* publish              /mrm_handler/turn_indicators_cmd */
-#define ISLAND_MK_PUB_STOP_MODE_OPERATOR_CONTROL                             28 /* publish              /stop_mode_operator/control */
-#define ISLAND_MK_PUB_STOP_MODE_OPERATOR_GEAR                                29 /* publish              /stop_mode_operator/gear */
-#define ISLAND_MK_PUB_STOP_MODE_OPERATOR_HAZARD_LIGHTS                       30 /* publish              /stop_mode_operator/hazard_lights */
-#define ISLAND_MK_PUB_STOP_MODE_OPERATOR_TURN_INDICATORS                     31 /* publish              /stop_mode_operator/turn_indicators */
+#define ISLAND_MK_PATH_MRM_COMFORTABLE_STOP_OPERATOR_OPERATE_ENTRY            3 /* path_entry           /mrm_comfortable_stop_operator/operate */
+#define ISLAND_MK_PATH_MRM_COMFORTABLE_STOP_OPERATOR_OPERATE_EXIT             4 /* path_exit            /mrm_comfortable_stop_operator/operate */
+#define ISLAND_MK_PATH_MRM_EMERGENCY_STOP_OPERATOR_ON_TIMER_ENTRY             5 /* path_entry           /mrm_emergency_stop_operator/on_timer */
+#define ISLAND_MK_PATH_MRM_EMERGENCY_STOP_OPERATOR_ON_TIMER_EXIT              6 /* path_exit            /mrm_emergency_stop_operator/on_timer */
+#define ISLAND_MK_PATH_MRM_HANDLER_CALL_MRM_ENTRY                             7 /* path_entry           /mrm_handler/call_mrm */
+#define ISLAND_MK_PATH_MRM_HANDLER_CALL_MRM_EXIT                              8 /* path_exit            /mrm_handler/call_mrm */
+#define ISLAND_MK_PATH_MRM_HANDLER_DRIVER_EXIT_ENTRY                          9 /* path_entry           /mrm_handler/driver_exit */
+#define ISLAND_MK_PATH_MRM_HANDLER_DRIVER_EXIT_EXIT                          10 /* path_exit            /mrm_handler/driver_exit */
+#define ISLAND_MK_PATH_MRM_HANDLER_ON_TIMER_ENTRY                            11 /* path_entry           /mrm_handler/on_timer */
+#define ISLAND_MK_PATH_MRM_HANDLER_ON_TIMER_EXIT                             12 /* path_exit            /mrm_handler/on_timer */
+#define ISLAND_MK_PATH_STOP_MODE_OPERATOR_ON_TIMER_ENTRY                     13 /* path_entry           /stop_mode_operator/on_timer */
+#define ISLAND_MK_PATH_STOP_MODE_OPERATOR_ON_TIMER_EXIT                      14 /* path_exit            /stop_mode_operator/on_timer */
+#define ISLAND_MK_TAKE_MRM_COMFORTABLE_STOP_OPERATOR_OPERATE                 15 /* take                 /mrm_comfortable_stop_operator/operate */
+#define ISLAND_MK_TAKE_MRM_HANDLER_CONTROL_MODE                              16 /* take                 /mrm_handler/control_mode */
+#define ISLAND_MK_TAKE_MRM_HANDLER_OPERATION_MODE_AVAILABILITY               17 /* take                 /mrm_handler/operation_mode_availability */
+#define ISLAND_MK_CALL_MRM_HANDLER_COMFORTABLE_STOP_OPERATE                  18 /* service_call         /mrm_handler/comfortable_stop_operate */
+#define ISLAND_MK_CALL_MRM_HANDLER_EMERGENCY_STOP_OPERATE                    19 /* service_call         /mrm_handler/emergency_stop_operate */
+#define ISLAND_MK_SERVE_MRM_COMFORTABLE_STOP_OPERATOR_OPERATE_ENTRY          20 /* service_serve_entry  /mrm_comfortable_stop_operator/operate */
+#define ISLAND_MK_SERVE_MRM_COMFORTABLE_STOP_OPERATOR_OPERATE_EXIT           21 /* service_serve_exit   /mrm_comfortable_stop_operator/operate */
+#define ISLAND_MK_SERVE_MRM_EMERGENCY_STOP_OPERATOR_OPERATE_ENTRY            22 /* service_serve_entry  /mrm_emergency_stop_operator/operate */
+#define ISLAND_MK_SERVE_MRM_EMERGENCY_STOP_OPERATOR_OPERATE_EXIT             23 /* service_serve_exit   /mrm_emergency_stop_operator/operate */
+#define ISLAND_MK_PUB_MRM_COMFORTABLE_STOP_OPERATOR_CLEAR_VELOCITY_LIMIT     24 /* publish              /mrm_comfortable_stop_operator/clear_velocity_limit */
+#define ISLAND_MK_PUB_MRM_COMFORTABLE_STOP_OPERATOR_MAX_VELOCITY_CANDIDATES  25 /* publish              /mrm_comfortable_stop_operator/max_velocity_candidates */
+#define ISLAND_MK_PUB_MRM_COMFORTABLE_STOP_OPERATOR_STATUS                   26 /* publish              /mrm_comfortable_stop_operator/status */
+#define ISLAND_MK_PUB_MRM_EMERGENCY_STOP_OPERATOR_EMERGENCY_CONTROL_CMD      27 /* publish              /mrm_emergency_stop_operator/emergency_control_cmd */
+#define ISLAND_MK_PUB_MRM_EMERGENCY_STOP_OPERATOR_STATUS                     28 /* publish              /mrm_emergency_stop_operator/status */
+#define ISLAND_MK_PUB_MRM_HANDLER_EMERGENCY_HOLDING                          29 /* publish              /mrm_handler/emergency_holding */
+#define ISLAND_MK_PUB_MRM_HANDLER_GEAR_CMD_OUT                               30 /* publish              /mrm_handler/gear_cmd_out */
+#define ISLAND_MK_PUB_MRM_HANDLER_HAZARD_LIGHTS_CMD                          31 /* publish              /mrm_handler/hazard_lights_cmd */
+#define ISLAND_MK_PUB_MRM_HANDLER_MRM_STATE                                  32 /* publish              /mrm_handler/mrm_state */
+#define ISLAND_MK_PUB_MRM_HANDLER_TAKEOVER_REQUEST_STATE                     33 /* publish              /mrm_handler/takeover_request_state */
+#define ISLAND_MK_PUB_MRM_HANDLER_TURN_INDICATORS_CMD                        34 /* publish              /mrm_handler/turn_indicators_cmd */
+#define ISLAND_MK_PUB_STOP_MODE_OPERATOR_CONTROL                             35 /* publish              /stop_mode_operator/control */
+#define ISLAND_MK_PUB_STOP_MODE_OPERATOR_GEAR                                36 /* publish              /stop_mode_operator/gear */
+#define ISLAND_MK_PUB_STOP_MODE_OPERATOR_HAZARD_LIGHTS                       37 /* publish              /stop_mode_operator/hazard_lights */
+#define ISLAND_MK_PUB_STOP_MODE_OPERATOR_TURN_INDICATORS                     38 /* publish              /stop_mode_operator/turn_indicators */
 
 /* Knobs that size the image, as the build delivered them (autoconf.h). */
 #ifdef CONFIG_COMMON_LIBC_MALLOC_ARENA_SIZE

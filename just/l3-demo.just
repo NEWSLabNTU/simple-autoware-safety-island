@@ -181,3 +181,32 @@ l3-check:
     [ -x $venv/bin/play_launch ] || { python3 -m venv $venv && $venv/bin/pip install -q "play_launch==$ver"; }
     env -i HOME="$HOME" USER="$USER" PATH=/usr/bin:/bin PLAY_LAUNCH="$PWD/$venv/bin/play_launch" \
         bash -c 'source /opt/ros/humble/setup.bash && exec .github/check-contracts.sh'
+
+# ---- phase8-W7: the takeover timeline ------------------------------------------
+# tools/timeline/README.md. One traced native_sim run, everything at once:
+#   tools/timeline/run-native.sh a|b|encore <id>      -> build/timeline/<id>/
+# By hand, one terminal each, into one run directory (default build/timeline/live);
+# Autoware must be launched with
+# operation_mode_availability_topic:=/system/operation_mode/availability_raw:
+#   just l3-scenario gate        the availability gate (the ODD verdict)
+#   just l3-probe                the contract probe and logger
+#   just l3-timeline             the live view
+#   just l3-scenario buttons     ODD exit / driver takes over / HPC loss
+
+# The contract probe and logger: every `when:` topic and the velocity, to JSONL (blocks). phase8-W7
+l3-probe dir="build/timeline/live":
+    bash -c 'source scripts/env.sh >/dev/null 2>&1; exec python3 tools/timeline/probe.py --out "{{dir}}/probe.jsonl"'
+
+# The scenario controller: gate | buttons | press <button> | run a|b|encore. phase8-W7
+l3-scenario cmd="buttons" arg="" dir="build/timeline/live":
+    #!/usr/bin/env bash
+    source scripts/env.sh >/dev/null 2>&1
+    log="{{dir}}/scenario.jsonl"; [ "{{cmd}}" = gate ] && log="{{dir}}/gate.jsonl"
+    exec python3 tools/timeline/scenario.py {{cmd}} {{arg}} --log "$log"
+
+# The live timeline of a run directory (pyqtgraph; blocks). png=<file> renders the static one instead. phase8-W7
+l3-timeline dir="build/timeline/live" png="":
+    #!/usr/bin/env bash
+    if [ -n "{{png}}" ]; then exec python3 tools/timeline/render.py "{{dir}}" --out "{{png}}" --table; fi
+    export DISPLAY="${DISPLAY:-{{VNC_DISPLAY}}}"
+    exec python3 tools/timeline/timeline.py "{{dir}}"

@@ -66,6 +66,9 @@ struct Param
   bool use_comfortable_stop;
   HazardLampPolicy turning_hazard_on{};
   TurnIndicatorPolicy turning_indicator_on{};
+  // phase8-W7 demo extension (not upstream): the takeover request.
+  bool use_takeover_request;
+  double takeover_request_timeout;
 };
 
 class MrmHandler : public ::nros::NodeWithTimers<1>
@@ -137,12 +140,17 @@ private:
   ::nros::Publisher<autoware_vehicle_msgs::msg::GearCommand> pub_gear_cmd_;
   ::nros::Publisher<autoware_adapi_v1_msgs::msg::MrmState> pub_mrm_state_;
   ::nros::Publisher<tier4_system_msgs::msg::EmergencyHoldingState> pub_emergency_holding_;
+  // phase8-W7: /system/takeover_request/state. MrmBehaviorStatus reused
+  // (AVAILABLE = idle, OPERATING = request on) so the island needs no new
+  // message package.
+  ::nros::Publisher<tier4_system_msgs::msg::MrmBehaviorStatus> pub_takeover_request_state_;
 
   void publishTurnIndicatorCmd();
   void publishHazardCmd();
   void publishGearCmd();
   void publishMrmState();
   void publishEmergencyHolding();
+  void publishTakeoverRequestState();
 
   autoware_adapi_v1_msgs::msg::MrmState mrm_state_{};
 
@@ -167,6 +175,15 @@ private:
   bool has_stamp_current_operation_mode_become_unavailable_{false};
   bool is_operation_mode_availability_timeout{false};
   void checkOperationModeAvailabilityTimeout();
+
+  // Takeover request (phase8-W7 demo extension, not upstream; porting-notes).
+  // Entered on the value fault while AUTONOMOUS, left on MANUAL (the driver
+  // answered), on expiry (the MRM starts) or when the fault clears.
+  bool is_takeover_requested_{false};
+  bool is_takeover_request_expired_{false};
+  double stamp_takeover_request_{0.0};
+  bool updateTakeoverRequest(bool is_control_mode_autonomous);
+  void clearTakeoverRequest(const char * why);
 
   // Algorithm
   bool is_emergency_holding_ = false;

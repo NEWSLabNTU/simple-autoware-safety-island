@@ -342,6 +342,25 @@ the others by fast-forward push once implementation starts.
   logger; the JSONL schema; the pyqtgraph drawer and the matplotlib
   renderer. Gate: branch A and branch B on native_sim with the timeline,
   every bar from the contract.
+  Status (2026-09-28): gate MET on native_sim, docs/takeover-trace.md. The
+  live contract carries the takeover (hazards `odd_exit` and `hpc_loss`,
+  entry_speed 8.33, the 10 s window bound to
+  `mrm_handler.takeover_request_timeout`, exit on `driver_took_over`, settle
+  by parameters); nano-ros PR 1394 moves the vendored pin to play_launch
+  92043c82 / rlm v0.1.46. Handler: `use_takeover_request`,
+  `takeover_request_timeout`, `/system/takeover_request/state`
+  (MrmBehaviorStatus reused), asked only while the operation mode is
+  AUTONOMOUS. tools/timeline: probe, gate and buttons, merge, pyqtgraph view,
+  matplotlib renderer, CI selftest. A 3/3: request on 0.5-88 ms after the
+  verdict, MANUAL 3.04 s in, request off 57-63 ms later, no MRM. B: b5-b8
+  comfortable stop to standstill in 11.3-18.2 s (FTTI 30 s); b3, b4 escalated
+  to the emergency stop when the host-side gate went silent 582 / 1134 ms
+  (load 27 / 56; `hpc_alive` is the rung's precondition, so the island was
+  right). Encore 3/3: last sample to braking 547-570 ms (643.33), to
+  standstill 3.47-3.51 s (FTTI 10 s). Open: the window expires on the
+  handler's tick, up to 100 ms after the 10 s, which the checker's WINDOWS
+  term does not charge (b8 +30 ms); the simulator's hazard-lights status never
+  shows ENABLE; b6's island trace ends 0.5 s in.
 - **W8 - silicon rehearsal.** W1 + W2 + W5 on the board; the trace window
   (G9); the encore (HPC loss) traced on the MCU with the live plot; ten
   consecutive scripted runs. Gate: the ten runs, every one green or

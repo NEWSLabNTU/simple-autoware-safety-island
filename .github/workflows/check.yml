@@ -33,3 +33,13 @@ jobs:
         run: |
           source /opt/ros/humble/setup.bash
           .github/check-contracts.sh
+      # phase8-W7: the timeline draws its declared bars from the checker's
+      # `--explain` table and its stop curve from the same braking-profile
+      # arithmetic. The selftest parses a captured table
+      # (tools/timeline/testdata/explain.txt) and recomputes every settle.
+      - name: timeline tools read the checker's table
+        shell: bash
+        run: |
+          python3 -m py_compile tools/timeline/*.py
+          bash -n tools/timeline/run-native.sh
+          python3 tools/timeline/tlcommon.py selftest

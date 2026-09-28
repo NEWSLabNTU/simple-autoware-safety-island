@@ -86,6 +86,10 @@ MrmHandler::MrmHandler(::nros::NodeHandle handle)
   param_.turning_hazard_on.emergency = declare_parameter<bool>("turning_hazard_on.emergency", true);
   param_.turning_indicator_on.emergency =
     declare_parameter<bool>("turning_indicator_on.emergency", true);
+  // phase8-W7 demo extension (not upstream): the takeover request. The
+  // contract's takeover_request window is bound to the timeout.
+  param_.use_takeover_request = declare_parameter<bool>("use_takeover_request", true);
+  param_.takeover_request_timeout = declare_parameter<double>("takeover_request_timeout", 10.0);
 
   // Subscribers — resolved contract names (porting-notes 07); the polling
   // subscribers became caching callbacks (porting-notes 14).
@@ -129,6 +133,8 @@ MrmHandler::MrmHandler(::nros::NodeHandle handle)
     create_publisher_in<autoware_adapi_v1_msgs::msg::MrmState>("/system/fail_safe/mrm_state");
   pub_emergency_holding_ = create_publisher_in<tier4_system_msgs::msg::EmergencyHoldingState>(
     "/system/fail_safe/emergency_holding");
+  pub_takeover_request_state_ = create_publisher_in<tier4_system_msgs::msg::MrmBehaviorStatus>(
+    "/system/takeover_request/state");
 
   // Clients — POLL model (porting-notes 14). Callback groups dropped (single
   // executor); pull_over client dropped (no on-island operator).
@@ -186,6 +192,8 @@ void MrmHandler::onOdometry(const nav_msgs::msg::Odometry & msg)
 
 void MrmHandler::onControlMode(const autoware_vehicle_msgs::msg::ControlModeReport & msg)
 {
+  // The driver's answer is read here (the contract's `driver_exit` path).
+  ISLAND_TRACE(ISLAND_MK_TAKE_MRM_HANDLER_CONTROL_MODE, msg.mode);
   control_mode_ = msg;
   has_control_mode_ = true;
 }
@@ -278,6 +286,20 @@ void MrmHandler::publishEmergencyHolding()
   msg.is_holding = is_emergency_holding_;
   ISLAND_TRACE(ISLAND_MK_PUB_MRM_HANDLER_EMERGENCY_HOLDING, msg.is_holding);
   pub_emergency_holding_.publish(msg);
+}
+
+void MrmHandler::publishTakeoverRequestState()
+{
+  using tier4_system_msgs::msg::MrmBehaviorStatus;
+  MrmBehaviorStatus msg{};
+  msg.stamp = now_stamp();
+  if (!param_.use_takeover_request) {
+    msg.state = MrmBehaviorStatus::NOT_AVAILABLE;
+  } else {
+    msg.state = is_takeover_requested_ ? MrmBehaviorStatus::OPERATING : MrmBehaviorStatus::AVAILABLE;
+  }
+  ISLAND_TRACE(ISLAND_MK_PUB_MRM_HANDLER_TAKEOVER_REQUEST_STATE, msg.state);
+  pub_takeover_request_state_.publish(msg);
 }
 
 void MrmHandler::operateMrm()
@@ -442,15 +464,29 @@ void MrmHandler::onTimer()
 
   checkOperationModeAvailabilityTimeout();
   // call_mrm is this same body on a tick where the availability stream has
-  // gone stale (the contract's comment on `call_mrm` says so).
-  if (is_operation_mode_availability_timeout) {
+  // gone stale, or (phase8-W7) says the current mode is not available: the
+  // two faults the contract's `call_mrm` answers.
+  const bool is_fault = is_operation_mode_availability_timeout || !isAvailableCurrentOperationMode();
+  if (is_fault) {
     ISLAND_TRACE(ISLAND_MK_PATH_MRM_HANDLER_CALL_MRM_ENTRY, mrm_state_.state);
   }
+  const bool was_takeover_requested = is_takeover_requested_;
   updateMrmState();
   operateMrm();
+  // driver_exit is this same body on the tick that reads the driver's MANUAL
+  // while the takeover request is on (the contract's `driver_exit` path).
+  const bool is_driver_exit =
+    was_takeover_requested && !is_takeover_requested_ && !isControlModeAutonomous();
+  if (is_driver_exit) {
+    ISLAND_TRACE(ISLAND_MK_PATH_MRM_HANDLER_DRIVER_EXIT_ENTRY, control_mode_.mode);
+  }
 
   publishMrmState();
-  if (is_operation_mode_availability_timeout) {
+  publishTakeoverRequestState();
+  if (is_driver_exit) {
+    ISLAND_TRACE(ISLAND_MK_PATH_MRM_HANDLER_DRIVER_EXIT_EXIT, is_takeover_requested_);
+  }
+  if (is_fault) {
     ISLAND_TRACE(ISLAND_MK_PATH_MRM_HANDLER_CALL_MRM_EXIT, mrm_state_.state);
   }
   publishTurnIndicatorCmd();
@@ -475,6 +511,10 @@ void MrmHandler::updateMrmState()
   const bool is_emergency = isEmergency();
 
   if (!is_emergency) {
+    // Back in the domain (or the stream is back): no request, and the next
+    // fault gets a fresh window.
+    if (is_takeover_requested_) clearTakeoverRequest("the fault cleared");
+    is_takeover_request_expired_ = false;
     if (mrm_state_.state != MrmState::NORMAL) transitionTo(MrmState::NORMAL);
     return;
   }
@@ -483,6 +523,8 @@ void MrmHandler::updateMrmState()
 
   switch (mrm_state_.state) {
     case MrmState::NORMAL:
+      // phase8-W7: ask the driver first, then fall to the MRM (below).
+      if (updateTakeoverRequest(is_control_mode_autonomous)) return;
       if (is_control_mode_autonomous) {
         transitionTo(MrmState::MRM_OPERATING);
       }
@@ -512,6 +554,59 @@ void MrmHandler::updateMrmState()
       std::printf("[mrm_handler] ERROR: invalid state: %d\n", mrm_state_.state);
       return;
   }
+}
+
+// phase8-W7 demo extension (not upstream; brief D section 1.5). Autoware
+// 1.5.0 has no takeover request. Called in NORMAL while the handler sees a
+// fault; returns true while the MRM must wait for the driver. The driver's
+// answer needs nothing new: NORMAL starts an MRM only in AUTONOMOUS, so MANUAL
+// is the cancel, and this only ends the request. The MRM that follows expiry
+// is the one getCurrentMrmBehavior() picks, as for any fault; a silent
+// availability stream is never waited on (it forces EMERGENCY_STOP there).
+bool MrmHandler::updateTakeoverRequest(const bool is_control_mode_autonomous)
+{
+  if (!is_control_mode_autonomous) {
+    if (is_takeover_requested_) clearTakeoverRequest("the driver took over");
+    return false;
+  }
+  // Only the ODD exit asks the driver: the ADS is driving (operation mode
+  // AUTONOMOUS) and its availability says it may not. Any other fault in
+  // NORMAL -- a vehicle that boots in AUTONOMOUS control mode with nothing
+  // available yet, as the planning simulator does -- takes the MRM at once,
+  // as upstream does.
+  using autoware_adapi_v1_msgs::msg::OperationModeState;
+  if (
+    !param_.use_takeover_request || is_takeover_request_expired_ ||
+    getCurrentOperationMode() != OperationModeState::AUTONOMOUS) {
+    return false;
+  }
+  if (is_operation_mode_availability_timeout) {
+    if (is_takeover_requested_) clearTakeoverRequest("the availability stream stopped");
+    return false;
+  }
+  if (!is_takeover_requested_) {
+    is_takeover_requested_ = true;
+    stamp_takeover_request_ = now_sec();
+    // Integer ms: the Zephyr image's minimal printf has no %f.
+    std::printf(
+      "[mrm_handler] takeover request: on, the driver has %d ms\n",
+      static_cast<int>(param_.takeover_request_timeout * 1000.0));
+    return true;
+  }
+  if (now_sec() - stamp_takeover_request_ < param_.takeover_request_timeout) {
+    return true;
+  }
+  is_takeover_request_expired_ = true;
+  clearTakeoverRequest("the window expired");
+  return false;
+}
+
+void MrmHandler::clearTakeoverRequest(const char * why)
+{
+  is_takeover_requested_ = false;
+  std::printf(
+    "[mrm_handler] takeover request: off after %d ms, %s\n",
+    static_cast<int>((now_sec() - stamp_takeover_request_) * 1000.0), why);
 }
 
 uint16_t MrmHandler::getCurrentMrmBehavior()
