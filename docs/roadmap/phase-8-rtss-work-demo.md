@@ -289,6 +289,19 @@ the others by fast-forward push once implementation starts.
 - **W1 - parameter store without services (nano-ros).** Gate: the island
   image links and boots with `features = []` and no local patch; QEMU first
   spin at the conf stack; the board region report.
+  Status (2026-09-29): gate MET, docs/boot-through.md ("Parameter store,
+  minimal form"). nano-ros PR #1384 (issue 1529) merged as cc1f5a93e: nros-cpp
+  `param-store` gives every Zephyr C++ image the store without the services.
+  Island pin cc1f5a93e, no local patch, `features = []`; queryables 7; the
+  entry seeds the 21 launch values and `declare_parameter` returns them.
+  QEMU links (RAM 403,956 B); at the conf heap it stops at stage 4 on the
+  heap (peak 88,312 of 94,720); at the D4 heap 122,880 and the conf stack
+  16,384 it reaches FirstSpin, peak 109,376 B, four nodes on the host, no
+  console error (headroom refused: 14,016 B spare, floor 24,576). Board
+  region report RAM 288,792 of 327,680 B (88.13 %), not flashed. Lost:
+  `ros2 param` and the parameter services. `use_comfortable_stop` is seeded
+  true since W7's yaml. Open: the heap value is W8's (the report asks for
+  >= 133,952 B). Island pin moved on to bec9aecb8 with W7 (contains cc1f5a93e).
 - **W2 - the link.** Root cause of the stall; 921,600 baud on both ends; the
   gateway router config; downsampling of Odometry and the two 30 Hz
   status topics on the serial egress; a 10-minute soak with the contract's

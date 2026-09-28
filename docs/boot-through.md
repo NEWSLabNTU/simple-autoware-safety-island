@@ -447,3 +447,109 @@ Nothing was cut. The derived retention slot (5 x 105 B, not 5 x 1,024 B) paid
 for the three extra slots, the five extra queryables and the 6 + 32 extra
 POSIX objects. The 776 B provenance staging packet and a smaller
 `RAM_TRACING_BUFFER_SIZE` are still available, if the board ever needs them.
+
+## Parameter store, minimal form
+
+phase8-W1, 2026-09-29. `features = []` in
+`src/safety_island_bringup/system.toml` (the parameter services off;
+`src/qemu_entry/system.toml` declares no `features`). nano-ros PR #1384
+(issue 1529, merged as cc1f5a93e) splits nros-cpp's feature: `param-store`
+compiles the store entry points (launch seeds, node-scoped
+declare/get/set) and every Zephyr C++ image gets it; `param-services` adds
+only the six servers. The island's pin is cc1f5a93e with no local patch.
+
+What the island keeps: the parameter STORE. The generated entry seeds the
+launch file's `<param from>` values (21 `nros_cpp_declare_param` calls in
+`build-qemu/qemu_entry_nros_main_generated.cpp`, no
+`register_parameter_services`), and each component's `declare_parameter`
+returns the seeded value, or its source default, instead of Unsupported
+(-16). What it loses: `ros2 param get/set/list/describe/dump`, the
+parameter services, and the `use_sim_time` runtime switch. From the host
+during the FirstSpin run below:
+
+    == ros2 service list ==
+    /system/mrm/comfortable_stop/operate
+    /system/mrm/emergency_stop/operate
+    == ros2 param list ==
+    (empty)
+
+The seeds keep the yaml's values, so `use_comfortable_stop` boots **false**
+(`mrm_handler.param.yaml:13`; the source default is true and the demo wants
+true). That is a yaml edit, not a store question; it is left open here.
+
+The derived tables (`build-qemu/nros/entity_inventory.cmake`):
+
+    set(NROS_DERIVED_MAX_QUERYABLES 7)
+    set(NROS_ENTITY_APP_QUERYABLES 7)
+    set(NROS_DERIVED_MAX_PARAMETERS 25)
+    NANO_ROS_FEATURES:STRING=
+
+`just sync` still prints "no producer" for the four components' source
+metadata. That is the host metadata probe, and it failed the same way
+before this change: two probes build and then halt at `declare_parameter
+(code=-16)` because capabilities are not lowered into the probe (issue
+0543: the probe is per workspace), and two fail to build on the host's
+unbounded `header.frame_id` (Odometry, VelocityReport). The image's tables
+come from the launch model, not the probe.
+
+**QEMU at the conf values** (heap 94,208, main stack 16,384; `just
+qemu-build` in `build-qemu`, `qemu-20260929T060055.*`). It links:
+
+    Memory region         Used Size  Region Size  %age Used
+               FLASH:      603868 B         4 MB     14.40%
+                 RAM:      403956 B         4 MB      9.63%
+    check-knob-delivery: DERIVED_PAIRS names every one of the 25 resolver call site(s) over 23 fact(s).
+    qemu-build: tolerating the known upstream SUBSCRIBED_TYPE_BOUNDS line (phase-412 W4); nothing else is red.
+
+It stops at registration on the platform heap, not on the store:
+
+    nros: HEAP EXHAUSTED: request 236 bytes, arena 94720 bytes, caller 0x297bb
+    stage      4  RegisteringEntities -- an entity claimed arena; registration in flight
+      arena used                    14196   (28.0%)
+      platform heap PEAK            88312 bytes   (93.2% of the heap)
+      platform heap capacity        94720 bytes   (NROS_ZEPHYR_HEAP_SIZE)
+
+`0x297bb` is `_z_slist_new` (zenoh-pico `src/collections/list.c:263`). The
+boot report also prints "ARENA EXHAUSTED ... 236 bytes"; the executor arena
+is 14,196 of 50,640 used, so that line reads the heap failure's size as an
+arena one.
+
+**QEMU at the D4 heap, conf stack** (`CONFIG_NROS_ZEPHYR_HEAP_SIZE=122880`
+on the env lever, main stack 16,384 from the conf, `build-qemu-w1d`,
+`qemu-20260929T060339.*`):
+
+               FLASH:      603868 B         4 MB     14.40%
+                 RAM:      432628 B         4 MB     10.31%
+    *** Booting Zephyr OS build v4.4.0 ***
+    stage      6  FirstSpin -- registration complete and spinning
+      arena used                    14248   (28.1%)
+      platform heap PEAK            109376 bytes   (88.6% of the heap)
+      platform heap capacity        123392 bytes   (NROS_ZEPHYR_HEAP_SIZE)
+    HEAP HEADROOM: REFUSED -- 14016 bytes, floor is 24576.
+      set CONFIG_NROS_ZEPHYR_HEAP_SIZE >= 133952
+
+The console carries no error line, and `ros2 node list` on domain 10 lists
+all four nodes. Two earlier FirstSpin runs of the same build on the
+pre-merge commit peaked at 105,976 and 108,624 B. So the first spin needs
+14,656 B more than the conf's arena (109,376 - 94,720), and the headroom
+floor asks for 133,952 B, 39,744 B above the conf's 94,208. With the
+services on, the peak was 190,216 B (iteration 7). The heap value is W8's
+call (D4 allows 122,880 in the board conf); this unit did not change a
+conf.
+
+**The S32K344 board image** (`just BOARD_BUILD_DIR=build-board-w1
+board-build`, twice, the same table on both passes, not flashed; queryables
+7; heap 94,208 from the conf):
+
+    Memory region         Used Size  Region Size  %age Used
+          IVT_HEADER:         256 B        256 B    100.00%
+               FLASH:      629160 B    4144896 B     15.18%
+                 RAM:      288792 B       320 KB     88.13%
+                ITCM:       14108 B        64 KB     21.53%
+                DTCM:       84528 B       128 KB     64.49%
+            IDT_LIST:           0 B        32 KB      0.00%
+    check-knob-delivery: DERIVED_PAIRS names every one of the 25 resolver call site(s) over 23 fact(s).
+    board-build: tolerating the known upstream SUBSCRIBED_TYPE_BOUNDS line (phase-412 W4); nothing else is red.
+
+Against W8's 323,112 B with the services on, the board's SRAM drops by
+34,320 B, leaving 38,888 B.
