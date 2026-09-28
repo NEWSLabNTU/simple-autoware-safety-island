@@ -69,9 +69,11 @@ runs with host traffic. Estimated (A, C, independently): inbound
 ~20 KB/s at contract rates against 11.5 KB/s, Odometry (718 B) alone 68 %
 of the line at 10 Hz; outbound always-on publishers 98 % of the line.
 
-Decision: raise the baud to 921,600 (exact on the S32K344 LPUART's 40 MHz
-clock and on the FT232R; C's estimate at that rate: inbound 22 %, outbound
-12 %), put every serial-specific setting on a second router (`board-peer`:
+Decision: raise the baud to 921,600 (W2 measured: NOT exact on the board,
+LPUART2's divider gives 909,091, -1.36 %, and the FT232R 923,077, +0.16 %;
+0 bad frames over 22 MB in 10 minutes even so; 1,000,000 would be exact on
+both ends; measured load at contract rates 30.3 % toward the board, 8.8 %
+from it), put every serial-specific setting on a second router (`board-peer`:
 listens on the serial port, connects to Autoware's untouched stock router
 on 7447, keep_alive 6, egress downsampling of the high-rate inputs on the
 serial link), and keep the Ethernet snippet as the drop-in upgrade once the
@@ -284,6 +286,17 @@ the others by fast-forward push once implementation starts.
   gateway router config; downsampling of Odometry and the two 30 Hz
   status topics on the serial egress; a 10-minute soak with the contract's
   inputs at contract rates and zero false emergencies. Gate: the soak log.
+  Status (2026-09-28): gate MET, docs/serial-link.md. Root cause: zenoh-pico's
+  read task exits on the first rejected message (a key id from a frame the
+  1 KiB ring lost while the busy-wait transmit starved the reader, or a
+  duplicate `U_TOKEN` from the router); the board's own lease then closes the
+  session at 21 s. 921,600 on both ends (the board runs 909,091, -1.36 %; not
+  exact, 0 bad frames); `just l3-peer` + demo/l3/router/island-gateway.json5
+  (keep_alive 6, downsampling, liveliness ACL, TX queue 16: the stock queue
+  let zenoh 1.8 stop data to the board mid-soak). Soak 600 s, all inputs at
+  contract rates, no false emergency, 0 in-run loss; reaction 609.8 ms on the
+  board. Open: joining while inputs already flow still starves the reader
+  (nano-ros issues 1533, 1534); join before the inputs flow.
 - **W3 - Autoware on zenoh in a container.** The image; the planning
   simulator on `rmw_zenoh_cpp`; the `takeover_demo` package; `graph_watcher`
   shows the island joining; `ros2 node list` shows all four island nodes

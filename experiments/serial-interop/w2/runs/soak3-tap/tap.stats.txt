@@ -1,0 +1,23 @@
+board->router: 5014198 wire bytes, 0 bad frames
+router->board: 17278830 wire bytes, 0 bad frames
+   76305  router->board FRAME PUSH
+   11480  board->router FRAME PUSH
+     118  board->router FRAME DECLARE:D_KEYEXPR
+      67  board->router FRAME DECLARE:D_TOKEN
+      30  board->router FRAME INTEREST
+      29  router->board FRAME DECLARE:D_FINAL
+      22  board->router FRAME DECLARE:D_SUB
+      21  router->board FRAME DECLARE:D_KEYEXPR
+      14  board->router FRAME DECLARE:D_QBL
+       4  board->router empty 
+       3  router->board empty 
+       3  router->board FRAME DECLARE:D_SUB
+       2  board->router INIT 
+       2  router->board INIT 
+       2  board->router OPEN 
+       2  router->board OPEN 
+       2  router->board FRAME DECLARE:U_SUB
+       1  board->router FRAME DECLARE:U_TOKEN
+       1  board->router FRAME DECLARE:U_KEYEXPR
+       1  router->board FRAME RESP_FINAL
+       1  router->board KEEPALIVE 

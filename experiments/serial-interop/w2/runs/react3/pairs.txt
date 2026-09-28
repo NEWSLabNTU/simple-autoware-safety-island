@@ -1,0 +1,48 @@
+trace: /tmp/claude-1000005/-home-aeon-repos-simple-autoware-safety-island/67d1554f-8fb1-4e04-90d1-34b4e77c040d/scratchpad/w2/runs/react3/trace.bin: 1975 records, 24570 B used of the buffer, 1921 markers, 53 heartbeats
+heartbeats: seq 0..52, uptime 100..5300 ms
+markers: first at 188.727 ms, last at 5314.365 ms after the first record
+
+pair (ENTRY->EXIT)                                       N     min us  median us     max us
+PATH_MRM_COMFORTABLE_STOP_OPERATOR_ON_TIMER             53      242.8      250.8      727.6
+PATH_MRM_EMERGENCY_STOP_OPERATOR_ON_TIMER              156      329.9      336.8     1405.9
+PATH_MRM_HANDLER_CALL_MRM                                5      212.4      607.1    14629.7
+PATH_MRM_HANDLER_ON_TIMER                               52        9.0        9.9    15380.7
+PATH_STOP_MODE_OPERATOR_ON_TIMER                       156      348.8      353.2     1006.7
+SERVE_MRM_EMERGENCY_STOP_OPERATOR_OPERATE                1        6.1        6.1        6.1
+
+period (ENTRY->next ENTRY)                               N     min ms  median ms     max ms
+PATH_MRM_COMFORTABLE_STOP_OPERATOR_ON_TIMER             52     26.633    100.000    104.132
+PATH_MRM_EMERGENCY_STOP_OPERATOR_ON_TIMER              155     24.938     33.000     37.239
+PATH_MRM_HANDLER_CALL_MRM                                4     94.508     99.961    104.113
+PATH_MRM_HANDLER_ON_TIMER                               52     26.332    100.001    104.143
+PATH_STOP_MODE_OPERATOR_ON_TIMER                       155     24.685     33.001     37.551
+
+marker counts:
+  CALL_MRM_HANDLER_EMERGENCY_STOP_OPERATE                        1
+  PATH_MRM_COMFORTABLE_STOP_OPERATOR_ON_TIMER_ENTRY             53
+  PATH_MRM_COMFORTABLE_STOP_OPERATOR_ON_TIMER_EXIT              53
+  PATH_MRM_EMERGENCY_STOP_OPERATOR_ON_TIMER_ENTRY              156
+  PATH_MRM_EMERGENCY_STOP_OPERATOR_ON_TIMER_EXIT               156
+  PATH_MRM_HANDLER_CALL_MRM_ENTRY                                5
+  PATH_MRM_HANDLER_CALL_MRM_EXIT                                 5
+  PATH_MRM_HANDLER_ON_TIMER_ENTRY                               53
+  PATH_MRM_HANDLER_ON_TIMER_EXIT                                52
+  PATH_STOP_MODE_OPERATOR_ON_TIMER_ENTRY                       156
+  PATH_STOP_MODE_OPERATOR_ON_TIMER_EXIT                        156
+  PUB_MRM_COMFORTABLE_STOP_OPERATOR_STATUS                      53
+  PUB_MRM_EMERGENCY_STOP_OPERATOR_EMERGENCY_CONTROL_CMD        156
+  PUB_MRM_EMERGENCY_STOP_OPERATOR_STATUS                       156
+  PUB_MRM_HANDLER_EMERGENCY_HOLDING                             15
+  PUB_MRM_HANDLER_GEAR_CMD_OUT                                  15
+  PUB_MRM_HANDLER_HAZARD_LIGHTS_CMD                             15
+  PUB_MRM_HANDLER_MRM_STATE                                     16
+  PUB_MRM_HANDLER_TURN_INDICATORS_CMD                           16
+  PUB_STOP_MODE_OPERATOR_CONTROL                               156
+  PUB_STOP_MODE_OPERATOR_GEAR                                  156
+  PUB_STOP_MODE_OPERATOR_HAZARD_LIGHTS                         156
+  PUB_STOP_MODE_OPERATOR_TURN_INDICATORS                       156
+  SERVE_MRM_EMERGENCY_STOP_OPERATOR_OPERATE_ENTRY                1
+  SERVE_MRM_EMERGENCY_STOP_OPERATOR_OPERATE_EXIT                 1
+  TAKE_MRM_HANDLER_OPERATION_MODE_AVAILABILITY                   7
+pairing notes:
+  PATH_MRM_HANDLER_ON_TIMER: ENTRY at 5314507737 never closed (buffer end?)

@@ -1,0 +1,263 @@
+19:22:36.287025 TRUNC-PARSE None None None
+19:22:37.538789 TRUNC-PARSE None None None
+19:22:37.540782 T INIT
+19:22:37.543799 T OPEN
+19:22:37.549818 D_KEYEXPR None 2 0:10/control/command/control_cmd/autoware_control_msgs::msg::dds_::Control_
+19:22:37.550768 D_SUB None 2 0:10/control/command/control_cmd/autoware_control_msgs::msg::dds_::Control_/*
+19:22:37.551762 D_KEYEXPR None 3 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/0/NN/%/%/mrm_emergency_stop_operator
+19:22:37.551762 D_TOKEN None 3 3
+19:22:37.561650 D_KEYEXPR None 4 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/3/MS/%/%/mrm_emergency_stop_operator/%control%command%control_cmd/autoware_control_msgs::msg::dds_::Control_/TypeHashNotSupported/1:2:1,1:,:,:,,
+19:22:37.561650 D_TOKEN None 4 4
+19:22:37.561650 D_KEYEXPR None 5 0:10/system/mrm/emergency_stop/operate/tier4_system_msgs::srv::dds_::OperateMrm_/TypeHashNotSupported
+19:22:37.561650 D_QBL None 5 5
+19:22:37.561650 D_KEYEXPR None 6 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/4/SS/%/%/mrm_emergency_stop_operator/%system%mrm%emergency_stop%operate/tier4_system_msgs::srv::dds_::OperateMrm_/TypeHashNotSupported/1:2:1,4:,:,:,,
+19:22:37.561650 D_TOKEN None 6 6
+19:22:37.561650 D_KEYEXPR None 7 0:10/system/mrm/emergency_stop/status/tier4_system_msgs::msg::dds_::MrmBehaviorStatus_/TypeHashNotSupported
+19:22:37.561650 INTEREST None None unparsed rest 3B
+19:22:37.562760 D_KEYEXPR None 8 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/5/MP/%/%/mrm_emergency_stop_operator/%system%mrm%emergency_stop%status/tier4_system_msgs::msg::dds_::MrmBehaviorStatus_/TypeHashNotSupported/1:2:1,10:,:,:,,
+19:22:37.562760 D_TOKEN None 9 8
+19:22:37.565061 D_KEYEXPR None 9 0:10/system/emergency/control_cmd/autoware_control_msgs::msg::dds_::Control_/TypeHashNotSupported
+19:22:37.565061 INTEREST None None unparsed rest 3B
+19:22:37.567808 D_KEYEXPR None 10 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/6/MP/%/%/mrm_emergency_stop_operator/%system%emergency%control_cmd/autoware_control_msgs::msg::dds_::Control_/TypeHashNotSupported/1:2:1,10:,:,:,,
+19:22:37.567808 D_TOKEN None 12 10
+19:22:37.568744 D_KEYEXPR None 11 0:10/system/mrm/comfortable_stop/operate/tier4_system_msgs::srv::dds_::OperateMrm_/TypeHashNotSupported
+19:22:37.568744 D_QBL None 13 11
+19:22:37.569763 D_KEYEXPR None 12 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/0/NN/%/%/mrm_comfortable_stop_operator
+19:22:37.570762 D_TOKEN None 14 12
+19:22:37.572753 D_KEYEXPR None 13 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/8/SS/%/%/mrm_comfortable_stop_operator/%system%mrm%comfortable_stop%operate/tier4_system_msgs::srv::dds_::OperateMrm_/TypeHashNotSupported/1:2:1,4:,:,:,,
+19:22:37.572753 D_TOKEN None 15 13
+19:22:37.575389 D_KEYEXPR None 14 0:10/system/mrm/comfortable_stop/status/tier4_system_msgs::msg::dds_::MrmBehaviorStatus_/TypeHashNotSupported
+19:22:37.575389 INTEREST None None unparsed rest 3B
+19:22:37.577768 D_KEYEXPR None 15 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/9/MP/%/%/mrm_comfortable_stop_operator/%system%mrm%comfortable_stop%status/tier4_system_msgs::msg::dds_::MrmBehaviorStatus_/TypeHashNotSupported/1:2:1,10:,:,:,,
+19:22:37.577768 D_TOKEN None 18 15
+19:22:37.579735 D_KEYEXPR None 16 0:10/planning/scenario_planning/max_velocity_candidates/autoware_internal_planning_msgs::msg::dds_::VelocityLimit_/TypeHashNotSupported
+19:22:37.579735 INTEREST None None unparsed rest 3B
+19:22:37.581753 D_KEYEXPR None 17 0:10/planning/scenario_planning/max_velocity_candidates/autoware_internal_planning_msgs::msg::dds_::VelocityLimit_/TypeHashNotSupported/@adv/pub/8d79a94f2075e9dfdc09b7db652d60e7/0/_
+19:22:37.581753 D_QBL None 21 17
+19:22:37.584737 D_KEYEXPR None 18 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/10/MP/%/%/mrm_comfortable_stop_operator/%planning%scenario_planning%max_velocity_candidates/autoware_internal_planning_msgs::msg::dds_::VelocityLimit_/TypeHashNotSupported/1:1:1,1:,:,:,,
+19:22:37.584737 D_TOKEN None 22 18
+19:22:37.586734 D_KEYEXPR None 19 0:10/planning/scenario_planning/clear_velocity_limit/autoware_internal_planning_msgs::msg::dds_::VelocityLimitClearCommand_/TypeHashNotSupported
+19:22:37.586734 INTEREST None None unparsed rest 3B
+19:22:37.590740 D_KEYEXPR None 20 0:10/planning/scenario_planning/clear_velocity_limit/autoware_internal_planning_msgs::msg::dds_::VelocityLimitClearCommand_/TypeHashNotSupported/@adv/pub/8d79a94f2075e9dfdc09b7db652d60e7/1/_
+19:22:37.591757 D_QBL None 25 20
+19:22:37.596736 D_KEYEXPR None 21 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/11/MP/%/%/mrm_comfortable_stop_operator/%planning%scenario_planning%clear_velocity_limit/autoware_internal_planning_msgs::msg::dds_::VelocityLimitClearCommand_/TypeHashNotSupported/1:1:1,1:,:,:,,
+19:22:37.596736 D_TOKEN None 26 21
+19:22:37.597744 D_KEYEXPR None 22 0:10/system/stop_mode/control/autoware_control_msgs::msg::dds_::Control_/TypeHashNotSupported
+19:22:37.598730 INTEREST None None unparsed rest 3B
+19:22:37.599734 D_KEYEXPR None 23 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/0/NN/%/%/stop_mode_operator
+19:22:37.599734 D_TOKEN None 29 23
+19:22:37.601743 D_KEYEXPR None 24 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/13/MP/%/%/stop_mode_operator/%system%stop_mode%control/autoware_control_msgs::msg::dds_::Control_/TypeHashNotSupported/1:2:1,5:,:,:,,
+19:22:37.602740 D_TOKEN None 30 24
+19:22:37.603731 D_KEYEXPR None 25 0:10/system/stop_mode/gear/autoware_vehicle_msgs::msg::dds_::GearCommand_/TypeHashNotSupported
+19:22:37.603731 INTEREST None None unparsed rest 3B
+19:22:37.605729 D_KEYEXPR None 26 0:10/system/stop_mode/gear/autoware_vehicle_msgs::msg::dds_::GearCommand_/TypeHashNotSupported/@adv/pub/8d79a94f2075e9dfdc09b7db652d60e7/2/_
+19:22:37.605729 D_QBL None 33 26
+19:22:37.607744 D_KEYEXPR None 27 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/14/MP/%/%/stop_mode_operator/%system%stop_mode%gear/autoware_vehicle_msgs::msg::dds_::GearCommand_/TypeHashNotSupported/1:1:1,1:,:,:,,
+19:22:37.608739 D_TOKEN None 34 27
+19:22:37.609737 D_KEYEXPR None 28 0:10/system/stop_mode/turn_indicators/autoware_vehicle_msgs::msg::dds_::TurnIndicatorsCommand_/TypeHashNotSupported
+19:22:37.609737 INTEREST None None unparsed rest 3B
+19:22:37.611743 D_KEYEXPR None 29 0:10/system/stop_mode/turn_indicators/autoware_vehicle_msgs::msg::dds_::TurnIndicatorsCommand_/TypeHashNotSupported/@adv/pub/8d79a94f2075e9dfdc09b7db652d60e7/3/_
+19:22:37.612739 D_QBL None 37 29
+19:22:37.614738 D_KEYEXPR None 30 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/15/MP/%/%/stop_mode_operator/%system%stop_mode%turn_indicators/autoware_vehicle_msgs::msg::dds_::TurnIndicatorsCommand_/TypeHashNotSupported/1:1:1,1:,:,:,,
+19:22:37.614738 D_TOKEN None 38 30
+19:22:37.616737 D_KEYEXPR None 31 0:10/system/stop_mode/hazard_lights/autoware_vehicle_msgs::msg::dds_::HazardLightsCommand_/TypeHashNotSupported
+19:22:37.616737 INTEREST None None unparsed rest 3B
+19:22:37.619734 D_KEYEXPR None 32 0:10/system/stop_mode/hazard_lights/autoware_vehicle_msgs::msg::dds_::HazardLightsCommand_/TypeHashNotSupported/@adv/pub/8d79a94f2075e9dfdc09b7db652d60e7/4/_
+19:22:37.621746 D_QBL None 41 32
+19:22:37.623733 D_KEYEXPR None 33 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/16/MP/%/%/stop_mode_operator/%system%stop_mode%hazard_lights/autoware_vehicle_msgs::msg::dds_::HazardLightsCommand_/TypeHashNotSupported/1:1:1,1:,:,:,,
+19:22:37.623733 D_TOKEN None 42 33
+19:22:37.624742 D_KEYEXPR None 34 0:10/vehicle/status/steering_status/autoware_vehicle_msgs::msg::dds_::SteeringReport_
+19:22:37.626731 D_SUB None 43 0:10/vehicle/status/steering_status/autoware_vehicle_msgs::msg::dds_::SteeringReport_/*
+19:22:37.631743 D_KEYEXPR None 35 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/17/MS/%/%/stop_mode_operator/%vehicle%status%steering_status/autoware_vehicle_msgs::msg::dds_::SteeringReport_/TypeHashNotSupported/1:2:1,1:,:,:,,
+19:22:37.631743 D_TOKEN None 44 35
+19:22:37.631743 D_KEYEXPR None 36 0:10/vehicle/status/velocity_status/autoware_vehicle_msgs::msg::dds_::VelocityReport_
+19:22:37.631743 D_SUB None 45 0:10/vehicle/status/velocity_status/autoware_vehicle_msgs::msg::dds_::VelocityReport_/*
+19:22:37.633717 D_KEYEXPR None 37 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/18/MS/%/%/stop_mode_operator/%vehicle%status%velocity_status/autoware_vehicle_msgs::msg::dds_::VelocityReport_/TypeHashNotSupported/1:2:1,1:,:,:,,
+19:22:37.633717 D_TOKEN None 46 37
+19:22:37.634737 D_KEYEXPR None 38 0:10/planning/route_state/autoware_planning_msgs::msg::dds_::RouteState_
+19:22:37.635734 D_SUB None 47 0:10/planning/route_state/autoware_planning_msgs::msg::dds_::RouteState_/*
+19:22:37.637723 D_KEYEXPR None 39 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/19/MS/%/%/stop_mode_operator/%planning%route_state/autoware_planning_msgs::msg::dds_::RouteState_/TypeHashNotSupported/1:2:1,1:,:,:,,
+19:22:37.638717 D_TOKEN None 48 39
+19:22:37.639737 D_KEYEXPR None 40 0:10/system/operation_mode/availability/tier4_system_msgs::msg::dds_::OperationModeAvailability_
+19:22:37.640714 D_SUB None 49 0:10/system/operation_mode/availability/tier4_system_msgs::msg::dds_::OperationModeAvailability_/*
+19:22:37.641707 D_KEYEXPR None 41 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/0/NN/%/%/mrm_handler
+19:22:37.641707 D_TOKEN None 50 41
+19:22:37.644717 D_KEYEXPR None 42 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/21/MS/%/%/mrm_handler/%system%operation_mode%availability/tier4_system_msgs::msg::dds_::OperationModeAvailability_/TypeHashNotSupported/1:2:1,1:,:,:,,
+19:22:37.644717 D_TOKEN None 51 42
+19:22:37.645710 D_KEYEXPR None 43 0:10/localization/kinematic_state/nav_msgs::msg::dds_::Odometry_
+19:22:37.646717 D_SUB None 52 0:10/localization/kinematic_state/nav_msgs::msg::dds_::Odometry_/*
+19:22:37.648713 D_KEYEXPR None 44 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/22/MS/%/%/mrm_handler/%localization%kinematic_state/nav_msgs::msg::dds_::Odometry_/TypeHashNotSupported/1:2:1,1:,:,:,,
+19:22:37.648713 D_TOKEN None 53 44
+19:22:37.649711 D_KEYEXPR None 45 0:10/vehicle/status/control_mode/autoware_vehicle_msgs::msg::dds_::ControlModeReport_
+19:22:37.651714 D_SUB None 54 0:10/vehicle/status/control_mode/autoware_vehicle_msgs::msg::dds_::ControlModeReport_/*
+19:22:37.653713 D_KEYEXPR None 46 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/23/MS/%/%/mrm_handler/%vehicle%status%control_mode/autoware_vehicle_msgs::msg::dds_::ControlModeReport_/TypeHashNotSupported/1:2:1,1:,:,:,,
+19:22:37.653713 D_TOKEN None 55 46
+19:22:37.655719 D_KEYEXPR None 47 0:10/system/mrm/comfortable_stop/status/tier4_system_msgs::msg::dds_::MrmBehaviorStatus_
+19:22:37.656710 D_SUB None 56 0:10/system/mrm/comfortable_stop/status/tier4_system_msgs::msg::dds_::MrmBehaviorStatus_/*
+19:22:37.658715 D_KEYEXPR None 48 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/24/MS/%/%/mrm_handler/%system%mrm%comfortable_stop%status/tier4_system_msgs::msg::dds_::MrmBehaviorStatus_/TypeHashNotSupported/1:2:1,1:,:,:,,
+19:22:37.658715 D_TOKEN None 57 48
+19:22:37.659716 D_KEYEXPR None 49 0:10/system/mrm/emergency_stop/status/tier4_system_msgs::msg::dds_::MrmBehaviorStatus_
+19:22:37.661716 D_SUB None 58 0:10/system/mrm/emergency_stop/status/tier4_system_msgs::msg::dds_::MrmBehaviorStatus_/*
+19:22:37.663716 D_KEYEXPR None 50 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/25/MS/%/%/mrm_handler/%system%mrm%emergency_stop%status/tier4_system_msgs::msg::dds_::MrmBehaviorStatus_/TypeHashNotSupported/1:2:1,1:,:,:,,
+19:22:37.663716 D_TOKEN None 59 50
+19:22:37.664704 D_KEYEXPR None 51 0:10/api/operation_mode/state/autoware_adapi_v1_msgs::msg::dds_::OperationModeState_
+19:22:37.666712 D_SUB None 60 0:10/api/operation_mode/state/autoware_adapi_v1_msgs::msg::dds_::OperationModeState_/*
+19:22:37.668710 D_KEYEXPR None 52 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/26/MS/%/%/mrm_handler/%api%operation_mode%state/autoware_adapi_v1_msgs::msg::dds_::OperationModeState_/TypeHashNotSupported/1:2:1,1:,:,:,,
+19:22:37.668710 D_TOKEN None 61 52
+19:22:37.669717 D_KEYEXPR None 53 0:10/control/command/gear_cmd/autoware_vehicle_msgs::msg::dds_::GearCommand_
+19:22:37.670701 D_SUB None 62 0:10/control/command/gear_cmd/autoware_vehicle_msgs::msg::dds_::GearCommand_/*
+19:22:37.674762 D_KEYEXPR None 54 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/27/MS/%/%/mrm_handler/%control%command%gear_cmd/autoware_vehicle_msgs::msg::dds_::GearCommand_/TypeHashNotSupported/1:2:1,1:,:,:,,
+19:22:37.676688 D_TOKEN None 63 54
+19:22:37.677689 D_KEYEXPR None 55 0:10/system/emergency/turn_indicators_cmd/autoware_vehicle_msgs::msg::dds_::TurnIndicatorsCommand_/TypeHashNotSupported
+19:22:37.678723 INTEREST None None unparsed rest 3B
+19:22:37.680701 D_KEYEXPR None 56 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/28/MP/%/%/mrm_handler/%system%emergency%turn_indicators_cmd/autoware_vehicle_msgs::msg::dds_::TurnIndicatorsCommand_/TypeHashNotSupported/1:2:1,10:,:,:,,
+19:22:37.680701 D_TOKEN None 66 56
+19:22:37.682717 D_KEYEXPR None 57 0:10/system/emergency/hazard_lights_cmd/autoware_vehicle_msgs::msg::dds_::HazardLightsCommand_/TypeHashNotSupported
+19:22:37.682717 INTEREST None None unparsed rest 3B
+19:22:37.684713 D_KEYEXPR None 58 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/29/MP/%/%/mrm_handler/%system%emergency%hazard_lights_cmd/autoware_vehicle_msgs::msg::dds_::HazardLightsCommand_/TypeHashNotSupported/1:2:1,10:,:,:,,
+19:22:37.685694 D_TOKEN None 69 58
+19:22:37.686700 D_KEYEXPR None 59 0:10/system/emergency/gear_cmd/autoware_vehicle_msgs::msg::dds_::GearCommand_/TypeHashNotSupported
+19:22:37.686700 INTEREST None None unparsed rest 3B
+19:22:37.688696 D_KEYEXPR None 60 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/30/MP/%/%/mrm_handler/%system%emergency%gear_cmd/autoware_vehicle_msgs::msg::dds_::GearCommand_/TypeHashNotSupported/1:2:1,10:,:,:,,
+19:22:37.689691 D_TOKEN None 72 60
+19:22:37.690692 D_KEYEXPR None 61 0:10/system/fail_safe/mrm_state/autoware_adapi_v1_msgs::msg::dds_::MrmState_/TypeHashNotSupported
+19:22:37.690692 INTEREST None None unparsed rest 3B
+19:22:37.692682 D_KEYEXPR None 62 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/31/MP/%/%/mrm_handler/%system%fail_safe%mrm_state/autoware_adapi_v1_msgs::msg::dds_::MrmState_/TypeHashNotSupported/1:2:1,10:,:,:,,
+19:22:37.692682 D_TOKEN None 75 62
+19:22:37.694690 D_KEYEXPR None 63 0:10/system/fail_safe/emergency_holding/tier4_system_msgs::msg::dds_::EmergencyHoldingState_/TypeHashNotSupported
+19:22:37.694690 INTEREST None None unparsed rest 3B
+19:22:37.697692 D_KEYEXPR None 64 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/32/MP/%/%/mrm_handler/%system%fail_safe%emergency_holding/tier4_system_msgs::msg::dds_::EmergencyHoldingState_/TypeHashNotSupported/1:2:1,10:,:,:,,
+19:22:37.698690 D_TOKEN None 78 64
+19:22:37.700707 D_KEYEXPR None 65 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/33/SC/%/%/mrm_handler/%system%mrm%comfortable_stop%operate/tier4_system_msgs::srv::dds_::OperateMrm_/TypeHashNotSupported/1:2:1,4:,:,:,,
+19:22:37.700707 D_TOKEN None 79 65
+19:22:37.701708 D_KEYEXPR None 66 0:@ros2_lv/10/**
+19:22:37.703828 INTEREST None None unparsed rest 3B
+19:22:37.705700 D_KEYEXPR None 67 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/34/SC/%/%/mrm_handler/%system%mrm%emergency_stop%operate/tier4_system_msgs::srv::dds_::OperateMrm_/TypeHashNotSupported/1:2:1,4:,:,:,,
+19:22:37.705700 D_TOKEN None 81 67
+19:22:45.735215 TRUNC-PARSE None None None
+19:22:45.987120 TRUNC-PARSE None None None
+19:22:45.990126 T INIT
+19:22:45.993091 T OPEN
+19:22:45.998091 D_KEYEXPR None 1 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/0/NN/%/%/node
+19:22:45.999119 D_TOKEN None 1 1
+19:22:46.000089 D_KEYEXPR None 2 0:10/control/command/control_cmd/autoware_control_msgs::msg::dds_::Control_
+19:22:46.001079 D_SUB None 2 0:10/control/command/control_cmd/autoware_control_msgs::msg::dds_::Control_/*
+19:22:46.003102 D_KEYEXPR None 3 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/0/NN/%/%/mrm_emergency_stop_operator
+19:22:46.003102 D_TOKEN None 3 3
+19:22:46.003102 U_TOKEN None 1 ['0201']
+19:22:46.003102 U_KEYEXPR None 1 []
+19:22:46.006321 D_KEYEXPR None 4 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/3/MS/%/%/mrm_emergency_stop_operator/%control%command%control_cmd/autoware_control_msgs::msg::dds_::Control_/TypeHashNotSupported/1:2:1,1:,:,:,,
+19:22:46.006321 D_TOKEN None 4 4
+19:22:46.008106 D_KEYEXPR None 5 0:10/system/mrm/emergency_stop/operate/tier4_system_msgs::srv::dds_::OperateMrm_/TypeHashNotSupported
+19:22:46.008106 D_QBL None 5 5
+19:22:46.011096 D_KEYEXPR None 6 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/4/SS/%/%/mrm_emergency_stop_operator/%system%mrm%emergency_stop%operate/tier4_system_msgs::srv::dds_::OperateMrm_/TypeHashNotSupported/1:2:1,4:,:,:,,
+19:22:46.011096 D_TOKEN None 6 6
+19:22:46.013427 D_KEYEXPR None 7 0:10/system/mrm/emergency_stop/status/tier4_system_msgs::msg::dds_::MrmBehaviorStatus_/TypeHashNotSupported
+19:22:46.016331 INTEREST None None unparsed rest 212B
+19:22:46.016331 D_TOKEN None 9 8
+19:22:46.017194 D_KEYEXPR None 9 0:10/system/emergency/control_cmd/autoware_control_msgs::msg::dds_::Control_/TypeHashNotSupported
+19:22:46.020293 INTEREST None None unparsed rest 202B
+19:22:46.020293 D_TOKEN None 12 10
+19:22:46.022104 D_KEYEXPR None 11 0:10/system/mrm/comfortable_stop/operate/tier4_system_msgs::srv::dds_::OperateMrm_/TypeHashNotSupported
+19:22:46.022104 D_QBL None 13 11
+19:22:46.024120 D_KEYEXPR None 12 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/0/NN/%/%/mrm_comfortable_stop_operator
+19:22:46.024120 D_TOKEN None 14 12
+19:22:46.026098 D_KEYEXPR None 13 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/8/SS/%/%/mrm_comfortable_stop_operator/%system%mrm%comfortable_stop%operate/tier4_system_msgs::srv::dds_::OperateMrm_/TypeHashNotSupported/1:2:1,4:,:,:,,
+19:22:46.027108 D_TOKEN None 15 13
+19:22:46.028108 D_KEYEXPR None 14 0:10/system/mrm/comfortable_stop/status/tier4_system_msgs::msg::dds_::MrmBehaviorStatus_/TypeHashNotSupported
+19:22:46.031098 INTEREST None None unparsed rest 216B
+19:22:46.032110 D_TOKEN None 18 15
+19:22:46.034118 D_KEYEXPR None 16 0:10/planning/scenario_planning/max_velocity_candidates/autoware_internal_planning_msgs::msg::dds_::VelocityLimit_/TypeHashNotSupported
+19:22:46.036101 INTEREST None None unparsed rest 188B
+19:22:46.037114 D_QBL None 21 17
+19:22:46.040112 D_KEYEXPR None 18 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/10/MP/%/%/mrm_comfortable_stop_operator/%planning%scenario_planning%max_velocity_candidates/autoware_internal_planning_msgs::msg::dds_::VelocityLimit_/TypeHashNotSupported/1:1:1,1:,:,:,,
+19:22:46.040112 D_TOKEN None 22 18
+19:22:46.042088 D_KEYEXPR None 19 0:10/planning/scenario_planning/clear_velocity_limit/autoware_internal_planning_msgs::msg::dds_::VelocityLimitClearCommand_/TypeHashNotSupported
+19:22:46.045111 INTEREST None None unparsed rest 197B
+19:22:46.045111 D_QBL None 25 20
+19:22:46.048095 D_KEYEXPR None 21 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/11/MP/%/%/mrm_comfortable_stop_operator/%planning%scenario_planning%clear_velocity_limit/autoware_internal_planning_msgs::msg::dds_::VelocityLimitClearCommand_/TypeHashNotSupported/1:1:1,1:,:,:,,
+19:22:46.049106 D_TOKEN None 26 21
+19:22:46.050091 D_KEYEXPR None 22 0:10/system/stop_mode/control/autoware_control_msgs::msg::dds_::Control_/TypeHashNotSupported
+19:22:46.052110 INTEREST None None unparsed rest 82B
+19:22:46.052110 D_TOKEN None 29 23
+19:22:46.054205 D_KEYEXPR None 24 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/13/MP/%/%/stop_mode_operator/%system%stop_mode%control/autoware_control_msgs::msg::dds_::Control_/TypeHashNotSupported/1:2:1,5:,:,:,,
+19:22:46.055107 D_TOKEN None 30 24
+19:22:46.056103 D_KEYEXPR None 25 0:10/system/stop_mode/gear/autoware_vehicle_msgs::msg::dds_::GearCommand_/TypeHashNotSupported
+19:22:46.058082 INTEREST None None unparsed rest 147B
+19:22:46.059111 D_QBL None 33 26
+19:22:46.061053 D_KEYEXPR None 27 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/14/MP/%/%/stop_mode_operator/%system%stop_mode%gear/autoware_vehicle_msgs::msg::dds_::GearCommand_/TypeHashNotSupported/1:1:1,1:,:,:,,
+19:22:46.061053 D_TOKEN None 34 27
+19:22:46.063157 D_KEYEXPR None 28 0:10/system/stop_mode/turn_indicators/autoware_vehicle_msgs::msg::dds_::TurnIndicatorsCommand_/TypeHashNotSupported
+19:22:46.065063 INTEREST None None unparsed rest 168B
+19:22:46.066094 D_QBL None 37 29
+19:22:46.069094 D_KEYEXPR None 30 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/15/MP/%/%/stop_mode_operator/%system%stop_mode%turn_indicators/autoware_vehicle_msgs::msg::dds_::TurnIndicatorsCommand_/TypeHashNotSupported/1:1:1,1:,:,:,,
+19:22:46.069094 D_TOKEN None 38 30
+19:22:46.071083 D_KEYEXPR None 31 0:10/system/stop_mode/hazard_lights/autoware_vehicle_msgs::msg::dds_::HazardLightsCommand_/TypeHashNotSupported
+19:22:46.073098 INTEREST None None unparsed rest 164B
+19:22:46.073098 D_QBL None 41 32
+19:22:46.076024 D_KEYEXPR None 33 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/16/MP/%/%/stop_mode_operator/%system%stop_mode%hazard_lights/autoware_vehicle_msgs::msg::dds_::HazardLightsCommand_/TypeHashNotSupported/1:1:1,1:,:,:,,
+19:22:46.076024 D_TOKEN None 42 33
+19:22:46.078037 D_KEYEXPR None 34 0:10/vehicle/status/steering_status/autoware_vehicle_msgs::msg::dds_::SteeringReport_
+19:22:46.079116 D_SUB None 43 0:10/vehicle/status/steering_status/autoware_vehicle_msgs::msg::dds_::SteeringReport_/*
+19:22:46.082059 D_KEYEXPR None 35 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/17/MS/%/%/stop_mode_operator/%vehicle%status%steering_status/autoware_vehicle_msgs::msg::dds_::SteeringReport_/TypeHashNotSupported/1:2:1,1:,:,:,,
+19:22:46.082059 D_TOKEN None 44 35
+19:22:46.083034 D_KEYEXPR None 36 0:10/vehicle/status/velocity_status/autoware_vehicle_msgs::msg::dds_::VelocityReport_
+19:22:46.085071 D_SUB None 45 0:10/vehicle/status/velocity_status/autoware_vehicle_msgs::msg::dds_::VelocityReport_/*
+19:22:46.087055 D_KEYEXPR None 37 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/18/MS/%/%/stop_mode_operator/%vehicle%status%velocity_status/autoware_vehicle_msgs::msg::dds_::VelocityReport_/TypeHashNotSupported/1:2:1,1:,:,:,,
+19:22:46.088067 D_TOKEN None 46 37
+19:22:46.089044 D_KEYEXPR None 38 0:10/planning/route_state/autoware_planning_msgs::msg::dds_::RouteState_
+19:22:46.090050 D_SUB None 47 0:10/planning/route_state/autoware_planning_msgs::msg::dds_::RouteState_/*
+19:22:46.092027 D_KEYEXPR None 39 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/19/MS/%/%/stop_mode_operator/%planning%route_state/autoware_planning_msgs::msg::dds_::RouteState_/TypeHashNotSupported/1:2:1,1:,:,:,,
+19:22:46.093068 D_TOKEN None 48 39
+19:22:46.094021 D_KEYEXPR None 40 0:10/system/operation_mode/availability/tier4_system_msgs::msg::dds_::OperationModeAvailability_
+19:22:46.096158 D_SUB None 49 0:10/system/operation_mode/availability/tier4_system_msgs::msg::dds_::OperationModeAvailability_/*
+19:22:46.097047 D_KEYEXPR None 41 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/0/NN/%/%/mrm_handler
+19:22:46.097047 D_TOKEN None 50 41
+19:22:46.100041 D_KEYEXPR None 42 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/21/MS/%/%/mrm_handler/%system%operation_mode%availability/tier4_system_msgs::msg::dds_::OperationModeAvailability_/TypeHashNotSupported/1:2:1,1:,:,:,,
+19:22:46.100041 D_TOKEN None 51 42
+19:22:46.101177 D_KEYEXPR None 43 0:10/localization/kinematic_state/nav_msgs::msg::dds_::Odometry_
+19:22:46.102017 D_SUB None 52 0:10/localization/kinematic_state/nav_msgs::msg::dds_::Odometry_/*
+19:22:46.105039 D_KEYEXPR None 44 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/22/MS/%/%/mrm_handler/%localization%kinematic_state/nav_msgs::msg::dds_::Odometry_/TypeHashNotSupported/1:2:1,1:,:,:,,
+19:22:46.105039 D_TOKEN None 53 44
+19:22:46.106027 D_KEYEXPR None 45 0:10/vehicle/status/control_mode/autoware_vehicle_msgs::msg::dds_::ControlModeReport_
+19:22:46.108042 D_SUB None 54 0:10/vehicle/status/control_mode/autoware_vehicle_msgs::msg::dds_::ControlModeReport_/*
+19:22:46.110033 D_KEYEXPR None 46 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/23/MS/%/%/mrm_handler/%vehicle%status%control_mode/autoware_vehicle_msgs::msg::dds_::ControlModeReport_/TypeHashNotSupported/1:2:1,1:,:,:,,
+19:22:46.111039 D_TOKEN None 55 46
+19:22:46.112004 D_KEYEXPR None 47 0:10/system/mrm/comfortable_stop/status/tier4_system_msgs::msg::dds_::MrmBehaviorStatus_
+19:22:46.113018 D_SUB None 56 0:10/system/mrm/comfortable_stop/status/tier4_system_msgs::msg::dds_::MrmBehaviorStatus_/*
+19:22:46.116005 D_KEYEXPR None 48 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/24/MS/%/%/mrm_handler/%system%mrm%comfortable_stop%status/tier4_system_msgs::msg::dds_::MrmBehaviorStatus_/TypeHashNotSupported/1:2:1,1:,:,:,,
+19:22:46.116005 D_TOKEN None 57 48
+19:22:46.118016 D_KEYEXPR None 49 0:10/system/mrm/emergency_stop/status/tier4_system_msgs::msg::dds_::MrmBehaviorStatus_
+19:22:46.119058 D_SUB None 58 0:10/system/mrm/emergency_stop/status/tier4_system_msgs::msg::dds_::MrmBehaviorStatus_/*
+19:22:46.122042 D_KEYEXPR None 50 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/25/MS/%/%/mrm_handler/%system%mrm%emergency_stop%status/tier4_system_msgs::msg::dds_::MrmBehaviorStatus_/TypeHashNotSupported/1:2:1,1:,:,:,,
+19:22:46.122042 D_TOKEN None 59 50
+19:22:46.123025 D_KEYEXPR None 51 0:10/api/operation_mode/state/autoware_adapi_v1_msgs::msg::dds_::OperationModeState_
+19:22:46.125052 D_SUB None 60 0:10/api/operation_mode/state/autoware_adapi_v1_msgs::msg::dds_::OperationModeState_/*
+19:22:46.127029 D_KEYEXPR None 52 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/26/MS/%/%/mrm_handler/%api%operation_mode%state/autoware_adapi_v1_msgs::msg::dds_::OperationModeState_/TypeHashNotSupported/1:2:1,1:,:,:,,
+19:22:46.127029 D_TOKEN None 61 52
+19:22:46.129021 D_KEYEXPR None 53 0:10/control/command/gear_cmd/autoware_vehicle_msgs::msg::dds_::GearCommand_
+19:22:46.130113 D_SUB None 62 0:10/control/command/gear_cmd/autoware_vehicle_msgs::msg::dds_::GearCommand_/*
+19:22:46.133033 D_KEYEXPR None 54 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/27/MS/%/%/mrm_handler/%control%command%gear_cmd/autoware_vehicle_msgs::msg::dds_::GearCommand_/TypeHashNotSupported/1:2:1,1:,:,:,,
+19:22:46.133033 D_TOKEN None 63 54
+19:22:46.135034 D_KEYEXPR None 55 0:10/system/emergency/turn_indicators_cmd/autoware_vehicle_msgs::msg::dds_::TurnIndicatorsCommand_/TypeHashNotSupported
+19:22:46.138041 INTEREST None None unparsed rest 209B
+19:22:46.138041 D_TOKEN None 66 56
+19:22:46.140027 D_KEYEXPR None 57 0:10/system/emergency/hazard_lights_cmd/autoware_vehicle_msgs::msg::dds_::HazardLightsCommand_/TypeHashNotSupported
+19:22:46.143044 INTEREST None None unparsed rest 205B
+19:22:46.143044 D_TOKEN None 69 58
+19:22:46.144006 D_KEYEXPR None 59 0:10/system/emergency/gear_cmd/autoware_vehicle_msgs::msg::dds_::GearCommand_/TypeHashNotSupported
+19:22:46.146989 INTEREST None None unparsed rest 188B
+19:22:46.146989 D_TOKEN None 72 60
+19:22:46.149028 D_KEYEXPR None 61 0:10/system/fail_safe/mrm_state/autoware_adapi_v1_msgs::msg::dds_::MrmState_/TypeHashNotSupported
+19:22:46.152108 INTEREST None None unparsed rest 187B
+19:22:46.152108 D_TOKEN None 75 62
+19:22:46.155647 D_KEYEXPR None 63 0:10/system/fail_safe/emergency_holding/tier4_system_msgs::msg::dds_::EmergencyHoldingState_/TypeHashNotSupported
+19:22:46.156996 INTEREST None None unparsed rest 203B
+19:22:46.156996 D_TOKEN None 78 64
+19:22:46.159005 D_KEYEXPR None 65 0:@ros2_lv/10/8d79a94f2075e9dfdc09b7db652d60e7/0/33/SC/%/%/mrm_handler/%system%mrm%comfortable_stop%operate/tier4_system_msgs::srv::dds_::OperateMrm_/TypeHashNotSupported/1:2:1,4:,:,:,,
+19:22:46.160011 D_TOKEN None 79 65
+19:22:46.160011 D_KEYEXPR None 66 0:@ros2_lv/10/**
+19:22:46.162993 INTEREST None None unparsed rest 190B
+19:22:46.162993 D_TOKEN None 81 67
+19:32:52.934576 REQUEST None None unparsed rest 142B
+PUSH per wire key: {'14': 6319, '7': 19135, '9': 18176, '61': 6000, '55': 6000, '57': 6000, '59': 6000}

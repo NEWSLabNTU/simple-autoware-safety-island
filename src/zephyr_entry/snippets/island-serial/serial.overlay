@@ -9,4 +9,6 @@
 	};
 };
 &lpuart0 { current-speed = <115200>; status = "okay"; };
-&lpuart2 { current-speed = <115200>; status = "okay"; };
+/* 921600: the rate the zenoh locator in serial.conf configures at session open
+ * (see its header); kept equal so the UART never runs at a second rate. */
+&lpuart2 { current-speed = <921600>; status = "okay"; };

@@ -1,8 +1,12 @@
 # phase7-W7 -- a transport peer for the board on its serial link. Imported by
 # one line at the end of the main justfile.
 #
-# The island image's zenoh locator is serial/uart@40330000#baudrate=115200, the
-# board's only wired UART (P6 -> FTDI -> /dev/ttyUSB0). With no peer the image
+# The island image's zenoh locator is serial/uart@40330000#baudrate=921600 (was
+# 115200 until phase8-W2), the board's only wired UART (P6 -> FTDI ->
+# /dev/ttyUSB0). This peer's baud must match the image's; PEER_BAUD says it.
+# For the phase-8 demo the island gateway is `just l3-peer` (just/l3-demo.just):
+# the same router, plus a link to Autoware's stock router, downsampling and the
+# liveliness ACL. This recipe stays the board-only peer. With no peer the image
 # waits in the session open-retry loop and no node ever starts (docs/board-facts.md,
 # Z1a). This is experiments/serial-interop's host side as a recipe: rmw_zenohd
 # LISTENING on the serial line, bridging to TCP for the ROS 2 CLI.
@@ -38,10 +42,14 @@ PEER_TTY := "/dev/ttyUSB0"
 # whose entities are easy to mistake for the board's. The board side is
 # serial; the TCP port only serves `board-peer-nodes`.
 PEER_TCP := "7449"
+# The image's rate: CONFIG_NROS_ZENOH_LOCATOR in
+# src/zephyr_entry/snippets/island-serial/serial.conf. An image built before
+# phase8-W2 runs at 115200: `just board-peer /dev/ttyUSB0 7449 <log> 115200`.
+PEER_BAUD := "921600"
 PEER_DIR := "build/trace"
 
 # Run the host zenoh router on the board's serial line (foreground; Ctrl-C stops).
-board-peer tty=PEER_TTY port=PEER_TCP log=(PEER_DIR / "board-peer-router.log"):
+board-peer tty=PEER_TTY port=PEER_TCP log=(PEER_DIR / "board-peer-router.log") baud=PEER_BAUD:
     #!/usr/bin/env bash
     set -eo pipefail
     if holders="$(fuser "{{tty}}" 2>/dev/null)" && [ -n "$holders" ]; then
@@ -61,7 +69,7 @@ board-peer tty=PEER_TTY port=PEER_TCP log=(PEER_DIR / "board-peer-router.log"):
     # (a clean "close session" in the log, nothing from the board side).
     bin="$PWD/{{PEER_DIR}}/board-peer-zenohd"
     ln -sfn /opt/ros/humble/lib/rmw_zenoh_cpp/rmw_zenohd "$bin"
-    echo "board-peer: rmw_zenohd on serial/{{tty}}#baudrate=115200 + tcp/[::]:{{port}}; log {{log}}"
+    echo "board-peer: rmw_zenohd on serial/{{tty}}#baudrate={{baud}} + tcp/[::]:{{port}}; log {{log}}"
     echo "board-peer: now reset the board (pyocd reset -t s32k344); Ctrl-C stops the router"
     env -i HOME="$HOME" USER="$USER" PATH=/usr/bin:/bin bash -c '
         source /opt/ros/humble/setup.bash
@@ -69,7 +77,7 @@ board-peer tty=PEER_TTY port=PEER_TCP log=(PEER_DIR / "board-peer-router.log"):
             || { echo "board-peer: zenoh_cpp_vendor is not on LD_LIBRARY_PATH (ros-humble-zenoh-cpp-vendor missing?)"; exit 1; }
         export ROS_DOMAIN_ID=10
         export ZENOH_ROUTER_CONFIG_URI="'"$cfg"'"
-        export ZENOH_CONFIG_OVERRIDE="listen/endpoints=[\"serial/{{tty}}#baudrate=115200\",\"tcp/[::]:{{port}}\"]"
+        export ZENOH_CONFIG_OVERRIDE="listen/endpoints=[\"serial/{{tty}}#baudrate={{baud}}\",\"tcp/[::]:{{port}}\"]"
         export RUST_LOG="'"$rust_log"'"
         exec "'"$bin"'"
     ' 2>&1 | tee "{{log}}"

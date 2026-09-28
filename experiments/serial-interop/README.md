@@ -314,3 +314,25 @@ TRANSIENT_LOCAL retention pool of 2 against five such publishers. See
 A trap found here: `just board-flash` is `west flash`, and it rebuilds first
 in its own environment. A board built with triage env vars (`ZPICO_*`) is
 flashed without them unless the same vars are set for `board-flash` too.
+
+## 921,600 baud and the island gateway (phase8-W2, 2026-09-28)
+
+The stall brief B saw at 115200 is diagnosed in `docs/serial-link.md`: the
+board's zenoh-pico read task exits on the first rejected message, and the
+board's own lease closes the session 21 s after it opened. The link now runs at
+921,600 through `just l3-peer` (the island gateway,
+`demo/l3/router/island-gateway.json5`); `just board-peer` defaults to 921,600
+too.
+
+`w2/` holds the data and the tools:
+
+- `tools/`: `swd_poll.py` (live SWD reads of the read task, RX ring, LPUART2
+  status, subscription counters and per-thread CPU), `island_inputs.py` (the
+  contracted inputs at contract rates, real sizes, and the outputs
+  vehicle_cmd_gate reads), `tapdecode.py` / `declwalk.py` (a socat dump,
+  decoded per direction down to each declaration), and the run scripts.
+- `runs/<run>/`: `poll.log`, `pub.log`, `router.log`, `tap.hex.xz` (socat
+  hex dump), and for react2/react3 the SWD trace read with its decode. soak3's
+  104 MB tap was reduced to `tap.stats.txt` and the `declwalk*.txt` counts.
+- `zephyr-d8q-921600.elf.xz`: the image every 921,600 run used and the one
+  left on the board.
