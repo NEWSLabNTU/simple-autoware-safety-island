@@ -152,4 +152,16 @@ export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 export ROS_DOMAIN_ID=10
 export CYCLONEDDS_URI="file://$_island_root/demo/cyclonedds.xml"
 
+# -- Demo participant marker -------------------------------------------------
+# `just demo-down` sweeps leftover demo processes by this variable. It is set
+# only where a demo process is launched (every launcher sources this file in
+# its own subshell), never by direnv: .envrc sources this file into the
+# interactive shell, and anything started from that shell -- an editor, a
+# Claude Code session -- would otherwise look like a demo participant. The
+# sweep used to key on CYCLONEDDS_URI, which direnv does export, and it
+# TERMed then KILLed a Claude Code session twice on 2026-09-28.
+if [ -z "${DIRENV_IN_ENVRC:-}" ]; then
+    export SAI_DEMO_RUN="$_island_root"
+fi
+
 unset _island_root

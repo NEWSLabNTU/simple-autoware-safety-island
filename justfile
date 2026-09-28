@@ -859,10 +859,26 @@ demo-down: (_kill-group "demo/.island.pgid") (_kill-group "demo/.sim.pgid") _swe
 # Kill a recorded process group: TERM, up to 3 s to exit, then KILL.
 # NOTE bash, not the default sh — dash's `kill -TERM -- -pgid` fails
 # silently, which is exactly how orphans piled up before.
+#
+# A pgid file outlives its group after a crash, and pgids are reused: a stale
+# file can name an unrelated group (a shell, an editor, a Claude Code
+# session, whose pgid is its own pid). So the group is killed only if one of
+# its members carries this checkout's SAI_DEMO_RUN (scripts/env.sh); else the
+# file is stale and only removed.
 [private]
 _kill-group file:
     #!/usr/bin/env bash
     pg=$(cat {{file}} 2>/dev/null) || exit 0
+    mark="SAI_DEMO_RUN={{justfile_directory()}}"
+    ours=0
+    for pid in $(ps -o pid= -g "$pg" 2>/dev/null); do
+        grep -qxzF "$mark" "/proc/$pid/environ" 2>/dev/null && { ours=1; break; }
+    done
+    if [ $ours = 0 ]; then
+        rm -f {{file}}
+        echo "stale {{file}} (group $pg holds no demo process), removed"
+        exit 0
+    fi
     kill -TERM -- -"$pg" 2>/dev/null
     for _ in 1 2 3; do kill -0 -- -"$pg" 2>/dev/null || break; sleep 1; done
     kill -KILL -- -"$pg" 2>/dev/null
@@ -871,7 +887,7 @@ _kill-group file:
 
 # Kill demo processes that outlived their pgid file.
 #
-# The discriminator is CYCLONEDDS_URI in /proc/<pid>/environ, not the command
+# The discriminator is SAI_DEMO_RUN in /proc/<pid>/environ, not the command
 # name. Name patterns cannot do this job: play_launch spawns each Autoware node
 # under its own binary, so a live sim is ~110 processes across ~35 distinct
 # names (68 `component_node`, plus `converter_node`, `relay`,
@@ -881,18 +897,20 @@ _kill-group file:
 # the next `just autoware` half-start (20/33 nodes, 0/13 containers), which
 # reads as a regression in whatever you changed last (nano-ros issue 0371).
 #
-# CYCLONEDDS_URI is the right key because .envrc points it at an ABSOLUTE path
-# inside this checkout and every demo participant inherits it, so the sweep is
-# scoped to this repo's demo: a second checkout, another play_launch project,
-# and any unrelated ROS process on the box are all untouched. Prefer the value
-# this recipe itself inherited (that is literally what the children got);
-# fall back to computing it for a bare shell with no direnv.
+# SAI_DEMO_RUN is exported by scripts/env.sh, which every demo launcher
+# sources, holding this checkout's absolute path, so a second checkout and
+# unrelated ROS processes are untouched. env.sh does NOT export it when direnv
+# evaluates .envrc, so the interactive shell and what it starts (editors,
+# Claude Code) never carry it. The key used to be CYCLONEDDS_URI, which direnv
+# does export: a detached script running demo-down TERMed, then KILLed, the
+# Claude Code session started in this checkout (twice, 2026-09-28).
 [private]
 _sweep-orphans:
     #!/usr/bin/env bash
-    uri="CYCLONEDDS_URI=${CYCLONEDDS_URI:-file://{{justfile_directory()}}/demo/cyclonedds.xml}"
+    mark="SAI_DEMO_RUN={{justfile_directory()}}"
 
-    # demo-down runs inside that same env, so never kill self or an ancestor.
+    # demo-down may run inside a launcher's env, so never kill self or an
+    # ancestor.
     keep=" $$ "
     p=$$
     while :; do
@@ -905,14 +923,16 @@ _sweep-orphans:
     for d in /proc/[0-9]*; do
         pid=${d#/proc/}
         case "$keep" in *" $pid "*) continue;; esac
+        # Belt and braces: never a Claude Code session, whatever its env.
+        case "$(cat "$d/comm" 2>/dev/null)" in claude) continue;; esac
         # -z: NUL-separated records; -x: match a whole record, not a prefix
-        grep -qxzF "$uri" "$d/environ" 2>/dev/null && victims+=("$pid")
+        grep -qxzF "$mark" "$d/environ" 2>/dev/null && victims+=("$pid")
     done
 
     if [ ${#victims[@]} -eq 0 ]; then
         echo "orphan sweep: nothing left over"
     else
-        echo "orphan sweep: ${#victims[@]} process(es) still holding this demo's CYCLONEDDS_URI"
+        echo "orphan sweep: ${#victims[@]} process(es) still holding this demo's SAI_DEMO_RUN"
         ps -o pid=,comm= -p "$(IFS=,; echo "${victims[*]}")" 2>/dev/null \
             | awk '{c[$2]++} END {for (n in c) printf "  %4d x %s\n", c[n], n}' | sort -rn
         kill -TERM "${victims[@]}" 2>/dev/null
@@ -924,11 +944,19 @@ _sweep-orphans:
         [ ${#alive[@]} -gt 0 ] && kill -KILL "${alive[@]}" 2>/dev/null
     fi
 
-    # Belt and braces: these carry no CYCLONEDDS_URI when started from a shell
-    # with no direnv, and the island ignores the variable even when it has it.
-    pkill -KILL -f 'demo/control_relay.py' 2>/dev/null
-    pkill -KILL -f 'build-zephyr/zephyr/zephyr.exe' 2>/dev/null
-    pkill -KILL -f 'native_entry/native_entry' 2>/dev/null
+    # Belt and braces for binaries started by hand without env.sh. Each
+    # pattern names a demo binary path, and `pgrep -f` also matches shells
+    # whose command text merely mentions it, so a pid is killed only if its
+    # own executable is that binary, built in this checkout.
+    for pat in 'demo/control_relay.py' 'build-zephyr/zephyr/zephyr.exe' 'native_entry/native_entry'; do
+        for pid in $(pgrep -f "$pat"); do
+            case "$keep" in *" $pid "*) continue;; esac
+            exe="$(readlink "/proc/$pid/exe" 2>/dev/null)"
+            args="$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null)"
+            case "$exe" in "{{justfile_directory()}}"/*zephyr.exe|"{{justfile_directory()}}"/*native_entry) kill -KILL "$pid" 2>/dev/null; continue;; esac
+            case "$exe:$args" in *python*:*demo/control_relay.py*) kill -KILL "$pid" 2>/dev/null;; esac
+        done
+    done
     rm -f demo/.*.pgid
     echo "orphan sweep done"
 
