@@ -466,3 +466,76 @@ w16-b4, but inside the 10 s takeover window, where it does no harm. The
 island's escalation is, again, the contract working: the comfortable-stop
 rung needs planning. A load-independent branch B needs the planner's
 trajectory rate held too, which is outside the gate.
+
+## 8. The start-up gap (phase8-W29)
+
+Every traced native_sim run had the island's first availability take at
+0.202 s of simulated time and the second at 0.69-0.83 s: w8a-e 514 ms,
+w14-e 521 ms, w27-a/b/e 632/583/488 ms, w26-a/b/e up to 705 ms. Past the
+500 ms bound, it gave one tick of false MRM just after start-up.
+W26's `15.565 s` episode in w26-e is the same thing, on the stamp
+recorder's time base (the recorder starts about 15 s before the island).
+
+**Where it was: the island's clock, not any hop of the stream.** Measured in
+w29-base-a (main 53f032e) with the island's console stamped on the host
+(`tools/timeline/stamp.py`, `island.trace.stamped.log`) and a 2 ms sampler
+of native_sim's lag behind the host:
+
+- The gate published every 100 ms from its first sample (its `stats`:
+  largest publish gap 101.7 ms in w27-a, 100.2 ms in w27-b and w27-e), and
+  the host probe heard every sample 100 ms apart. There was no gap on the
+  wire, so neither discovery nor the gate's start-up nor the converter
+  caused it.
+- The island's boot costs 500-650 ms of host time (participant creation,
+  Cyclone ingesting a running Autoware graph's discovery, the components'
+  registration) at simulated time 0 to 0.2 s. native_sim's simulated clock
+  does not move while embedded code computes or blocks in a host call. In
+  real-time mode it only ever sleeps when it is AHEAD of the host
+  (`timer_model.c`, `hwtimer_tick_timer_reached`), so afterwards it sprints
+  until it is level again. The sampler: 591 ms behind the host at 9 ms,
+  still 543 ms behind at the first spin (0.204 s), then falling 6 ms per
+  6 ms of simulated time, level at 0.77 s.
+- The host stamps show the sprint. `0.202 ... claimed at first spin` came at
+  host +729 ms and `0.712 silence-runtime` came at +760 ms: 510 ms of island
+  time in 31 ms of host time. The island's emergency control commands,
+  published 33 ms apart on its clock, reached the probe 15 within 40 ms
+  (w27-e) and 18 within 31 ms (w29-base-a). W26's own wall-clock stamps
+  show the same thing: mrm_state stamped 100 ms apart on the island arrived
+  2 ms apart on the host, and the MRM came at the instant the clock caught
+  up.
+
+The island took the latest sample at its first spin, and then its clock ran
+half a second ahead in about 40 ms of host time. Nothing could arrive in
+that window.
+
+**The fix: the first spin waits for the clock** (`src/native_sim_entry/src/sim_clock_catch_up.c`).
+The link wraps `nros_cpp_spin_once`, and the first call waits in `k_sleep`
+until native_sim's clock is level with the host. The sprint then happens
+before the island takes or times anything. It prints one line:
+
+    [native_sim] first spin at 268 ms: the clock was 517 ms behind the host (boot work at simulated time 0), held 637 ms to catch up, 0 ms behind now
+
+The board image does not include this file. A board's boot costs real time
+before its first spin. In W10's cold resets, each 10 Hz input was taken
+20-21 times in the first 2 s (`experiments/serial-interop/w10/runs/*/poll.excerpt.txt`).
+
+| run | lag caught up | first two takes (s) | gap | largest gap, first 3 s | verdict |
+|---|---|---|---|---|---|
+| w29-base-a (before) | - | 0.202, 0.823 | 621 ms | 621 ms | PASS, false MRM at start |
+| w29-a1 | 517 ms | 0.905, 0.924 | 19 ms | 121 ms | PASS |
+| w29-b1 | 418 ms | 0.671, 0.678 | 7 ms | 138 ms | PASS |
+| w29-a2 | 450 ms | 0.685, 0.726 | 41 ms | 100 ms | PASS |
+| w29-b2 | 307 ms | 0.587, 0.598 | 11 ms | 134 ms | PASS |
+| w29-a3 | 392 ms | 0.723, 0.786 | 63 ms | 101 ms | PASS |
+
+None of the five had a start-up MRM. w29-a1 had a 100 ms COMFORTABLE_STOP
+2.7 s after engage, and so did w27-a. That episode is Autoware's own raw
+availability: one sample with `autonomous: false`, which the gate relayed
+as it should (gate `publish` events n=264/265, `raw_autonomous: false`).
+It is not a gap.
+
+nros's `silence-runtime .../operation_mode_availability` warning still
+appears once, 500 ms after the first spin, in every native_sim run and in all five of W23's QEMU runs.
+It does so even when the trace shows takes every 100 ms, so it is not
+evidence of a gap. The silence rule counts only the takes its age monitor
+observes, and here it observes none.

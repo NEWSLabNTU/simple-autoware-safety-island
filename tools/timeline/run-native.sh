@@ -40,6 +40,7 @@ parallel --lb --halt now,done=1 --termseq TERM,5000,KILL,1000 ::: \
 rc=${PIPESTATUS[0]}
 for _ in 1 2 3 4 5 6 7 8; do pgrep -f 'build-zephyr/zephyr/zephyr.exe' >/dev/null || break; sleep 1; done
 cp tmp_island.log "$out.log" 2>/dev/null || true
+cp tmp_island.stamped.log "$out.stamped.log" 2>/dev/null || true
 cp tmp_sim.log "$dir/sim.log" 2>/dev/null || true
 echo "loadavg_end=$(cut -d' ' -f1-3 /proc/loadavg)" >> "$out.meta"
 echo "wall_secs=$(( $(date +%s) - start ))" >> "$out.meta"

@@ -65,3 +65,9 @@ nano_ros_add_executable(native_sim_entry
     BRINGUP "${CMAKE_CURRENT_SOURCE_DIR}/../safety_island_bringup"
     TYPED
     DEPLOY  zephyr)
+
+# phase8-W29: the executor's first spin waits for native_sim's simulated clock
+# to catch up with the host, so the boot stall is not replayed as a sprint the
+# island's timers see (the reasoning is in src/sim_clock_catch_up.c).
+target_sources(app PRIVATE src/sim_clock_catch_up.c)
+zephyr_ld_options(-Wl,--wrap=nros_cpp_spin_once)

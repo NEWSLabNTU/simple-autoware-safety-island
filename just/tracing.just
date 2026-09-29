@@ -72,7 +72,9 @@ _job-traced-island out:
     source scripts/env.sh
     ps -o pgid= -p $$ | tr -d ' ' > demo/.island.pgid
     python3 scripts/sntp-server.py >> tmp_sntp.log 2>&1 &  # phase8-W18: the epoch (prj.conf)
-    exec ./build-zephyr/zephyr/zephyr.exe --trace-out="{{out}}" > tmp_island.log 2>&1
+    # phase8-W29: the console also goes to tmp_island.stamped.log with host
+    # stamps, which show the island clock's lag (docs/takeover-trace.md, 8)
+    exec ./build-zephyr/zephyr/zephyr.exe --trace-out="{{out}}" 2>&1 | python3 -u tools/timeline/stamp.py tmp_island.log tmp_island.stamped.log
 
 [private]
 _trace-meta out image:
