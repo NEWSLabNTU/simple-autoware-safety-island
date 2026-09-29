@@ -15,7 +15,9 @@
 // router-serial.json5 explains). The intended deltas against the stock file,
 // and the only ones:
 //   1. transport.link.tx.keep_alive 6 (stock 2): a keepalive every 10 s,
-//      inside zenoh-pico's 20 s tolerance (router-serial.json5 explains).
+//      inside zenoh-pico's 20 s tolerance at a 10 s island lease
+//      (router-serial.json5 explains); the island states 60 s since
+//      phase8-W15 (island-serial/serial.conf), so this is now margin.
 //   2. `downsampling`: serial egress, three rules (see the block).
 //   3. `access_control`: serial egress, no liveliness tokens (see the block).
 //   4. transport.link.tx.queue: size.data 16 (stock 2) and

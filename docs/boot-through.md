@@ -864,3 +864,54 @@ host peer at all the island closed its session with reason 5 (EXPIRED)
 30.1 s after opening, twice; the stock router's `lease: 60000` /
 `keep_alive: 2` sends one keepalive per 30 s, and the island tolerates 10 s
 (`CONFIG_NROS_ZENOH_LEASE_MS` default). W15 owns the fix.
+
+### phase8-W15: the plain-router drop is configuration, not version
+
+**Mode.** The island is a zenoh CLIENT: nano-ros's only session mode on
+Zephyr (no Kconfig selects peer; `SessionMode::Client` is the default), and
+the router logs `New transport opened ... - whatami: client` and `InitSyn {
+version: 9, whatami: Client ...}`. zenoh's own config says "instances in
+client mode do not participate in gossip", and the tap saw no OAM message
+toward the island in any run. Scouting and multicast are compiled out
+(`Z_FEATURE_SCOUTING=0`, `Z_FEATURE_MULTICAST_TRANSPORT=0`); a client
+opens one link, to the connect locator. The peer/gossip hypothesis is refuted.
+
+**Versions.** Host router ros-humble-rmw-zenoh-cpp 0.1.9 (upgraded to 0.1.10
+on 2026-09-29 18:36), container 0.1.10; both vendor zenoh-c 1.8.0 built from
+zenoh commit 2687c51, and both ship `lease: 60000`, `keep_alive: 2`. The
+island's zenoh-pico is jerry73204/zenoh-pico `nano-ros` 52f60b79 =
+`1.8.0-74-g52f60b79` (same commit under nano-ros bec9aecb8 and da272e419):
+the same release as the router, protocol version 9 on both sides. Key
+expressions are rmw_zenoh humble's (`@ros2_lv/10/<zid>/<nid>/<eid>/NN|MP|MS|
+SS|SC/...`, `.../TypeHashNotSupported`).
+
+**Cause.** zenoh-pico (upstream 1.8.0, `transport.c` OpenAck handling)
+measures router silence against min(router lease, own lease) = 10 s, and
+closes after two silent periods; rmw_zenohd keepalives an idle link every
+30 s. The CLOSE is decided at ~OPEN+20 s but reaches the wire only with the
+next byte the router sends, 20-50 ms after it: the 30 s keepalive, or a host
+peer's liveliness declarations forwarded to the island when graph discovery
+is on -- which is why W8a saw it "0.15 s after `ros2 node list`". The same
+thing is known upstream as ros2/rmw_zenoh#734 (closed: "Actually using any
+`Z_TRANSPORT_LEASE` > `lease`/`keep_alive` works"), and nano-ros fixed it for
+its cargo lane in issue 0906, but the Zephyr Kconfig default stayed 10000.
+
+**One change at a time** (QEMU, `/mnt/mx500/aeon/worktrees/w15/tap/*`, the
+tap is W14's zproxy on 7472 in front of a private rmw_zenohd on 7471):
+
+| run | image | router | host peers at OPEN+ | result |
+| --- | --- | --- | --- | --- |
+| A | 10 s, discovery on | stock 0.1.9 | none | KEEPALIVE 49.652, CLOSE reason 5 49.676 (OPEN 19.463) |
+| B | 10 s, discovery on | stock 0.1.9 | 24 s | peer's FRAMEs 28.401, CLOSE reason 5 28.451; list empty |
+| E | 10 s, discovery on | keep_alive 6 only | 24, 40, 55 s | held 88 s, 3 of 3 lists name the 3 nodes |
+| F | 10 s, discovery on | gossip `enabled: false` only | 24 s | KEEPALIVE 33.393, CLOSE reason 5 33.441 |
+| H | 10 s, discovery on | 0.1.10 (container) | 24 s | FRAMEs 32.248, CLOSE reason 5 32.267 |
+| I | 10 s, main f7c9369 | stock 0.1.10 | 24, 40 s | KEEPALIVE 34.409, CLOSE 34.410; +24 lists 3, +40 empty |
+| D | 60 s, main + this change | stock 0.1.9 | 24, 40, 55, 70 s | held 77 s, 4 of 4 lists |
+| J | 60 s, main + this change | stock 0.1.10 | 24, 40, 55, 70 s | held 97 s, keepalives +30/+60/+90, 4 of 4 lists |
+
+Only the lease (or the router's keepalive cadence) moves the result; gossip
+and router version do not. Fix: `CONFIG_NROS_ZENOH_LEASE_MS=60000` stated in
+qemu-ethernet, island-ethernet and island-serial, and the Zephyr default
+moved in nano-ros (issue 1574). On 0.1.10 the host `ros2 node list` did not
+hang: 6 of 6 runs returned, each session open 0.8-2.9 s (run J).
