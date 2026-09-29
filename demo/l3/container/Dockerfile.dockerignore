@@ -6,6 +6,7 @@
 !demo/l3/takeover_demo/
 !demo/l3/container/entrypoint.sh
 !demo/l3/container/bin/
+!demo/l3/container/patches/
 !demo/map/sample-map-planning/
 **/__pycache__
 **/*.pyc

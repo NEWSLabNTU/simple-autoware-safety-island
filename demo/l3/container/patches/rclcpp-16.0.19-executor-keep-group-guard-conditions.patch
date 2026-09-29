@@ -1,0 +1,107 @@
+diff --git a/rclcpp/src/rclcpp/executor.cpp b/rclcpp/src/rclcpp/executor.cpp
+index a406cb6e..a92c4efe 100644
+--- a/rclcpp/src/rclcpp/executor.cpp
++++ b/rclcpp/src/rclcpp/executor.cpp
+@@ -15,7 +15,9 @@
+ #include <algorithm>
+ #include <memory>
+ #include <map>
++#include <mutex>
+ #include <string>
++#include <unordered_map>
+ #include <type_traits>
+ #include <utility>
+ #include <vector>
+@@ -38,6 +40,60 @@
+ using namespace std::chrono_literals;
+ 
+ using rclcpp::exceptions::throw_from_rcl_error;
++
++namespace
++{
++// sai phase8-W11: the executor keeps each callback group's notify guard
++// condition in its wait set through a RAW pointer
++// (weak_groups_to_guard_conditions_, memory_strategy_->guard_conditions_).
++// A callback group destroyed while another thread of a MultiThreadedExecutor
++// is inside rcl_wait() frees that guard condition under the waiter (its
++// destructor even triggers it first, so the waiter wakes right into the
++// freed object): ros2/rclcpp#2445, open on Humble. On rmw_zenoh_cpp the
++// guard condition is a heap object with a mutex, so the waiter writes into
++// freed memory (heap corruption, a later abort in malloc) or blocks on a
++// stale mutex. Here the executor holds a strong reference to every guard
++// condition it put in the wait set until it takes it out again, on the
++// thread that owns the wait set. Kept outside the class so the ABI of
++// librclcpp.so is unchanged.
++std::mutex g_gc_keepalive_mutex;
++std::unordered_map<
++  const rclcpp::Executor *,
++  std::unordered_map<const rclcpp::GuardCondition *, rclcpp::GuardCondition::SharedPtr>>
++g_gc_keepalive;
++
++void keep_guard_condition(const rclcpp::Executor * e, rclcpp::GuardCondition::SharedPtr gc)
++{
++  std::lock_guard<std::mutex> lock(g_gc_keepalive_mutex);
++  g_gc_keepalive[e][gc.get()] = std::move(gc);
++}
++
++void release_guard_condition(const rclcpp::Executor * e, const rclcpp::GuardCondition * gc)
++{
++  rclcpp::GuardCondition::SharedPtr last;  // destroyed after the lock is dropped
++  std::lock_guard<std::mutex> lock(g_gc_keepalive_mutex);
++  auto it = g_gc_keepalive.find(e);
++  if (it == g_gc_keepalive.end()) {
++    return;
++  }
++  auto jt = it->second.find(gc);
++  if (jt != it->second.end()) {
++    last = std::move(jt->second);
++    it->second.erase(jt);
++  }
++}
++
++void release_all_guard_conditions(const rclcpp::Executor * e)
++{
++  std::unordered_map<const rclcpp::GuardCondition *, rclcpp::GuardCondition::SharedPtr> last;
++  std::lock_guard<std::mutex> lock(g_gc_keepalive_mutex);
++  auto it = g_gc_keepalive.find(e);
++  if (it != g_gc_keepalive.end()) {
++    last.swap(it->second);
++    g_gc_keepalive.erase(it);
++  }
++}
++}  // namespace
+ using rclcpp::AnyExecutable;
+ using rclcpp::Executor;
+ using rclcpp::ExecutorOptions;
+@@ -111,6 +167,7 @@ Executor::~Executor()
+     memory_strategy_->remove_guard_condition(guard_condition);
+   }
+   weak_groups_to_guard_conditions_.clear();
++  release_all_guard_conditions(this);
+ 
+   // Finalize the wait set.
+   if (rcl_wait_set_fini(&wait_set_) != RCL_RET_OK) {
+@@ -221,6 +278,7 @@ Executor::add_callback_group_to_map(
+     weak_groups_to_guard_conditions_[weak_group_ptr] = callback_group_guard_condition.get();
+     // Add the callback_group's notify condition to the guard condition handles
+     memory_strategy_->add_guard_condition(*callback_group_guard_condition);
++    keep_guard_condition(this, callback_group_guard_condition);
+   }
+ 
+   if (notify) {
+@@ -305,6 +363,7 @@ Executor::remove_callback_group_from_map(
+     auto iter = weak_groups_to_guard_conditions_.find(weak_group_ptr);
+     if (iter != weak_groups_to_guard_conditions_.end()) {
+       memory_strategy_->remove_guard_condition(iter->second);
++      release_guard_condition(this, iter->second);
+     }
+     weak_groups_to_guard_conditions_.erase(weak_group_ptr);
+ 
+@@ -731,6 +790,7 @@ Executor::wait_for_work(std::chrono::nanoseconds timeout)
+             auto guard_condition = callback_guard_pair->second;
+             weak_groups_to_guard_conditions_.erase(group_ptr);
+             memory_strategy_->remove_guard_condition(guard_condition);
++            release_guard_condition(this, guard_condition);
+           }
+           weak_groups_to_nodes_.erase(group_ptr);
+         });

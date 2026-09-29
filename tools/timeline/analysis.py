@@ -8,12 +8,22 @@ merge.py). All times here are ms from the first injection (the button).
 
 The act is read from the injections: odd_exit and a takeover is branch A,
 odd_exit alone branch B, hpc_loss the encore.
+
+The window (phase8-W12). `window:` is a LEAST time: the request lasts at
+least the window, and the checker charges it up to the DEADLINE (request on
++ window); the rung below is charged its route FROM the deadline, and that
+route's first hop (mrm_handler/call_mrm, 110 ms = the 100 ms tick + the
+10 ms call) is where the late notice of the deadline is charged
+(play_launch `window-expiry`). So branch B is cut at the deadline, a derived
+instant (the request-on edge plus the declared, parameter-bound window),
+never at the request-off edge, which lies inside the route below; the
+verdict -> velocity limit row needs no derived instant at all.
 """
 import re
 
 import tlcommon as tl
 
-TICK_MS = 100.0  # mrm_handler update_rate 10: a window is noticed on a tick
+TICK_MS = 100.0  # mrm_handler update_rate 10: the encore's detect row adds it back (below)
 HPC_TIMEOUT_MS = 500.0  # mrm_handler timeout_operation_mode_availability: hpc_loss
 
 
@@ -115,9 +125,14 @@ def analyze(ev, rows, explain="", windows=None, entry_speed=None):
         E["hazard_lights_on"] = t_of(_first(ev, probe("vehicle_hazard_lights", lambda v: v == "ENABLE"), after=t0))
         E["island_hazard_cmd_on"] = t_of(_first(ev, probe("island_hazard_lights_cmd", lambda v: v == "ENABLE"),
                                                 after=t0))
+        # Host-side receipts of the request, beside the island's own edges.
+        E["tor_on_host"] = t_of(_first(ev, probe("takeover_request_state", lambda v: v == "OPERATING"), after=t0))
+        E["tor_off_host"] = t_of(_first(ev, probe("takeover_request_state", lambda v: v != "OPERATING"),
+                                        after=(E["tor_on_host"] or t0) + 1))
         obs["detect"] = d(t0, E["fault_on_wire"])
         obs["tor_route"] = d(E["fault_on_wire"], E["tor_on"])
         obs["dwell"] = d(E["tor_on"], E["tor_off"])
+        obs["dwell_host"] = d(E["tor_on_host"], E["tor_off_host"])
         if act == "a":
             E["takeover_press"] = t_of(_first(ev, lambda e: e["source"] == "scenario" and e.get("marker") == "takeover"
                                               and e["kind"] == "inject", after=t0))
@@ -145,8 +160,15 @@ def analyze(ev, rows, explain="", windows=None, entry_speed=None):
             E["standstill"] = standstill(ev, E["safe_cmd"] or after_on)
             E["mrm_succeeded"] = t_of(_first(ev, probe("mrm_state", lambda v: v["state"] == "MRM_SUCCEEDED"),
                                              after=t0))
-            obs["windows"] = d(E["fault_on_wire"], E["tor_off"])
-            obs["route"] = d(E["tor_off"], E["safe_cmd"])
+            # The deadline: request on + the window (derived, see the module doc).
+            wn = int(round(win_ms * 1e6))
+            E["deadline"] = E["tor_on"] + wn if E["tor_on"] is not None else None
+            E["deadline_host"] = E["tor_on_host"] + wn if E["tor_on_host"] is not None else None
+            obs["windows"] = d(E["fault_on_wire"], E["deadline"])
+            obs["route"] = d(E["deadline"], E["safe_cmd"])
+            obs["windows_route"] = d(E["fault_on_wire"], E["safe_cmd"])
+            obs["route_host"] = d(E["deadline_host"], E["host_limit"])
+            obs["windows_route_host"] = d(E["fault_on_wire"], E["host_limit"])
             obs["planner_hop"] = d(E["safe_cmd"], E["first_decel"])
             obs["settle"] = d(E["safe_cmd"], E["standstill"])
             obs["total"] = d(t0, E["standstill"])
@@ -188,7 +210,8 @@ def analyze(ev, rows, explain="", windows=None, entry_speed=None):
     decl_settle_at_obs = tl.settle_s(v_entry, -p[0], -p[1]) * 1000 if p and v_entry else None
     bound = entry_speed.get(hazard)
     res = dict(act=act, hazard=hazard, rung=rung, t0=t0, edges={k: ms(v) for k, v in E.items()},
-               edges_ns=E, observed=obs, declared=decl_rows, window_ms=win_ms, profile=p,
+               edges_ns=E, observed=obs, declared=decl_rows, window_ms=win_ms,
+               window_end_ms=(decl_rows.get("takeover_request") or {}).get("window_end"), profile=p,
                entry_speed_declared=bound, entry_speed_observed=v_entry,
                entry_speed_exceeded=(v_entry is not None and bound is not None and v_entry > bound),
                settle_at_observed_speed_ms=decl_settle_at_obs, align=align, have_island=have_island,
@@ -251,13 +274,24 @@ def verdicts(r):
             out.append(dict(term="no MRM", observed="none" if ok_nomrm else "MRM_OPERATING",
                             declared="none", ok=ok_nomrm, note=""))
         else:
-            dw = o.get("dwell")
-            out.append(dict(term="window dwell (request on -> off)", observed=dw, declared=w,
-                            ok=None if dw is None else (w <= dw <= w + TICK_MS),
-                            note=f"waited out: {w:.0f} <= dwell <= {w:.0f} + one tick"))
+            # The window is a least time, bounded above by the checker's
+            # `ends within` (window + the first hop of the route below).
+            end = tr.get("window_end")
+            for term, key in (("window dwell, island clock (request on -> off)", "dwell"),
+                              ("window dwell, host (request on -> off as received)", "dwell_host")):
+                dw = o.get(key)
+                out.append(dict(term=term, observed=dw,
+                                declared=f"[{w:.2f}, {end:.2f}]" if end is not None else f">= {w:.2f}",
+                                ok=None if dw is None else (w <= dw and (end is None or dw <= end)),
+                                note="at least the window; ends within the checker's `ends within`"))
             cs = dr.get("comfortable_stop", {})
-            add("windows (verdict -> window over)", o.get("windows"), cs.get("windows"))
-            add("route (window over -> velocity limit)", o.get("route"), cs.get("route"))
+            add("windows (verdict -> deadline = request on + window)", o.get("windows"), cs.get("windows"))
+            add("route, island clock (deadline -> velocity limit)", o.get("route"), cs.get("route"))
+            add("route, host (deadline -> velocity limit received)", o.get("route_host"), cs.get("route"))
+            wr = None if cs.get("windows") is None or cs.get("route") is None else cs["windows"] + cs["route"]
+            add("windows + route (verdict -> velocity limit)", o.get("windows_route"), wr, "no derived instant")
+            add("windows + route, host (verdict -> velocity limit received)", o.get("windows_route_host"), wr,
+                "no derived instant")
             add("settle (velocity limit -> standstill)", o.get("settle"), cs.get("settle"),
                 "includes the planner hop, not declared here")
             add("total (button -> standstill)", o.get("total"), cs.get("total"))

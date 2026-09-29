@@ -66,10 +66,10 @@ publish_ros_env() {
 
 report() {
     say "middleware: ${RMW_IMPLEMENTATION} domain ${ROS_DOMAIN_ID} (never autoware-env.bash: it forces Cyclone)"
-    if (exec 3<>/dev/tcp/127.0.0.1/7447) 2>/dev/null; then
-        say "router: tcp/127.0.0.1:7447 reachable"
+    if (exec 3<>/dev/tcp/127.0.0.1/"${L3_ROUTER_PORT:-7447}") 2>/dev/null; then
+        say "router: tcp/127.0.0.1:${L3_ROUTER_PORT:-7447} reachable"
     else
-        say "router: NOTHING on tcp/127.0.0.1:7447 -- start the host's rmw_zenohd (just l3-router), and run with --network host"
+        say "router: NOTHING on tcp/127.0.0.1:${L3_ROUTER_PORT:-7447} -- start the host's rmw_zenohd (just l3-router ${L3_ROUTER_PORT:-7447}), and run with --network host"
     fi
     if [ -n "${DISPLAY:-}" ] && [ -d /tmp/.X11-unix ]; then
         say "display: $DISPLAY (host X socket mounted)"

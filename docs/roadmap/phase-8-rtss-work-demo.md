@@ -342,8 +342,8 @@ the others by fast-forward push once implementation starts.
   driver response gives MANUAL 22 ms later. `takeover_demo` (six nodes,
   contract clean), `.github/workflows/check.yml` (14 contracts, pinned
   play_launch 0.12.0). Open: an rmw_wait hang in component containers (6 of
-  19 container starts completed), G3 kills an unfiltered island even at
-  1 MiB, G4, G5.
+  19 container starts completed; root-caused and fixed by W11), G3 kills an
+  unfiltered island even at 1 MiB, G4, G5.
 - **W4 - zenoh gaps in nano-ros.** G3 as D9 (discovery off on the island,
   data first) and G4 (transient-local subscriber); revert the phase-7
   volatile change and fix the contract's rate claim. Gate: a late-joining
@@ -414,6 +414,57 @@ the others by fast-forward push once implementation starts.
   measured; the board's own heap reading.
 - **W9 - the booth.** Poster, the two-minute script, the fallback
   (native_sim with the identical plot), a recorded run.
+- **W11 - the container start flake.** Root cause, fix at the right layer,
+  gate: 20 consecutive container starts complete, then a routed drive with
+  the planner publishing.
+  Status (2026-09-29): gate MET, demo/l3/README.md ("Start flake and silent
+  planner", trap 2). Three causes, all in the image: (a) rmw_zenoh_cpp
+  0.1.9's `rmw_wait` clears the wait set's `triggered` flag without its
+  mutex and loses wakeups (ros2/rmw_zenoh#1032, fixed in 0.1.10, taken from
+  ROS apt testing); (b) rclcpp 16.0.19's executor frees a destroyed
+  callback group's guard condition under a waiting thread
+  (ros2/rclcpp#2445), which silenced behavior_path_planner on a re-route:
+  rclcpp rebuilt with a 60-line executor.cpp patch; (c) zenoh 1.8.0's peer
+  gossip deadlocks under join churn when the Net runtime has one worker
+  (eclipse-zenoh/zenoh#2581): `ZENOH_RUNTIME` gives it 8. Starts: 3 of 10
+  on the W3 image, 7 of 8 on the host (unchanged), 40 of 40 on the fixed
+  image at load 18.9-41.3; four routed drives (three re-routes) PASS with
+  `path_with_lane_id` at 10.0 Hz, largest gap 117-130 ms. Client mode also
+  cured (c) but raised the planner chain's largest gap to 0.54-0.92 s.
+  Open: the host path keeps all three; drop the testing source and the
+  patch when ROS apt ships them.
+- **W14 - one pin move, and what waited on it.**
+  Status (2026-09-29): docs/boot-through.md ("phase8-W14"). nano-ros
+  `da272e419` (main): local queryable derived (issue 1549), domain
+  agreement (1550), graph discovery as a knob (phase-473 W1), the
+  transient-local subscriber (phase-473 W2), external contract publishers
+  out of the image (1567), play_launch `bbf9c044` / rlm v0.1.47. Landed on
+  it: W13 (`CONFIG_NROS_MAX_QUERYABLES=4` and its knob tolerance retired;
+  the table derives to 4), W4 (`mrm_handler` reads
+  `/api/operation_mode/state` TRANSIENT_LOCAL; the contract states
+  `durability: transient_local` and no longer claims 10 Hz for a latched
+  on-change topic), graph discovery off in both TCP snippets (serial derives
+  it off), W11 (container), W12 (the window as a least time), and the
+  native_sim conf stating `CONFIG_NROS_DOMAIN_ID=10`, which 1550's check
+  demands. QEMU: RAM 361,524 B (W8a 370,676), FirstSpin heap PEAK
+  74,016 B in three runs (W8a 74,856-76,080), so the heap stays 102,400 (peak + 24,576
+  rounded to 4 KiB). Board region report RAM 269,416 of 327,680 B (82.22 %,
+  W8a 277,208), not flashed; `board-doctor` one domain everywhere: 10.
+  `play_launch check` bbf9c044 clean on the island contract; CI script
+  14/14 on the pinned 0.12.0. native_sim, one run each, load 20-31: A FAIL
+  and B FAIL, both on host availability gaps (1,600 / 1,901 ms, over the
+  500 ms `hpc_alive` bound, so the island escalated as it must); reruns A
+  PASS, B PASS (a 6,826 ms host gap again, before the fault) and B PASS
+  clean (window dwell 10,001 ms island / 10,002 host, `windows` 10,067
+  against 10,110); encore PASS (last sample to braking 607 ms against
+  643). Open: the host gate's gaps at load 30; the plain-router session
+  drop moved to W15 (/mnt/mx500/aeon/worktrees/w15-handoff.md: a lease
+  mismatch, 30 s router keepalives against a 10 s island lease); CI's
+  EXPECT cannot flip until a play_launch past 0.12.0 is on the package
+  index, and under bbf9c044 `docs/demo-l4/stage2-rungBudget` exits 0
+  where it must exit 1 (its `ladder-rung-budget` error on rung
+  `b1_degrade_ads` is gone; the table no longer lists that rung); re-measure the serial link without the gateway ACL
+  on the board (W10).
 
 Order: W0 first; W1, W2, W3, W6 in parallel; W4 and W5 after W1; W7 after
 W6; W8 after W2, W4, W5, W7; W9 last. Rough effort 6-7 weeks on the core

@@ -184,6 +184,8 @@ SIGSTOP landed 95.01 / 56.53 / 50.24 ms after the gate's last sample.
   `takeover_request` window should carry the expiry tick (a route of the
   window's own) or the contract should declare `window: 10s` plus the
   handler's period. Not changed here; it is a play_launch/contract decision.
+  **Resolved by phase8-W12 (section 6): the tick was charged, in the route
+  below the window; this table cut at the wrong edge.**
 - **b3 and b4 are the island being right about a host that stalled.** The
   comfortable-stop rung requires `hpc_alive`. In b3 the availability stream
   on the wire went silent for 582.02 ms at 11821 ms, 1.8 s into the
@@ -223,7 +225,100 @@ band; declared bars (hatched, from the checker) over observed bars (solid,
 from events), one pair per rung the hazard reaches; the event ticks; the
 verdicts.
 
-## 6. Reproduce
+## 6. The window, settled (phase8-W12)
+
+**What `window:` means.** A LEAST time. The 10 s is what the driver is
+given (Drive Pilot's figure, decision 3): the request is never withdrawn and
+no MRM starts before 10 s after the request went on. The handler guarantees
+that by construction (`now - stamp < timeout` against the stamp it took when
+the request went on, on one clock), and every run so far shows it: the
+island-clock dwell has never been below 10000.00 ms. How LATE the MRM may
+start is not a second number. play_launch charges the window up to its
+DEADLINE (request on + 10 s) and then the rung below its own route, walked
+from the guard, whose first hop is `/mrm_handler/call_mrm` 110 ms = the
+100 ms tick the handler reads the deadline on + the 10 ms call. That is the
+same shape the checker uses after the 500 ms staleness window (`hpc_loss`:
+detect 500, then a route that starts with the tick), which the encore table
+above already adds back. So the request ends within [10000, 10110] ms of
+going on, and the fallback's command within 110 ms of the deadline.
+
+**What was wrong.** Not the handler and not the arithmetic: (1) rlm v0.1.46
+documented the window as "stay at most this long", the opposite of the
+promise and not meetable by any implementation, since whatever enforces a
+deadline notices it after it passes; (2) nothing CHECKED that the route below
+a window holds the owner's notice (it held it here only because
+`call_mrm`'s declared 110 ms contains the tick); (3) this document's branch B
+table cut at the request-OFF edge, which lies inside that route, so the tick
+was counted in "windows" and again in "route" (the 0.01 ms route rows above
+are the other half of the same mistake). Adding the tick to WINDOWS, or
+declaring `window: 10.1s`, would have charged it twice.
+
+**What changed.**
+- ros-launch-manifest v0.1.47 (text only): `window` is "at least", with the
+  interval written out.
+- play_launch bbf9c044 (phase 84): rule `window-expiry` (the route below a
+  window must start at the node its `param:` names, and charge it at least
+  the period of that node's timer that publishes the rung's output; a
+  warning when no such timer is declared); `--explain` prints
+  `window >=10000.00` and the interval the request ends in. No TOTAL moved.
+- `tools/timeline/analysis.py`: branch B is cut at the deadline (request on
+  + the declared, parameter-bound window, a derived instant); the dwell is
+  checked against `[window, ends within]` read from the checker, on the
+  island clock and as the host received it; a "windows + route" row needs no
+  derived instant at all. The hard-coded "+ one tick" is gone.
+
+The checker's rows for the live contract (play_launch bbf9c044):
+
+```
+odd_exit  takeover_request  window   100.00      0.00  110.00  window >=10000.00         -  30000.00         -
+odd_exit  comfortable_stop  rung     100.00  10110.00  110.00    9996.67 derived  20316.67  30000.00   9683.33
+odd_exit  emergency_stop    floor    100.00  10110.00  143.33    4165.33 derived  14518.67  30000.00  15481.33
+  TOTAL = DETECT + WINDOWS + ROUTE + SETTLE; WINDOWS is the route and window of every windowed rung passed on the way, up to its deadline.
+  A window is a least time (`window >=`); noticing its deadline is the first hop of the ROUTE below it (`window-expiry`), never a second charge.
+  odd_exit/takeover_request: lasts at least 10000.00ms once on, and ends within 10110.00ms: /mrm_handler reads the deadline on its 100.00ms timer ('on_timer'), charged inside /mrm_handler/call_mrm 110.00ms, the first hop of the route below
+```
+
+**Three runs of branch B** on an image built from main 55a65a4 in a
+worktree, with no handler change (`build-zephyr/zephyr/zephyr.exe`, sha256
+`828ee7f5...8161bd48a3`, native_sim, tracing on), `tools/timeline/run-native.sh b
+w12-b<n>`, one at a time under the demo lock, each started below load 35:
+
+```
+w12-b1 VERDICT: PASS b: v at the fault 3.87 m/s; TOR on True, mrm (3, 3) (3 = COMFORTABLE_STOP), v 0.000
+w12-b2 VERDICT: FAIL b: v at the fault 3.86 m/s; TOR on True, mrm (3, 2) (3 = COMFORTABLE_STOP), v 0.000
+w12-b3 VERDICT: PASS b: v at the fault 3.91 m/s; TOR on True, mrm (3, 3) (3 = COMFORTABLE_STOP), v 0.000
+```
+
+| term | declared | w12-b1 | w12-b2 | w12-b3 |
+|---|---|---|---|---|
+| detect (button -> verdict on the wire) | 100.00 | 98.68 | 11.77 | 4.73 |
+| takeover route (verdict -> request on) | 110.00 | 65.74 | 75.08 | 34.25 |
+| window dwell, island clock (request on -> off) | [10000.00, 10110.00] | 10100.00 | 10000.00 | 10000.00 |
+| window dwell, host (request on -> off as received) | [10000.00, 10110.00] | 10099.58 | 10000.01 | 10002.09 |
+| windows (verdict -> deadline = request on + window) | 10110.00 | 10065.74 | 10075.08 | 10034.25 |
+| route, island clock (deadline -> velocity limit) | 110.00 | 100.01 | 0.01 | 0.01 |
+| route, host (deadline -> velocity limit received) | 110.00 | 100.59 | 9.70 | 3.33 |
+| windows + route (verdict -> velocity limit) | 10220.00 | 10165.74 | 10075.09 | 10034.25 |
+| windows + route, host (verdict -> velocity limit received) | 10220.00 | 10168.52 | 10087.67 | 10038.17 |
+| settle (velocity limit -> standstill) | 9996.67 | 8334.73 | 4435.95 | 5686.58 |
+| total (button -> standstill) | 20316.67 | 18599.16 | 14522.80 | 15725.56 |
+| rung reached | COMFORTABLE_STOP | COMFORTABLE_STOP | EMERGENCY_STOP FAIL | COMFORTABLE_STOP |
+| HPC alive: longest availability gap (host) | 500.00 | 106.58 | 600.35 FAIL | 114.41 |
+| entry speed (m/s) | 8.33 | 2.90 | 2.99 | 3.00 |
+
+Load at start 26.2 / 32.1 / 21.5. Every window row passes in every run, on
+both clocks. w12-b1 is the case finding 1 was about: the handler read the
+deadline one full tick late (dwell 10100.00 on the island clock); cut at the
+deadline, the notice sits in the route (100.01 against 110) and the windows
+term reads 10065.74 against 10110. w12-b2's act FAIL is not the window:
+2.9 s into the comfortable stop the host's availability stream went silent
+for 600.35 ms (the gate logged 8 `stall` events, tick and raw stream both,
+host load 32-53), the island rightly raised `hpc_loss` and escalated to the
+emergency stop, as b3 did in W7. The run trace's `check` reports FAIL only
+for the two `DRIVER_EXIT` markers, which branch B never reaches (nobody
+takes over). Plot: `docs/takeover-trace/timeline_b_w12-b1.png`.
+
+## 7. Reproduce
 
 ```
 just zephyr-build                        # native_sim, tracing on

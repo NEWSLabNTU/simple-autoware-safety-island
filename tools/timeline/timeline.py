@@ -12,7 +12,8 @@ explain.txt in the run directory, or a fresh run on the live contract).
 Before the first injection the velocity lane scrolls over the last 60 s.
 At the first injection t = 0 is the button and the declared bars are laid
 from it; observed bars grow as their edges arrive. The takeover-request rung
-turns red the moment its dwell exceeds its window plus one handler tick; the
+turns red the moment its dwell passes the checker's `ends within` (the window
+plus the first hop of the route below, phase8-W12); the
 velocity lane flags an entry speed above the hazard's declared bound.
 --png writes a screenshot of the window on exit (render.py is the slide
 renderer; this is the booth view).
@@ -138,7 +139,7 @@ def main():
         E = r["edges"]
         t_end = max([v for v in E.values() if v is not None] + [now_ms if now_ms < 60000 else 0.0])
         shown = [row.get("total") or 0.0 for row in r["declared"].values() if row.get("role") != "skipped"]
-        shown += [r["window_ms"] + 110.0] if r["act"] in ("a", "b") else []
+        shown += [r["window_end_ms"] or r["window_ms"]] if r["act"] in ("a", "b") else []
         pv.setXRange(-2, max([t_end / 1000 + 2, 12] + [x / 1000 + 1 for x in shown if x]), padding=0)
         if r["profile"] and r["entry_speed_observed"] and E.get("safe_cmd") is not None:
             a_, j_, _ = r["profile"]
@@ -166,7 +167,7 @@ def main():
                         continue
                     col = rd.TERM[term]
                     if (kind == "observed" and label == "takeover_request" and term == "windows"
-                            and w > r["window_ms"] + an.TICK_MS):
+                            and r["window_end_ms"] is not None and w > r["window_end_ms"]):
                         col = rd.CRIT
                     brush = pg.mkBrush(col) if kind == "observed" else pg.mkBrush(QtGui.QColor(col).lighter(160))
                     bar = pg.BarGraphItem(x0=[x / 1000], y=[y], height=0.6, width=[w / 1000], brush=brush,

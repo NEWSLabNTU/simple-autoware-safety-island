@@ -30,6 +30,12 @@
 #   window 10 s                 decision 3 (Drive Pilot's figure), bound to
 #                               mrm_handler's `takeover_request_timeout`,
 #                               set to 10.0 in l3_takeover.launch.xml.
+#                               A LEAST time (rlm v0.1.47, phase8-W12): the
+#                               request lasts at least the window; the
+#                               handler reads the deadline on its 100 ms
+#                               tick, and that late notice is charged in the
+#                               110 ms handler reaction of the rung below,
+#                               from the deadline (`window-expiry`), once.
 #   odd_exit interval 30 s      decision 3, a stated judgement like the 3 s
 #                               of the island contract.
 #   hpc_loss interval 10 s      NOT the island's 3 s. At 30 km/h the

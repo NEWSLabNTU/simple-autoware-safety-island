@@ -51,6 +51,9 @@ args=(
     -e ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-10}"
     -e L3_LOG_DIR=/l3-log -v "$LOG_HOST:/l3-log"
 )
+# A router other than the host's 7447 (a second demo on one host): both or neither.
+[ -n "${L3_ROUTER_PORT:-}" ] && args+=(-e L3_ROUTER_PORT="$L3_ROUTER_PORT")
+[ -n "${ZENOH_CONFIG_OVERRIDE:-}" ] && args+=(-e ZENOH_CONFIG_OVERRIDE="$ZENOH_CONFIG_OVERRIDE")
 [ -t 0 ] && [ -t 1 ] && args+=(-it)
 
 if [ "${L3_X:-0}" = "1" ]; then

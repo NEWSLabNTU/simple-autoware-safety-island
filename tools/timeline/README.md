@@ -20,9 +20,9 @@ Design: `docs/roadmap/phase-8-rtss-work-demo.md`, D7. Results:
 | `merge.py` | island trace markers onto host CLOCK_MONOTONIC: coarse offset from anchor 1, refined on every publish/receipt pair, checked by anchor 2 (the W3 method, docs/reaction-trace.md) |
 | `analysis.py` | declared against observed for one run: the edges, the observed terms, one verdict per declared bar, the rung the run ended on, the longest availability gap (the `hpc_alive` precondition) |
 | `render.py` | the static PNG of a run for the slides, and `--table` (markdown) |
-| `timeline.py` | the booth view: pyqtgraph, tails the run directory at 20 Hz; a rung turns red when its dwell exceeds its window plus one handler tick; the entry-speed flag |
+| `timeline.py` | the booth view: pyqtgraph, tails the run directory at 20 Hz; a rung turns red when its dwell passes the checker's `ends within` (window + the first hop of the route below, phase8-W12); the entry-speed flag |
 | `run-native.sh` | one traced native_sim run with Autoware, everything above, into `build/timeline/<id>/` |
-| `testdata/explain.txt` | the checker's settle-derived lines and budget table for the live contract (play_launch 92043c82), for `tlcommon.py selftest` |
+| `testdata/explain.txt` | the checker's settle-derived lines and budget table for the live contract (play_launch phase 84, phase8-W12), for `tlcommon.py selftest` |
 
 ## Dependencies
 

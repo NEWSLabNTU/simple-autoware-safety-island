@@ -51,6 +51,14 @@ D's figure; the floor fits it with 5191.33 ms to spare.
 
 Each variant fails the comfortable-stop rung and nothing else.
 
+**The window is a least time (phase8-W12, play_launch phase 84, rlm
+v0.1.47).** The request lasts at least 10 s; WINDOWS charges it up to its
+deadline, and the handler's late notice of the deadline (its 100 ms tick) is
+the first hop of the route below, `/mrm_handler/call_mrm` 110 ms. The new
+rule `window-expiry` checks that hop holds the tick; it passes on all three
+files, `--explain` now prints `window >=10000.00` and "ends within
+10110.00ms", and no number in the table above moved.
+
 **Why the variants are 20 s and 65 km/h, not brief D's 12 s and +10 km/h.**
 Brief D computed its variants at 16.7 m/s (60 km/h), where the comfortable
 rung had 993 ms of slack. At the decided 30 km/h it has 9363.33 ms, and the
@@ -76,8 +84,13 @@ cd demo/l3/contracts
 play_launch check <stem>.launch.xml --explain
 ```
 
-against play_launch `92043c82` (phase 83, rlm v0.1.46)
-(`/home/aeon/repos/play_launch/install/play_launch/lib/play_launch/play_launch`).
+against play_launch `bbf9c044` (phase 84, rlm v0.1.47; phase8-W12 re-ran all three, the verdicts did not move;
+phase8-W14 regenerated them on the W8a mrm_handler, built from nano-ros da272e419's vendored
+submodule with `cargo build --release -p play_launch`; W12 used
+`/home/aeon/repos/play_launch/install/play_launch/lib/play_launch/play_launch`).
+Against W12's outputs only the timestamps, the contract line numbers of the
+`settle-derived` lines and three `derivable-min-rate` infos moved: W8a removed
+the handler's gear, turn-indicator and emergency-holding publishers.
 Without Autoware on `AMENT_PREFIX_PATH` the verdicts are the same and
 `when-field-unknown` adds three warnings saying the fields are unchecked.
 
@@ -90,37 +103,35 @@ unicode arrow**; they are left as the tool printed them.
 ```
 Parsing launch file: l3_takeover.launch.xml
 Parsed: 1 scopes, 5 nodes, 0 containers, 0 composable nodes
-2026-09-28T11:28:44.028951Z  INFO Loaded 1 manifest(s) [0 overlay, 1 provider] (0 scopes without manifests, 0 errors, 2 warnings)
+2026-09-29T07:13:34.179341Z  INFO Loaded 1 manifest(s) [0 overlay, 1 provider] (0 scopes without manifests, 0 errors, 2 warnings)
 
 ── Cross-scope diagnostics ──
   info[path-exclusion]: scope path 'island.tor' (scope 0): the critical path assumes each node runs on arrival, but these traversals serialise with a sibling callback and may be delayed by it — /mrm_handler/on_timer may wait for [call_mrm, driver_exit] (up to 110.00ms). Declare `concurrency.exclusive` on the node if they can in fact run concurrently; absent that declaration every path of a node is assumed to serialise, matching rclcpp's default callback group
   info[derivable-min-rate]: publisher '/mrm_comfortable_stop_operator/status' promises min_rate_hz 10, which the graph already derives for '/system/mrm/comfortable_stop/status' from the timers that drive it. The declaration is redundant and can be deleted
   info[derivable-min-rate]: publisher '/mrm_emergency_stop_operator/emergency_control_cmd' promises min_rate_hz 30, which the graph already derives for '/system/emergency/control_cmd' from the timers that drive it. The declaration is redundant and can be deleted
   info[derivable-min-rate]: publisher '/mrm_emergency_stop_operator/status' promises min_rate_hz 30, which the graph already derives for '/system/mrm/emergency_stop/status' from the timers that drive it. The declaration is redundant and can be deleted
-  info[derivable-min-rate]: publisher '/mrm_handler/emergency_holding' promises min_rate_hz 10, which the graph already derives for '/system/fail_safe/emergency_holding' from the timers that drive it. The declaration is redundant and can be deleted
-  info[derivable-min-rate]: publisher '/mrm_handler/gear_cmd_out' promises min_rate_hz 10, which the graph already derives for '/system/emergency/gear_cmd' from the timers that drive it. The declaration is redundant and can be deleted
   info[derivable-min-rate]: publisher '/mrm_handler/hazard_lights_cmd' promises min_rate_hz 10, which the graph already derives for '/system/emergency/hazard_lights_cmd' from the timers that drive it. The declaration is redundant and can be deleted
-  info[derivable-min-rate]: publisher '/mrm_handler/turn_indicators_cmd' promises min_rate_hz 10, which the graph already derives for '/system/emergency/turn_indicators_cmd' from the timers that drive it. The declaration is redundant and can be deleted
-  info[fault-reaction-budget]: l3_takeover.contract.yaml:95: hazard 'hpc_loss': detection 500.00ms (/mrm_handler/operation_mode_availability detects within 500.00ms) + reaction 4308.67ms (reaction route /mrm_handler/call_mrm → /mrm_emergency_stop_operator/on_timer (+33.33ms sampling) = 143.33ms + settle 4165.33ms) = 4808.67ms fits the fault-tolerant time interval 10000.00ms with 5191.33ms of slack
+  info[fault-reaction-budget]: l3_takeover.contract.yaml:101: hazard 'hpc_loss': detection 500.00ms (/mrm_handler/operation_mode_availability detects within 500.00ms) + reaction 4308.67ms (reaction route /mrm_handler/call_mrm → /mrm_emergency_stop_operator/on_timer (+33.33ms sampling) = 143.33ms + settle 4165.33ms) = 4808.67ms fits the fault-tolerant time interval 10000.00ms with 5191.33ms of slack
   warning[reaction-unguarded]: hazard 'hpc_loss' reaction 'l3_engaged' ends at /system/emergency/control_cmd and no subscriber there declares an `on_violation` — a stalled reaction would go unnoticed. Guard it with a second hazard whose guard is this output
-  info[fault-reaction-budget]: l3_takeover.contract.yaml:93: hazard 'odd_exit': detection 120.00ms (/availability_gate/availability reports every 100.00ms + 20.00ms) + 'takeover_request' reaction 110.00ms + window 10000.00ms + reaction 4308.67ms (reaction route /mrm_handler/call_mrm → /mrm_emergency_stop_operator/on_timer (+33.33ms sampling) = 143.33ms + settle 4165.33ms) = 14538.67ms fits the fault-tolerant time interval 30000.00ms with 15461.33ms of slack
+  info[fault-reaction-budget]: l3_takeover.contract.yaml:99: hazard 'odd_exit': detection 120.00ms (/availability_gate/availability reports every 100.00ms + 20.00ms) + 'takeover_request' reaction 110.00ms + window 10000.00ms + reaction 4308.67ms (reaction route /mrm_handler/call_mrm → /mrm_emergency_stop_operator/on_timer (+33.33ms sampling) = 143.33ms + settle 4165.33ms) = 14538.67ms fits the fault-tolerant time interval 30000.00ms with 15461.33ms of slack
   warning[reaction-unguarded]: hazard 'odd_exit' reaction 'l3_engaged' ends at /system/emergency/control_cmd and no subscriber there declares an `on_violation` — a stalled reaction would go unnoticed. Guard it with a second hazard whose guard is this output
-  info[settle-derived]: l3_takeover.contract.yaml:245: hazard 'odd_exit', rung 'comfortable_stop': settle from /mrm_comfortable_stop_operator's braking profile, a = |min_acceleration| = 1 m/s^2, j = |min_jerk| = 0.3 m/s^3, v0 = entry_speed 8.33 m/s: v_r = a^2/(2j) = 1^2/(2*0.3) = 1.6667 m/s; v0 = 8.33 > v_r, so t = a/j + (v0 - v_r)/a = 1/0.3 + (8.33 - 1.6667)/1 = 3333.33 + 6663.33 = 9996.67ms
-  info[settle-derived]: l3_takeover.contract.yaml:267: hazard 'hpc_loss', rung 'emergency_stop': settle from /mrm_emergency_stop_operator's braking profile, a = |target_acceleration| = 2.5 m/s^2, j = |target_jerk| = 1.5 m/s^3, v0 = entry_speed 8.33 m/s: v_r = a^2/(2j) = 2.5^2/(2*1.5) = 2.0833 m/s; v0 = 8.33 > v_r, so t = a/j + (v0 - v_r)/a = 2.5/1.5 + (8.33 - 2.0833)/2.5 = 1666.67 + 2498.67 = 4165.33ms
-  info[settle-derived]: l3_takeover.contract.yaml:267: hazard 'odd_exit', rung 'emergency_stop': settle from /mrm_emergency_stop_operator's braking profile, a = |target_acceleration| = 2.5 m/s^2, j = |target_jerk| = 1.5 m/s^3, v0 = entry_speed 8.33 m/s: v_r = a^2/(2j) = 2.5^2/(2*1.5) = 2.0833 m/s; v0 = 8.33 > v_r, so t = a/j + (v0 - v_r)/a = 2.5/1.5 + (8.33 - 2.0833)/2.5 = 1666.67 + 2498.67 = 4165.33ms
+  info[settle-derived]: l3_takeover.contract.yaml:247: hazard 'odd_exit', rung 'comfortable_stop': settle from /mrm_comfortable_stop_operator's braking profile, a = |min_acceleration| = 1 m/s^2, j = |min_jerk| = 0.3 m/s^3, v0 = entry_speed 8.33 m/s: v_r = a^2/(2j) = 1^2/(2*0.3) = 1.6667 m/s; v0 = 8.33 > v_r, so t = a/j + (v0 - v_r)/a = 1/0.3 + (8.33 - 1.6667)/1 = 3333.33 + 6663.33 = 9996.67ms
+  info[settle-derived]: l3_takeover.contract.yaml:269: hazard 'hpc_loss', rung 'emergency_stop': settle from /mrm_emergency_stop_operator's braking profile, a = |target_acceleration| = 2.5 m/s^2, j = |target_jerk| = 1.5 m/s^3, v0 = entry_speed 8.33 m/s: v_r = a^2/(2j) = 2.5^2/(2*1.5) = 2.0833 m/s; v0 = 8.33 > v_r, so t = a/j + (v0 - v_r)/a = 2.5/1.5 + (8.33 - 2.0833)/2.5 = 1666.67 + 2498.67 = 4165.33ms
+  info[settle-derived]: l3_takeover.contract.yaml:269: hazard 'odd_exit', rung 'emergency_stop': settle from /mrm_emergency_stop_operator's braking profile, a = |target_acceleration| = 2.5 m/s^2, j = |target_jerk| = 1.5 m/s^3, v0 = entry_speed 8.33 m/s: v_r = a^2/(2j) = 2.5^2/(2*1.5) = 2.0833 m/s; v0 = 8.33 > v_r, so t = a/j + (v0 - v_r)/a = 2.5/1.5 + (8.33 - 2.0833)/2.5 = 1666.67 + 2498.67 = 4165.33ms
 
 -- Fault-reaction budgets (--explain, ms) --
-HAZARD    RUNG              ROLE     DETECT   WINDOWS   ROUTE           SETTLE     TOTAL      FTTI     SLACK
-hpc_loss  takeover_request  skipped       -         -       -                -         -  10000.00         -
-hpc_loss  comfortable_stop  skipped       -         -       -                -         -  10000.00         -
-hpc_loss  emergency_stop    floor    500.00      0.00  143.33  4165.33 derived   4808.67  10000.00   5191.33
-odd_exit  takeover_request  window   120.00      0.00  110.00  window 10000.00         -  30000.00         -
-odd_exit  comfortable_stop  rung     120.00  10110.00  410.00  9996.67 derived  20636.67  30000.00   9363.33
-odd_exit  emergency_stop    floor    120.00  10110.00  143.33  4165.33 derived  14538.67  30000.00  15461.33
-  TOTAL = DETECT + WINDOWS + ROUTE + SETTLE; WINDOWS is the route and window of every windowed rung passed on the way.
+HAZARD    RUNG              ROLE     DETECT   WINDOWS   ROUTE             SETTLE     TOTAL      FTTI     SLACK
+hpc_loss  takeover_request  skipped       -         -       -                  -         -  10000.00         -
+hpc_loss  comfortable_stop  skipped       -         -       -                  -         -  10000.00         -
+hpc_loss  emergency_stop    floor    500.00      0.00  143.33    4165.33 derived   4808.67  10000.00   5191.33
+odd_exit  takeover_request  window   120.00      0.00  110.00  window >=10000.00         -  30000.00         -
+odd_exit  comfortable_stop  rung     120.00  10110.00  410.00    9996.67 derived  20636.67  30000.00   9363.33
+odd_exit  emergency_stop    floor    120.00  10110.00  143.33    4165.33 derived  14538.67  30000.00  15461.33
+  TOTAL = DETECT + WINDOWS + ROUTE + SETTLE; WINDOWS is the route and window of every windowed rung passed on the way, up to its deadline.
+  A window is a least time (`window >=`); noticing its deadline is the first hop of the ROUTE below it (`window-expiry`), never a second charge.
   hpc_loss/takeover_request: requires hpc_alive, which this fault removes
   hpc_loss/comfortable_stop: requires hpc_alive, which this fault removes
-  odd_exit/takeover_request: transitional: charged to every rung below it
+  odd_exit/takeover_request: lasts at least 10000.00ms once on, and ends within 10110.00ms: /mrm_handler reads the deadline on its 100.00ms timer ('on_timer'), charged inside /mrm_handler/call_mrm 110.00ms, the first hop of the route below
 
 1 manifest(s) checked: 1 clean, 0 with errors (0 errors, 2 warnings)
 1 contract(s): 0 overlay, 1 provider
@@ -132,39 +143,37 @@ exit code: 0
 ```
 Parsing launch file: l3_takeover_window20.launch.xml
 Parsed: 1 scopes, 5 nodes, 0 containers, 0 composable nodes
-2026-09-28T11:28:44.293010Z  WARN [cross-scope] [ladder-rung-budget] error: l3_takeover_window20.contract.yaml:117: hazard 'odd_exit': fallback rung 'comfortable_stop' cannot make the fault-tolerant time interval — detection 120.00ms + 'takeover_request' reaction 110.00ms + window 20000.00ms + reaction 410.00ms + settle 9996.67ms = 30636.67ms against 30000.00ms. A graded reaction is a promise in its own right, not only a step on the way to the floor (at hazards.odd_exit.reaction)
-2026-09-28T11:28:44.293021Z  INFO Loaded 1 manifest(s) [0 overlay, 1 provider] (0 scopes without manifests, 1 errors, 2 warnings)
+2026-09-29T07:13:34.430926Z  WARN [cross-scope] [ladder-rung-budget] error: l3_takeover_window20.contract.yaml:123: hazard 'odd_exit': fallback rung 'comfortable_stop' cannot make the fault-tolerant time interval — detection 120.00ms + 'takeover_request' reaction 110.00ms + window 20000.00ms + reaction 410.00ms + settle 9996.67ms = 30636.67ms against 30000.00ms. A graded reaction is a promise in its own right, not only a step on the way to the floor (at hazards.odd_exit.reaction)
+2026-09-29T07:13:34.430939Z  INFO Loaded 1 manifest(s) [0 overlay, 1 provider] (0 scopes without manifests, 1 errors, 2 warnings)
 
 ── Cross-scope diagnostics ──
   info[path-exclusion]: scope path 'island.tor' (scope 0): the critical path assumes each node runs on arrival, but these traversals serialise with a sibling callback and may be delayed by it — /mrm_handler/on_timer may wait for [call_mrm, driver_exit] (up to 110.00ms). Declare `concurrency.exclusive` on the node if they can in fact run concurrently; absent that declaration every path of a node is assumed to serialise, matching rclcpp's default callback group
   info[derivable-min-rate]: publisher '/mrm_comfortable_stop_operator/status' promises min_rate_hz 10, which the graph already derives for '/system/mrm/comfortable_stop/status' from the timers that drive it. The declaration is redundant and can be deleted
   info[derivable-min-rate]: publisher '/mrm_emergency_stop_operator/emergency_control_cmd' promises min_rate_hz 30, which the graph already derives for '/system/emergency/control_cmd' from the timers that drive it. The declaration is redundant and can be deleted
   info[derivable-min-rate]: publisher '/mrm_emergency_stop_operator/status' promises min_rate_hz 30, which the graph already derives for '/system/mrm/emergency_stop/status' from the timers that drive it. The declaration is redundant and can be deleted
-  info[derivable-min-rate]: publisher '/mrm_handler/emergency_holding' promises min_rate_hz 10, which the graph already derives for '/system/fail_safe/emergency_holding' from the timers that drive it. The declaration is redundant and can be deleted
-  info[derivable-min-rate]: publisher '/mrm_handler/gear_cmd_out' promises min_rate_hz 10, which the graph already derives for '/system/emergency/gear_cmd' from the timers that drive it. The declaration is redundant and can be deleted
   info[derivable-min-rate]: publisher '/mrm_handler/hazard_lights_cmd' promises min_rate_hz 10, which the graph already derives for '/system/emergency/hazard_lights_cmd' from the timers that drive it. The declaration is redundant and can be deleted
-  info[derivable-min-rate]: publisher '/mrm_handler/turn_indicators_cmd' promises min_rate_hz 10, which the graph already derives for '/system/emergency/turn_indicators_cmd' from the timers that drive it. The declaration is redundant and can be deleted
-  info[fault-reaction-budget]: l3_takeover_window20.contract.yaml:95: hazard 'hpc_loss': detection 500.00ms (/mrm_handler/operation_mode_availability detects within 500.00ms) + reaction 4308.67ms (reaction route /mrm_handler/call_mrm → /mrm_emergency_stop_operator/on_timer (+33.33ms sampling) = 143.33ms + settle 4165.33ms) = 4808.67ms fits the fault-tolerant time interval 10000.00ms with 5191.33ms of slack
+  info[fault-reaction-budget]: l3_takeover_window20.contract.yaml:101: hazard 'hpc_loss': detection 500.00ms (/mrm_handler/operation_mode_availability detects within 500.00ms) + reaction 4308.67ms (reaction route /mrm_handler/call_mrm → /mrm_emergency_stop_operator/on_timer (+33.33ms sampling) = 143.33ms + settle 4165.33ms) = 4808.67ms fits the fault-tolerant time interval 10000.00ms with 5191.33ms of slack
   warning[reaction-unguarded]: hazard 'hpc_loss' reaction 'l3_engaged' ends at /system/emergency/control_cmd and no subscriber there declares an `on_violation` — a stalled reaction would go unnoticed. Guard it with a second hazard whose guard is this output
-  info[fault-reaction-budget]: l3_takeover_window20.contract.yaml:93: hazard 'odd_exit': detection 120.00ms (/availability_gate/availability reports every 100.00ms + 20.00ms) + 'takeover_request' reaction 110.00ms + window 20000.00ms + reaction 4308.67ms (reaction route /mrm_handler/call_mrm → /mrm_emergency_stop_operator/on_timer (+33.33ms sampling) = 143.33ms + settle 4165.33ms) = 24538.67ms fits the fault-tolerant time interval 30000.00ms with 5461.33ms of slack
-  error[ladder-rung-budget]: l3_takeover_window20.contract.yaml:117: hazard 'odd_exit': fallback rung 'comfortable_stop' cannot make the fault-tolerant time interval — detection 120.00ms + 'takeover_request' reaction 110.00ms + window 20000.00ms + reaction 410.00ms + settle 9996.67ms = 30636.67ms against 30000.00ms. A graded reaction is a promise in its own right, not only a step on the way to the floor
+  info[fault-reaction-budget]: l3_takeover_window20.contract.yaml:99: hazard 'odd_exit': detection 120.00ms (/availability_gate/availability reports every 100.00ms + 20.00ms) + 'takeover_request' reaction 110.00ms + window 20000.00ms + reaction 4308.67ms (reaction route /mrm_handler/call_mrm → /mrm_emergency_stop_operator/on_timer (+33.33ms sampling) = 143.33ms + settle 4165.33ms) = 24538.67ms fits the fault-tolerant time interval 30000.00ms with 5461.33ms of slack
+  error[ladder-rung-budget]: l3_takeover_window20.contract.yaml:123: hazard 'odd_exit': fallback rung 'comfortable_stop' cannot make the fault-tolerant time interval — detection 120.00ms + 'takeover_request' reaction 110.00ms + window 20000.00ms + reaction 410.00ms + settle 9996.67ms = 30636.67ms against 30000.00ms. A graded reaction is a promise in its own right, not only a step on the way to the floor
   warning[reaction-unguarded]: hazard 'odd_exit' reaction 'l3_engaged' ends at /system/emergency/control_cmd and no subscriber there declares an `on_violation` — a stalled reaction would go unnoticed. Guard it with a second hazard whose guard is this output
-  info[settle-derived]: l3_takeover_window20.contract.yaml:245: hazard 'odd_exit', rung 'comfortable_stop': settle from /mrm_comfortable_stop_operator's braking profile, a = |min_acceleration| = 1 m/s^2, j = |min_jerk| = 0.3 m/s^3, v0 = entry_speed 8.33 m/s: v_r = a^2/(2j) = 1^2/(2*0.3) = 1.6667 m/s; v0 = 8.33 > v_r, so t = a/j + (v0 - v_r)/a = 1/0.3 + (8.33 - 1.6667)/1 = 3333.33 + 6663.33 = 9996.67ms
-  info[settle-derived]: l3_takeover_window20.contract.yaml:267: hazard 'hpc_loss', rung 'emergency_stop': settle from /mrm_emergency_stop_operator's braking profile, a = |target_acceleration| = 2.5 m/s^2, j = |target_jerk| = 1.5 m/s^3, v0 = entry_speed 8.33 m/s: v_r = a^2/(2j) = 2.5^2/(2*1.5) = 2.0833 m/s; v0 = 8.33 > v_r, so t = a/j + (v0 - v_r)/a = 2.5/1.5 + (8.33 - 2.0833)/2.5 = 1666.67 + 2498.67 = 4165.33ms
-  info[settle-derived]: l3_takeover_window20.contract.yaml:267: hazard 'odd_exit', rung 'emergency_stop': settle from /mrm_emergency_stop_operator's braking profile, a = |target_acceleration| = 2.5 m/s^2, j = |target_jerk| = 1.5 m/s^3, v0 = entry_speed 8.33 m/s: v_r = a^2/(2j) = 2.5^2/(2*1.5) = 2.0833 m/s; v0 = 8.33 > v_r, so t = a/j + (v0 - v_r)/a = 2.5/1.5 + (8.33 - 2.0833)/2.5 = 1666.67 + 2498.67 = 4165.33ms
+  info[settle-derived]: l3_takeover_window20.contract.yaml:247: hazard 'odd_exit', rung 'comfortable_stop': settle from /mrm_comfortable_stop_operator's braking profile, a = |min_acceleration| = 1 m/s^2, j = |min_jerk| = 0.3 m/s^3, v0 = entry_speed 8.33 m/s: v_r = a^2/(2j) = 1^2/(2*0.3) = 1.6667 m/s; v0 = 8.33 > v_r, so t = a/j + (v0 - v_r)/a = 1/0.3 + (8.33 - 1.6667)/1 = 3333.33 + 6663.33 = 9996.67ms
+  info[settle-derived]: l3_takeover_window20.contract.yaml:269: hazard 'hpc_loss', rung 'emergency_stop': settle from /mrm_emergency_stop_operator's braking profile, a = |target_acceleration| = 2.5 m/s^2, j = |target_jerk| = 1.5 m/s^3, v0 = entry_speed 8.33 m/s: v_r = a^2/(2j) = 2.5^2/(2*1.5) = 2.0833 m/s; v0 = 8.33 > v_r, so t = a/j + (v0 - v_r)/a = 2.5/1.5 + (8.33 - 2.0833)/2.5 = 1666.67 + 2498.67 = 4165.33ms
+  info[settle-derived]: l3_takeover_window20.contract.yaml:269: hazard 'odd_exit', rung 'emergency_stop': settle from /mrm_emergency_stop_operator's braking profile, a = |target_acceleration| = 2.5 m/s^2, j = |target_jerk| = 1.5 m/s^3, v0 = entry_speed 8.33 m/s: v_r = a^2/(2j) = 2.5^2/(2*1.5) = 2.0833 m/s; v0 = 8.33 > v_r, so t = a/j + (v0 - v_r)/a = 2.5/1.5 + (8.33 - 2.0833)/2.5 = 1666.67 + 2498.67 = 4165.33ms
 
 -- Fault-reaction budgets (--explain, ms) --
-HAZARD    RUNG              ROLE     DETECT   WINDOWS   ROUTE           SETTLE     TOTAL      FTTI    SLACK
-hpc_loss  takeover_request  skipped       -         -       -                -         -  10000.00        -
-hpc_loss  comfortable_stop  skipped       -         -       -                -         -  10000.00        -
-hpc_loss  emergency_stop    floor    500.00      0.00  143.33  4165.33 derived   4808.67  10000.00  5191.33
-odd_exit  takeover_request  window   120.00      0.00  110.00  window 20000.00         -  30000.00        -
-odd_exit  comfortable_stop  rung     120.00  20110.00  410.00  9996.67 derived  30636.67  30000.00  -636.67
-odd_exit  emergency_stop    floor    120.00  20110.00  143.33  4165.33 derived  24538.67  30000.00  5461.33
-  TOTAL = DETECT + WINDOWS + ROUTE + SETTLE; WINDOWS is the route and window of every windowed rung passed on the way.
+HAZARD    RUNG              ROLE     DETECT   WINDOWS   ROUTE             SETTLE     TOTAL      FTTI    SLACK
+hpc_loss  takeover_request  skipped       -         -       -                  -         -  10000.00        -
+hpc_loss  comfortable_stop  skipped       -         -       -                  -         -  10000.00        -
+hpc_loss  emergency_stop    floor    500.00      0.00  143.33    4165.33 derived   4808.67  10000.00  5191.33
+odd_exit  takeover_request  window   120.00      0.00  110.00  window >=20000.00         -  30000.00        -
+odd_exit  comfortable_stop  rung     120.00  20110.00  410.00    9996.67 derived  30636.67  30000.00  -636.67
+odd_exit  emergency_stop    floor    120.00  20110.00  143.33    4165.33 derived  24538.67  30000.00  5461.33
+  TOTAL = DETECT + WINDOWS + ROUTE + SETTLE; WINDOWS is the route and window of every windowed rung passed on the way, up to its deadline.
+  A window is a least time (`window >=`); noticing its deadline is the first hop of the ROUTE below it (`window-expiry`), never a second charge.
   hpc_loss/takeover_request: requires hpc_alive, which this fault removes
   hpc_loss/comfortable_stop: requires hpc_alive, which this fault removes
-  odd_exit/takeover_request: transitional: charged to every rung below it
+  odd_exit/takeover_request: lasts at least 20000.00ms once on, and ends within 20110.00ms: /mrm_handler reads the deadline on its 100.00ms timer ('on_timer'), charged inside /mrm_handler/call_mrm 110.00ms, the first hop of the route below
 
 1 manifest(s) checked: 1 clean, 0 with errors (1 errors, 2 warnings)
 1 contract(s): 0 overlay, 1 provider
@@ -176,39 +185,37 @@ exit code: 1
 ```
 Parsing launch file: l3_takeover_65kmh.launch.xml
 Parsed: 1 scopes, 5 nodes, 0 containers, 0 composable nodes
-2026-09-28T11:28:44.550743Z  WARN [cross-scope] [ladder-rung-budget] error: l3_takeover_65kmh.contract.yaml:117: hazard 'odd_exit': fallback rung 'comfortable_stop' cannot make the fault-tolerant time interval — detection 120.00ms + 'takeover_request' reaction 110.00ms + window 10000.00ms + reaction 410.00ms + settle 19726.67ms = 30366.67ms against 30000.00ms. A graded reaction is a promise in its own right, not only a step on the way to the floor (at hazards.odd_exit.reaction)
-2026-09-28T11:28:44.550764Z  INFO Loaded 1 manifest(s) [0 overlay, 1 provider] (0 scopes without manifests, 1 errors, 2 warnings)
+2026-09-29T07:13:34.681219Z  WARN [cross-scope] [ladder-rung-budget] error: l3_takeover_65kmh.contract.yaml:123: hazard 'odd_exit': fallback rung 'comfortable_stop' cannot make the fault-tolerant time interval — detection 120.00ms + 'takeover_request' reaction 110.00ms + window 10000.00ms + reaction 410.00ms + settle 19726.67ms = 30366.67ms against 30000.00ms. A graded reaction is a promise in its own right, not only a step on the way to the floor (at hazards.odd_exit.reaction)
+2026-09-29T07:13:34.681228Z  INFO Loaded 1 manifest(s) [0 overlay, 1 provider] (0 scopes without manifests, 1 errors, 2 warnings)
 
 ── Cross-scope diagnostics ──
   info[path-exclusion]: scope path 'island.tor' (scope 0): the critical path assumes each node runs on arrival, but these traversals serialise with a sibling callback and may be delayed by it — /mrm_handler/on_timer may wait for [call_mrm, driver_exit] (up to 110.00ms). Declare `concurrency.exclusive` on the node if they can in fact run concurrently; absent that declaration every path of a node is assumed to serialise, matching rclcpp's default callback group
   info[derivable-min-rate]: publisher '/mrm_comfortable_stop_operator/status' promises min_rate_hz 10, which the graph already derives for '/system/mrm/comfortable_stop/status' from the timers that drive it. The declaration is redundant and can be deleted
   info[derivable-min-rate]: publisher '/mrm_emergency_stop_operator/emergency_control_cmd' promises min_rate_hz 30, which the graph already derives for '/system/emergency/control_cmd' from the timers that drive it. The declaration is redundant and can be deleted
   info[derivable-min-rate]: publisher '/mrm_emergency_stop_operator/status' promises min_rate_hz 30, which the graph already derives for '/system/mrm/emergency_stop/status' from the timers that drive it. The declaration is redundant and can be deleted
-  info[derivable-min-rate]: publisher '/mrm_handler/emergency_holding' promises min_rate_hz 10, which the graph already derives for '/system/fail_safe/emergency_holding' from the timers that drive it. The declaration is redundant and can be deleted
-  info[derivable-min-rate]: publisher '/mrm_handler/gear_cmd_out' promises min_rate_hz 10, which the graph already derives for '/system/emergency/gear_cmd' from the timers that drive it. The declaration is redundant and can be deleted
   info[derivable-min-rate]: publisher '/mrm_handler/hazard_lights_cmd' promises min_rate_hz 10, which the graph already derives for '/system/emergency/hazard_lights_cmd' from the timers that drive it. The declaration is redundant and can be deleted
-  info[derivable-min-rate]: publisher '/mrm_handler/turn_indicators_cmd' promises min_rate_hz 10, which the graph already derives for '/system/emergency/turn_indicators_cmd' from the timers that drive it. The declaration is redundant and can be deleted
-  info[fault-reaction-budget]: l3_takeover_65kmh.contract.yaml:95: hazard 'hpc_loss': detection 500.00ms (/mrm_handler/operation_mode_availability detects within 500.00ms) + reaction 8200.67ms (reaction route /mrm_handler/call_mrm → /mrm_emergency_stop_operator/on_timer (+33.33ms sampling) = 143.33ms + settle 8057.33ms) = 8700.67ms fits the fault-tolerant time interval 10000.00ms with 1299.33ms of slack
+  info[fault-reaction-budget]: l3_takeover_65kmh.contract.yaml:101: hazard 'hpc_loss': detection 500.00ms (/mrm_handler/operation_mode_availability detects within 500.00ms) + reaction 8200.67ms (reaction route /mrm_handler/call_mrm → /mrm_emergency_stop_operator/on_timer (+33.33ms sampling) = 143.33ms + settle 8057.33ms) = 8700.67ms fits the fault-tolerant time interval 10000.00ms with 1299.33ms of slack
   warning[reaction-unguarded]: hazard 'hpc_loss' reaction 'l3_engaged' ends at /system/emergency/control_cmd and no subscriber there declares an `on_violation` — a stalled reaction would go unnoticed. Guard it with a second hazard whose guard is this output
-  info[fault-reaction-budget]: l3_takeover_65kmh.contract.yaml:93: hazard 'odd_exit': detection 120.00ms (/availability_gate/availability reports every 100.00ms + 20.00ms) + 'takeover_request' reaction 110.00ms + window 10000.00ms + reaction 8200.67ms (reaction route /mrm_handler/call_mrm → /mrm_emergency_stop_operator/on_timer (+33.33ms sampling) = 143.33ms + settle 8057.33ms) = 18430.67ms fits the fault-tolerant time interval 30000.00ms with 11569.33ms of slack
-  error[ladder-rung-budget]: l3_takeover_65kmh.contract.yaml:117: hazard 'odd_exit': fallback rung 'comfortable_stop' cannot make the fault-tolerant time interval — detection 120.00ms + 'takeover_request' reaction 110.00ms + window 10000.00ms + reaction 410.00ms + settle 19726.67ms = 30366.67ms against 30000.00ms. A graded reaction is a promise in its own right, not only a step on the way to the floor
+  info[fault-reaction-budget]: l3_takeover_65kmh.contract.yaml:99: hazard 'odd_exit': detection 120.00ms (/availability_gate/availability reports every 100.00ms + 20.00ms) + 'takeover_request' reaction 110.00ms + window 10000.00ms + reaction 8200.67ms (reaction route /mrm_handler/call_mrm → /mrm_emergency_stop_operator/on_timer (+33.33ms sampling) = 143.33ms + settle 8057.33ms) = 18430.67ms fits the fault-tolerant time interval 30000.00ms with 11569.33ms of slack
+  error[ladder-rung-budget]: l3_takeover_65kmh.contract.yaml:123: hazard 'odd_exit': fallback rung 'comfortable_stop' cannot make the fault-tolerant time interval — detection 120.00ms + 'takeover_request' reaction 110.00ms + window 10000.00ms + reaction 410.00ms + settle 19726.67ms = 30366.67ms against 30000.00ms. A graded reaction is a promise in its own right, not only a step on the way to the floor
   warning[reaction-unguarded]: hazard 'odd_exit' reaction 'l3_engaged' ends at /system/emergency/control_cmd and no subscriber there declares an `on_violation` — a stalled reaction would go unnoticed. Guard it with a second hazard whose guard is this output
-  info[settle-derived]: l3_takeover_65kmh.contract.yaml:245: hazard 'odd_exit', rung 'comfortable_stop': settle from /mrm_comfortable_stop_operator's braking profile, a = |min_acceleration| = 1 m/s^2, j = |min_jerk| = 0.3 m/s^3, v0 = entry_speed 18.06 m/s: v_r = a^2/(2j) = 1^2/(2*0.3) = 1.6667 m/s; v0 = 18.06 > v_r, so t = a/j + (v0 - v_r)/a = 1/0.3 + (18.06 - 1.6667)/1 = 3333.33 + 16393.33 = 19726.67ms
-  info[settle-derived]: l3_takeover_65kmh.contract.yaml:267: hazard 'hpc_loss', rung 'emergency_stop': settle from /mrm_emergency_stop_operator's braking profile, a = |target_acceleration| = 2.5 m/s^2, j = |target_jerk| = 1.5 m/s^3, v0 = entry_speed 18.06 m/s: v_r = a^2/(2j) = 2.5^2/(2*1.5) = 2.0833 m/s; v0 = 18.06 > v_r, so t = a/j + (v0 - v_r)/a = 2.5/1.5 + (18.06 - 2.0833)/2.5 = 1666.67 + 6390.67 = 8057.33ms
-  info[settle-derived]: l3_takeover_65kmh.contract.yaml:267: hazard 'odd_exit', rung 'emergency_stop': settle from /mrm_emergency_stop_operator's braking profile, a = |target_acceleration| = 2.5 m/s^2, j = |target_jerk| = 1.5 m/s^3, v0 = entry_speed 18.06 m/s: v_r = a^2/(2j) = 2.5^2/(2*1.5) = 2.0833 m/s; v0 = 18.06 > v_r, so t = a/j + (v0 - v_r)/a = 2.5/1.5 + (18.06 - 2.0833)/2.5 = 1666.67 + 6390.67 = 8057.33ms
+  info[settle-derived]: l3_takeover_65kmh.contract.yaml:247: hazard 'odd_exit', rung 'comfortable_stop': settle from /mrm_comfortable_stop_operator's braking profile, a = |min_acceleration| = 1 m/s^2, j = |min_jerk| = 0.3 m/s^3, v0 = entry_speed 18.06 m/s: v_r = a^2/(2j) = 1^2/(2*0.3) = 1.6667 m/s; v0 = 18.06 > v_r, so t = a/j + (v0 - v_r)/a = 1/0.3 + (18.06 - 1.6667)/1 = 3333.33 + 16393.33 = 19726.67ms
+  info[settle-derived]: l3_takeover_65kmh.contract.yaml:269: hazard 'hpc_loss', rung 'emergency_stop': settle from /mrm_emergency_stop_operator's braking profile, a = |target_acceleration| = 2.5 m/s^2, j = |target_jerk| = 1.5 m/s^3, v0 = entry_speed 18.06 m/s: v_r = a^2/(2j) = 2.5^2/(2*1.5) = 2.0833 m/s; v0 = 18.06 > v_r, so t = a/j + (v0 - v_r)/a = 2.5/1.5 + (18.06 - 2.0833)/2.5 = 1666.67 + 6390.67 = 8057.33ms
+  info[settle-derived]: l3_takeover_65kmh.contract.yaml:269: hazard 'odd_exit', rung 'emergency_stop': settle from /mrm_emergency_stop_operator's braking profile, a = |target_acceleration| = 2.5 m/s^2, j = |target_jerk| = 1.5 m/s^3, v0 = entry_speed 18.06 m/s: v_r = a^2/(2j) = 2.5^2/(2*1.5) = 2.0833 m/s; v0 = 18.06 > v_r, so t = a/j + (v0 - v_r)/a = 2.5/1.5 + (18.06 - 2.0833)/2.5 = 1666.67 + 6390.67 = 8057.33ms
 
 -- Fault-reaction budgets (--explain, ms) --
-HAZARD    RUNG              ROLE     DETECT   WINDOWS   ROUTE            SETTLE     TOTAL      FTTI     SLACK
-hpc_loss  takeover_request  skipped       -         -       -                 -         -  10000.00         -
-hpc_loss  comfortable_stop  skipped       -         -       -                 -         -  10000.00         -
-hpc_loss  emergency_stop    floor    500.00      0.00  143.33   8057.33 derived   8700.67  10000.00   1299.33
-odd_exit  takeover_request  window   120.00      0.00  110.00   window 10000.00         -  30000.00         -
-odd_exit  comfortable_stop  rung     120.00  10110.00  410.00  19726.67 derived  30366.67  30000.00   -366.67
-odd_exit  emergency_stop    floor    120.00  10110.00  143.33   8057.33 derived  18430.67  30000.00  11569.33
-  TOTAL = DETECT + WINDOWS + ROUTE + SETTLE; WINDOWS is the route and window of every windowed rung passed on the way.
+HAZARD    RUNG              ROLE     DETECT   WINDOWS   ROUTE             SETTLE     TOTAL      FTTI     SLACK
+hpc_loss  takeover_request  skipped       -         -       -                  -         -  10000.00         -
+hpc_loss  comfortable_stop  skipped       -         -       -                  -         -  10000.00         -
+hpc_loss  emergency_stop    floor    500.00      0.00  143.33    8057.33 derived   8700.67  10000.00   1299.33
+odd_exit  takeover_request  window   120.00      0.00  110.00  window >=10000.00         -  30000.00         -
+odd_exit  comfortable_stop  rung     120.00  10110.00  410.00   19726.67 derived  30366.67  30000.00   -366.67
+odd_exit  emergency_stop    floor    120.00  10110.00  143.33    8057.33 derived  18430.67  30000.00  11569.33
+  TOTAL = DETECT + WINDOWS + ROUTE + SETTLE; WINDOWS is the route and window of every windowed rung passed on the way, up to its deadline.
+  A window is a least time (`window >=`); noticing its deadline is the first hop of the ROUTE below it (`window-expiry`), never a second charge.
   hpc_loss/takeover_request: requires hpc_alive, which this fault removes
   hpc_loss/comfortable_stop: requires hpc_alive, which this fault removes
-  odd_exit/takeover_request: transitional: charged to every rung below it
+  odd_exit/takeover_request: lasts at least 10000.00ms once on, and ends within 10110.00ms: /mrm_handler reads the deadline on its 100.00ms timer ('on_timer'), charged inside /mrm_handler/call_mrm 110.00ms, the first hop of the route below
 
 1 manifest(s) checked: 1 clean, 0 with errors (1 errors, 2 warnings)
 1 contract(s): 0 overlay, 1 provider

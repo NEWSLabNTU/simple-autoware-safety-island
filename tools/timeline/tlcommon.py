@@ -277,8 +277,18 @@ def parse_explain(text):
     Each row: hazard, rung, role (rung | floor | window | skipped), detect,
     windows, route, settle, settle_kind (derived | literal | window), total,
     ftti, slack; ms, None where the table prints '-'.
+
+    A window row also gets `window_end`: the latest the rung ends after it
+    goes on, from the checker's note (play_launch phase 84, `window-expiry`):
+    "lasts at least W ms once on, and ends within E ms: <owner> reads the
+    deadline on its P ms timer ... charged inside <hop> H ms". E = W + H, the
+    first hop of the route below, which is where the checker charges the
+    late notice of the deadline. None when the checker printed no such note
+    (play_launch before phase 84).
     """
     rows, on = [], False
+    ends = {(m.group(1), m.group(2)): float(m.group(4)) for m in re.finditer(
+        r"^  (\w+)/(\w+): lasts at least ([0-9.]+)ms once on, and ends within ([0-9.]+)ms", text, re.M)}
     for line in text.splitlines():
         if line.startswith("-- Fault-reaction budgets"):
             on = True
@@ -296,7 +306,8 @@ def parse_explain(text):
         rest = tok[3:]
         detect, windows, route = _num(rest[0]), _num(rest[1]), _num(rest[2])
         if rest[3] == "window":
-            settle, kind, rest2 = _num(rest[4]), "window", rest[5:]
+            # "window 10000.00" (phase 83) or "window >=10000.00" (phase 84)
+            settle, kind, rest2 = _num(rest[4].removeprefix(">=")), "window", rest[5:]
         elif rest[3] == "-":
             settle, kind, rest2 = None, None, rest[4:]
         else:
@@ -304,7 +315,7 @@ def parse_explain(text):
         total, ftti, slack = _num(rest2[0]), _num(rest2[1]), _num(rest2[2])
         rows.append(dict(hazard=hazard, rung=rung, role=role, detect=detect, windows=windows,
                          route=route, settle=settle, settle_kind=kind, total=total, ftti=ftti,
-                         slack=slack))
+                         slack=slack, window_end=ends.get((hazard, rung))))
     return rows
 
 
@@ -339,9 +350,10 @@ def stop_curve(v0, decel, jerk, n=200):
 def selftest(path=os.path.join(HERE, "testdata/explain.txt")):
     """What the timeline takes from the checker still reads the same (CI).
 
-    testdata/explain.txt is the `--explain` output of play_launch 92043c82 on
-    the live contract (the settle-derived lines and the budget table, as
-    captured in the W7 runs). The timeline's declared bars are parse_explain()
+    testdata/explain.txt is the `--explain` output of play_launch on the live
+    contract (the settle-derived lines and the budget table): 92043c82 for
+    the W7 runs, the phase-84 checker since phase8-W12, which adds the
+    window's `ends within` note. The timeline's declared bars are parse_explain()
     of that table and its dashed stop curve is settle_s(); both must agree
     with the checker's own numbers, or every bar drawn is wrong.
     """
@@ -370,6 +382,12 @@ def selftest(path=os.path.join(HERE, "testdata/explain.txt")):
               r is not None and abs(mine - r["settle"]) < 0.02)
     w = by.get(("odd_exit", "takeover_request"), {})
     check(f"odd_exit/takeover_request: a window of {w.get('settle')} ms", w.get("settle_kind") == "window")
+    cs = by.get(("odd_exit", "comfortable_stop"), {})
+    end = w.get("window_end")
+    check(f"odd_exit/takeover_request: ends within {end} ms = window {w.get('settle')} + the route below's "
+          f"first hop (<= its route {cs.get('route')})",
+          end is not None and w.get("settle") is not None and cs.get("route") is not None
+          and w["settle"] < end <= w["settle"] + cs["route"] + 0.005)
     print("selftest: " + ("OK" if not fails else f"{len(fails)} FAILED"))
     return 0 if not fails else 1
 

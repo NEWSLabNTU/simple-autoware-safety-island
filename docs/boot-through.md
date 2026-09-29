@@ -754,3 +754,113 @@ branch: A misses the 8 comfortable-stop markers, B only the 2 `driver_exit`
 markers A records, so the three together see all 29. B publishes
 `clear_velocity_limit` when its closing odd-enter cancels the stop, which
 is the reason that publisher stays.
+
+### phase8-W14: the pin that carries W4, W5 and issue 1567
+
+nano-ros moved to `da272e419` (main): local queryable derived (issue 1549,
+`bf2532c15`), the domain agreement check (issue 1550, `b6b763edb`), graph
+discovery as a knob (phase-473 W1, `d04981fe1`), the transient-local
+subscriber (phase-473 W2, `a259c7058`), play_launch `bbf9c044` / rlm v0.1.47,
+and issue 1567 (`da272e419`: a publisher the contract names on an external
+topic is no longer a component of the image). With 1567 the queryable table
+derives to 4 again, so both confs drop the stated
+`CONFIG_NROS_MAX_QUERYABLES=4` and both recipes drop its knob-delivery
+tolerance (W13). The island's TCP snippets (`qemu-ethernet`,
+`island-ethernet`) state `CONFIG_NROS_ZENOH_GRAPH_DISCOVERY=n` (a serial
+image derives it off).
+`mrm_handler` reads `/api/operation_mode/state` TRANSIENT_LOCAL again (W4).
+
+**QEMU** (`build-qemu-w14`, heap 102,400, the configure lines):
+
+    -- nros: NROS_MAX_QUERYABLES=4 DERIVED from this image's entity inventory (nothing in Kconfig or the environment states one)
+    -- nros: NROS_RMW_LOCAL_QUERYABLE=1 DERIVED from this image's entity inventory (nothing in Kconfig or the environment states one)
+    -- nros: ZPICO_GRAPH_DISCOVERY=0 from CONFIG_NROS_ZENOH_GRAPH_DISCOVERY, which OVERRIDES the value 1 derived from this image's zenoh links (tcp)
+    qemu-build: tolerating the known upstream SUBSCRIBED_TYPE_BOUNDS line (phase-412 W4); nothing else is red.
+               FLASH:      583056 B         4 MB     13.90%
+                 RAM:      361524 B         4 MB      8.62%
+
+RAM 9,152 B below W8a's 370,676 at the same conf. `just qemu-run 40`
+(`qemu-20260929T171429.*`, the final tree):
+
+    [00:00:02.323,000] <inf> nros: nros: [    2.323000] graph discovery is compiled out (ZPICO_GRAPH_DISCOVERY=0): no liveliness subscriber and no graph cache. ...
+    stage      6  FirstSpin -- registration complete and spinning
+      Z_FEATURE_LOCAL_QUERYABLE     1   (DERIVED from the image's entity inventory)
+      platform heap PEAK            74016 bytes   (71.9% of the heap)
+      platform heap capacity        102912 bytes   (NROS_ZEPHYR_HEAP_SIZE)
+    HEAP HEADROOM: ok -- 28896 bytes spare (peak 74016 of 102912, floor 24576).
+    == ros2 node list (rmw_zenoh_cpp, domain 10), t=+20 s ==
+    /mrm_comfortable_stop_operator
+    /mrm_emergency_stop_operator
+    /mrm_handler
+
+Four FirstSpin peaks on this pin: 74,016 B three times (`T154909`,
+`T155115`, `T171429`) and 71,944 B once (`T160847`, an image with a 60 s
+lease built for the W15 handoff below); W8a's were 74,856-76,080. The
+largest asks for 74,016 + 24,576 = 98,592, which rounds up to 4 KiB as
+**102,400**: the heap stays where W8a put it, in both confs.
+
+**The board image** (`just BOARD_BUILD_DIR=build-board-w14 board-build`,
+island-serial, not flashed):
+
+    -- nros: ZPICO_GRAPH_DISCOVERY=0 DERIVED from this image's zenoh links (serial); nothing in Kconfig or the environment states otherwise
+    -- nros: NROS_RMW_LOCAL_QUERYABLE=1 DERIVED from this image's entity inventory (nothing in Kconfig or the environment states one)
+    board-build: tolerating the known upstream SUBSCRIBED_TYPE_BOUNDS line (phase-412 W4); nothing else is red.
+    Memory region         Used Size  Region Size  %age Used
+          IVT_HEADER:         256 B        256 B    100.00%
+               FLASH:      608384 B    4144896 B     14.68%
+                 RAM:      269416 B       320 KB     82.22%
+                ITCM:       11000 B        64 KB     16.78%
+                DTCM:       61528 B       128 KB     46.94%
+            IDT_LIST:           0 B        32 KB      0.00%
+
+SRAM 7,792 B below W8a's 277,208 (58,264 B free), DTCM 1,344 B below.
+(`board-size`'s rom/ram reports fail in this environment on a missing
+`anytree` module in the west venv; the linker table above is the build's
+own.) `just board-doctor` with `ROS_DOMAIN_ID=10` and a pyocd stub on PATH
+prints `[OK]      one ROS domain everywhere: 10` over system.toml, both
+snippets, the built image and the shell.
+
+**native_sim** (`just zephyr-build`, Cyclone). Issue 1550's configure check
+refused this image first (`CONFIG_NROS_DOMAIN_ID = 0 (what the image bakes;
+from the Kconfig default ...)` against system.toml's 10): its conf stated
+only `CONFIG_NROS_CYCLONE_DOMAIN_ID=10`. prj-cyclonedds.conf now states
+`CONFIG_NROS_DOMAIN_ID=10` as well. W7's acts on it
+(`tools/timeline/run-native.sh`, under the demo lock, load 20-31 at the
+start; the declared side from play_launch bbf9c044):
+
+    VERDICT: FAIL a: v at the fault 3.92 m/s; TOR on True, TOR now 1, control mode 4, mrm (3, 2)
+    VERDICT: FAIL b: v at the fault 3.88 m/s; TOR on True, mrm (3, 2) (3 = COMFORTABLE_STOP), v 0.000
+    VERDICT: PASS encore: v at the fault 3.90 m/s; mrm (3, 2) (2 = EMERGENCY_STOP), v 0.000, after restore mrm (1, 1)
+
+Both failures are the host gate going silent past the 500 ms `hpc_alive`
+bound, after which the island escalated to the emergency stop as the
+contract says it must (the same class as W7's b3/b4):
+
+    w14-a | HPC alive: longest availability gap (host) | 500.00 | 1599.93 | FAIL | at 2303 ms; over 500 ms the island raises hpc_loss |
+    w14-b | HPC alive: longest availability gap (host) | 500.00 | 1901.49 | FAIL | at 860 ms; over 500 ms the island raises hpc_loss |
+
+Reruns: `VERDICT: PASS a: v at the fault 3.90 m/s; TOR on True, TOR now 1,
+control mode 4, mrm (1, 1)` (w14-a2, largest gap 422.91 ms); w14-b2 PASS by
+verdict but with a 6,825.68 ms host gap starting before the fault (the
+island took the verdict 4.98 s late); w14-b3 clean, `VERDICT: PASS b: v at
+the fault 3.93 m/s; TOR on True, mrm (3, 3) (3 = COMFORTABLE_STOP), v
+0.000`, with W12's window rows:
+
+    | window dwell, island clock (request on -> off) | [10000.00, 10110.00] | 10001.00 | PASS | at least the window; ends within the checker's `ends within` |
+    | window dwell, host (request on -> off as received) | [10000.00, 10110.00] | 10002.27 | PASS | at least the window; ends within the checker's `ends within` |
+    | windows (verdict -> deadline = request on + window) | 10110.00 | 10067.43 | PASS |  |
+    | HPC alive: longest availability gap (host) | 500.00 | 154.46 | PASS | at 745 ms; over 500 ms the island raises hpc_loss |
+
+The encore: last sample to braking command 606.95 ms against 643.33,
+to standstill 3,519.15 ms (FTTI 10 s). W8a's runs had host gaps of at most
+166 ms at load 16-27; these started at 20-31 with a nano-ros CI container
+running on the same host, and w14-a's probe saw four availability gaps over
+500 ms (570 to 1,600 ms).
+
+**The plain-router drop** (W8a's open item) moved to phase8-W15 with W14's
+measurements: /mnt/mx500/aeon/worktrees/w15-handoff.md (a TCP tap between
+QEMU's guestfwd and a stock `rmw_zenohd`, the pin above). In short: with no
+host peer at all the island closed its session with reason 5 (EXPIRED)
+30.1 s after opening, twice; the stock router's `lease: 60000` /
+`keep_alive: 2` sends one keepalive per 30 s, and the island tolerates 10 s
+(`CONFIG_NROS_ZENOH_LEASE_MS` default). W15 owns the fix.

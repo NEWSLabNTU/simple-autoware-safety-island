@@ -12,8 +12,9 @@
 #   just l3-container
 #   # = docker build -f demo/l3/container/Dockerfile -t sai-l3-autoware:1.5.0 .
 #
-# Two stages, split where a source edit stops invalidating the install:
+# Three stages, split where a source edit stops invalidating the install:
 #
+#   rclcpp     rclcpp 16.0.19 + one executor patch, built alone (W11).
 #   autoware   ROS base + rmw_zenoh_cpp (pinned) + the localrepo install.
 #              Keyed on nothing in this repository, so editing the overlay or
 #              the takeover package never re-installs Autoware.
@@ -35,6 +36,32 @@
 # and loopback multicast (zenoh does not scout).
 
 ARG BASE_IMAGE=ros:humble-ros-base-jammy
+
+# ===========================================================================
+# rclcpp 16.0.19 (the version ROS apt ships, checked below) with one patch:
+# the executor holds a strong reference to every callback group's notify
+# guard condition it put in its wait set (ros2/rclcpp#2445, open on Humble).
+# behavior_path_planner destroys module callback groups when a new route
+# arrives; in a component_container_mt another executor thread is inside
+# rmw_wait on that guard condition, and on rmw_zenoh_cpp the freed object is
+# written to (heap corruption, then an abort in malloc under glog's failure
+# handler, which deadlocks) or locked (a stale mutex): the planner goes
+# silent after a re-route (demo/l3/README.md, trap 2b). Built alone, dropped
+# over the packaged library in the demo stage (dpkg-divert); the patch
+# touches executor.cpp only, so the library's ABI is unchanged.
+FROM ${BASE_IMAGE} AS rclcpp
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+ARG RCLCPP_VERSION=16.0.19
+COPY demo/l3/container/patches/rclcpp-16.0.19-executor-keep-group-guard-conditions.patch /tmp/rclcpp.patch
+RUN apt-get update && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/* \
+    && git clone -q --depth 1 --branch ${RCLCPP_VERSION} https://github.com/ros2/rclcpp.git /ws/src/rclcpp \
+    && git -C /ws/src/rclcpp apply /tmp/rclcpp.patch \
+    && source /opt/ros/humble/setup.bash && cd /ws \
+    && colcon build --packages-select rclcpp --event-handlers console_direct- \
+        --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUILD_TESTING=OFF > /tmp/build.log 2>&1 \
+        || { tail -40 /tmp/build.log; exit 1; } \
+    && strip --strip-debug /ws/install/rclcpp/lib/librclcpp.so
 
 # ===========================================================================
 FROM ${BASE_IMAGE} AS autoware
@@ -71,19 +98,34 @@ RUN mkdir /tmp/stub && cd /tmp/stub \
     && dpkg -i sai-nvinfer-stub_*_all.deb \
     && cd / && rm -rf /tmp/stub
 
-# --- rmw_zenoh_cpp from ROS apt, pinned ---------------------------------------
-# The localrepo ships no RMW but Cyclone. 0.1.9 is what phase 7 proved against
-# the island's zenoh-pico. ROS apt serves only the newest build of a version,
-# so the exact strings below are what it served on 2026-09-28; when a newer
-# 0.1.9 rebuild replaces them the build fails HERE, loudly, and the ARGs are
-# the one place to move. The host this was measured on runs
-# 0.1.9-1jammy.20260723.022609 of rmw_zenoh_cpp (same source, older rebuild).
-ARG RMW_ZENOH_VERSION=0.1.9-1jammy.20260907.200640
-ARG ZENOH_VENDOR_VERSION=0.1.9-1jammy.20260723.020902
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# --- rmw_zenoh_cpp 0.1.10 from ROS apt TESTING, pinned ------------------------
+# The localrepo ships no RMW but Cyclone. NOT 0.1.9 (phase8-W11): 0.1.9's
+# rmw_wait clears wait_set_data->triggered at the end of
+# check_and_attach_condition() WITHOUT condition_mutex (a regression from the
+# lock-order fix ros2/rmw_zenoh#1005, backported as #1015). A guard condition
+# or a service that fires while rmw_wait is still attaching the rest of the
+# wait set has its wakeup overwritten, and the thread sleeps in an untimed
+# pthread_cond_wait for good: component containers that stop loading
+# composables ("N composable(s) still constructing"). Upstream issue #1032,
+# fix #1036, humble backport #1041, released in 0.1.10. Measured in
+# demo/l3/README.md, trap 2a.
+#
+# 0.1.10 is in ros2-testing only (the main repo still serves 0.1.9 on
+# 2026-09-29); the testing source is added for this RUN and removed in it.
+# zenoh_cpp_vendor 0.1.10 vendors the same zenoh as 0.1.9 (the diff touches
+# no zenoh version), so the host's 0.1.9 rmw_zenohd and the island's
+# zenoh-pico talk to it unchanged. Exact strings: when a rebuild replaces
+# them the build fails HERE, loudly, and the ARGs are the one place to move
+# (once 0.1.10 syncs to main, drop the testing source).
+ARG RMW_ZENOH_VERSION=0.1.10-1jammy.20260915.210859
+ARG ZENOH_VENDOR_VERSION=0.1.10-1jammy.20260915.201617
+RUN sed 's#/ros2/ubuntu#/ros2-testing/ubuntu#' \
+        /etc/apt/sources.list.d/ros2.sources > /etc/apt/sources.list.d/ros2-testing.sources \
+    && apt-get update && apt-get install -y --no-install-recommends \
         ros-humble-rmw-zenoh-cpp=${RMW_ZENOH_VERSION} \
         ros-humble-zenoh-cpp-vendor=${ZENOH_VENDOR_VERSION} \
     && apt-mark hold ros-humble-rmw-zenoh-cpp ros-humble-zenoh-cpp-vendor \
+    && rm /etc/apt/sources.list.d/ros2-testing.sources \
     && rm -rf /var/lib/apt/lists/*
 
 # --- Autoware 1.5.0 from the localrepo ----------------------------------------
@@ -169,6 +211,14 @@ RUN source /opt/ros/humble/setup.bash \
     && rm -rf build log
 COPY demo/map/sample-map-planning/ /opt/demo/map/sample-map-planning/
 
+# The patched rclcpp (stage `rclcpp` above), over the packaged one. Fails
+# loudly if ROS apt has moved rclcpp past the version the patch was made on.
+ARG RCLCPP_VERSION=16.0.19
+COPY --from=rclcpp /ws/install/rclcpp/lib/librclcpp.so /tmp/librclcpp.so
+RUN dpkg-query -W -f '${Version}' ros-humble-rclcpp | grep -q "^${RCLCPP_VERSION}-" \
+    && dpkg-divert --add --rename --divert /opt/ros/humble/lib/librclcpp.so.distrib /opt/ros/humble/lib/librclcpp.so \
+    && install -m 0644 /tmp/librclcpp.so /opt/ros/humble/lib/librclcpp.so && rm /tmp/librclcpp.so
+
 COPY demo/l3/container/entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY demo/l3/container/bin/ /usr/local/bin/
 RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/l3-*
@@ -179,8 +229,25 @@ RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/l3-*
 # in this image: it hard-sets RMW_IMPLEMENTATION=rmw_cyclonedds_cpp.
 # The zenoh session dials the host's router at tcp/localhost:7447 (rmw_zenoh's
 # default) -- the container runs on the host network and starts no router.
+#
+# ZENOH_RUNTIME gives zenoh's Net runtime 8 worker threads instead of 1
+# (phase8-W11). While Autoware's ~57 peer sessions all join at once, zenoh
+# 1.8.0 (vendored by rmw_zenoh_cpp 0.1.9 and 0.1.10) can deadlock a session
+# for good: an RX thread holds the routing ctrl_lock and parks in
+# block_in_place (Gossip::link_states, p2p_peer hat) until a task on the Net
+# runtime runs, while that runtime's ONLY worker waits for ctrl_lock to open
+# the next gossiped link (eclipse-zenoh/zenoh#2581, fixed on main by #2779
+# after 1.8.0; the PR names the single worker as the precondition). Seen
+# here as play_launch frozen 0.2 s after "Registered 112 members" and as a
+# container stuck in rclcpp::init -> z_liveliness_get. With more workers one
+# is free to run the task unless all of them are waiting on ctrl_lock at
+# once. Client mode (no gossip at all) also cured it but routes every
+# message through the router: largest gaps of 0.54-0.92 s on the planner
+# chain against 0.11-0.17 s as peers (demo/l3/README.md, trap 2c), too
+# close to the island's HPC-loss rung.
 ENV RMW_IMPLEMENTATION=rmw_zenoh_cpp \
     ROS_DOMAIN_ID=10 \
+    ZENOH_RUNTIME="(net: (worker_threads: 8))" \
     L3_MAP=/opt/demo/map/sample-map-planning \
     L3_WS=/opt/demo_ws/install
 

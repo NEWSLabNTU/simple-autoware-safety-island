@@ -27,15 +27,18 @@
 #
 # Needs a zenoh router the session can reach: rmw_zenoh_cpp dials
 # tcp/localhost:7447 by default (the host's stock rmw_zenohd; the container
-# runs on the host network). Nothing here starts one.
+# runs on the host network). Nothing here starts one. Another port:
+# L3_ROUTER_PORT=<p> plus ZENOH_CONFIG_OVERRIDE='connect/endpoints=["tcp/localhost:<p>"]'
+# (run.sh passes both through).
 source "$(dirname "$(readlink -f "$0")")/l3-env"
 set -e
 topic=/system/operation_mode/availability
 [ "${L3_GATE:-1}" = "1" ] && topic=/system/operation_mode/availability_raw
 log_dir="${L3_LOG_DIR:-$HOME/l3-play_log}"
 mkdir -p "$log_dir"
-if ! (exec 3<>/dev/tcp/127.0.0.1/7447) 2>/dev/null; then
-    echo "l3-autoware: nothing listens on 127.0.0.1:7447 -- start the router first (just l3-router)" >&2
+port="${L3_ROUTER_PORT:-7447}"
+if ! (exec 3<>/dev/tcp/127.0.0.1/"$port") 2>/dev/null; then
+    echo "l3-autoware: nothing listens on 127.0.0.1:$port -- start the router first (just l3-router $port)" >&2
     exit 1
 fi
 echo "l3-autoware: $(command -v play_launch) ($(play_launch --version 2>/dev/null)), RMW $RMW_IMPLEMENTATION, domain $ROS_DOMAIN_ID"

@@ -187,9 +187,21 @@ version: 1
 #   window = 10 s.
 #     Decision 3 of the phase-8 doc (Drive Pilot's figure), bound to
 #     mrm_handler's `takeover_request_timeout: 10.0` in its parameter file;
-#     `window-param` refuses the file if the two ever differ. The handler
-#     notices expiry on its 10 Hz tick, so the next rung's route starts with
-#     the same 110 ms and there is no new term.
+#     `window-param` refuses the file if the two ever differ.
+#     WHAT IT MEANS (phase8-W12, rlm v0.1.47): a LEAST time. The driver is
+#     guaranteed the whole 10 s: the request is never withdrawn, and no MRM
+#     starts, before 10 s after it went on (the handler compares against the
+#     stamp it took when the request went on, `now - stamp < timeout`, on
+#     one clock). How LATE the MRM may start is not a second number: the
+#     checker charges the window up to its deadline (request on + 10 s) and
+#     the rung below its own route from there, and that route's first hop is
+#     this handler's `call_mrm`, 110 ms = the 100 ms tick the expiry is read
+#     on + the 10 ms call. `window-expiry` (play_launch phase 84) checks that
+#     the hop holds the tick of the timer that publishes the request
+#     (`on_timer`, 10 Hz), so the request ends within 10 000 to 10 110 ms of
+#     going on and the late notice is charged exactly once. The W7 runs cut
+#     at the request-off edge instead of the deadline and so counted the
+#     tick twice (docs/takeover-trace.md, finding 1 and section 6).
 #
 #   entry_speed = 8.33 m/s.
 #     30 km/h, decision 2: the ODD speed bound. One YAML anchor, read by both
@@ -548,7 +560,11 @@ nodes:
       control_mode: { min_rate_hz: 10, qos: { depth: 1 } }
       comfortable_stop_status: { min_rate_hz: 10, qos: { depth: 1 } }
       emergency_stop_status: { min_rate_hz: 10, qos: { depth: 1 } }
-      operation_mode_state: { min_rate_hz: 10, qos: { depth: 1 } }
+      # Latched, published on CHANGE by default_adapi: no rate is claimed.
+      # TRANSIENT_LOCAL as upstream since phase8-W14 (nano-ros phase-473 W2
+      # serves a transient-local subscription from the publisher's cache), so
+      # a late joiner reads the current mode instead of waiting for a change.
+      operation_mode_state: { qos: { depth: 1, durability: transient_local } }
     pub:
       # VOLATILE, stated on every publisher of the island (phase7-W8). The
       # source creates these with the default profile, which is volatile; but
@@ -643,7 +659,6 @@ topics:
     type: autoware_adapi_v1_msgs/msg/OperationModeState
     external: pub
     sub: [mrm_handler/operation_mode_state]
-    rate_hz: 10
 
   # --- produced by the island, consumed outside it --------------------------
   /planning/scenario_planning/max_velocity_candidates:

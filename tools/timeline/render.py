@@ -96,11 +96,13 @@ def bar_segments(r):
                  ("route", cs["detect"] + cs["windows"], cs["route"]),
                  ("settle", cs["detect"] + cs["windows"] + cs["route"], cs["settle"])] if cs else []
             oseg = []
-            if E.get("fault_on_wire") is not None and E.get("tor_off") is not None:
+            # Cut at the deadline (request on + window), where the checker
+            # ends WINDOWS; the late notice is in the route (phase8-W12).
+            if E.get("fault_on_wire") is not None and E.get("deadline") is not None:
                 oseg = [("detect", 0.0, E["fault_on_wire"]),
-                        ("windows", E["fault_on_wire"], E["tor_off"] - E["fault_on_wire"])]
+                        ("windows", E["fault_on_wire"], E["deadline"] - E["fault_on_wire"])]
                 if E.get("safe_cmd") is not None:
-                    oseg.append(("route", E["tor_off"], E["safe_cmd"] - E["tor_off"]))
+                    oseg.append(("route", E["deadline"], E["safe_cmd"] - E["deadline"]))
                     if E.get("standstill") is not None:
                         oseg.append(("settle", E["safe_cmd"], E["standstill"] - E["safe_cmd"]))
             out.append(("comfortable_stop", d, oseg))
@@ -142,7 +144,7 @@ def render(run_dir, out, explain_path=None, title=None):
     if r["act"] == "a":
         t_end = max(t_end, r["window_ms"] + 2500.0)
     shown = [row.get("total") or 0.0 for row in r["declared"].values() if row.get("role") != "skipped"]
-    shown = [x for x in shown if x] + ([r["window_ms"] + 110.0] if r["act"] in ("a", "b") else [])
+    shown = [x for x in shown if x] + ([r["window_end_ms"] or r["window_ms"]] if r["act"] in ("a", "b") else [])
     t_end = max([t_end] + [x + 1000.0 for x in shown])
     x_lo, x_hi = -2.0, t_end / 1000.0
     plt.rcParams.update({"font.size": 9, "axes.edgecolor": INK2, "axes.labelcolor": INK2,
@@ -198,7 +200,7 @@ def render(run_dir, out, explain_path=None, title=None):
                     continue
                 red = False
                 if kind == "observed" and label == "takeover_request" and term == "windows" and r["act"] == "b":
-                    red = w > r["window_ms"] + an.TICK_MS
+                    red = w < r["window_ms"] or (r["window_end_ms"] is not None and w > r["window_end_ms"])
                 axb.barh(y, w / 1000.0, left=x / 1000.0, height=0.62,
                          color=(CRIT if red else TERM[term]), alpha=(0.35 if kind == "declared" else 1.0),
                          hatch=("////" if kind == "declared" else None), edgecolor="#fcfcfb", linewidth=1.5)

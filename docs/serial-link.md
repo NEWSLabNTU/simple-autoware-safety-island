@@ -451,5 +451,13 @@ traffic at a 1 ms latency timer; the scripts wait for it.
 - zenoh 1.8's congestion flag (section 5): worth an upstream report with
   run p1 as the reproducer.
 - W4 (D9, discovery off) makes the ACL unnecessary; keep the ACL until then.
+  phase8-W14: the pin now carries it (nano-ros phase-473 W1), and the serial
+  image DERIVES discovery off (`ZPICO_GRAPH_DISCOVERY=0 DERIVED from this
+  image's zenoh links (serial)` at configure): no liveliness subscriber, no
+  graph cache. The ACL's reason (section 2: the history replay and the token
+  churn toward the board) is gone in the image, but the link has not been
+  re-measured without the ACL on the board. That run (a tap on the serial
+  link, `ros2 node list`, an Autoware restart) decides whether the ACL is
+  retired; W10 owns the board.
 - The contract's `min_rate_hz: 30` on `emergency_control_cmd` is met on the
   board (29.3/s on the wire); the host's depth-1 view is 17.9/s.

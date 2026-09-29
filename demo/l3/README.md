@@ -35,9 +35,15 @@ first: `just l3-host-ws`). `just l3-island-qemu <elf> <port> <secs> <host>`
 boots a QEMU island image into a router on the host. `just l3-check` is the CI
 job.
 
-Order matters (see "Traps"): the island joins BEFORE Autoware is engaged; if
-`l3-autoware` sits at "N composable(s) still constructing" for more than a
-minute, Ctrl-C it, wait 10 s (the zenoh lease) and start it again.
+Order matters (see "Traps"): the island joins BEFORE Autoware is engaged.
+A healthy start prints `Startup complete ... composable 68/68` about 4 s
+after `Registered 112 members`; if it does not within a minute, Ctrl-C it,
+wait 10 s (the zenoh lease) and start it again, and see trap 2.
+
+A second router on one host (a rehearsal beside the booth): `just
+l3-router 7461` and `L3_ROUTER_PORT=7461
+ZENOH_CONFIG_OVERRIDE='connect/endpoints=["tcp/localhost:7461"]' just
+l3-autoware` (`run.sh` passes both through), with another `ROS_DOMAIN_ID`.
 
 ## The container (`container/`)
 
@@ -51,10 +57,16 @@ minute, Ctrl-C it, wait 10 s (the zenoh lease) and start it again.
   `autoware-theme-1-5-0` (autoware-full minus the 1.79 GB `autoware-data`);
 - an equivs stub that Provides `libnvinfer10`, `libnvinfer-plugin10`,
   `libnvonnxparsers10` (no CUDA, no TensorRT);
-- `ros-humble-rmw-zenoh-cpp=0.1.9-1jammy.20260907.200640` and
-  `ros-humble-zenoh-cpp-vendor=0.1.9-1jammy.20260723.020902` from ROS apt,
-  held (the host runs rmw_zenoh_cpp `0.1.9-1jammy.20260723.022609`, same
-  source, older rebuild);
+- `ros-humble-rmw-zenoh-cpp=0.1.10-1jammy.20260915.210859` and
+  `ros-humble-zenoh-cpp-vendor=0.1.10-1jammy.20260915.201617` from ROS apt
+  **testing**, held (W11, trap 2a: 0.1.9 loses wakeups; main still serves
+  0.1.9 on 2026-09-29; the host runs rmw_zenoh_cpp
+  `0.1.9-1jammy.20260723.022609` and its router is unaffected);
+- `librclcpp.so` rebuilt from rclcpp 16.0.19 (the packaged version) with
+  `container/patches/rclcpp-16.0.19-executor-keep-group-guard-conditions.patch`,
+  diverted over the packaged one (W11, trap 2b);
+- `ZENOH_RUNTIME="(net: (worker_threads: 8))"` in the image ENV: zenoh's
+  Net runtime gets 8 workers instead of 1 (W11, trap 2c);
 - `play_launch==0.12.0` from the package index;
 - the `demo/host_ws` overlay and `takeover_demo`, colcon-built to
   `/opt/demo_ws/install`; the sample map at `/opt/demo/map`;
@@ -249,6 +261,54 @@ second one's "-1204 ms" counted an MRM from before the exit, since fixed.)
 The simulator's MANUAL mode with no manual command drops the speed to 0 at
 once.
 
+## Start flake and silent planner (W11, 2026-09-29)
+
+Method: a private `rmw_zenohd` on 7461 and domain 61 (other units share
+the host), every start under `flock /tmp/claude-1000005/sai-demo.lock`,
+begun when the 1-min load was below 35 (or after 10 min of waiting). A start
+counts when play_launch prints `Startup complete` with n/n containers and
+composables within the timeout (300 s for the first three, then 120 s; a
+healthy start takes 4-7 s). A hung start was dumped with gdb inside the
+container (`docker exec --privileged`, the matching `-dbgsym`).
+
+| image / path | rmw_zenoh_cpp | rclcpp | zenoh Net workers | starts complete | load at start |
+|---|---|---|---|---|---|
+| `1.5.0` (W3) + gdb | 0.1.9 | 16.0.19 | 1 | 3 of 10 | 13.8-34.1 |
+| host, `where=host` | 0.1.9 | 16.0.19 | 1 | 7 of 8 | 33.1-55.1 |
+| rmw_zenoh_cpp from testing | 0.1.10 | 16.0.19 | 1 | 19 of 20 | 21.8-44.8 |
+| + the rclcpp patch | 0.1.10 | patched | 1 | 18 of 20 | 16.2-34.2 |
+| + client mode instead of 8 workers | 0.1.10 | patched | (client) | 20 of 20 | 21.7-34.7 |
+| **the image now** | 0.1.10 | patched | 8 | **40 of 40** | 18.9-41.3 |
+
+The gate on the image now, first and last lines verbatim:
+
+```
+start 1: COMPLETE t=4.1s load_at_start=25.71 load_at_end=25.01 | 2026-09-29T02:15:22.808942Z  INFO Startup complete: all nodes ready (nodes 31/31, containers 13/13, composable 68/68)
+start 40: COMPLETE t=4.2s load_at_start=33.68 load_at_end=34.11 | 2026-09-29T02:40:56.697730Z  INFO Startup complete: all nodes ready (nodes 31/31, containers 13/13, composable 68/68)
+```
+
+Then one more start and four routed drives in it (`REROUTE=1` each: the
+last three are re-routes, each resetting behavior_path_planner's modules),
+the island's two outputs from a stand-in, rates over 75 s from the start of
+each act. Rows: `path_with_lane_id`, `lane_driving/trajectory`,
+`/planning/trajectory`, `/control/command/control_cmd`:
+
+```
+start d: COMPLETE t=4.2s load_at_start=32.88 load_at_end=32.88 | 2026-09-29T02:41:17.876604Z  INFO Startup complete: all nodes ready (nodes 31/31, containers 13/13, composable 68/68)
+== route 4 load=28.82
+scenario rc=0: VERDICT: PASS drive: v 3.72 -> 1.79 m/s, availability 10.0 Hz, mrm NORMAL
+path_with_lane_id   10.0 Hz from first msg (+  0.0 s)  n= 750  max gap    117.1 ms  silent at end     77.9 ms
+trajectory          10.0 Hz from first msg (+  0.0 s)  n= 750  max gap    155.7 ms  silent at end     49.6 ms
+trajectory          10.0 Hz from first msg (+  0.0 s)  n= 749  max gap    201.7 ms  silent at end     47.5 ms
+control_cmd         33.3 Hz from first msg (+  0.0 s)  n=2501  max gap     58.9 ms  silent at end     -8.2 ms
+```
+
+All four routes PASS, `path_with_lane_id` at 10.0 Hz with a largest gap
+of 117-130 ms. Before the rclcpp patch the first or second re-route
+silenced the planner in 3 of 3 runs (3 of 4 module resets), with and
+without play_launch's interception (`--interception off`); with it, 7 of 7
+re-routes in one run and 3 of 3 here kept it at 10 Hz.
+
 ## Traps (each one cost time today)
 
 1. **`--container-mode observable` + rmw_zenoh_cpp: the planner never plans.**
@@ -257,29 +317,69 @@ once.
    refused ("The target mode is not available"). `stock` works;
    `l3-autoware` defaults to it (`L3_CONTAINER_MODE` overrides). `isolated`
    (117 processes, 7.3 GiB) never set a route in the one run tried.
-2. **Executors that sleep forever.** Intermittently a component container
-   never loads a composable ("3 composable(s) still constructing" for
-   minutes, "Query queue depth of 10 reached, discarding oldest Query for
-   service .../_container/list_nodes"), or a timer-less node
-   (`initial_pose_adaptor`) never sees `/initialpose`. gdb in the container
-   (`L3_DEBUG=1`): 19 executor threads on one mutex, the one holding it in
-   `rmw_wait` -> `pthread_cond_wait` with no timeout while queries queue:
-   ```
-   #4  ___pthread_cond_wait (cond=0x5de53df6ecb0, mutex=0x5de53df6ece0)
-   #5  0x0000771b3d4da824 in rmw_wait () from /opt/ros/humble/lib/librmw_zenoh_cpp.so
-   #6  0x0000771b3d7878d8 in rcl_wait () from /opt/ros/humble/lib/librcl.so
-   ```
-   A lost wakeup in rmw_zenoh_cpp 0.1.9's wait set is the reading; not
-   checked against upstream. Counted today: the container completed 6 of 19
-   starts, the host 5 of 5 (host load ~20 throughout). The two differ in the
-   rmw_zenoh_cpp build (image 20260907, host 20260723: same 0.1.9 source,
-   different rebuild), in `--init` and in seccomp; which one matters is not
-   known. The measured runs retried until a start completed.
-   The same signature (idle, 0 Hz, last log line "Found 0 bidirectional
-   lanes") hit `behavior_path_planner` right after it received a route in 2
-   of 6 routes (trap 1's observable run, and a re-route under an engaged
-   vehicle in stock mode), which is why the scenario keeps a SET route
-   (`REROUTE=1` redoes it). Trap 1 may be this trap, not the container mode.
+2. **Three hangs that looked like one (root-caused by W11, 2026-09-29; the
+   measurements are in "Start flake and silent planner" below).** W3 saw
+   component containers that never finish loading ("3 composable(s) still
+   constructing", "Query queue depth of 10 reached ... list_nodes") and a
+   `behavior_path_planner` that goes silent after a route; all three causes
+   below are fixed in the image.
+   - **2a. rmw_zenoh_cpp 0.1.9 loses wakeups** (the start flake). Its
+     `rmw_wait` clears `wait_set_data->triggered` at the end of
+     `check_and_attach_condition()` without `condition_mutex`, a regression
+     of the lock-order fix #1005 (humble backport in 0.1.9). A guard
+     condition or a request that fires while the waiter is still attaching
+     the rest of its wait set has its wakeup overwritten, and the waiter
+     sleeps in an untimed `pthread_cond_wait` for good. Upstream: issue
+     ros2/rmw_zenoh#1032, fix #1036, humble #1041, released in 0.1.10 (ROS
+     apt testing). Evidence, with the 0.1.9 debug symbols: in the stuck
+     container the executor's only waiter is in an untimed wait with
+     `wait_set_data->triggered = false` while an attached guard condition
+     reads `has_triggered_ = true`, a state only the unlocked clear can
+     leave; the other 19 executor threads wait for its mutex:
+     ```
+     /map/map_container  LWP1215 UNTIMED triggered=false gc_true=1/3 srv_nonempty=[] subscriptions: 0 services: 0
+     ```
+     12 of the 13 containers play_launch named as pending in 7 hung starts
+     show that state (the 13th had finished by the dump). The window is the
+     scan of the wait set, so load widens it.
+   - **2b. rclcpp Humble frees a guard condition under the waiter** (the
+     silent planner; NOT 2a: it reproduced on 0.1.10). A new route makes
+     `behavior_path_planner` reset its modules ("New uuid route is received.
+     Resetting modules."), which destroys module callback groups. rclcpp
+     16.0.19's executor keeps each group's notify guard condition in the
+     wait set through a raw pointer, and `~CallbackGroup` triggers it, so in
+     `component_container_mt` another thread wakes inside `rmw_wait` onto a
+     freed rmw_zenoh `GuardCondition` (ros2/rclcpp#2445, open on Humble).
+     Two dumps: the executor blocked in
+     `GuardCondition::detach_condition_and_is_trigger_set` on a stale
+     mutex, and `PlannerManager::run` -> `RouteHandler::getCenterLinePath`
+     -> `malloc` taking a signal, glog's failure handler then deadlocking in
+     `malloc` (`*** Aborted at ...` at the second of the reset). Cyclone's
+     handle-based guard conditions do not write into the freed object,
+     which is why only zenoh showed it. Fix: rclcpp rebuilt with the
+     executor holding a strong reference until it takes the guard condition
+     out of its wait set (`container/patches/`, ABI unchanged).
+   - **2c. zenoh 1.8.0 peer gossip deadlocks under join churn** (what
+     remained after 2a: 4 of 45 starts on 0.1.10, 3 of them dumped). An RX thread holds the
+     routing `ctrl_lock` and parks in `block_in_place`
+     (`Gossip::link_states`, p2p_peer hat) while the Net runtime's only
+     worker waits for that lock to open the next link; every later declare
+     waits behind it. Seen as play_launch frozen 0.2 s after "Registered 112
+     members" (no progress line ever again) and as a container stuck in
+     `rclcpp::init` -> `rmw_init` -> `z_liveliness_get` ("LoadNode service
+     not available after 30s"). Upstream: eclipse-zenoh/zenoh#2581, fixed on
+     main by #2779 (2026-09-11), not in any rmw_zenoh release; the PR names
+     the Net runtime's single worker as the precondition. Fix: the image
+     sets `ZENOH_RUNTIME="(net: (worker_threads: 8))"`, so a free worker
+     runs the task the RX thread waits for. Client mode (no gossip) also
+     cured it, 20 of 20 starts, but put every message through the router:
+     the largest gap on the planner chain rose from 0.11-0.17 s as peers to
+     0.54-0.92 s (`control_cmd` 0.57-0.86 s), too close to the 0.58 s at
+     which W7's island already escalated on a silent gate.
+   The scenario still keeps a SET route by default (`REROUTE=1` redoes it);
+   with 2b fixed a re-route no longer silences the planner. Trap 1 was
+   probably 2b (observable mode's first route), not the container mode;
+   not re-measured.
 3. **The island cannot join a full Autoware graph unfiltered.** On a plain
    router the QEMU island died of heap exhaustion 2.3 s after boot
    (`_z_slist_push_empty`, `_z_slice_init` in `zpico_read`), with the 120 KiB
@@ -336,9 +436,18 @@ once.
 - G5 (W5): the island's `operate` call must reach its own operator; until
   then the HPC-loss act announces but does not brake.
 - G3 (W4): discovery off on the island; until then only the gateway ACL keeps
-  the island alive, and not through an Autoware restart.
+  the island alive, and not through an Autoware restart. phase8-W14: the
+  nano-ros pin carries the knob; serial images derive it off and both TCP
+  snippets state it off. Whether the gateway's liveliness ACL can go needs a
+  re-measurement on the board behind the gateway, without the ACL and
+  through an Autoware restart (W10 decides); until then keep it.
 - G4 (W4): a late-joining island must read the current operation mode.
-- The `rmw_wait` hang (trap 2) is upstream of everything here; a newer
-  rmw_zenoh_cpp or a client-mode session config are the two things to try.
+  phase8-W14: `mrm_handler` subscribes TRANSIENT_LOCAL again on the pin that
+  serves it (phase-473 W2); the late-join run itself is not measured here.
+- Trap 2's fixes live in the image only. The host path (`where=host`)
+  still runs rmw_zenoh_cpp 0.1.9, stock rclcpp and peer sessions: 7 of 8
+  host starts completed (W11). Drop the testing source and the rclcpp patch
+  once ROS apt ships rmw_zenoh_cpp 0.1.10 and rclcpp#2445 is fixed on
+  Humble; client mode can go once rmw_zenoh vendors a zenoh with #2779.
 - The comfortable-stop branch and the relay's ENABLE path wait for
   `use_comfortable_stop: true` on the island (W7).

@@ -73,25 +73,17 @@ qemu-build: sync
     # "red only on the upstream NROS_DERIVED_SUBSCRIBED_TYPE_BOUNDS line
     # (phase-412 W4)"), and a second pass does not converge it. Any OTHER
     # undelivered knob still refuses the image.
-    #
-    # phase8-W8a: a SECOND line is tolerated, by its exact values: the
-    # queryable table the island confs STATE (CONFIG_NROS_MAX_QUERYABLES=4)
-    # over the derivation's 2. nano-ros composes the contract's external
-    # availability publisher into the inventory, so the transient-local count
-    # is refused and the table derives short (src/zephyr_entry/boards/
-    # mr_canhubk3_s32k344.conf says why). Any other value on that line refuses.
     if ! python3 {{NANO_ROS_ROOT}}/scripts/check-knob-delivery.py {{QEMU_BUILD_DIR}} \
             > {{QEMU_LOG_DIR}}/{{QEMU_BUILD_DIR}}.knob-delivery.log 2>&1; then
         cat {{QEMU_LOG_DIR}}/{{QEMU_BUILD_DIR}}.knob-delivery.log
         if grep '^  - ' {{QEMU_LOG_DIR}}/{{QEMU_BUILD_DIR}}.knob-delivery.log \
-                | grep -v '^  - NROS_DERIVED_SUBSCRIBED_TYPE_BOUNDS=' \
-                | grep -qv '^  - NROS_DERIVED_MAX_QUERYABLES=2 but NROS_RESOLVED_NROS_MAX_QUERYABLES=4 '; then
+                | grep -qv '^  - NROS_DERIVED_SUBSCRIBED_TYPE_BOUNDS='; then
             echo ""
             echo "qemu-build: REFUSING this image -- a resolved knob did not reach the compile."
             echo '  Run `just qemu-build` again; the second pass converges.'
             exit 1
         fi
-        echo "qemu-build: tolerating the known upstream SUBSCRIBED_TYPE_BOUNDS line (phase-412 W4) and the stated MAX_QUERYABLES=4 (phase8-W8a); nothing else is red."
+        echo "qemu-build: tolerating the known upstream SUBSCRIBED_TYPE_BOUNDS line (phase-412 W4); nothing else is red."
     else
         cat {{QEMU_LOG_DIR}}/{{QEMU_BUILD_DIR}}.knob-delivery.log
     fi

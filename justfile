@@ -643,16 +643,11 @@ board-build: sync
     # second pass does not converge it, and until phase7-W1 it made this
     # recipe exit 1 on an image that had in fact linked. Same tolerance as
     # qemu-build (just/emulation.just). Any OTHER undelivered knob refuses.
-    #
-    # phase8-W8a: and, by its exact values, the queryable table the board
-    # conf STATES (CONFIG_NROS_MAX_QUERYABLES=4 over the derivation's 2; the
-    # conf says why). Same tolerance as qemu-build.
     knob_log={{BOARD_BUILD_DIR}}/check-knob-delivery.log
     if ! python3 {{NANO_ROS_ROOT}}/scripts/check-knob-delivery.py {{BOARD_BUILD_DIR}} > "$knob_log" 2>&1; then
         cat "$knob_log"
         if grep '^  - ' "$knob_log" \
-                | grep -v '^  - NROS_DERIVED_SUBSCRIBED_TYPE_BOUNDS=' \
-                | grep -qv '^  - NROS_DERIVED_MAX_QUERYABLES=2 but NROS_RESOLVED_NROS_MAX_QUERYABLES=4 '; then
+                | grep -qv '^  - NROS_DERIVED_SUBSCRIBED_TYPE_BOUNDS='; then
             echo ""
             echo "board-build: REFUSING this image -- a resolved knob did not reach the compile."
             echo "  The fragments on disk are correct and the delivered value is one pass behind."
@@ -662,7 +657,7 @@ board-build: sync
             echo '  Run `just board-build` again; the second pass converges.'
             exit 1
         fi
-        echo "board-build: tolerating the known upstream SUBSCRIBED_TYPE_BOUNDS line (phase-412 W4) and the stated MAX_QUERYABLES=4 (phase8-W8a); nothing else is red."
+        echo "board-build: tolerating the known upstream SUBSCRIBED_TYPE_BOUNDS line (phase-412 W4); nothing else is red."
     else
         cat "$knob_log"
     fi
