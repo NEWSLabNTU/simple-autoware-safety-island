@@ -1,6 +1,6 @@
 {
  "generator": "src/safety_island_tracing/gen_markers.py",
- "contract_sha256": "795396d14387de3d99050850b924b1e8aac7eef73eb22d78593c234261fda61a",
+ "contract_sha256": "990442fc5e0fce3fee6d60f3ca6df9324d2dbd1423b63d738cd25530ca74509b",
  "table_sha256": "0935f5b7449bb462bf030efefab5094968040c44ebf3493da532c432019944cf",
  "entities": {
   "pub": 8,
@@ -30,6 +30,7 @@
   "CONFIG_NROS_CYCLONE_DOMAIN_ID",
   "CONFIG_NROS_DOMAIN_ID",
   "CONFIG_NROS_GRAPH_CACHE_SIZE",
+  "CONFIG_NROS_SNTP_TIMEOUT_MS",
   "CONFIG_NROS_ZENOH_SERIAL_RX_RING_BYTES",
   "CONFIG_NROS_ZEPHYR_HEAP_SIZE",
   "CONFIG_NROS_ZEPHYR_TASK_SLOTS",

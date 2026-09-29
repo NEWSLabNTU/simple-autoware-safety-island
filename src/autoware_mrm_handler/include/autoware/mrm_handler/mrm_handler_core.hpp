@@ -153,11 +153,11 @@ private:
   Param param_;
 
   // Start-up lifecycle (phase8-W27, replaces upstream's isDataReady() gate
-  // and phase8-W10's join grace; docs/porting-notes.md). INIT from
-  // construction until every required input has been heard (publish nothing);
-  // RUN from then on, for good. INIT that outlasts `init_timeout` enters RUN
-  // as an init FAILURE, which the state machine treats like a lost
-  // availability stream until the missing inputs arrive.
+  // and phase8-W10's join grace; docs/porting-notes.md 20). INIT from
+  // construction until every required input is ESTABLISHED (phase8-W28;
+  // publish nothing); RUN from then on, for good. INIT that outlasts
+  // `init_timeout` enters RUN as an init FAILURE, which the state machine
+  // treats like a lost availability stream until the inputs are established.
   enum class Phase { Init, Run };
   Phase phase_{Phase::Init};
   double stamp_boot_{0.0};
@@ -171,7 +171,28 @@ private:
     INPUT_COMFORTABLE_STOP_STATUS = 1u << 2,
     INPUT_EMERGENCY_STOP_STATUS = 1u << 3,
   };
-  uint32_t getMissingInputs();
+  // phase8-W28: the last two arrivals of a periodic required input, for the
+  // "established" rule (isEstablished() in the .cpp states it per input).
+  struct Arrivals
+  {
+    uint8_t count{0};  // saturates at 2
+    double prev{0.0};
+    double last{0.0};
+    void note(double t)
+    {
+      prev = last;
+      last = t;
+      if (count < 2) ++count;
+    }
+    void reset() { count = 0; }
+  };
+  Arrivals arrivals_operation_mode_availability_{};
+  Arrivals arrivals_comfortable_stop_status_{};
+  Arrivals arrivals_emergency_stop_status_{};
+  bool isEstablished(const Arrivals & a, double window, double now) const;
+  // Fills the required inputs never heard, and those heard but not yet
+  // established (bitmasks of RequiredInput).
+  void getUnestablishedInputs(uint32_t & never_heard, uint32_t & not_steady);
   bool updatePhase();
   bool isInputLost();
   void onTimer();

@@ -78,9 +78,11 @@ KNOB_FILES = [
 
 
 # phase8-W27: mrm_handler's INIT -> RUN transition (docs/porting-notes.md 20).
-# INIT_DONE's arg is the ms from construction to the last required input;
-# INIT_TIMEOUT's is the bitmask of the inputs never heard (bit 0 availability,
-# 1 operation mode state, 2 comfortable-stop status, 3 emergency-stop status).
+# INIT_DONE's arg is the ms from construction to the tick that found every
+# required input established (phase8-W28); INIT_TIMEOUT's is the bitmask of
+# the inputs never heard in bits 0-3 (bit 0 availability, 1 operation mode
+# state, 2 comfortable-stop status, 3 emergency-stop status) and of those
+# heard but not yet established in bits 8-11, the same order.
 # Exactly one of the two fires per boot, so the timeline can tell start-up
 # from a fault.
 LIFECYCLE = [

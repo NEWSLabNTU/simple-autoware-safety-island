@@ -577,6 +577,8 @@ registration is CPU work too, and it ran above the reader.
   INIT/RUN lifecycle instead (docs/porting-notes.md, 20). INIT waits for the
   operation mode with the other required inputs, from boot, for at most
   `init_timeout` (3.0 s), and a missing input after that is an init failure.
+  phase8-W28: INIT waits for each input to be established (two samples within
+  its window), not heard once (porting-notes 20).
 
 ### 11.4 The gate on 55a65a4 (with the triage of 11.1)
 

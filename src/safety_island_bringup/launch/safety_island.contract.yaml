@@ -485,10 +485,12 @@ nodes:
       takeover_request_timeout: { type: double }
       # phase8-W27, the start-up lifecycle (not upstream). The detection
       # budgets in this file (max_age, `within`, the hazards' FDTI) apply from
-      # RUN, when every required input has been heard once; before that the
+      # RUN, when every required input is established (phase8-W28: two
+      # samples within the availability timeout for the periodic inputs, one
+      # for the latched operation mode; porting-notes 20); before that the
       # handler is in INIT and publishes nothing, and the INIT budget is this
-      # parameter (3.0 s from construction), after which a missing input is
-      # an init failure answered like an availability loss. rlm has no key
+      # parameter (3.0 s from construction), after which an input not yet
+      # established is an init failure answered like an availability loss. rlm has no key
       # for a start-up budget, so it is stated here and not checked.
       init_timeout: { type: double }
     cli:

@@ -190,11 +190,11 @@ Template:
 - phase8-W27 (`mrm_handler_core.cpp`, `updatePhase()`): two phases in an
   explicit member, `Phase::Init` and `Phase::Run`.
 
-      boot --> INIT   publishes nothing; logs the missing inputs once a second
-      INIT --(every required input heard)--> RUN          marker INIT_DONE (arg: ms since boot)
+      boot --> INIT   publishes nothing; logs the pending inputs once a second
+      INIT --(every required input established)--> RUN    marker INIT_DONE (arg: ms since boot)
       INIT --(init_timeout, 3.0 s from construction)--> RUN + init failure
-                                                          marker INIT_TIMEOUT (arg: missing bitmask)
-      RUN + init failure --(every required input heard)--> RUN (failure cleared)
+                                                          marker INIT_TIMEOUT (arg: pending bitmasks)
+      RUN + init failure --(every required input established)--> RUN (failure cleared)
       RUN never returns to INIT.
 
   Required = upstream's `isDataReady()` set plus the operation mode state:
@@ -203,6 +203,38 @@ Template:
   `emergency_stop_status`, each operator status reporting anything but
   NOT_AVAILABLE. Odometry and the control mode are not required, as
   upstream: unheard they read "not stopped" and "not AUTONOMOUS".
+- phase8-W28: "established", not "heard once". W27 left INIT on the first
+  sample of each input; in acts a and b that was the first availability
+  sample at 0.202 s, the host stream's next came at 0.834 s (632 ms against
+  the 0.5 s timeout), and RUN published MRM_OPERATING / EMERGENCY_STOP for
+  one tick at 0.8 s, NORMAL again at 0.9 s. One sample says a publisher
+  exists, not that its stream keeps its period. The rule, per input
+  (`getUnestablishedInputs()`, `isEstablished()`; each callback records its
+  last two arrival times, `Arrivals`):
+
+      input                        established when
+      operation_mode_availability  two consecutive samples at most
+                                   timeout_operation_mode_availability (0.5 s)
+                                   apart, the newer at most that old at the tick
+      comfortable_stop_status,     two consecutive samples reporting anything
+      emergency_stop_status        but NOT_AVAILABLE (NOT_AVAILABLE restarts
+                                   the count), same window and freshness
+      operation_mode_state         one sample
+
+  The availability's window is the timeout RUN judges it by, so a stream
+  established in INIT cannot time out on RUN's first tick unless it stalls
+  after it. The operator statuses have no timeout parameter: the operators
+  publish every tick (10 Hz, 30 Hz) and the availability timeout, the only
+  stream bound the handler has, is five periods of the slower; RUN does not
+  watch them, so the window is a start-up rule only. The operation mode is
+  TRANSIENT_LOCAL and published on change (default_adapi latches it): a
+  second sample may never come, so one suffices -- the publisher's cache or
+  a change, either is the current mode.
+- The INIT log and the init-failure log name both kinds of pending input:
+  "never heard: ...; not yet steady: ...". INIT_TIMEOUT's arg keeps W27's
+  never-heard bitmask in bits 0-3 and adds the heard-but-not-established
+  bitmask in bits 8-11 (same bit order); INIT_DONE's arg is the ms from
+  construction to the tick that found every input established.
 - The init failure is one more input fault, `isInputLost()`, beside the
   stale availability stream: `isEmergency()` holds, `getCurrentMrmBehavior()`
   forces EMERGENCY_STOP, and the takeover request is skipped. So the handler
@@ -212,7 +244,7 @@ Template:
   availability itself was never heard, its stamp is the boot, so the
   availability timeout holds too.
 - Recovery is the state machine's, as from any fault: on the first tick
-  that has every required input the failure clears, and `isEmergency()` is
+  that has every required input established the failure clears, and `isEmergency()` is
   judged on the inputs alone; if nothing else is wrong `updateMrmState()`
   returns to NORMAL from MRM_OPERATING, MRM_SUCCEEDED or MRM_FAILED, and
   `operateMrm()` cancels the emergency stop. It is cleared by the inputs,

@@ -81,6 +81,10 @@ int to_ms(double sec) { return static_cast<int>(sec * 1000.0); }
 
 void print_inputs(uint32_t mask)
 {
+  if (mask == 0) {
+    std::printf("none");
+    return;
+  }
   const char * sep = "";
   for (uint32_t i = 0; i < sizeof(kRequiredInputNames) / sizeof(kRequiredInputNames[0]); ++i) {
     if (mask & (1u << i)) {
@@ -180,6 +184,7 @@ void MrmHandler::onOperationModeAvailability(
 {
   ISLAND_TRACE(ISLAND_MK_TAKE_MRM_HANDLER_OPERATION_MODE_AVAILABILITY, msg.autonomous);
   stamp_operation_mode_availability_ = now_sec();
+  arrivals_operation_mode_availability_.note(stamp_operation_mode_availability_);
   operation_mode_availability_ = msg;
   has_operation_mode_availability_ = true;
 
@@ -220,12 +225,24 @@ void MrmHandler::onComfortableStopStatus(const tier4_system_msgs::msg::MrmBehavi
 {
   mrm_comfortable_stop_status_ = msg;
   has_mrm_comfortable_stop_status_ = true;
+  // phase8-W28: a NOT_AVAILABLE sample restarts the "established" count.
+  if (isComfortableStopStatusAvailable()) {
+    arrivals_comfortable_stop_status_.note(now_sec());
+  } else {
+    arrivals_comfortable_stop_status_.reset();
+  }
 }
 
 void MrmHandler::onEmergencyStopStatus(const tier4_system_msgs::msg::MrmBehaviorStatus & msg)
 {
   mrm_emergency_stop_status_ = msg;
   has_mrm_emergency_stop_status_ = true;
+  // phase8-W28: a NOT_AVAILABLE sample restarts the "established" count.
+  if (isEmergencyStopStatusAvailable()) {
+    arrivals_emergency_stop_status_.note(now_sec());
+  } else {
+    arrivals_emergency_stop_status_.reset();
+  }
 }
 
 void MrmHandler::onOperationModeState(const autoware_adapi_v1_msgs::msg::OperationModeState & msg)
@@ -396,68 +413,122 @@ void MrmHandler::drainMrmClientReplies()
   }
 }
 
-// phase8-W27: which required inputs have not been heard yet. The set is
-// upstream's isDataReady() list -- the availability, and each operator status
-// in use, reporting anything but NOT_AVAILABLE -- plus the operation mode
-// state, without which every mode reads UNKNOWN and so "not available".
-// Odometry and the control mode are not in it, as upstream: before they are
-// heard the handler reads "not stopped" and "not AUTONOMOUS", the cautious
-// defaults (an MRM is not declared finished, and none is started for a
-// vehicle that is not in autonomous control).
-uint32_t MrmHandler::getMissingInputs()
+// phase8-W27: the required inputs are upstream's isDataReady() list -- the
+// availability, and each operator status in use, reporting anything but
+// NOT_AVAILABLE -- plus the operation mode state, without which every mode
+// reads UNKNOWN and so "not available". Odometry and the control mode are not
+// in it, as upstream: before they are heard the handler reads "not stopped"
+// and "not AUTONOMOUS", the cautious defaults (an MRM is not declared
+// finished, and none is started for a vehicle that is not in autonomous
+// control).
+//
+// phase8-W28: INIT ends when each required input is ESTABLISHED, not when it
+// has been heard once. One sample says a publisher exists; it does not say
+// the stream keeps its period, and a stream that stalls right after its first
+// sample (W27's acts a and b: first availability at 0.202 s, the next at
+// 0.834 s) turned into an MRM on RUN's first ticks. The rule, per input:
+//
+//   operation_mode_availability  two consecutive samples at most
+//       timeout_operation_mode_availability (0.5 s) apart, the newer one at
+//       most that old at the tick. The same bound RUN judges the stream by,
+//       so an established stream cannot time out on RUN's first tick.
+//   comfortable_stop_status, emergency_stop_status  two consecutive samples,
+//       each reporting anything but NOT_AVAILABLE (a NOT_AVAILABLE sample
+//       restarts the count), at most timeout_operation_mode_availability
+//       apart, the newer one at most that old at the tick. They have no
+//       timeout parameter of their own; the operators publish their status
+//       every tick (10 Hz and 30 Hz), and the availability timeout is the
+//       only stream bound the handler has, 5 periods of the slower one. RUN
+//       does not watch them (as before), so this is a start-up rule only.
+//   operation_mode_state  ONE sample. It is TRANSIENT_LOCAL and published on
+//       change (default_adapi latches it), so a second sample may never come
+//       and a "two samples" rule would never end INIT. The sample is the
+//       publisher's cache or a change, and either is the current mode.
+bool MrmHandler::isEstablished(const Arrivals & a, double window, double now) const
 {
-  uint32_t missing = 0;
-  if (!has_operation_mode_availability_) missing |= INPUT_OPERATION_MODE_AVAILABILITY;
-  if (!has_operation_mode_state_) missing |= INPUT_OPERATION_MODE_STATE;
-  if (param_.use_comfortable_stop && !isComfortableStopStatusAvailable()) {
-    missing |= INPUT_COMFORTABLE_STOP_STATUS;
+  return a.count >= 2 && (a.last - a.prev) <= window && (now - a.last) <= window;
+}
+
+void MrmHandler::getUnestablishedInputs(uint32_t & never_heard, uint32_t & not_steady)
+{
+  const double now = now_sec();
+  const double window = param_.timeout_operation_mode_availability;
+  never_heard = 0;
+  not_steady = 0;
+
+  if (!has_operation_mode_availability_) {
+    never_heard |= INPUT_OPERATION_MODE_AVAILABILITY;
+  } else if (!isEstablished(arrivals_operation_mode_availability_, window, now)) {
+    not_steady |= INPUT_OPERATION_MODE_AVAILABILITY;
   }
-  if (!isEmergencyStopStatusAvailable()) missing |= INPUT_EMERGENCY_STOP_STATUS;
-  return missing;
+
+  if (!has_operation_mode_state_) never_heard |= INPUT_OPERATION_MODE_STATE;
+
+  if (param_.use_comfortable_stop) {
+    if (!has_mrm_comfortable_stop_status_) {
+      never_heard |= INPUT_COMFORTABLE_STOP_STATUS;
+    } else if (!isEstablished(arrivals_comfortable_stop_status_, window, now)) {
+      not_steady |= INPUT_COMFORTABLE_STOP_STATUS;
+    }
+  }
+
+  if (!has_mrm_emergency_stop_status_) {
+    never_heard |= INPUT_EMERGENCY_STOP_STATUS;
+  } else if (!isEstablished(arrivals_emergency_stop_status_, window, now)) {
+    not_steady |= INPUT_EMERGENCY_STOP_STATUS;
+  }
 }
 
 // phase8-W27: the start-up lifecycle. Returns false while the tick must stay
 // silent (INIT), true once the state machine runs (RUN).
 //
-//   INIT --(every required input heard)----------------> RUN
-//   INIT --(init_timeout after boot, inputs missing)---> RUN, init failure
-//   RUN, init failure --(every required input heard)---> RUN
+//   INIT --(every required input established)----------> RUN
+//   INIT --(init_timeout after boot, one is not)-------> RUN, init failure
+//   RUN, init failure --(every required input established)--> RUN
 //
 // There is no way back to INIT. In RUN a missing or stale input is a fault,
 // judged by the existing timeouts; the init failure is one more such fault,
 // raised once and cleared by the inputs, not by time.
 bool MrmHandler::updatePhase()
 {
-  const uint32_t missing = getMissingInputs();
+  uint32_t never_heard = 0;
+  uint32_t not_steady = 0;
+  getUnestablishedInputs(never_heard, not_steady);
+  const uint32_t pending = never_heard | not_steady;
   const double since_boot = now_sec() - stamp_boot_;
 
   if (phase_ == Phase::Run) {
-    if (is_init_failed_ && missing == 0) {
+    if (is_init_failed_ && pending == 0) {
       // The recovery is the state machine's, as from any fault: with the
       // init failure gone, isEmergency() is judged on the inputs alone.
       is_init_failed_ = false;
       std::printf(
-        "[mrm_handler] init failure cleared: every input heard %d ms after boot\n",
+        "[mrm_handler] init failure cleared: every input established %d ms after boot\n",
         to_ms(since_boot));
     }
     return true;
   }
 
-  if (missing == 0) {
+  if (pending == 0) {
     phase_ = Phase::Run;
     ISLAND_TRACE(ISLAND_MK_MRM_HANDLER_INIT_DONE, static_cast<uint32_t>(to_ms(since_boot)));
-    std::printf("[mrm_handler] INIT -> RUN: every input heard %d ms after boot\n", to_ms(since_boot));
+    std::printf(
+      "[mrm_handler] INIT -> RUN: every input established %d ms after boot\n", to_ms(since_boot));
     return true;
   }
 
   if (since_boot >= param_.init_timeout) {
     phase_ = Phase::Run;
     is_init_failed_ = true;
-    ISLAND_TRACE(ISLAND_MK_MRM_HANDLER_INIT_TIMEOUT, missing);
+    // arg: bits 0-3 the inputs never heard, bits 8-11 those heard but not
+    // established (bit order: RequiredInput).
+    ISLAND_TRACE(ISLAND_MK_MRM_HANDLER_INIT_TIMEOUT, never_heard | (not_steady << 8));
     std::printf(
       "[mrm_handler] ERROR: init failure: %d ms after boot, never heard: ", to_ms(since_boot));
-    print_inputs(missing);
-    std::printf("; INIT -> RUN in fault, emergency until they arrive\n");
+    print_inputs(never_heard);
+    std::printf("; not yet steady: ");
+    print_inputs(not_steady);
+    std::printf("; INIT -> RUN in fault, emergency until they are established\n");
     return true;
   }
 
@@ -466,16 +537,18 @@ bool MrmHandler::updatePhase()
   if (!has_stamp_init_log_ || since_boot - stamp_init_log_ >= 1.0) {
     has_stamp_init_log_ = true;
     stamp_init_log_ = since_boot;
-    std::printf("[mrm_handler] INIT %d ms: waiting for ", to_ms(since_boot));
-    print_inputs(missing);
+    std::printf("[mrm_handler] INIT %d ms: never heard: ", to_ms(since_boot));
+    print_inputs(never_heard);
+    std::printf("; not yet steady: ");
+    print_inputs(not_steady);
     std::printf("\n");
   }
   return false;
 }
 
 // An input the handler cannot judge the vehicle by: the availability stream
-// has gone stale, or (phase8-W27) a required input was never heard within
-// init_timeout. Both force the emergency stop and skip the takeover request.
+// has gone stale, or (phase8-W27) a required input was not established
+// within init_timeout. Both force the emergency stop and skip the takeover request.
 bool MrmHandler::isInputLost()
 {
   return is_operation_mode_availability_timeout || is_init_failed_;
