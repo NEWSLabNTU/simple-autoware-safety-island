@@ -1,13 +1,13 @@
 {
  "generator": "src/safety_island_tracing/gen_markers.py",
- "contract_sha256": "77f0913663f56b7bceb90ec612a1f0a672b474cae37ce7a9c5c752aece507460",
- "table_sha256": "b54335f3431b01b7ab1d463b25b2bd97d4ad897995ae218c85f0f5020897630a",
+ "contract_sha256": "a800364f04c84183b5e86f80d8fae019512dc211407f49c754026a297617116a",
+ "table_sha256": "9cdf1e17cf38db7174df4a4ad5b6092d7a026957830cf4ebbb2e1ce6d1bc87ca",
  "entities": {
-  "pub": 15,
-  "sub": 11,
+  "pub": 8,
+  "sub": 7,
   "srv": 2,
   "cli": 2,
-  "timer": 4
+  "timer": 3
  },
  "knobs": [
   "CONFIG_COMMON_LIBC_MALLOC_ARENA_SIZE",
@@ -25,6 +25,7 @@
   "CONFIG_NET_SOCKETS_POLL_MAX",
   "CONFIG_NROS_CYCLONE_DOMAIN_ID",
   "CONFIG_NROS_GRAPH_CACHE_SIZE",
+  "CONFIG_NROS_MAX_QUERYABLES",
   "CONFIG_NROS_ZEPHYR_HEAP_SIZE",
   "CONFIG_NROS_ZEPHYR_TASK_SLOTS",
   "CONFIG_NROS_ZEPHYR_TASK_STACK_SIZE",
@@ -148,24 +149,6 @@
   },
   {
    "id": 13,
-   "name": "PATH_STOP_MODE_OPERATOR_ON_TIMER_ENTRY",
-   "kind": "path_entry",
-   "element": "/stop_mode_operator/on_timer",
-   "node": "stop_mode_operator",
-   "trigger": "timer",
-   "rate_hz": 30.0
-  },
-  {
-   "id": 14,
-   "name": "PATH_STOP_MODE_OPERATOR_ON_TIMER_EXIT",
-   "kind": "path_exit",
-   "element": "/stop_mode_operator/on_timer",
-   "node": "stop_mode_operator",
-   "trigger": "timer",
-   "rate_hz": 30.0
-  },
-  {
-   "id": 15,
    "name": "TAKE_MRM_COMFORTABLE_STOP_OPERATOR_OPERATE",
    "kind": "take",
    "element": "/mrm_comfortable_stop_operator/operate",
@@ -173,7 +156,7 @@
    "triggers": "/mrm_comfortable_stop_operator/operate"
   },
   {
-   "id": 16,
+   "id": 14,
    "name": "TAKE_MRM_HANDLER_CONTROL_MODE",
    "kind": "take",
    "element": "/mrm_handler/control_mode",
@@ -181,7 +164,7 @@
    "triggers": "/mrm_handler/driver_exit"
   },
   {
-   "id": 17,
+   "id": 15,
    "name": "TAKE_MRM_HANDLER_OPERATION_MODE_AVAILABILITY",
    "kind": "take",
    "element": "/mrm_handler/operation_mode_availability",
@@ -189,7 +172,7 @@
    "triggers": "/mrm_handler/call_mrm"
   },
   {
-   "id": 18,
+   "id": 16,
    "name": "CALL_MRM_HANDLER_COMFORTABLE_STOP_OPERATE",
    "kind": "service_call",
    "element": "/mrm_handler/comfortable_stop_operate",
@@ -197,7 +180,7 @@
    "service": "/system/mrm/comfortable_stop/operate"
   },
   {
-   "id": 19,
+   "id": 17,
    "name": "CALL_MRM_HANDLER_EMERGENCY_STOP_OPERATE",
    "kind": "service_call",
    "element": "/mrm_handler/emergency_stop_operate",
@@ -205,7 +188,7 @@
    "service": "/system/mrm/emergency_stop/operate"
   },
   {
-   "id": 20,
+   "id": 18,
    "name": "SERVE_MRM_COMFORTABLE_STOP_OPERATOR_OPERATE_ENTRY",
    "kind": "service_serve_entry",
    "element": "/mrm_comfortable_stop_operator/operate",
@@ -213,7 +196,7 @@
    "service": "/system/mrm/comfortable_stop/operate"
   },
   {
-   "id": 21,
+   "id": 19,
    "name": "SERVE_MRM_COMFORTABLE_STOP_OPERATOR_OPERATE_EXIT",
    "kind": "service_serve_exit",
    "element": "/mrm_comfortable_stop_operator/operate",
@@ -221,7 +204,7 @@
    "service": "/system/mrm/comfortable_stop/operate"
   },
   {
-   "id": 22,
+   "id": 20,
    "name": "SERVE_MRM_EMERGENCY_STOP_OPERATOR_OPERATE_ENTRY",
    "kind": "service_serve_entry",
    "element": "/mrm_emergency_stop_operator/operate",
@@ -229,7 +212,7 @@
    "service": "/system/mrm/emergency_stop/operate"
   },
   {
-   "id": 23,
+   "id": 21,
    "name": "SERVE_MRM_EMERGENCY_STOP_OPERATOR_OPERATE_EXIT",
    "kind": "service_serve_exit",
    "element": "/mrm_emergency_stop_operator/operate",
@@ -237,7 +220,7 @@
    "service": "/system/mrm/emergency_stop/operate"
   },
   {
-   "id": 24,
+   "id": 22,
    "name": "PUB_MRM_COMFORTABLE_STOP_OPERATOR_CLEAR_VELOCITY_LIMIT",
    "kind": "publish",
    "element": "/mrm_comfortable_stop_operator/clear_velocity_limit",
@@ -245,7 +228,7 @@
    "topic": "/planning/scenario_planning/clear_velocity_limit"
   },
   {
-   "id": 25,
+   "id": 23,
    "name": "PUB_MRM_COMFORTABLE_STOP_OPERATOR_MAX_VELOCITY_CANDIDATES",
    "kind": "publish",
    "element": "/mrm_comfortable_stop_operator/max_velocity_candidates",
@@ -253,7 +236,7 @@
    "topic": "/planning/scenario_planning/max_velocity_candidates"
   },
   {
-   "id": 26,
+   "id": 24,
    "name": "PUB_MRM_COMFORTABLE_STOP_OPERATOR_STATUS",
    "kind": "publish",
    "element": "/mrm_comfortable_stop_operator/status",
@@ -261,7 +244,7 @@
    "topic": "/system/mrm/comfortable_stop/status"
   },
   {
-   "id": 27,
+   "id": 25,
    "name": "PUB_MRM_EMERGENCY_STOP_OPERATOR_EMERGENCY_CONTROL_CMD",
    "kind": "publish",
    "element": "/mrm_emergency_stop_operator/emergency_control_cmd",
@@ -269,7 +252,7 @@
    "topic": "/system/emergency/control_cmd"
   },
   {
-   "id": 28,
+   "id": 26,
    "name": "PUB_MRM_EMERGENCY_STOP_OPERATOR_STATUS",
    "kind": "publish",
    "element": "/mrm_emergency_stop_operator/status",
@@ -277,23 +260,7 @@
    "topic": "/system/mrm/emergency_stop/status"
   },
   {
-   "id": 29,
-   "name": "PUB_MRM_HANDLER_EMERGENCY_HOLDING",
-   "kind": "publish",
-   "element": "/mrm_handler/emergency_holding",
-   "node": "mrm_handler",
-   "topic": "/system/fail_safe/emergency_holding"
-  },
-  {
-   "id": 30,
-   "name": "PUB_MRM_HANDLER_GEAR_CMD_OUT",
-   "kind": "publish",
-   "element": "/mrm_handler/gear_cmd_out",
-   "node": "mrm_handler",
-   "topic": "/system/emergency/gear_cmd"
-  },
-  {
-   "id": 31,
+   "id": 27,
    "name": "PUB_MRM_HANDLER_HAZARD_LIGHTS_CMD",
    "kind": "publish",
    "element": "/mrm_handler/hazard_lights_cmd",
@@ -301,7 +268,7 @@
    "topic": "/system/emergency/hazard_lights_cmd"
   },
   {
-   "id": 32,
+   "id": 28,
    "name": "PUB_MRM_HANDLER_MRM_STATE",
    "kind": "publish",
    "element": "/mrm_handler/mrm_state",
@@ -309,52 +276,12 @@
    "topic": "/system/fail_safe/mrm_state"
   },
   {
-   "id": 33,
+   "id": 29,
    "name": "PUB_MRM_HANDLER_TAKEOVER_REQUEST_STATE",
    "kind": "publish",
    "element": "/mrm_handler/takeover_request_state",
    "node": "mrm_handler",
    "topic": "/system/takeover_request/state"
-  },
-  {
-   "id": 34,
-   "name": "PUB_MRM_HANDLER_TURN_INDICATORS_CMD",
-   "kind": "publish",
-   "element": "/mrm_handler/turn_indicators_cmd",
-   "node": "mrm_handler",
-   "topic": "/system/emergency/turn_indicators_cmd"
-  },
-  {
-   "id": 35,
-   "name": "PUB_STOP_MODE_OPERATOR_CONTROL",
-   "kind": "publish",
-   "element": "/stop_mode_operator/control",
-   "node": "stop_mode_operator",
-   "topic": "/system/stop_mode/control"
-  },
-  {
-   "id": 36,
-   "name": "PUB_STOP_MODE_OPERATOR_GEAR",
-   "kind": "publish",
-   "element": "/stop_mode_operator/gear",
-   "node": "stop_mode_operator",
-   "topic": "/system/stop_mode/gear"
-  },
-  {
-   "id": 37,
-   "name": "PUB_STOP_MODE_OPERATOR_HAZARD_LIGHTS",
-   "kind": "publish",
-   "element": "/stop_mode_operator/hazard_lights",
-   "node": "stop_mode_operator",
-   "topic": "/system/stop_mode/hazard_lights"
-  },
-  {
-   "id": 38,
-   "name": "PUB_STOP_MODE_OPERATOR_TURN_INDICATORS",
-   "kind": "publish",
-   "element": "/stop_mode_operator/turn_indicators",
-   "node": "stop_mode_operator",
-   "topic": "/system/stop_mode/turn_indicators"
   }
  ]
 }

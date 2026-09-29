@@ -17,9 +17,6 @@
   <node pkg="autoware_mrm_comfortable_stop_operator" exec="mrm_comfortable_stop_operator" name="mrm_comfortable_stop_operator">
     <param from="$(dirname)/../../autoware_mrm_comfortable_stop_operator/config/mrm_comfortable_stop_operator.param.yaml"/>
   </node>
-  <node pkg="autoware_stop_mode_operator" exec="stop_mode_operator" name="stop_mode_operator">
-    <param from="$(dirname)/../../autoware_stop_mode_operator/config/default.param.yaml"/>
-  </node>
   <node pkg="autoware_mrm_handler" exec="mrm_handler" name="mrm_handler">
     <param from="$(dirname)/../../autoware_mrm_handler/config/mrm_handler.param.yaml"/>
   </node>

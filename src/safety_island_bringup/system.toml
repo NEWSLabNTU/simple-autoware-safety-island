@@ -48,10 +48,10 @@ pkg = "autoware_mrm_comfortable_stop_operator"
 class = "autoware::mrm_comfortable_stop_operator::MrmComfortableStopOperator"
 name = "mrm_comfortable_stop_operator"
 
-[[component]]
-pkg = "autoware_stop_mode_operator"
-class = "autoware::stop_mode_operator::StopModeOperator"
-name = "stop_mode_operator"
+# stop_mode_operator left the image in phase8-W8a (phase-8 doc D4): Autoware
+# 1.5.0 launches it only with the control-command gate, the demo runs
+# vehicle_cmd_gate, and nothing reads /system/stop_mode/*. The package stays
+# in src/ as a port; no entry builds it.
 
 [[component]]
 pkg = "autoware_mrm_handler"

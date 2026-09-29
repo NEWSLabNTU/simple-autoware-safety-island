@@ -139,7 +139,11 @@ already does. Unit W3 copies that layout rather than inventing one.
 - `stop_mode_operator` leaves the demo image: in 1.5.0 it is launched only
   with the control-command gate, nothing in the demo's `vehicle_cmd_gate`
   setup reads its outputs, and it owns three 30 Hz inbound topics and three
-  of the five latched publishers (D).
+  of the five latched publishers (D). Done in W8a: out of system.toml, the
+  launch file, the contract and every entry's build; the package stays in
+  `src/` as a port that no image builds. W8a also cut the handler's gear
+  pass-through (in and out), turn-indicator and emergency-holding endpoints
+  after reading their readers in the 1.5.0 source (W8a status line below).
 - `Z_FEATURE_LOCAL_QUERYABLE=1`: the handler's `operate` request never
   reached the operator in the same image, because the router does not send
   a query back to the session it came from (B). This is the flag that made
@@ -147,7 +151,9 @@ already does. Unit W3 copies that layout rather than inventing one.
   and a server share an image (unit W5).
 - Heap 122,880 B and a 24 KiB trace buffer fit at 317,472 B of 327,680 (B).
   The heap is still a stated board fact, not a derived one; the honest line
-  on the slide stays "the dynamic side is not derived".
+  on the slide stays "the dynamic side is not derived". Since W8a the heap
+  is 102,400 B, sized from the demo image's QEMU FirstSpin peak plus the
+  boot report's floor (docs/boot-through.md, "The demo image").
 
 ### D5. The takeover request lives in `mrm_handler`, not in a fifth node
 
@@ -378,6 +384,34 @@ the others by fast-forward push once implementation starts.
   (G9); the encore (HPC loss) traced on the MCU with the live plot; ten
   consecutive scripted runs. Gate: the ten runs, every one green or
   explained.
+- **W8a - the demo image, shrunk to what the demo shows.**
+  Status (2026-09-29): docs/boot-through.md ("The demo image").
+  `stop_mode_operator` out (D4, G10's `/system/stop_mode/*`, G9's 34 % of
+  markers); `mrm_handler` loses the gear pass-through (in and out), the
+  turn-indicator and the emergency-holding outputs, each after reading its
+  reader in the 1.5.0 source (`vehicle_cmd_gate` takes them only in
+  EMERGENCY_STOP and keeps its last command without them;
+  `hazard_status_converter` reads a missing holding sample as false, the
+  only value the island sent). Kept: hazard lights (hazard_relay, the
+  encore's gate, the probe) and `clear_velocity_limit`. 3 nodes, 22
+  entities (8 publishers, 7 subscriptions), 4 queryables, 29 trace markers
+  (38). `play_launch check` 92043c82 clean, W6's verdicts unchanged; CI
+  script 14/14. Found: nano-ros composes the contract's external
+  `/availability_gate/availability` publisher into the image inventory, so
+  the transient-local count is refused and queryables derive to 2; the
+  comfortable-stop operator then fails `create_publisher_in (code=-3)` on
+  QEMU. Worked around by stating `CONFIG_NROS_MAX_QUERYABLES=4` (both
+  confs; both recipes tolerate that one knob-delivery line by value). POSIX
+  pools 39/17 by nano-ros's formula. QEMU FirstSpin heap PEAK 74,856-76,080 B
+  over five runs (W1: 109,376), independent of the heap size; heap set to
+  102,400 B in both confs (peak + floor, rounded to 4 KiB): headroom ok,
+  27,192 B spare. Board region report RAM 277,208 of 327,680 B (84.60 %,
+  W1 288,792), not flashed. Regression on native_sim, one run each: A
+  PASS, B PASS (its `windows` row 10,156 against 10,110, W7's open tick
+  item), encore PASS (last sample to braking 594 ms). Open: the island
+  drops its zenoh session when a host peer joins a plain router (QEMU,
+  any heap); nano-ros should skip `externals` publishers; W4 not yet
+  measured; the board's own heap reading.
 - **W9 - the booth.** Poster, the two-minute script, the fallback
   (native_sim with the identical plot), a recorded run.
 

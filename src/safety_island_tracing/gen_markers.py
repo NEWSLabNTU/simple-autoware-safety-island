@@ -45,7 +45,6 @@ COMPONENT_DIRS = [
     "src/autoware_mrm_handler",
     "src/autoware_mrm_emergency_stop_operator",
     "src/autoware_mrm_comfortable_stop_operator",
-    "src/autoware_stop_mode_operator",
 ]
 # Integer Kconfig values stated in these files are the knobs that size the
 # image; the provenance record carries the value each one had in the BUILD

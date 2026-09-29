@@ -19,10 +19,7 @@
 #include <autoware_adapi_v1_msgs/msg/mrm_state.hpp>
 #include <autoware_adapi_v1_msgs/msg/operation_mode_state.hpp>
 #include <autoware_vehicle_msgs/msg/control_mode_report.hpp>
-#include <autoware_vehicle_msgs/msg/gear_command.hpp>
 #include <autoware_vehicle_msgs/msg/hazard_lights_command.hpp>
-#include <autoware_vehicle_msgs/msg/turn_indicators_command.hpp>
-#include <tier4_system_msgs/msg/emergency_holding_state.hpp>
 #include <tier4_system_msgs/msg/mrm_behavior_status.hpp>
 #include <tier4_system_msgs/msg/operation_mode_availability.hpp>
 #include <tier4_system_msgs/srv/operate_mrm.hpp>
@@ -117,7 +114,6 @@ private:
   void onComfortableStopStatus(const tier4_system_msgs::msg::MrmBehaviorStatus & msg);
   void onEmergencyStopStatus(const tier4_system_msgs::msg::MrmBehaviorStatus & msg);
   void onOperationModeState(const autoware_adapi_v1_msgs::msg::OperationModeState & msg);
-  void onGearCmd(const autoware_vehicle_msgs::msg::GearCommand & msg);
 
   tier4_system_msgs::msg::OperationModeAvailability operation_mode_availability_{};
   bool has_operation_mode_availability_{false};
@@ -131,25 +127,20 @@ private:
   bool has_mrm_emergency_stop_status_{false};
   autoware_adapi_v1_msgs::msg::OperationModeState operation_mode_state_{};
   bool has_operation_mode_state_{false};
-  autoware_vehicle_msgs::msg::GearCommand gear_cmd_{};
-  bool has_gear_cmd_{false};
 
-  // Publisher
-  ::nros::Publisher<autoware_vehicle_msgs::msg::TurnIndicatorsCommand> pub_turn_indicator_cmd_;
+  // Publisher. phase8-W8a (demo trim, not upstream): the turn-indicator,
+  // gear and emergency-holding publishers and the gear pass-through input are
+  // gone; their only readers hold or default the same values without them
+  // (safety_island.contract.yaml, "WHAT THE IMAGE LEAVES OUT").
   ::nros::Publisher<autoware_vehicle_msgs::msg::HazardLightsCommand> pub_hazard_cmd_;
-  ::nros::Publisher<autoware_vehicle_msgs::msg::GearCommand> pub_gear_cmd_;
   ::nros::Publisher<autoware_adapi_v1_msgs::msg::MrmState> pub_mrm_state_;
-  ::nros::Publisher<tier4_system_msgs::msg::EmergencyHoldingState> pub_emergency_holding_;
   // phase8-W7: /system/takeover_request/state. MrmBehaviorStatus reused
   // (AVAILABLE = idle, OPERATING = request on) so the island needs no new
   // message package.
   ::nros::Publisher<tier4_system_msgs::msg::MrmBehaviorStatus> pub_takeover_request_state_;
 
-  void publishTurnIndicatorCmd();
   void publishHazardCmd();
-  void publishGearCmd();
   void publishMrmState();
-  void publishEmergencyHolding();
   void publishTakeoverRequestState();
 
   autoware_adapi_v1_msgs::msg::MrmState mrm_state_{};
@@ -187,7 +178,6 @@ private:
 
   // Algorithm
   bool is_emergency_holding_ = false;
-  uint8_t last_gear_command_{autoware_vehicle_msgs::msg::GearCommand::DRIVE};
   void transitionTo(const int new_state);
   void updateMrmState();
   void operateMrm();

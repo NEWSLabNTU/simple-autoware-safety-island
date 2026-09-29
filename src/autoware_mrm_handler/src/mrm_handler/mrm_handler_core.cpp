@@ -120,19 +120,13 @@ MrmHandler::MrmHandler(::nros::NodeHandle handle)
   create_subscription_in<autoware_adapi_v1_msgs::msg::OperationModeState, MrmHandler,
                          &MrmHandler::onOperationModeState>(
     "/api/operation_mode/state", ::nros::QoS(1));
-  NROS_SUBSCRIBE(autoware_vehicle_msgs::msg::GearCommand, onGearCmd, "/control/command/gear_cmd", ::nros::QoS(1));
 
-  // Publisher
-  pub_turn_indicator_cmd_ = create_publisher_in<autoware_vehicle_msgs::msg::TurnIndicatorsCommand>(
-    "/system/emergency/turn_indicators_cmd");
+  // Publisher (phase8-W8a: turn indicators, gear and emergency holding
+  // dropped for the demo image; see the header).
   pub_hazard_cmd_ = create_publisher_in<autoware_vehicle_msgs::msg::HazardLightsCommand>(
     "/system/emergency/hazard_lights_cmd");
-  pub_gear_cmd_ =
-    create_publisher_in<autoware_vehicle_msgs::msg::GearCommand>("/system/emergency/gear_cmd");
   pub_mrm_state_ =
     create_publisher_in<autoware_adapi_v1_msgs::msg::MrmState>("/system/fail_safe/mrm_state");
-  pub_emergency_holding_ = create_publisher_in<tier4_system_msgs::msg::EmergencyHoldingState>(
-    "/system/fail_safe/emergency_holding");
   pub_takeover_request_state_ = create_publisher_in<tier4_system_msgs::msg::MrmBehaviorStatus>(
     "/system/takeover_request/state");
 
@@ -216,28 +210,6 @@ void MrmHandler::onOperationModeState(const autoware_adapi_v1_msgs::msg::Operati
   has_operation_mode_state_ = true;
 }
 
-void MrmHandler::onGearCmd(const autoware_vehicle_msgs::msg::GearCommand & msg)
-{
-  gear_cmd_ = msg;
-  has_gear_cmd_ = true;
-}
-
-void MrmHandler::publishTurnIndicatorCmd()
-{
-  using autoware_vehicle_msgs::msg::TurnIndicatorsCommand;
-  TurnIndicatorsCommand msg{};
-
-  msg.stamp = now_stamp();
-  if (param_.turning_indicator_on.emergency && isEmergency()) {
-    msg.command = TurnIndicatorsCommand::DISABLE;
-  } else {
-    msg.command = TurnIndicatorsCommand::NO_COMMAND;
-  }
-
-  ISLAND_TRACE(ISLAND_MK_PUB_MRM_HANDLER_TURN_INDICATORS_CMD, msg.command);
-  pub_turn_indicator_cmd_.publish(msg);
-}
-
 void MrmHandler::publishHazardCmd()
 {
   using autoware_vehicle_msgs::msg::HazardLightsCommand;
@@ -254,38 +226,11 @@ void MrmHandler::publishHazardCmd()
   pub_hazard_cmd_.publish(msg);
 }
 
-void MrmHandler::publishGearCmd()
-{
-  using autoware_vehicle_msgs::msg::GearCommand;
-  GearCommand msg{};
-  msg.stamp = now_stamp();
-
-  if (isEmergency()) {
-    msg.command =
-      (param_.use_parking_after_stopped && isStopped()) ? GearCommand::PARK : last_gear_command_;
-  } else {
-    msg.command = has_gear_cmd_ ? gear_cmd_.command : last_gear_command_;
-    last_gear_command_ = msg.command;
-  }
-
-  ISLAND_TRACE(ISLAND_MK_PUB_MRM_HANDLER_GEAR_CMD_OUT, msg.command);
-  pub_gear_cmd_.publish(msg);
-}
-
 void MrmHandler::publishMrmState()
 {
   mrm_state_.stamp = now_stamp();
   ISLAND_TRACE(ISLAND_MK_PUB_MRM_HANDLER_MRM_STATE, (mrm_state_.state << 16) | mrm_state_.behavior);
   pub_mrm_state_.publish(mrm_state_);
-}
-
-void MrmHandler::publishEmergencyHolding()
-{
-  tier4_system_msgs::msg::EmergencyHoldingState msg{};
-  msg.stamp = now_stamp();
-  msg.is_holding = is_emergency_holding_;
-  ISLAND_TRACE(ISLAND_MK_PUB_MRM_HANDLER_EMERGENCY_HOLDING, msg.is_holding);
-  pub_emergency_holding_.publish(msg);
 }
 
 void MrmHandler::publishTakeoverRequestState()
@@ -489,10 +434,7 @@ void MrmHandler::onTimer()
   if (is_fault) {
     ISLAND_TRACE(ISLAND_MK_PATH_MRM_HANDLER_CALL_MRM_EXIT, mrm_state_.state);
   }
-  publishTurnIndicatorCmd();
   publishHazardCmd();
-  publishGearCmd();
-  publishEmergencyHolding();
   ISLAND_TRACE(ISLAND_MK_PATH_MRM_HANDLER_ON_TIMER_EXIT, 1);
 }
 

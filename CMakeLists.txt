@@ -35,7 +35,7 @@ set(_ws_subdirs
     # Ported node packages
     src/autoware_mrm_emergency_stop_operator          # P1
     src/autoware_mrm_comfortable_stop_operator        # P2
-    src/autoware_stop_mode_operator                   # P2
+    # src/autoware_stop_mode_operator: out of the image since phase8-W8a (D4)
     src/autoware_mrm_handler                          # P3
 )
 

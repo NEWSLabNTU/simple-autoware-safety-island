@@ -553,3 +553,204 @@ board-build`, twice, the same table on both passes, not flashed; queryables
 
 Against W8's 323,112 B with the services on, the board's SRAM drops by
 34,320 B, leaving 38,888 B.
+
+## The demo image
+
+phase8-W8a, 2026-09-29. The island is sized for the RTSS@Work demo
+(`docs/roadmap/phase-8-rtss-work-demo.md`: acts A, B and the encore, the
+live timeline, and what the host's Autoware reads), not as a complete
+safety island. Island pin bec9aecb8, `features = []` as in W1.
+
+**What left the image, and the reader checked first** (Autoware 1.5.0
+source under `~/repos/autoware/1.5.0-ws`, the demo's `demo/host_ws`
+overlay, `tools/timeline`, `demo/l3/takeover_demo`):
+
+| cut | reader in the demo | why it can go |
+|---|---|---|
+| `stop_mode_operator`, whole node (D4) | none: 1.5.0 launches it only with the control-command gate; the demo runs `vehicle_cmd_gate` | three 30 Hz inputs (steering, velocity, route state), four outputs (three latched), 6 of the old 38 trace markers and G9's 34 % of marker volume |
+| `mrm_handler` `/system/emergency/gear_cmd` and its `/control/command/gear_cmd` pass-through input | `vehicle_cmd_gate` only, and only while `mrm_state` says `EMERGENCY_STOP` (`onMrmState`) | with no sample the gate keeps the gear it last sent (`getContinuousTopic` returns the previous command when the new stamp is older), which is DRIVE; the island sent DRIVE too (`use_parking_after_stopped: false`) |
+| `mrm_handler` `/system/emergency/turn_indicators_cmd` | `vehicle_cmd_gate`, same condition | the gate keeps the planner's last indicator; nothing in the demo shows it |
+| `mrm_handler` `/system/fail_safe/emergency_holding` | the host's `hazard_status_converter` (W3's remap, G10) | it reads a missing sample as `false` (`converter.cpp:122-124`), the only value the island could send with `use_emergency_holding: false` |
+
+Kept, although the planning simulator never shows it (W7 finding 4):
+`/system/emergency/hazard_lights_cmd`, read by the demo's `hazard_relay`
+(branch B), by `vehicle_cmd_gate` in the encore, and by the timeline probe.
+Kept: `clear_velocity_limit`, the only thing that lifts the comfortable
+stop's latched limit when the fault clears. The handler still declares
+`turning_indicator_on.emergency` and `use_parking_after_stopped`; nothing
+reads them now (the parameter store is small; the declarations stay with
+the upstream code).
+
+The contract, the launch file, `system.toml`, the three entries' builds
+(the `add_subdirectory` lines and the board's ITCM relocation), the bringup
+`package.xml`, the demo composition contracts (`demo/l3/contracts/`, three
+files) and `takeover_demo`'s island node list changed together.
+`play_launch check` (92043c82, built from the nano-ros vendored copy) on
+the island contract: `1 manifest(s) checked: 1 clean, 0 with errors (0
+errors, 2 warnings)`, every budget row as W7's; the demo composition
+20,636.67 / 14,538.67 / 4,808.67 ms as W6's, the two variants refused on
+the comfortable rung only (30,636.67 and 30,366.67 ms). `just l3-check`
+(the CI script, pinned wheel 0.12.0): `14 contract(s) checked; every
+verdict as expected`. Trace markers regenerate from 38 to 29: stop_mode's 6 and
+the handler's three dropped publishers.
+
+**The derived tables** (`build-qemu-w8a/nros/entity_inventory.cmake`
+against W1's):
+
+| | W1 (4 nodes) | W8a (3 nodes) |
+|---|---|---|
+| entities (inventory) | 33 | 23 (22 in the image; see below) |
+| publishers / subscriptions | 14 / 11 | 9 / 7 (8 / 7 in the image) |
+| queryables | 7 derived | 2 derived, 4 stated (below) |
+| `NROS_EXECUTOR_MAX_CBS` | 19 | 14 |
+| executor arena | 50,640 | 35,920 |
+| `NROS_MAX_LIVELINESS` | - | 25 |
+| POSIX mutex / cond pools | 70 / 48 | 39 / 17 |
+
+**A defect this surfaced: the external availability publisher.** W7 named
+the demo's gate as the external publisher of
+`/system/operation_mode/availability` (`pub: [/availability_gate/availability]`;
+without it `odd_exit` is `hazard-unguarded`, re-checked here). nano-ros's
+entity inventory composes that name into the image as a fourth component
+(`availability_gate = 1 entities, 0 slots`) although the model marks the
+topic `externals: pub`, and its row states no durability, so:
+
+    # NROS_DERIVED_TL_PUBLISHERS is not derived: publisher /system/operation_mode/availability (tier4_system_msgs/msg/OperationModeAvailability) states no `durability`: nothing derived it. A count over the rows that answered is not a bound on the row that did not
+    set(NROS_DERIVED_MAX_QUERYABLES 2)
+
+and the image boots short of the two cache queryables the comfortable-stop
+operator's latched publishers need (QEMU, heap 122,880, conf stack,
+`qemu-20260929T083204.*`):
+
+    [nros] FATAL: node "mrm_comfortable_stop_operator" failed to construct at create_publisher_in (code=-3)
+    stage      4  RegisteringEntities -- an entity claimed arena; registration in flight
+
+The contract cannot state that endpoint's QoS: a `nodes:` block for the
+gate is refused (`node-identity-unknown`) or, keyed absolute, passes and
+never reaches `contracts.pub_endpoints`; a topic-level `qos:` reaches the
+subscriber's row only. So both confs STATE `CONFIG_NROS_MAX_QUERYABLES=4`
+(2 services + 2 latched publishers; the retention pool's builtin of 2
+covers the 2 latched publishers), and `qemu-build` tolerates that one
+knob-delivery line by its exact values
+(`NROS_DERIVED_MAX_QUERYABLES=2 but NROS_RESOLVED_NROS_MAX_QUERYABLES=4`),
+and so does `board-build`. The right fix is nano-ros's: skip a publisher
+the model lists under `externals`. The POSIX pools follow nano-ros's own
+formula for 7 subscribers and 4 queryables: 7 + 4 + 24 + 4 = 39 mutexes,
+7 + 4 + 2 + 4 = 17 conds (stated, because nano-ros re-takes that floor only
+for a derived table).
+
+**QEMU, heap on the lever, conf stack** (`CONFIG_NROS_ZEPHYR_HEAP_SIZE`
+122,880 and 1,048,576, main stack 16,384; `build-qemu-w8a`,
+`build-qemu-w8a-1m`):
+
+               FLASH:      581764 B         4 MB     13.87%
+                 RAM:      391156 B         4 MB      9.33%
+    stage      6  FirstSpin -- registration complete and spinning
+      arena used                    11680   (32.5%)
+      platform heap PEAK            75760 bytes   (61.4% of the heap)
+      platform heap capacity        123392 bytes   (NROS_ZEPHYR_HEAP_SIZE)
+    HEAP HEADROOM: ok -- 47632 bytes spare (peak 75760 of 123392, floor 24576).
+      CONFIG_NROS_ZEPHYR_HEAP_SIZE could go as low as 100336 on this
+
+Four FirstSpin runs, peak 75,760 / 74,856 / 76,080 B at the 122,880 heap
+(`qemu-20260929T092349`, `T092558`, `T092841`) and 75,736 B at 1 MiB
+(`T101644`): the peak does not grow with the heap. Against W1's 109,376 B
+at the same heap, the demo image needs 33,296 B less at the first spin (against the largest of the four).
+The same image at 122,880 links 41,472 B smaller in RAM than W1's (391,156
+against 432,628). The host saw the three nodes:
+
+    == +15 s
+    /mrm_comfortable_stop_operator
+    /mrm_emergency_stop_operator
+    /mrm_handler
+
+**The heap value.** The headroom rule asks for peak + 24,576 floor; the
+largest of the four asks for >= 100,656, and rounded up to 4 KiB that is
+**102,400**, now the value in both confs (was 94,208).
+
+**QEMU at the conf values** (heap 102,400, main stack 16,384;
+`build-qemu-w8a`, `qemu-20260929T111152.*`):
+
+               FLASH:      581764 B         4 MB     13.87%
+                 RAM:      370676 B         4 MB      8.84%
+    stage      6  FirstSpin -- registration complete and spinning
+      arena used                    11680   (32.5%)
+      platform heap PEAK            75720 bytes   (73.6% of the heap)
+      platform heap capacity        102912 bytes   (NROS_ZEPHYR_HEAP_SIZE)
+    HEAP HEADROOM: ok -- 27192 bytes spare (peak 75720 of 102912, floor 24576).
+
+and `ros2 node list` on domain 10 at +15 s lists the three nodes.
+
+**The S32K344 board image** (`just BOARD_BUILD_DIR=build-board-w8a
+board-build`, island-serial, heap 102,400, trace buffer 16,384, not
+flashed; twice, the same table: the first pass refused on the
+MAX_QUERYABLES line, the second, with the tolerance, exits 0 and prints
+`board-build: tolerating the known upstream SUBSCRIBED_TYPE_BOUNDS line
+(phase-412 W4) and the stated MAX_QUERYABLES=4 (phase8-W8a); nothing else
+is red.`):
+
+    Memory region         Used Size  Region Size  %age Used
+          IVT_HEADER:         256 B        256 B    100.00%
+               FLASH:      606952 B    4144896 B     14.64%
+                 RAM:      277208 B       320 KB     84.60%
+                ITCM:       10996 B        64 KB     16.78%
+                DTCM:       62872 B       128 KB     47.97%
+            IDT_LIST:           0 B        32 KB      0.00%
+
+Against W1's 288,792 B at the 94,208 heap: 11,584 B less SRAM with an
+8,192 B larger heap, 50,472 B free. DTCM (the relocated executor storage)
+drops 21,656 B and ITCM (the node bodies) 3,112 B.
+
+**Before and after:**
+
+| | W1 (HEAD 55a65a4) | W8a |
+|---|---|---|
+| nodes | 4 | 3 |
+| entities (inventory) | 33, 14 publishers | 23, 9 publishers (22 and 8 in the image) |
+| queryables | 7 | 4 |
+| heap PEAK at FirstSpin (QEMU) | 109,376 | 74,856-76,080 (5 runs) |
+| `CONFIG_NROS_ZEPHYR_HEAP_SIZE` | 94,208 (FirstSpin needs a lever) | 102,400 (headroom ok at the conf) |
+| board SRAM | 288,792 (88.13 %) | 277,208 (84.60 %) |
+
+**Not measured here: nano-ros W4** (graph discovery off, D9). Its pin has
+not landed; it removes the liveliness subscriber and the graph cache
+(`CONFIG_NROS_GRAPH_CACHE_SIZE=4096` of .bss), so it lowers both numbers
+further. Re-measure the peak when it does.
+
+**Open: the island leaves the graph when a host peer joins** (QEMU,
+plain `rmw_zenohd`, no liveliness ACL). The three nodes are listed at
++15 s and gone at +30 s, +45 s, +60 s and +75 s, at the 122,880 heap and at
+1 MiB alike, and with the old 70/48 POSIX pools too, so it is neither the
+heap nor this unit's pools. The router's transport log names the moment
+(`qemu-20260929T093106.router.log`, `RUST_LOG=zenoh_transport=debug`):
+0.15 s after the host's `ros2 node list` peer opened its session, the
+island sent a fresh `InitSyn` on its live transport and the router closed
+it:
+
+    01:31:32.300 New transport opened between 45dfebbe... and 47298e3e... - whatami: router
+    01:31:32.453 Transport: 4b294cb1.... Message handling not implemented: TransportMessage { body: InitSyn(InitSyn { version: 9, whatami: Client, ...
+    01:31:32.453 [47298e3e...] Closing transport with peer: 4b294cb1...
+
+No console line, no heap exhaustion (fatal in this image), and the island
+does not reconnect within the run. `qemu-run`'s own single query at half
+the bound races the drop, which is why some runs list the nodes and some
+do not. On the board the W2 gateway keeps liveliness away from the
+island, and W4 turns discovery off; this was not run against HEAD.
+
+**Regression, W7's acts on native_sim** (`tools/timeline/run-native.sh`,
+one run each, sequential, under the demo lock, load 16-27 at the start;
+the declared side from play_launch 92043c82):
+
+    VERDICT: PASS a: v at the fault 3.90 m/s; TOR on True, TOR now 1, control mode 4, mrm (1, 1)
+    VERDICT: PASS b: v at the fault 3.86 m/s; TOR on True, mrm (3, 3) (3 = COMFORTABLE_STOP), v 0.000
+    VERDICT: PASS encore: v at the fault 3.87 m/s; mrm (3, 2) (2 = EMERGENCY_STOP), v 0.000, after restore mrm (1, 1)
+
+In w8a-b the `windows` row reads 10,156.01 ms against the declared
+10,110.00 (the window expires on the handler's tick; W7's open item, not
+this change). The encore's last sample to braking command is 594.00 ms
+against 643.33 (W7: 547-570). `trace-check` reports FAIL on each single
+act, because it requires every marker in one trace and each act takes one
+branch: A misses the 8 comfortable-stop markers, B only the 2 `driver_exit`
+markers A records, so the three together see all 29. B publishes
+`clear_velocity_limit` when its closing odd-enter cancels the stop, which
+is the reason that publisher stays.

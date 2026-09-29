@@ -148,6 +148,9 @@ paths:
 
 nodes:
   # ---- the island (the island contract, plus the takeover deltas) ----------
+  # phase8-W8a: the handler's gear pass-through, turn-indicator and
+  # emergency-holding endpoints are out of the island image, as in
+  # src/safety_island_bringup/launch/safety_island.contract.yaml.
   mrm_handler:
     params:
       update_rate: { type: integer }
@@ -173,10 +176,7 @@ nodes:
         output:
           - mrm_state
           - takeover_request_state
-          - turn_indicators_cmd
           - hazard_lights_cmd
-          - gear_cmd_out
-          - emergency_holding
         max_latency: 100ms
       # The reaction: the value fault and the silence fault both start it.
       # It enters the takeover request, calls an operator, or both, and the
@@ -210,16 +210,12 @@ nodes:
       control_mode: { min_rate_hz: 10, qos: { depth: 1 } }
       comfortable_stop_status: { min_rate_hz: 10, qos: { depth: 1 } }
       emergency_stop_status: { min_rate_hz: 10, qos: { depth: 1 } }
-      gear_cmd_in: { min_rate_hz: 10, qos: { depth: 1 } }
       operation_mode_state: { min_rate_hz: 10, qos: { depth: 1 } }
     pub:
       mrm_state: { min_rate_hz: 10, qos: { durability: volatile } }
       # MrmBehaviorStatus reused: AVAILABLE = idle, OPERATING = request on.
       takeover_request_state: { min_rate_hz: 10, qos: { durability: volatile } }
-      gear_cmd_out: { min_rate_hz: 10, qos: { durability: volatile } }
       hazard_lights_cmd: { min_rate_hz: 10, qos: { durability: volatile } }
-      turn_indicators_cmd: { min_rate_hz: 10, qos: { durability: volatile } }
-      emergency_holding: { min_rate_hz: 10, qos: { durability: volatile } }
 
   mrm_comfortable_stop_operator:
     params:
@@ -355,11 +351,6 @@ topics:
     external: pub
     sub: [mrm_handler/kinematic_state]
     rate_hz: 10
-  /control/command/gear_cmd:
-    type: autoware_vehicle_msgs/msg/GearCommand
-    external: pub
-    sub: [mrm_handler/gear_cmd_in]
-    rate_hz: 10
   /api/operation_mode/state:
     type: autoware_adapi_v1_msgs/msg/OperationModeState
     external: pub
@@ -373,22 +364,10 @@ topics:
     type: autoware_adapi_v1_msgs/msg/MrmState
     external: sub
     pub: [mrm_handler/mrm_state]
-  /system/emergency/gear_cmd:
-    type: autoware_vehicle_msgs/msg/GearCommand
-    external: sub
-    pub: [mrm_handler/gear_cmd_out]
   /system/emergency/hazard_lights_cmd:
     type: autoware_vehicle_msgs/msg/HazardLightsCommand
     external: sub
     pub: [mrm_handler/hazard_lights_cmd]
-  /system/emergency/turn_indicators_cmd:
-    type: autoware_vehicle_msgs/msg/TurnIndicatorsCommand
-    external: sub
-    pub: [mrm_handler/turn_indicators_cmd]
-  /system/fail_safe/emergency_holding:
-    type: tier4_system_msgs/msg/EmergencyHoldingState
-    external: sub
-    pub: [mrm_handler/emergency_holding]
 
 services:
   /system/mrm/comfortable_stop/operate:

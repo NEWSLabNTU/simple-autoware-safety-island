@@ -28,11 +28,11 @@ DRIVER_RESPONSE = '/demo/driver/response'
 GRAPH_EVENT = '/demo/graph/event'
 
 # The island's nodes, as `ros2 node list` shows them (root namespace).
+# Three since phase8-W8a: stop_mode_operator left the image (decision D4).
 ISLAND_NODES = (
     '/mrm_handler',
     '/mrm_comfortable_stop_operator',
     '/mrm_emergency_stop_operator',
-    '/stop_mode_operator',
 )
 
 

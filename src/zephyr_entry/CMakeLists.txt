@@ -127,7 +127,6 @@ endif()
 add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../island_interfaces" island_interfaces)
 add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../autoware_mrm_emergency_stop_operator" autoware_mrm_emergency_stop_operator)
 add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../autoware_mrm_comfortable_stop_operator" autoware_mrm_comfortable_stop_operator)
-add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../autoware_stop_mode_operator" autoware_stop_mode_operator)
 add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../autoware_mrm_handler" autoware_mrm_handler)
 
 # Relocate the entry's .bss into DTCM. The S32K344 has 64 KiB ITCM + 128 KiB
@@ -190,7 +189,6 @@ zephyr_code_relocate(LIBRARY app LOCATION DTCM_BSS)
 # See docs/tcm-relocation.md -- reading only mr_canhubk3.dts suggests otherwise
 # and is wrong.
 zephyr_code_relocate(LIBRARY mrm_handler_lib                   LOCATION ITCM_TEXT)
-zephyr_code_relocate(LIBRARY stop_mode_operator_lib            LOCATION ITCM_TEXT)
 zephyr_code_relocate(LIBRARY mrm_emergency_stop_operator_lib   LOCATION ITCM_TEXT)
 zephyr_code_relocate(LIBRARY mrm_comfortable_stop_operator_lib LOCATION ITCM_TEXT)
 

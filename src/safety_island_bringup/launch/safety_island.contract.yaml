@@ -39,10 +39,30 @@
 # image (the vehicle, Autoware proper); `external: sub` means the consumer does.
 # Only two topics here are internal to the island, both MRM status reports.
 #
-# Rates are each node's own `update_rate`/`rate` parameter -- 10 Hz for
+# Rates are each node's own `update_rate` parameter -- 10 Hz for
 # mrm_comfortable_stop_operator and mrm_handler, 30 Hz for
-# mrm_emergency_stop_operator and stop_mode_operator -- not numbers invented to
-# satisfy the mapper.
+# mrm_emergency_stop_operator -- not numbers invented to satisfy the mapper.
+#
+# WHAT THE IMAGE LEAVES OUT (phase8-W8a). The island is sized for the RTSS@Work
+# demo, not as a complete safety island: every endpoint below has a reader in
+# the demo or a place in a hazard's walk. Out, with the reader checked in the
+# Autoware 1.5.0 source first (docs/roadmap/phase-8-rtss-work-demo.md, W8a):
+#   stop_mode_operator, whole (decision D4): launched in 1.5.0 only with the
+#     control-command gate; the demo runs vehicle_cmd_gate; nothing reads
+#     /system/stop_mode/*; its three 30 Hz inputs crossed the link for nothing.
+#   mrm_handler /system/emergency/gear_cmd and its /control/command/gear_cmd
+#     pass-through input, /system/emergency/turn_indicators_cmd: read only by
+#     vehicle_cmd_gate, and only while mrm_state says EMERGENCY_STOP; with no
+#     sample the gate holds the gear and indicator it last sent
+#     (getContinuousTopic), which is DRIVE and the planner's indicator, the
+#     same values the island sent (use_parking_after_stopped: false).
+#   mrm_handler /system/fail_safe/emergency_holding: read only by the host's
+#     hazard_status_converter (demo/host_ws remap, gap G10), which reads a
+#     missing sample as false, the only value the island could send with
+#     use_emergency_holding: false.
+# Kept although the simulator never shows it: /system/emergency/hazard_lights_cmd,
+# read by the demo's hazard_relay (branch B), by vehicle_cmd_gate in the
+# encore, and by the timeline probe.
 #
 # TIMERS ARE HERE, under each node's `paths:`. This file once said they could
 # not be expressed and that `ENTITIES` had to survive to carry them. That was
@@ -433,8 +453,9 @@ nodes:
       emergency_control_cmd: { min_rate_hz: 30, qos: { durability: volatile } }
       status: { min_rate_hz: 30, qos: { durability: volatile } }
 
-  # The arbiter. Seven subscriptions -- `operation_mode_state` is the one the
-  # CMakeLists list omitted.
+  # The arbiter. Six subscriptions since phase8-W8a dropped the gear
+  # pass-through (seven before; `operation_mode_state` is the one the old
+  # CMakeLists list omitted).
   mrm_handler:
     params:
       update_rate: { type: integer }
@@ -455,18 +476,15 @@ nodes:
       comfortable_stop_operate: {}
       emergency_stop_operate: {}
     paths:
-      # `onTimer` -> publishMrmState / TakeoverRequestState /
-      # TurnIndicatorCmd / HazardCmd / GearCmd / EmergencyHolding, in that
-      # order.
+      # `onTimer` -> publishMrmState / TakeoverRequestState / HazardCmd, in
+      # that order (phase8-W8a dropped TurnIndicatorCmd, GearCmd and
+      # EmergencyHolding; see the head of this file).
       on_timer:
         trigger: { timer: { rate_hz: 10 } }
         output:
           - mrm_state
           - takeover_request_state
-          - turn_indicators_cmd
           - hazard_lights_cmd
-          - gear_cmd_out
-          - emergency_holding
         # One tick of `update_rate: 10`. A timer callback that has not
         # finished when the next tick is due is late by any definition, so
         # the period is the budget; it is not a new number.
@@ -530,7 +548,6 @@ nodes:
       control_mode: { min_rate_hz: 10, qos: { depth: 1 } }
       comfortable_stop_status: { min_rate_hz: 10, qos: { depth: 1 } }
       emergency_stop_status: { min_rate_hz: 10, qos: { depth: 1 } }
-      gear_cmd_in: { min_rate_hz: 10, qos: { depth: 1 } }
       operation_mode_state: { min_rate_hz: 10, qos: { depth: 1 } }
     pub:
       # VOLATILE, stated on every publisher of the island (phase7-W8). The
@@ -545,34 +562,7 @@ nodes:
       # phase8-W7: MrmBehaviorStatus reused. AVAILABLE = idle, OPERATING =
       # the request is on, NOT_AVAILABLE = use_takeover_request is false.
       takeover_request_state: { min_rate_hz: 10, qos: { durability: volatile } }
-      gear_cmd_out: { min_rate_hz: 10, qos: { durability: volatile } }
       hazard_lights_cmd: { min_rate_hz: 10, qos: { durability: volatile } }
-      turn_indicators_cmd: { min_rate_hz: 10, qos: { durability: volatile } }
-      emergency_holding: { min_rate_hz: 10, qos: { durability: volatile } }
-
-  stop_mode_operator:
-    params:
-      rate: { type: double }
-      stop_hold_acceleration: { type: double }
-      enable_auto_parking: { type: bool }
-    paths:
-      # `on_timer` -> publish_control_command / gear_command /
-      # turn_indicators_command / hazard_lights_command.
-      on_timer:
-        trigger: { timer: { rate_hz: 30 } }
-        output: [control, gear, turn_indicators, hazard_lights]
-    sub:
-      steering_status: { min_rate_hz: 30, qos: { depth: 1 } }
-      velocity_status: { min_rate_hz: 30, qos: { depth: 1 } }
-      route_state: { min_rate_hz: 30, qos: { depth: 1 } }
-    pub:
-      control: { min_rate_hz: 30, qos: { durability: volatile } }   # QoS(5), volatile
-      # The three below are TRANSIENT_LOCAL in the source (durable_qos): a
-      # gear or light command is latched. Same reason as the comfortable-stop
-      # operator's: the retention pool is derived from stated durability.
-      gear: { min_rate_hz: 30, qos: { depth: 1, durability: transient_local } }
-      hazard_lights: { min_rate_hz: 30, qos: { depth: 1, durability: transient_local } }
-      turn_indicators: { min_rate_hz: 30, qos: { depth: 1, durability: transient_local } }
 
 # The reactions, as scope paths from the guarded input to the topic that
 # commits each rung. What each rung COSTS is the reaction walk the hazards
@@ -649,31 +639,11 @@ topics:
     external: pub
     sub: [mrm_handler/control_mode]
     rate_hz: 10
-  /control/command/gear_cmd:
-    type: autoware_vehicle_msgs/msg/GearCommand
-    external: pub
-    sub: [mrm_handler/gear_cmd_in]
-    rate_hz: 10
   /api/operation_mode/state:
     type: autoware_adapi_v1_msgs/msg/OperationModeState
     external: pub
     sub: [mrm_handler/operation_mode_state]
     rate_hz: 10
-  /vehicle/status/steering_status:
-    type: autoware_vehicle_msgs/msg/SteeringReport
-    external: pub
-    sub: [stop_mode_operator/steering_status]
-    rate_hz: 30
-  /vehicle/status/velocity_status:
-    type: autoware_vehicle_msgs/msg/VelocityReport
-    external: pub
-    sub: [stop_mode_operator/velocity_status]
-    rate_hz: 30
-  /planning/route_state:
-    type: autoware_planning_msgs/msg/RouteState
-    external: pub
-    sub: [stop_mode_operator/route_state]
-    rate_hz: 30
 
   # --- produced by the island, consumed outside it --------------------------
   /planning/scenario_planning/max_velocity_candidates:
@@ -703,46 +673,11 @@ topics:
     external: sub
     pub: [mrm_handler/takeover_request_state]
     rate_hz: 10
-  /system/emergency/gear_cmd:
-    type: autoware_vehicle_msgs/msg/GearCommand
-    external: sub
-    pub: [mrm_handler/gear_cmd_out]
-    rate_hz: 10
   /system/emergency/hazard_lights_cmd:
     type: autoware_vehicle_msgs/msg/HazardLightsCommand
     external: sub
     pub: [mrm_handler/hazard_lights_cmd]
     rate_hz: 10
-  /system/emergency/turn_indicators_cmd:
-    type: autoware_vehicle_msgs/msg/TurnIndicatorsCommand
-    external: sub
-    pub: [mrm_handler/turn_indicators_cmd]
-    rate_hz: 10
-  /system/fail_safe/emergency_holding:
-    type: tier4_system_msgs/msg/EmergencyHoldingState
-    external: sub
-    pub: [mrm_handler/emergency_holding]
-    rate_hz: 10
-  /system/stop_mode/control:
-    type: autoware_control_msgs/msg/Control
-    external: sub
-    pub: [stop_mode_operator/control]
-    rate_hz: 30
-  /system/stop_mode/gear:
-    type: autoware_vehicle_msgs/msg/GearCommand
-    external: sub
-    pub: [stop_mode_operator/gear]
-    rate_hz: 30
-  /system/stop_mode/hazard_lights:
-    type: autoware_vehicle_msgs/msg/HazardLightsCommand
-    external: sub
-    pub: [stop_mode_operator/hazard_lights]
-    rate_hz: 30
-  /system/stop_mode/turn_indicators:
-    type: autoware_vehicle_msgs/msg/TurnIndicatorsCommand
-    external: sub
-    pub: [stop_mode_operator/turn_indicators]
-    rate_hz: 30
 
 # The two MRM operate services. `mrm_handler` is the arbiter: it decides which
 # behaviour to run and calls the operator that runs it. Both sides are on this
