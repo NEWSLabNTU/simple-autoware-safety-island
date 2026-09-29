@@ -10,6 +10,7 @@ Design: `docs/roadmap/phase-8-rtss-work-demo.md` (D2, D3, D5). Recipes:
 | `takeover_demo/` | the host-side ROS 2 package (ament_python) and its launch contract | W3 |
 | `router/` | the island gateway router (`just l3-peer`) | W2 |
 | `contracts/` | the demo contract with the four new keys | W6 |
+| `ORIN.md` | the booth HPC (NVIDIA Orin, arm64): feasibility, the multi-arch image (unbuilt), the rehearsal checklist | W21 |
 
 ## Run it
 
@@ -47,7 +48,9 @@ l3-autoware` (`run.sh` passes both through), with another `ROS_DOMAIN_ID`.
 
 ## The container (`container/`)
 
-`ros:humble-ros-base-jammy`, then, following autosdv's desktop image
+`ros:humble-ros-base-jammy` (pinned by its multi-arch index digest since
+W21; amd64 and arm64 from one Dockerfile, the arm64 side unbuilt: see
+`ORIN.md`), then, following autosdv's desktop image
 (NEWSLabNTU/autosdv@6e7b709 `docker/desktop/`,
 `setup/scripts/install-autoware-debian.sh`):
 

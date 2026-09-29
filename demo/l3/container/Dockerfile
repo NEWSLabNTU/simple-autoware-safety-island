@@ -34,8 +34,33 @@
 # models nothing here loads), TurboVNC (RViz runs on the host over zenoh; the
 # container can also draw into the host's X/VNC display through the socket),
 # and loopback multicast (zenoh does not scout).
+#
+# Two architectures (phase8-W21): amd64 (the demo host, measured) and arm64
+# (the booth HPC, an NVIDIA Orin; UNBUILT AND UNTESTED as of 2026-09-29).
+# BuildKit sets TARGETARCH; the stage that differs per architecture picks the
+# localrepo .deb and the pinned rmw_zenoh build stamps from it, and fails on
+# any other value. Nothing else in the image is architecture-specific: the
+# base is a multi-arch index, the TensorRT stub is Architecture: all, the
+# overlay is launch files and Python, play_launch has an aarch64 wheel.
+#
+#   docker build -f demo/l3/container/Dockerfile -t sai-l3-autoware:1.5.0 .
+#       native: amd64 here, arm64 on the Orin (build it ON the Orin)
+#   just l3-container-arm64
+#       arm64 on an x86 host under QEMU binfmt (slow; nothing real-time)
+#
+# The arm64 path keeps the same stub as amd64 in place of CUDA/TensorRT: the
+# image runs on the Orin's CPU only, exactly as the planning simulator runs
+# here. demo/l3/ORIN.md has the feasibility evidence and the rehearsal
+# checklist.
 
-ARG BASE_IMAGE=ros:humble-ros-base-jammy
+# The multi-arch INDEX digest of ros:humble-ros-base-jammy the amd64 image
+# was built from (osrf/docker_images 20e3ba6, 2026-09-09; its amd64 variant
+# carries ros-humble-rclcpp 16.0.19-1jammy.20260724). Pinned because the tag
+# moves: ROS apt now serves rclcpp 16.0.21 on both architectures, and a
+# rebuilt base would fail the rclcpp version check in the demo stage. The
+# arm64 variant of this index comes from the same osrf revision and build
+# day; its rclcpp version is not verified (the check will say).
+ARG BASE_IMAGE=ros:humble-ros-base-jammy@sha256:1813d3c85d7f96ff7d3012d865204583255740182db5d0065f8f8cd029a83138
 
 # ===========================================================================
 # rclcpp 16.0.19 (the version ROS apt ships, checked below) with one patch:
@@ -49,6 +74,9 @@ ARG BASE_IMAGE=ros:humble-ros-base-jammy
 # silent after a re-route (demo/l3/README.md, trap 2b). Built alone, dropped
 # over the packaged library in the demo stage (dpkg-divert); the patch
 # touches executor.cpp only, so the library's ABI is unchanged.
+# Architecture-neutral: built from source for whatever TARGETARCH is. (The
+# patch also applies cleanly to 16.0.21, whose executor.cpp is identical;
+# neither 16.0.20 nor 16.0.21 fixes #2445, which is still open.)
 FROM ${BASE_IMAGE} AS rclcpp
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ARG RCLCPP_VERSION=16.0.19
@@ -69,6 +97,15 @@ FROM ${BASE_IMAGE} AS autoware
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8 LC_ALL=C.UTF-8
 
+# Set by BuildKit from --platform (or the builder's own architecture). Empty
+# under the legacy builder: the RUNs below then refuse to guess.
+ARG TARGETARCH
+RUN case "${TARGETARCH}" in amd64|arm64) ;; \
+        *) echo "TARGETARCH='${TARGETARCH}': build with BuildKit for linux/amd64 or linux/arm64" >&2; exit 1;; \
+    esac; \
+    [ "$(dpkg --print-architecture)" = "${TARGETARCH}" ] \
+    || { echo "base image is $(dpkg --print-architecture), TARGETARCH is ${TARGETARCH}" >&2; exit 1; }
+
 # aria2 earns its place as in autosdv: the release host throttles per
 # connection (autosdv measured wget 383 KB/s against aria2c 2905 KB/s on this
 # exact URL). equivs builds the TensorRT stub below. gosu/sudo are the
@@ -85,6 +122,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Packages file. None of the 68 composables the planning simulator loads links
 # a TensorRT library (brief A, play_log), so the dependency is packaging only.
 # The real runtime libs are 2.5-4.4 GB installed; this is 0.
+# Both architectures: equivs builds it Architecture: all, which satisfies an
+# arm64 Depends as well; the JetPack 6.2 pool depends on the same three
+# unversioned names from the same five packages as the amd64 pool (W21,
+# compared index to index). On the Orin, JetPack's real TensorRT lives on
+# the HOST; this image neither sees nor needs it.
 RUN mkdir /tmp/stub && cd /tmp/stub \
     && printf '%s\n' \
         'Section: misc' 'Priority: optional' 'Standards-Version: 3.9.2' \
@@ -117,13 +159,25 @@ RUN mkdir /tmp/stub && cd /tmp/stub \
 # zenoh-pico talk to it unchanged. Exact strings: when a rebuild replaces
 # them the build fails HERE, loudly, and the ARGs are the one place to move
 # (once 0.1.10 syncs to main, drop the testing source).
-ARG RMW_ZENOH_VERSION=0.1.10-1jammy.20260915.210859
-ARG ZENOH_VENDOR_VERSION=0.1.10-1jammy.20260915.201617
-RUN sed 's#/ros2/ubuntu#/ros2-testing/ubuntu#' \
+#
+# The build stamp differs per architecture (the buildfarm builds each on its
+# own; ros2-testing jammy binary-{amd64,arm64}/Packages, read 2026-09-29).
+# The testing source is the ros2 source with its URI changed; it names no
+# architecture, so apt reads the TARGETARCH index (ports.ubuntu.com serves
+# the Ubuntu side of an arm64 base; the ROS side is one host for both).
+ARG RMW_ZENOH_VERSION_AMD64=0.1.10-1jammy.20260915.210859
+ARG ZENOH_VENDOR_VERSION_AMD64=0.1.10-1jammy.20260915.201617
+ARG RMW_ZENOH_VERSION_ARM64=0.1.10-1jammy.20260916.050325
+ARG ZENOH_VENDOR_VERSION_ARM64=0.1.10-1jammy.20260916.042209
+RUN case "${TARGETARCH}" in \
+        amd64) rmw=${RMW_ZENOH_VERSION_AMD64}; vendor=${ZENOH_VENDOR_VERSION_AMD64};; \
+        arm64) rmw=${RMW_ZENOH_VERSION_ARM64}; vendor=${ZENOH_VENDOR_VERSION_ARM64};; \
+    esac \
+    && sed 's#/ros2/ubuntu#/ros2-testing/ubuntu#' \
         /etc/apt/sources.list.d/ros2.sources > /etc/apt/sources.list.d/ros2-testing.sources \
     && apt-get update && apt-get install -y --no-install-recommends \
-        ros-humble-rmw-zenoh-cpp=${RMW_ZENOH_VERSION} \
-        ros-humble-zenoh-cpp-vendor=${ZENOH_VENDOR_VERSION} \
+        ros-humble-rmw-zenoh-cpp="$rmw" \
+        ros-humble-zenoh-cpp-vendor="$vendor" \
     && apt-mark hold ros-humble-rmw-zenoh-cpp ros-humble-zenoh-cpp-vendor \
     && rm /etc/apt/sources.list.d/ros2-testing.sources \
     && rm -rf /var/lib/apt/lists/*
@@ -148,11 +202,25 @@ RUN sed 's#/ros2/ubuntu#/ros2-testing/ubuntu#' \
 # setup-prerequisites.sh and activate-dds-config.sh are NOT run: the first
 # installs ROS (present) and TensorRT (stubbed), the second configures
 # CycloneDDS sysctls this image does not use.
+#
+# Per architecture (release 1.5.0-2, SHA256SUMS.txt): the ubuntu2204 .deb is
+# the amd64 pool, the jetpack62 .deb the arm64 one (built on
+# nvcr.io/nvidia/l4t-tensorrt:r10.3.0-devel, JetPack 6.2 / L4T r36.4, but
+# installable on plain jammy arm64: the same 459 package names, 453 arm64 +
+# 6 all, and every Depends name of the install set resolves against Ubuntu
+# jammy arm64 + ROS apt + the stub; W21, from the pool's own Packages file).
+# Both are "_all.deb" wrappers; the architecture is inside.
 ARG AW_RELEASE=1.5.0-2
-ARG AW_DEB=autoware-localrepo-1-5-0_1.5.0-2ubuntu2204_all.deb
-ARG AW_SHA256=f8e2d1d2f43d7a7186b7fbcd391b473783d1ef9cd131a12bfea898255d450acb
+ARG AW_DEB_AMD64=autoware-localrepo-1-5-0_1.5.0-2ubuntu2204_all.deb
+ARG AW_SHA256_AMD64=f8e2d1d2f43d7a7186b7fbcd391b473783d1ef9cd131a12bfea898255d450acb
+ARG AW_DEB_ARM64=autoware-localrepo-1-5-0_1.5.0-2jetpack62_all.deb
+ARG AW_SHA256_ARM64=e3187ca5a7e175aaabd239b5056d7ec1fb6eba92f6c232f8be67ee9958a6a064
 ARG AW_URL=https://github.com/NEWSLabNTU/autoware-localrepo/releases/download
 RUN --mount=type=cache,target=/var/cache/autoware-localrepo,sharing=locked \
+    case "${TARGETARCH}" in \
+        amd64) AW_DEB=${AW_DEB_AMD64}; AW_SHA256=${AW_SHA256_AMD64};; \
+        arm64) AW_DEB=${AW_DEB_ARM64}; AW_SHA256=${AW_SHA256_ARM64};; \
+    esac; \
     deb=/var/cache/autoware-localrepo/${AW_DEB}; \
     if [ -f "$deb" ] && echo "${AW_SHA256}  $deb" | sha256sum -c --status; then \
         echo "localrepo: cached $deb (sha256 ok)"; \

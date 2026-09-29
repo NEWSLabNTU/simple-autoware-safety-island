@@ -109,6 +109,23 @@ l3-container:
     echo "l3-container: {{L3_IMAGE}} in $(( $(date +%s) - start )) s, $(docker image inspect -f '{{{{.Size}}' {{L3_IMAGE}} | awk '{printf "%.2f GB", $1/1e9}')"
     docker image prune -f --filter label=org.newslab.sai.image=l3-autoware
 
+# The same image for arm64 (the booth Orin) on an x86 host, under QEMU binfmt
+# (qemu-aarch64 registered with the F flag). UNBUILT as of 2026-09-29; expect
+# hours (the rclcpp stage compiles under emulation) and nothing real-time
+# from the result. On the Orin itself run plain `just l3-container`: BuildKit
+# picks arm64 natively. demo/l3/ORIN.md.
+
+# Build the arm64 (Orin) image on this x86 host under QEMU (unbuilt, slow). phase8-W21
+l3-container-arm64 tag="sai-l3-autoware:1.5.0-arm64":
+    #!/usr/bin/env bash
+    set -eo pipefail
+    grep -q '^flags: .*F' /proc/sys/fs/binfmt_misc/qemu-aarch64 2>/dev/null \
+        || { echo "l3-container-arm64: no qemu-aarch64 binfmt with the F flag; see demo/l3/ORIN.md"; exit 1; }
+    start=$(date +%s)
+    DOCKER_BUILDKIT=1 setsid ionice -c2 -n7 docker build --platform linux/arm64 \
+        -f demo/l3/container/Dockerfile -t {{tag}} .
+    echo "l3-container-arm64: {{tag}} in $(( $(date +%s) - start )) s, $(docker image inspect -f '{{{{.Architecture}} {{{{.Size}}' {{tag}} | awk '{printf "%s %.2f GB", $1, $2/1e9}')"
+
 # Build the demo overlay + takeover_demo on the host (build/l3-host-ws). phase8-W3
 l3-host-ws:
     env -i HOME="$HOME" USER="$USER" PATH=/usr/bin:/bin:$HOME/.local/bin bash -c 'source /opt/ros/humble/setup.bash && source /opt/autoware/1.5.0/setup.bash >/dev/null 2>&1 && colcon --log-base {{L3_HOST_WS}}/log build --base-paths demo/host_ws/src demo/l3/takeover_demo --build-base {{L3_HOST_WS}}/build --install-base {{L3_HOST_WS}}/install --merge-install'
