@@ -412,6 +412,23 @@ the others by fast-forward push once implementation starts.
   drops its zenoh session when a host peer joins a plain router (QEMU,
   any heap); nano-ros should skip `externals` publishers; W4 not yet
   measured; the board's own heap reading.
+- **W16 - the availability gate does not stall.** Status (2026-09-29):
+  docs/takeover-trace.md, section 7. The W7 rclpy gate's silences
+  (582-1134 ms; b3, b4, w12-b2) were its executor thread blocked in the
+  kernel on file writes (a count file rewritten every tick; ext4 flushes a
+  truncated file on close), not the CPU run queue, not Autoware's converter
+  and not DDS. Replaced by `demo/host_ws/src/availability_gate` (C++,
+  rclcpp): 10 Hz timer republishing the latest raw sample while younger than
+  1 s, no file I/O on the executor thread (writer thread; count record on
+  /dev/shm), mlockall, SCHED_FIFO through `gate-rt` when `ulimit -r`
+  allows (0 for this user: needs a limits.d rtprio entry). Same topics, node
+  name, SIGUSR1/SIGUSR2, SIGSTOP/SIGCONT. Load test, 600 s at a 1-min load
+  held near 50 (37.6-62.3, median 51.8): largest publish gap 122.46 ms
+  (rclpy gate in the same run: 937.62 ms). Branch B 4/5; the FAIL (w16-b3)
+  had a 106 ms longest gap and escalated because Autoware's
+  `comfortable_stop` availability dropped when `/planning/trajectory`
+  exceeded its 1 s topic timeout. Open: the L3 container still launches
+  W3's Python gate; the planner's rate under load.
 - **W9 - the booth.** Poster, the two-minute script, the fallback
   (native_sim with the identical plot), a recorded run.
 - **W11 - the container start flake.** Root cause, fix at the right layer,

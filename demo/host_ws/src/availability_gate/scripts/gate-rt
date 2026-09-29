@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# availability_gate under SCHED_FIFO (GATE_RTPRIO, default 20) when the
+# rtprio limit allows it, SCHED_OTHER with a warning when it does not.
+# phase8-W16. The stall this gate fixes was file I/O, not the run queue
+# (docs/takeover-trace.md), so FIFO is margin; it needs `ulimit -r` >= the
+# priority (a limits.d rtprio entry for the user, or the container's
+# --cap-add SYS_NICE --ulimit rtprio=...). GATE_RTPRIO=0 skips it.
+exe="$(dirname "$0")/availability_gate"  # not readlink: --symlink-install links this script into src/
+prio="${GATE_RTPRIO:-20}"
+if [ "$prio" != 0 ]; then
+    if chrt -f "$prio" true 2>/dev/null; then
+        exec chrt -f "$prio" "$exe" "$@"
+    fi
+    echo "gate-rt: SCHED_FIFO $prio not permitted (ulimit -r $(ulimit -r)); running SCHED_OTHER" >&2
+fi
+exec "$exe" "$@"

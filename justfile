@@ -1010,14 +1010,17 @@ _sweep-orphans:
 
 # Build the host_ws overlay: the MRM-shadowed tier4_system_launch that
 # disables Autoware's stock MRM nodes (the domain_bridge checkout is gone —
-# direct connection needs no bridge).
+# direct connection needs no bridge), and the C++ availability gate
+# (phase8-W16), which needs Autoware's tier4_system_msgs. Under `env -i`: the
+# login shell carries another checkout's overlay ahead of /opt/autoware.
 #
-# Build the demo overlay (MRM-shadowed tier4_system_launch).
+# Build the demo overlay (MRM-shadowed tier4_system_launch, availability gate).
 demo-host-ws:
     #!/usr/bin/env bash
     set -e
-    source /opt/ros/humble/setup.bash
-    cd demo/host_ws && colcon build --symlink-install
+    cd demo/host_ws
+    exec env -i HOME="$HOME" USER="$USER" PATH=/usr/bin:/bin:$HOME/.local/bin bash -c \
+        'source /opt/ros/humble/setup.bash && source /opt/autoware/1.5.0/setup.bash >/dev/null 2>&1 && colcon build --symlink-install'
 
 # Inspect the demo graph while `just island` (and/or `just autoware`) runs
 # in another terminal. Env from .envrc; the daemon restart drops the cached

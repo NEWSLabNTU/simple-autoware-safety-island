@@ -16,7 +16,7 @@ Design: `docs/roadmap/phase-8-rtss-work-demo.md`, D7. Results:
 |---|---|
 | `tlcommon.py` | the event schema (module doc), the JSONL writer and tailer, the declared side (resolved SystemModel, the contract sidecar's `when:`/`window:`/`exit:`/`entry_speed`, the `--explain` table parser), the braking-profile arithmetic; `selftest` for CI |
 | `probe.py` | the probe and logger: subscribes to every topic named in a `when:` (types from the resolved model), writes a `predicate` event on each change of truth, plus the samples the lanes and the alignment need |
-| `scenario.py` | `gate`: the availability gate (Autoware's availability on `.../availability_raw` republished at 10 Hz on `/system/operation_mode/availability` with `autonomous &= !odd_exit`); `press <button>` / `buttons` (a window): odd-exit, odd-enter, takeover (MANUAL via `/control/control_mode_request`), hpc-loss (SIGSTOP the gate), hpc-restore; `run a\|b\|encore`: the whole act, scripted, one VERDICT |
+| `scenario.py` | `gate`: execs the availability gate, `demo/host_ws/src/availability_gate` (C++, phase8-W16; Autoware's availability on `.../availability_raw` republished at 10 Hz on `/system/operation_mode/availability` with `autonomous &= !odd_exit`); `press <button>` / `buttons` (a window): odd-exit, odd-enter, takeover (MANUAL via `/control/control_mode_request`), hpc-loss (SIGSTOP the gate), hpc-restore; `run a\|b\|encore`: the whole act, scripted, one VERDICT |
 | `merge.py` | island trace markers onto host CLOCK_MONOTONIC: coarse offset from anchor 1, refined on every publish/receipt pair, checked by anchor 2 (the W3 method, docs/reaction-trace.md) |
 | `analysis.py` | declared against observed for one run: the edges, the observed terms, one verdict per declared bar, the rung the run ended on, the longest availability gap (the `hpc_alive` precondition) |
 | `render.py` | the static PNG of a run for the slides, and `--table` (markdown) |
@@ -65,9 +65,14 @@ A run directory holds `probe.jsonl`, `gate.jsonl`, `scenario.jsonl`,
 
 - On native_sim island durations are simulated time; a callback takes zero
   time (docs/takeover-trace.md, the first paragraph).
-- The gate is a Python process on the host: on a loaded machine it can go
-  silent past the island's 500 ms availability timeout, and the island then
-  rightly raises `hpc_loss` (runs b3, b4). The gate logs `stall` events so
-  the silence can be attributed; run below load ~35.
+- The gate is the C++ node `availability_gate` (phase8-W16), built by
+  `just demo-host-ws` and started through its `gate-rt` wrapper (SCHED_FIFO
+  when `ulimit -r` allows; it is 0 for this user, so SCHED_OTHER). W7's
+  rclpy gate went silent for 250-1134 ms on a loaded host because its
+  executor thread blocked in file writes (docs/takeover-trace.md, section
+  7); the C++ gate does no file I/O on that thread and held its largest
+  publish gap under 150 ms for 10 min at load 100-130. It still logs
+  `stall` events (timer or raw stream more than GATE_STALL_MS late) and a
+  `stats` event with its largest publish gap at exit.
 - `tlcommon.PLAY_LAUNCH_W6` is a local fallback path to a source-built
   play_launch; set `PLAY_LAUNCH_CHECK` elsewhere.

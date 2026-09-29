@@ -197,8 +197,10 @@ SIGSTOP landed 95.01 / 56.53 / 50.24 ms after the gate's last sample.
   Neither is an island fault: the host-side 10 Hz gate is a Python process
   on a machine at load 28-60. The gate now logs `stall` events for its own
   timer and for the raw stream (added after b5); in b7 the 451.87 ms gap is
-  both at once (timer 454.40 ms late, raw stream 474.77 ms late), i.e. host
-  scheduling, not Autoware's converter alone.
+  both at once (timer 454.40 ms late, raw stream 474.77 ms late). That was
+  read as host scheduling; W16 measured it (section 7): it was the gate's
+  own executor thread blocked in a file write, and the C++ gate that
+  replaces it holds 10 Hz at load 100+.
 - **The branch A velocity drop is the simulator.** The planning simulator
   has no driver model: on MANUAL, |v| goes to 0 in one sample. Nothing after
   the MANUAL edge in branch A is vehicle behaviour.
@@ -326,5 +328,141 @@ tools/timeline/run-native.sh b b9        # or a / encore; -> build/timeline/b9/
 python3 tools/timeline/render.py build/timeline/b9 --table
 ```
 
-Run one at a time, and on a host below load ~35: b4 shows what a starved
-gate does.
+Run one at a time. The load-35 rule of W7 was for the rclpy gate; the C++
+gate (section 7) held its 10 Hz at a 1-min load of 100-130.
+
+## 7. The gate stall (phase8-W16)
+
+b3, b4 (W7) and w12-b2 (W12) failed branch B the same way: the host-side
+availability gate went silent for 582-1134 ms, the island rightly raised
+`hpc_loss` and escalated to the emergency stop. W16 measured where the
+silence came from and replaced the gate.
+
+**Where it was: the gate's one executor thread, blocked in the kernel on a
+file write.** Measured with a synthetic 10 Hz `availability_raw` source, the
+W7 rclpy gate unchanged, an external subscriber, and a 5 ms sampler of
+`/proc/<gate>/task/*/{stat,wchan,schedstat}`:
+
+- The load on this host is I/O, not CPU. At a 1-min load of 44-58 the
+  threads were 33-68 in D state and 2-4 runnable; PSI cpu `some` 1.3 %, io
+  `some` 95 % / `full` 81 %.
+- Every gate stall of 100 ms or more was its main (rclpy executor) thread in
+  D state, in `rq_qos_wait`, `folio_wait_bit_common`,
+  `do_get_write_access` or `wait_transaction_locked` (block-layer write
+  throttling, page writeback, the ext4 journal). No thread's `run_delay`
+  grew by 30 ms or more between two samples: the run queue was never the
+  cause.
+- `strace -T` names the call: the gate rewrote `build/timeline/gate.pid.count`
+  on every tick (open O_TRUNC, write, close), and ext4 flushes a file
+  truncated and rewritten on close; that `close()` took 138 ms at load 60,
+  and the sampler saw the same thread 375-2322 ms in D state under stress.
+  The JSONL writes sat on the same thread. While it was blocked, neither the
+  timer nor the raw subscription ran, so both stall markers fired together
+  (b7's 454 / 475 ms): the "raw stream late" half was the gate not reading
+  it. In the same runs an independent subscriber saw the raw source's own
+  largest gap at 110-175 ms.
+- Not Autoware's converter, not DDS: with the raw source regular, the rclpy
+  gate still went silent; the C++ gate on the same DDS config, in the same
+  runs, did not.
+- Start-up is a second, separate hazard: under stress both gates took about
+  200 s to start, blocked opening the rcl log file in `~/.ros/log` (btrfs on
+  the spinning /home disk). `scenario.py gate` now passes
+  `--disable-external-lib-logs`.
+
+**The fix: `demo/host_ws/src/availability_gate`, a C++ rclcpp node** under
+the same node name, topic contract and control interface:
+
+- a 10 Hz wall timer republishes the LATEST raw sample while it is younger
+  than 1.0 s (`raw_max_age_ms`), `autonomous &= !odd_exit`; nothing once it
+  is older. Publishing on its own timer, not per raw sample, stays: the
+  converter's own jitter (b1: 400-704 ms) never reaches the island, and a
+  dead converter still silences the stream 1 s later;
+- no file-system call on the executor thread after start-up: events and
+  console lines go through a queue to a writer thread; the sample count the
+  hpc-loss button reads is a 64-byte record in a MAP_SHARED page on /dev/shm
+  (tmpfs, no writeback), updated by memcpy; its path follows the pid in
+  `build/timeline/gate.pid`;
+- `mlockall(MCL_CURRENT|MCL_FUTURE)` after start-up (RLIMIT_MEMLOCK is 8 GB
+  here), so reclaim cannot turn a callback into a major fault;
+- `gate-rt` runs it under SCHED_FIFO 20 when `ulimit -r` allows, else
+  SCHED_OTHER with a warning. This user's rtprio limit is 0 (only `@audio`
+  has an rtprio entry), so on this host it runs SCHED_OTHER;
+- SIGUSR1 / SIGUSR2 and `/demo/odd/exit` set the ODD flag (applied, and its
+  `odd` event stamped, at the next tick); SIGSTOP / SIGCONT stop and resume
+  every thread, so the HPC-loss act is still true silence (checked: 3.80 s
+  with no sample, the `last` event's n matching the count record); a
+  `stats` event at exit gives the largest publish gap, SIGCONT resumes
+  excluded.
+
+**Load test.** 600 s per gate, counted from its first sample; each gate
+with its own synthetic raw source and domain; the external subscriber is a
+C++ node that keeps receipt times in memory (a Python subscriber stalled on
+its own writes and was dropped after the first try). The host's ROS was
+upgraded at 18:30-18:36 (rclcpp 16.0.19 -> 16.0.21, rmw_zenoh 0.1.10); s2
+and s3 ran before it, s4 after, with the gate rebuilt against 16.0.21.
+
+- s2, s3 (before the upgrade): stress-ng `--cpu 16 --hdd 4 --iomix 4 --vm 2
+  --vm-bytes 2g` on the disk holding the gates' logs, on top of the host's
+  own load. This drove the 1-min load to 100-134, far past the failures'
+  27-56, on a shared host: too much, kept only as a bound.
+- s4 (after the upgrade): the 1-min load held near 50 by nice-19
+  `stress-ng --cpu 1` instances added and removed every 30 s, CPU only, the
+  rest of the load being the host's own (mostly I/O). 1-min load, sampled
+  every 30 s: 37.6 at t+0 s, 44.3-62.3 from t+120 s on, median 51.8.
+
+| run | gate | 1-min load (min / median / max) | largest gap, external | gaps > 150 ms | largest gap, gate's own | stall events |
+|---|---|---|---|---|---|---|
+| s4 | W7 rclpy | 37.6 / 51.8 / 62.3 | 937.62 ms | 1 (1 > 500) | - | 3 |
+| s4 | W16 C++, SCHED_OTHER | same run | 122.46 ms | 0 | 113.67 ms | 0 |
+| s2 | W7 rclpy | 38.8 / 108.9 / 133.9 | 733.42 ms | 81 (9 > 250, 2 > 500) | - | 92 |
+| s2 | W16 C++, SCHED_OTHER | same run | 146.98 ms | 0 | 131.39 ms | 0 |
+| s3 | W16 C++, SCHED_OTHER | 41.3 / 99.5 / 125.4 | 124.36 ms | 0 | 122.93 ms | 0 |
+| s3 | W16 C++, SCHED_FIFO 20 (L3 image, `--cap-add SYS_NICE --ulimit rtprio=20`, no mlock: the container's memlock limit) | same run | 128.96 ms | 0 | 104.53 ms | 0 |
+
+s4's one rclpy silence (937.62 ms) was its main thread in D state
+(`__wait_on_buffer`, `folio_wait_bit_common`, `rq_qos_wait`) under
+CPU-only added load: the host's own I/O is enough.
+The W7 gate's worst gaps republished the same raw sample (stamp gap 0):
+its raw callback had not run. The C++ gate's residual lateness (up to
++47 ms over the 100 ms period under SCHED_OTHER) is the CPU run queue at
+load 100+; SCHED_FIFO takes its own timer to +4.5 ms, and what is left in
+the external column is the subscriber's own scheduling.
+
+**Branch B with the C++ gate** (`tools/timeline/run-native.sh b w16-b<n>`,
+each under `flock /tmp/claude-1000005/sai-demo.lock`; image
+`c28dba8f...bcc8e`, native_sim, origin/main 3fb4cfb). w16-b1 ran before the
+ROS upgrade, w16-b2..b5 after it with the gate rebuilt. w16-b2 was held
+until the 1-min load was at least 40 (no added load). Verdicts verbatim,
+with the load at start, the gate's largest publish gap (its `stats`) and
+the longest gap the probe saw on `/system/operation_mode/availability`:
+
+```
+w16-b1 [37.74 41.46 55.31] VERDICT: PASS b: v at the fault 3.88 m/s; TOR on True, mrm (3, 3) (3 = COMFORTABLE_STOP), v 0.000
+w16-b2 [47.74 55.28 59.63] VERDICT: PASS b: v at the fault 3.94 m/s; TOR on True, mrm (3, 3) (3 = COMFORTABLE_STOP), v 0.000
+w16-b3 [50.95 53.15 58.17] VERDICT: FAIL b: v at the fault 3.86 m/s; TOR on True, mrm (3, 2) (3 = COMFORTABLE_STOP), v 0.000
+w16-b4 [48.11 52.92 57.75] VERDICT: PASS b: v at the fault 3.88 m/s; TOR on True, mrm (3, 3) (3 = COMFORTABLE_STOP), v 0.000
+w16-b5 [36.88 48.50 55.68] VERDICT: PASS b: v at the fault 3.92 m/s; TOR on True, mrm (3, 3) (3 = COMFORTABLE_STOP), v 0.000
+```
+
+| run | gate's largest publish gap | probe's longest availability gap |
+|---|---|---|
+| w16-b1 | 106.60 ms | 108.52 ms |
+| w16-b2 | 102.29 ms | 109.32 ms |
+| w16-b3 | 105.22 ms | 106.48 ms |
+| w16-b4 | 104.04 ms | 110.80 ms |
+| w16-b5 | 104.91 ms | 110.90 ms |
+
+**w16-b3 is not the gate.** The stream never paused for more than 106 ms.
+The island escalated because Autoware's own availability said the
+comfortable stop was unavailable: the raw `comfortable_stop` flag (the gate
+passes it through untouched) was false from 11.97 s to 13.37 s after the
+button, 1.9 s into the comfortable stop, and the handler logged "no mrm
+operation available: operate emergency_stop". play_launch's
+diagnostics.csv names the cause: `topic_state_monitor_scenario_planning_trajectory`
+went ERROR when `/planning/trajectory` was more than its 1.0 s timeout old
+(last message 1.03 s before, measured rate 8.9 Hz). The planner, not the
+gate, was starved. The same flag dropped for 3.2 s in w16-b2 and 2.0 s in
+w16-b4, but inside the 10 s takeover window, where it does no harm. The
+island's escalation is, again, the contract working: the comfortable-stop
+rung needs planning. A load-independent branch B needs the planner's
+trajectory rate held too, which is outside the gate.

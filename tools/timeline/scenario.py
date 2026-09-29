@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The scenario controller (phase8-W7): the availability gate and the buttons.
+"""The scenario controller (phase8-W7, W16): the availability gate and the buttons.
 
   scenario.py gate  [--log F]      the availability gate (a process of its own)
   scenario.py press <button> [--log F]
@@ -12,24 +12,35 @@ THE GATE stands in for takeover_demo's availability_gate (phase8-W3) on the
 native_sim demo, under the same node name, so the live contract's
 `/availability_gate/availability` names it truthfully: Autoware is launched
 with operation_mode_availability_topic:=/system/operation_mode/availability_raw,
-and the gate republishes every raw sample on /system/operation_mode/availability
-(the island's guard) with `autonomous &= !odd_exit`, one out per one in, same
-QoS, at 10 Hz from its own timer: each tick republishes the LATEST raw
-sample while it is younger than RAW_MAX_AGE (1.0 s) and nothing once it is
-older. One-out-per-one-in (W3's gate) passed the aggregator's jitter straight
-to the island: on this host, loaded, Autoware's converter left gaps of 400 to
-704 ms (run b1 of docs/takeover-trace.md), and one of 602 ms fired the
-island's 500 ms HPC-loss timeout in the middle of the takeover window. A
-stalled converter still stops the stream, 1.0 s later.
+and the gate republishes on /system/operation_mode/availability (the
+island's guard) with `autonomous &= !odd_exit`, same QoS, at 10 Hz from its
+own timer: each tick republishes the LATEST raw sample while it is younger
+than RAW_MAX_AGE (1.0 s) and nothing once it is older. One-out-per-one-in
+(W3's gate) passed the aggregator's jitter straight to the island: on this
+host, loaded, Autoware's converter left gaps of 400 to 704 ms (run b1 of
+docs/takeover-trace.md), and one of 602 ms fired the island's 500 ms
+HPC-loss timeout in the middle of the takeover window. A stalled converter
+still stops the stream, 1.0 s later.
+
+`scenario.py gate` execs the C++ gate, demo/host_ws/src/availability_gate
+(phase8-W16; `just demo-host-ws` builds it), through its gate-rt wrapper
+(SCHED_FIFO when the rtprio limit allows). W7's rclpy gate went silent for
+250-1134 ms on a loaded host: its one executor thread rewrote a count file
+every tick and ext4 blocked the truncating close() behind writeback
+(docs/takeover-trace.md, "The gate stall"). The C++ gate does no file I/O
+on its executor thread.
 
 The ODD flag is SIGUSR1 (exit) / SIGUSR2 (enter) to the gate, or a
 std_msgs/Bool on /demo/odd/exit (the topic W3's odd_monitor publishes). The
-gate's pid is in build/timeline/gate.pid. It writes a `gate` event for the
-first sample it publishes with a new `autonomous` value: the fault on the
-wire, which is where the odd_exit hazard's detection ends; and a `stall`
-event whenever its own timer (`tick`) or the raw stream (`availability_raw`)
-was more than GATE_STALL_MS (250) late, so a silence the island sees can be
-laid at the door of the gate or of Autoware's converter.
+gate's pid is in build/timeline/gate.pid, followed by the path of its count
+record ("<samples> <t of the last>", on /dev/shm), which hpc-loss reads. It
+writes a `gate` event for the first sample it publishes with a new
+`autonomous` value: the fault on the wire, which is where the odd_exit
+hazard's detection ends; a `stall` event whenever its own timer (`tick`) or
+the raw stream (`availability_raw`) was more than GATE_STALL_MS (250) late,
+so a silence the island sees can be laid at the door of the gate or of
+Autoware's converter; and a `stats` event at exit with its largest publish
+gap.
 
 THE BUTTONS: odd-exit / odd-enter signal the gate. takeover asks the VEHICLE
 for MANUAL (/control/control_mode_request, the planning simulator's service),
@@ -68,76 +79,20 @@ def default_log():
 
 # ------------------------------------------------------------- the gate ----
 def gate(log):
-    import rclpy
-    from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
-    from std_msgs.msg import Bool
-    from tier4_system_msgs.msg import OperationModeAvailability
-
-    w = tl.Writer(log)
-    rclpy.init()
-    node = rclpy.create_node("availability_gate")
-    qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.VOLATILE)
-    pub = node.create_publisher(OperationModeAvailability, AVAIL, qos)
-    st = dict(odd_exit=False, last=None, n=0)
-    raw_max_age_ns = int(float(ENV("RAW_MAX_AGE", "1.0")) * 1e9)
-
-    def set_odd(v, how):
-        if st["odd_exit"] != v:
-            st["odd_exit"] = v
-            w.write("gate", "odd", hazard="odd_exit", value=v, how=how)
-            print(f"gate: odd_exit -> {v} ({how})", flush=True)
-
-    signal.signal(signal.SIGUSR1, lambda *_: set_odd(True, "SIGUSR1"))
-    signal.signal(signal.SIGUSR2, lambda *_: set_odd(False, "SIGUSR2"))
-    node.create_subscription(Bool, "/demo/odd/exit", lambda m: set_odd(bool(m.data), "/demo/odd/exit"), qos)
-
-    stall_ns = int(float(ENV("GATE_STALL_MS", "250")) * 1e6)
-
-    def on_raw(raw):
-        t = tl.now_ns()
-        if st.get("raw_t") is not None and t - st["raw_t"] > stall_ns:
-            # the converter (Autoware) was late: which side of the gate a
-            # gap the island sees came from (docs/takeover-trace.md, b3/b4)
-            w.write("gate", "stall", t_mono_ns=t, marker="availability_raw",
-                    value=dict(gap_ms=round((t - st["raw_t"]) / 1e6, 3)))
-        st["raw"], st["raw_auto"], st["raw_t"] = raw, bool(raw.autonomous), t
-
-    def on_tick():
-        # 10 Hz from the gate's own timer: the latest raw sample while it is
-        # fresh (RAW_MAX_AGE in the module doc); nothing once it is not.
-        tn = tl.now_ns()
-        if st.get("tick_t") is not None and tn - st["tick_t"] > stall_ns:
-            # the gate itself was late (its 10 Hz timer did not run)
-            w.write("gate", "stall", t_mono_ns=tn, marker="tick",
-                    value=dict(gap_ms=round((tn - st["tick_t"]) / 1e6, 3)))
-        st["tick_t"] = tn
-        if st.get("raw") is None or tn - st["raw_t"] > raw_max_age_ns:
-            return
-        out = st["raw"]
-        out.autonomous = bool(st["raw_auto"] and not st["odd_exit"])
-        pub.publish(out)
-        t = tl.now_ns()
-        st["n"] += 1
-        if out.autonomous != st["last"]:
-            w.write("gate", "publish", t_mono_ns=t, hazard="odd_exit", marker="availability",
-                    value=dict(autonomous=out.autonomous, raw_autonomous=st["raw_auto"], n=st["n"]))
-            print(f"gate: availability.autonomous -> {out.autonomous} (sample {st['n']})", flush=True)
-            st["last"] = out.autonomous
-        with open(GATE_PID + ".count", "w") as f:  # read by hpc-loss: the last sample before the stop
-            f.write(f"{st['n']} {t}\n")
-
-    node.create_subscription(OperationModeAvailability, RAW, on_raw, qos)
-    node.create_timer(0.1, on_tick)
+    """Exec the C++ gate (demo/host_ws/src/availability_gate, phase8-W16)."""
+    try:
+        from ament_index_python.packages import PackageNotFoundError, get_package_prefix
+        prefix = get_package_prefix("availability_gate")
+    except (ImportError, PackageNotFoundError):
+        sys.exit("scenario: the availability_gate package is not on AMENT_PREFIX_PATH; "
+                 "build the overlay (`just demo-host-ws`) and source scripts/env.sh")
+    exe = os.path.join(prefix, "lib/availability_gate/gate-rt")
     os.makedirs(os.path.dirname(GATE_PID), exist_ok=True)
-    with open(GATE_PID, "w") as f:
-        f.write(f"{os.getpid()}\n")
-    print(f"gate: {RAW} -> {AVAIL} (pid {os.getpid()}), log {log}", flush=True)
-    stop = []
-    signal.signal(signal.SIGTERM, lambda *_: stop.append(1))
-    signal.signal(signal.SIGINT, lambda *_: stop.append(1))
-    while not stop:
-        rclpy.spin_once(node, timeout_sec=0.1)
-    os._exit(0)
+    argv = [exe, "--log", log, "--pid-file", GATE_PID, "--ros-args", "--disable-external-lib-logs",
+            "-p", "raw_max_age_ms:=%d" % round(float(ENV("RAW_MAX_AGE", "1.0")) * 1000),
+            "-p", "stall_ms:=%d" % round(float(ENV("GATE_STALL_MS", "250")))]
+    sys.stdout.flush()
+    os.execv(exe, argv)
 
 
 def gate_pid():
@@ -147,6 +102,12 @@ def gate_pid():
         return pid
     except (OSError, ValueError, IndexError):
         sys.exit(f"scenario: no running gate (pid file {GATE_PID}); start `scenario.py gate` first")
+
+
+def gate_count_path():
+    # "<pid> <count record>" (the C++ gate keeps the record on /dev/shm)
+    f = open(GATE_PID).read().split()
+    return f[1] if len(f) > 1 else GATE_PID + ".count"
 
 
 # ---------------------------------------------------------- the buttons ----
@@ -178,8 +139,8 @@ class Buttons:
             t = tl.now_ns()
             os.kill(pid, signal.SIGSTOP)
             t1 = tl.now_ns()
-            try:
-                n, tl_last = open(GATE_PID + ".count").read().split()
+            try:  # the gate's count record: "<samples> <t of the last>", read while it is stopped
+                n, tl_last = open(gate_count_path()).read().split()[:2]
             except (OSError, ValueError):
                 n, tl_last = None, None
             self.w.write("scenario", "inject", t_mono_ns=t, hazard="hpc_loss", marker="hpc_loss",
