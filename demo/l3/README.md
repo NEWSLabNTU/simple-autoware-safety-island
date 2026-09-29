@@ -76,7 +76,12 @@ l3-autoware` (`run.sh` passes both through), with another `ROS_DOMAIN_ID`.
 Permissions, as autosdv: a user `aw` created at uid 1000 and bent by the
 entrypoint to `HOST_UID`/`HOST_GID`, in `dialout`, `video`, `plugdev` (their
 gids taken from the host), passwordless sudo, `gosu` to drop root. `run.sh`
-passes `--network host --shm-size 2g --init`; `L3_SERIAL=/dev/serial/by-id/...`
+passes `--network host --shm-size 2g --init` and, for the gate (W24),
+`--cap-add SYS_NICE --ulimit rtprio=20 --ulimit memlock=-1`: SCHED_FIFO 20
+for the unprivileged user comes from the rtprio limit (gosu drops the
+capability, the limit survives), and `mlockall` fails with ENOMEM under
+Docker's 64 KiB memlock default (W16); `GATE_RTPRIO=0` runs the gate
+SCHED_OTHER; `L3_SERIAL=/dev/serial/by-id/...`
 passes a serial device by id (default none: W2's router owns the board's
 port on the host); `L3_X=1` mounts the host X socket (and `/dev/dri`) for
 RViz inside; `L3_DEBUG=1` adds SYS_PTRACE for gdb.
@@ -114,12 +119,15 @@ be initialized").
 
 `launch/takeover.launch.xml` with its sidecar contract
 `launch/takeover.contract.yaml` (nodes, endpoints, rates, services; `play_launch
-check` clean). All nodes are rclpy on rmw_zenoh_cpp, domain 10.
+check` clean). All nodes are rclpy on rmw_zenoh_cpp, domain 10, except the
+gate: since phase8-W24 the launch file starts W16's C++ `availability_gate`
+(package `demo/host_ws/src/availability_gate`, through its `gate-rt`
+wrapper) in place of W3's rclpy one, which is deleted.
 
 | node | subscribes | publishes / serves |
 |---|---|---|
 | `odd_monitor` | `/localization/kinematic_state`, `/demo/odd/inject` | `/demo/odd/exit` (Bool, 10 Hz), `/demo/odd/reason` (String, 10 Hz); `~/inject_exit`, `~/clear` (Trigger). 30 km/h bound, optional `segment_polygon`; an exit latches |
-| `availability_gate` | `/system/operation_mode/availability_raw`, `/demo/odd/exit` | `/system/operation_mode/availability` with `autonomous &= !odd_exit`, one out per raw sample (10 Hz); a silent ODD monitor counts as an exit |
+| `availability_gate` (C++, W16/W24) | `/system/operation_mode/availability_raw`, `/demo/odd/exit` | `/system/operation_mode/availability` with `autonomous &= !odd_exit`, from a 10 Hz wall timer: the latest raw sample while it is younger than 1 s, nothing once it is older; `odd_timeout_s: 1.0`, so an ODD monitor silent for 1 s (or never heard) counts as an exit, W3's rule. No file-system call on the executor thread, `mlockall`, SCHED_FIFO 20 through `gate-rt`; SIGSTOP silences every thread (the HPC-loss act). `scenario hpc` finds it by its installed path (`lib/availability_gate/availability_gate`) |
 | `takeover_hmi` | `/demo/odd/exit`, `/api/operation_mode/state` (TL), `/vehicle/status/control_mode`, `/system/fail_safe/mrm_state`, `/demo/driver/response` | `/demo/takeover/state` (String), `/demo/takeover/remaining` (Float32), 10 Hz; client `/control/control_mode_request` (MANUAL, the simulator's) |
 | `driver_button` | keyboard when stdin is a tty | `/demo/driver/response` (Empty), `/demo/odd/inject` (Bool); `~/take_over`, `~/odd_exit`, `~/odd_clear` (Trigger) |
 | `hazard_relay` | `/system/fail_safe/mrm_state`, `/system/emergency/hazard_lights_cmd` | `/system/hazard_lights_cmd` (10 Hz): the island's hazard command in COMFORTABLE_STOP, DISABLE otherwise |
@@ -309,6 +317,93 @@ silenced the planner in 3 of 3 runs (3 of 4 module resets), with and
 without play_launch's interception (`--interception off`); with it, 7 of 7
 re-routes in one run and 3 of 3 here kept it at 10 Hz.
 
+## The C++ gate in the container (W24, 2026-09-29)
+
+`takeover.launch.xml` starts W16's C++ gate through `gate-rt`
+(`odd_timeout_s: 1.0`); `run.sh` gives the container `--cap-add SYS_NICE
+--ulimit rtprio=20 --ulimit memlock=-1`. Image `sai-l3-autoware:1.5.0-w24`
+(the Dockerfile unchanged: the local `ros:humble-ros-base-jammy` is already
+W21's digest `sha256:1813d3c8...`, so every Autoware layer came from cache and
+the rclcpp 16.0.19 check passed). Same method as W11: a private
+`rmw_zenohd` (keep_alive 6, `experiments/serial-interop/router-serial.json5`)
+on 7484, every Autoware start under `flock /tmp/claude-1000005/sai-demo.lock`,
+a start counted when play_launch prints `Startup complete` with n/n
+containers and composables.
+
+Starts: 10 of 10 on the final image (load 13.5-28.8; 3-4 s each), and 10 of
+10 plus one on the image one scenario.py edit earlier. Four of the 21 read
+`nodes 30/31`: `logging_diag_graph` "Exited without code", trap 13. In every
+start the takeover launch came up and the gate ran SCHED_FIFO 20 with
+`mlockall MCL_CURRENT|MCL_FUTURE`, as root (`docker exec`, what `just
+l3-takeover` does) on odd starts and as the image user `aw` on even ones:
+
+```
+[gate-rt-2] gate: /system/operation_mode/availability_raw -> /system/operation_mode/availability (pid 2058), log -, SCHED_FIFO 20, mlockall MCL_CURRENT|MCL_FUTURE, count /dev/shm/sai-availability-gate-2058.count
+pid 1993's current scheduling policy: SCHED_FIFO          (chrt -p; user aw)
+pid 1993's current scheduling priority: 20
+policy                                       :                    1
+prio                                         :                   79
+VmLck:	 1811072 kB
+VmRSS:	  137440 kB
+limits: Max locked memory unlimited unlimited bytes
+Max realtime priority 20 20
+```
+
+Every thread of the gate inherits the class (21-36 threads `FF 20`, zenoh's
+`net-*`, `rx-*`, `tx-0` among them). VmLck counts the locked mappings,
+1,278,040-2,292,088 kB, most of it not resident (VmRSS
+126,192-166,008 kB).
+
+The acts, one start, the QEMU island (the island sources at f7c9369, main
+when W24 began; W15's lease and W25's trim landed later; domain 10, heap 102,400; `w15-ctl/build-qemu-m10`, sha256 `2560fe38be6a`)
+joined before the first engage, `l3-scenario` for each:
+
+```
+VERDICT: PASS drive: v 2.97 -> 4.12 m/s, availability 10.0 Hz, mrm NORMAL          (initial pose, goal, route SET, engage)
+  +  0.072 s  takeover TOR_ACTIVE
+  +  2.024 s  driver response (TAKE OVER)
+  +  2.044 s  control_mode MANUAL
+  +  2.072 s  takeover DRIVER_TOOK_OVER
+VERDICT: PASS odd-respond: island MRM_OPERATING never after the exit; takeover state DRIVER_TOOK_OVER; control_mode MANUAL; v 2.72 -> 0.00 m/s
+  +  0.054 s  takeover TOR_ACTIVE
+  + 10.153 s  takeover TOR_EXPIRED
+  + 10.237 s  mrm_state MRM_OPERATING/COMFORTABLE_STOP  v=2.69 m/s
+VERDICT: PASS odd: island MRM_OPERATING 10237 ms after the exit; takeover state TOR_EXPIRED; control_mode AUTONOMOUS; v 4.17 -> 0.21 m/s
+== 5. HPC loss: SIGSTOP the availability gate (pids [2297]) ==
+  +  0.566 s  mrm_state MRM_OPERATING/EMERGENCY_STOP  v=4.17 m/s
+  +  3.362 s  mrm_state MRM_SUCCEEDED/EMERGENCY_STOP  v=0.00 m/s
+  +  4.314 s  SIGCONT availability_gate
+  +  4.399 s  mrm_state NORMAL/NONE  v=0.00 m/s
+VERDICT: PASS hpc: MRM_OPERATING seen 644 ms after the last availability sample, v 4.17 -> 0.04 m/s, standstill 3.31 s after SIGSTOP, recovered to NORMAL: True
+probe: n=211 span=25.3 s rate=8.30 Hz max_gap=4400.07 ms (at mono 4671160.661 s) gaps>150ms=1 >250ms=1 >500ms=1 ...
+gate: stats: 1439 samples, largest publish gap 101.876 ms, 0 gaps over 150.000 ms, largest tick gap 101.874 ms, largest raw gap 108.871 ms (SIGCONT resumes excluded: 1)
+```
+
+The probe is a TEST-ONLY C++ subscriber in the container around the hpc
+act: one silence, 4.40 s, the SIGSTOP; nothing else over 150 ms. The HPC-loss
+act now brakes (W3's run did not: G5). odd-respond changed verdict rule:
+since W7 the island holds the 10 s window, so a driver who answers inside it
+sees no MRM, and `scenario` no longer demands one (it failed on that before
+the edit, with the same timeline). W3's `odd_timeout_s` rule, live: ODD
+monitor SIGSTOPped 3 s during an engaged drive, the gate kept 10 Hz and
+dropped `autonomous` 1.05 s after the stop, back 0.10 s after SIGCONT
+(external probe; stop and resume times from the host clock).
+
+Idle, 600 s from the gate's first sample, 1-min load held by nice-19
+`stress-ng --cpu 1` instances (25-40, added and removed every 30 s), CPU
+only; the load logged every 30 s: 42.6 / 54.2 / 67.0 (min / median / max
+over the window; the start overshot: 40 instances at a load of 6, and the
+host's own load rose at the end):
+
+```
+gate: stats: 6029 samples, largest publish gap 101.671 ms, 0 gaps over 150.000 ms, largest tick gap 101.675 ms, largest raw gap 117.277 ms (SIGCONT resumes excluded: 0)
+probe: n=5993 span=599.2 s rate=10.00 Hz max_gap=111.38 ms ... gaps>150ms=0 >250ms=0 >500ms=0
+```
+
+W16's s4 (same load band, the host, SCHED_OTHER): 113.67 ms own, 122.46 ms
+external. The host path (`where=host`) builds the same gate in
+`just l3-host-ws`; with this user's rtprio limit of 0 it runs SCHED_OTHER.
+
 ## Traps (each one cost time today)
 
 1. **`--container-mode observable` + rmw_zenoh_cpp: the planner never plans.**
@@ -434,7 +529,8 @@ re-routes in one run and 3 of 3 here kept it at 10 Hz.
 ## Open
 
 - G5 (W5): the island's `operate` call must reach its own operator; until
-  then the HPC-loss act announces but does not brake.
+  then the HPC-loss act announces but does not brake. W24, QEMU island at
+  f7c9369: it brakes (standstill 3.31 s after the SIGSTOP).
 - G3 (W4): discovery off on the island; until then only the gateway ACL keeps
   the island alive, and not through an Autoware restart. phase8-W14: the
   nano-ros pin carries the knob; serial images derive it off and both TCP

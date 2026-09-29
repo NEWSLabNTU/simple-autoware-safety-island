@@ -5,8 +5,9 @@
   <version>0.1.0</version>
   <description>
     Host side of the phase-8 L3 takeover demo: ODD monitor, takeover HMI,
-    availability gate, driver button, hazard relay, graph watcher and the
-    scenario driver. Runs on rmw_zenoh_cpp in domain 10 beside Autoware 1.5.0.
+    driver button, hazard relay, graph watcher and the scenario driver; the
+    launch file also starts the C++ availability gate (package
+    availability_gate, phase8-W16/W24). Runs on rmw_zenoh_cpp in domain 10 beside Autoware 1.5.0.
   </description>
   <maintainer email="d10922013@csie.ntu.edu.tw">aeon</maintainer>
   <license>Apache License 2.0</license>
@@ -20,6 +21,7 @@
   <exec_depend>autoware_planning_msgs</exec_depend>
   <exec_depend>autoware_vehicle_msgs</exec_depend>
   <exec_depend>tier4_system_msgs</exec_depend>
+  <exec_depend>availability_gate</exec_depend>
 
   <export>
     <build_type>ament_python</build_type>

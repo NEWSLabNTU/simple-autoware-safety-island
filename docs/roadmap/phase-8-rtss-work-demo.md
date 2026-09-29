@@ -512,6 +512,26 @@ the others by fast-forward push once implementation starts.
   exhausted in zpico_read at 102,400); the trigger fires once per boot; a
   pre-act availability flap can fire it early.
 
+- **W24 - the container runs the C++ gate.** Status (2026-09-29):
+  demo/l3/README.md ("The C++ gate in the container"). takeover.launch.xml
+  starts W16's `availability_gate` through `gate-rt` with `odd_timeout_s:
+  1.0` (W3's rule, checked against its source and live: a SIGSTOPped ODD
+  monitor drops `autonomous` 1.05 s later); W3's rclpy gate is deleted; the
+  contract's gate path is timer-driven now (`play_launch check` clean, CI
+  script 14/14). `run.sh` adds `--cap-add SYS_NICE --ulimit rtprio=20
+  --ulimit memlock=-1`. Image `sai-l3-autoware:1.5.0-w24` (Autoware layers
+  cached; the local base already W21's digest). Starts 10/10 on it (and
+  10/10 + 1 on the image one edit before); SCHED_FIFO 20 and mlockall in
+  every one, as root and as `aw`. Acts with the QEMU island (f7c9369): drive,
+  odd-respond (TOR 0.07 s, MANUAL 2.04 s, no MRM), odd (COMFORTABLE_STOP at
+  10.24 s), hpc (MRM 0.57 s after SIGSTOP, standstill 3.31 s, one 4.40 s
+  silence) all PASS; odd-respond's verdict no longer demands an MRM (W7's
+  window). Idle 600 s at a 1-min load of 42.6 / 54.2 / 67.0: largest publish
+  gap 101.67 ms (gate), 111.38 ms (external probe), none over 150 ms.
+  Open: the load overshot the 50 asked for (start and host spikes); the
+  demo/l3/contracts compositions still model the gate as input-triggered
+  (`trigger: input`, 20 ms); the acts ran on the pre-W15 island.
+
 Order: W0 first; W1, W2, W3, W6 in parallel; W4 and W5 after W1; W7 after
 W6; W8 after W2, W4, W5, W7; W9 last. Rough effort 6-7 weeks on the core
 path (D); the board path 1-1.5 weeks once W1 and W2 land (B); the link is

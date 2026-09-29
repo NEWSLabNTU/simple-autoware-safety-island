@@ -13,10 +13,11 @@
 # Rates on timer-driven outputs are not written: the checker derives them
 # from the timers (`rate_hz: 10` in the launch file). Other rates are the
 # nodes' own parameters (`rate_hz: 10` in the launch file) or,
-# for the gate, the converter's: the gate publishes one sample per raw
-# sample, so its output rate IS the aggregator's 10 Hz (diagnostic graph
-# `rate: 10.0`), which is what the island's contract requires on the same
-# topic (min_rate_hz 10, max_age 500 ms).
+# for the gate (phase8-W24: W16's C++ availability_gate), its own 10 Hz wall
+# timer (period_ms 100, the node's default): it republishes the LATEST raw
+# sample on every tick while that sample is younger than 1 s, so its output
+# rate no longer follows the converter's gaps; that is what the island's
+# contract requires on the same topic (min_rate_hz 10, max_age 500 ms).
 
 version: 1
 
@@ -46,18 +47,21 @@ nodes:
     params:
       odd_timeout_s: { type: double }
     paths:
-      # One raw sample in, one sample out, in the subscription callback. The
-      # 20 ms is brief D's budget for this hop (section 2); unmeasured.
-      republish:
-        trigger: { input: [availability_raw] }
+      # phase8-W24: timer-driven (W16's C++ gate). Each 100 ms tick publishes
+      # the latest raw sample with autonomous &= !odd_exit, while that sample
+      # is younger than raw_max_age_ms (1000); older, nothing (a dead
+      # converter still silences the stream, 1 s later).
+      on_timer:
+        trigger: { timer: { rate_hz: 10 } }
         output: [availability]
-        max_latency: 20ms
     sub:
-      availability_raw: { min_rate_hz: 10, qos: { depth: 1 } }
+      # Read-latest since W24: the timer, not the raw sample, sets the cadence.
+      availability_raw: { min_rate_hz: 10, max_age: 1s, qos: { depth: 1 }, state: true }
       # Read-latest; silent for more than odd_timeout_s reads as "ODD left".
       odd_exit: { min_rate_hz: 10, max_age: 1s, qos: { depth: 1 }, state: true }
     pub:
-      availability: { min_rate_hz: 10, qos: { depth: 1, durability: volatile } }
+      # 10 Hz is derived from the timer (W24); play_launch reports a stated rate as redundant.
+      availability: { qos: { depth: 1, durability: volatile } }
 
   takeover_hmi:
     params:
@@ -162,7 +166,6 @@ topics:
     type: tier4_system_msgs/msg/OperationModeAvailability
     pub: [availability_gate/availability]
     external: sub
-    rate_hz: 10
   /system/hazard_lights_cmd:
     type: autoware_vehicle_msgs/msg/HazardLightsCommand
     pub: [hazard_relay/system_hazard_lights_cmd]

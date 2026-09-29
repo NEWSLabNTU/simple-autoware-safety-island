@@ -216,9 +216,12 @@ class Scenario(Node):
 
     # -- the acts -------------------------------------------------------------
     def gate_pids(self):
+        # The installed executable of each publisher's node, whatever package
+        # holds it: lib/availability_gate/availability_gate (W16's C++ gate,
+        # exec'd by gate-rt, so the wrapper leaves no process of its own).
         pids = set()
         for info in self.get_publishers_info_by_topic(c.AVAILABILITY):
-            out = subprocess.run(['pgrep', '-f', f'takeover_demo/{info.node_name}'],
+            out = subprocess.run(['pgrep', '-f', f'/lib/[^ ]+/{info.node_name}( |$)'],
                                  capture_output=True, text=True)
             found = [int(p) for p in out.stdout.split()]
             log(f'publisher /{info.node_name} on {c.AVAILABILITY}: pids {found}')
@@ -280,10 +283,16 @@ class Scenario(Node):
         mrm_seen = [e for e in self.events if 'MRM_OPERATING' in e[1] and e[0] >= self.t0]
         manual = self.ctrl == ControlModeReport.MANUAL
         first = f'{(mrm_seen[0][0] - self.t0) * 1000:.0f} ms' if mrm_seen else 'never'
-        # Today's island reacts to the exit at once (the 10 s rung is W7's), so
-        # PASS means: the takeover state machine ran, the island reacted, and,
-        # with a response, the vehicle reports MANUAL.
-        ok = bool(mrm_seen) and (manual if respond else self.hmi == 'TOR_EXPIRED')
+        # Since W7 the island holds the takeover window (10 s) before its rung
+        # fires, so a driver who answers inside it sees NO MRM (measured W24:
+        # TOR_ACTIVE, MANUAL 2.06 s, DRIVER_TOOK_OVER, mrm_state NORMAL). PASS:
+        # with a response, the vehicle reports MANUAL and the HMI
+        # DRIVER_TOOK_OVER; without one, the window expires and the island
+        # reacts (MRM_OPERATING).
+        if respond:
+            ok = manual and self.hmi == 'DRIVER_TOOK_OVER'
+        else:
+            ok = bool(mrm_seen) and self.hmi == 'TOR_EXPIRED'
         log(f'VERDICT: {"PASS" if ok else "FAIL"} {"odd-respond" if respond else "odd"}: island '
             f'MRM_OPERATING {first} after the exit; takeover state {self.hmi}; '
             f'control_mode {CTRL.get(self.ctrl)}; v {v0:.2f} -> {self.v:.2f} m/s')

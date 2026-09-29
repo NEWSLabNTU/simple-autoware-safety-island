@@ -6,7 +6,6 @@ PKG = 'takeover_demo'
 NODES = [
     'odd_monitor',
     'takeover_hmi',
-    'availability_gate',
     'driver_button',
     'hazard_relay',
     'graph_watcher',

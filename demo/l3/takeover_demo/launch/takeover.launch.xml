@@ -5,8 +5,9 @@
 
      Autoware must be launched with
        operation_mode_availability_topic:=/system/operation_mode/availability_raw
-     (the demo/host_ws overlay's argument), so that availability_gate, not the
-     stock converter, is the publisher of the topic the island guards. -->
+     (the demo/host_ws overlay's argument), so that availability_gate (the C++ node of
+     demo/host_ws/src/availability_gate, phase8-W16/W24), not the stock
+     converter, is the publisher of the topic the island guards. -->
 <launch>
   <arg name="max_speed_kmh" default="30.0" description="ODD speed bound (phase-8 decision 2)"/>
   <arg name="segment_polygon" default="" description="ODD segment in map coordinates, x,y;x,y;... (empty: none)"/>
@@ -20,7 +21,16 @@
     <param name="rate_hz" value="10.0"/>
   </node>
 
-  <node pkg="takeover_demo" exec="availability_gate" name="availability_gate" output="screen">
+  <!-- phase8-W24: W16's C++ gate (package availability_gate) in place of
+       W3's rclpy one. A 10 Hz wall timer republishes the latest raw sample
+       while it is younger than 1 s; no file-system call on the executor
+       thread; mlockall. gate-rt runs it SCHED_FIFO 20 when the rtprio limit
+       allows (the container: run.sh's SYS_NICE, rtprio and memlock).
+       odd_timeout_s 1.0 is W3's rule: an ODD monitor silent for 1 s, or never
+       heard, counts as an ODD exit (odd_monitor publishes at 10 Hz). No
+       `args`: launch passes a substitution as ONE argument, and the gate
+       refuses any argument it does not know, an empty one included. -->
+  <node pkg="availability_gate" exec="gate-rt" name="availability_gate" output="screen">
     <param name="odd_timeout_s" value="1.0"/>
   </node>
 

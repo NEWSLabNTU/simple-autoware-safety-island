@@ -28,6 +28,13 @@
 #                       of one tty corrupt each other's frames).
 #   L3_LOG_HOST=<dir>   where play_launch's log lands on the host
 #                       (default build/l3-container-log).
+#   SYS_NICE, rtprio 20, memlock unlimited
+#                       the availability gate (phase8-W16/W24) runs through
+#                       gate-rt: SCHED_FIFO 20, which the unprivileged user
+#                       gets from the rtprio limit (gosu drops the
+#                       capability; the limit survives it), and mlockall(),
+#                       which fails with ENOMEM under Docker's 64 KiB memlock
+#                       default. GATE_RTPRIO=0 runs it SCHED_OTHER.
 #   L3_DEBUG=1          SYS_PTRACE, for gdb inside.
 set -euo pipefail
 
@@ -44,6 +51,7 @@ args=(
     --rm --name "$NAME"
     --network host --shm-size 2g
     --init
+    --cap-add SYS_NICE --ulimit rtprio=20 --ulimit memlock=-1
     -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)"
     -e HOST_DIALOUT_GID="$(gid_of dialout)"
     -e HOST_VIDEO_GID="$(gid_of video)"
@@ -54,6 +62,7 @@ args=(
 # A router other than the host's 7447 (a second demo on one host): both or neither.
 [ -n "${L3_ROUTER_PORT:-}" ] && args+=(-e L3_ROUTER_PORT="$L3_ROUTER_PORT")
 [ -n "${ZENOH_CONFIG_OVERRIDE:-}" ] && args+=(-e ZENOH_CONFIG_OVERRIDE="$ZENOH_CONFIG_OVERRIDE")
+[ -n "${GATE_RTPRIO:-}" ] && args+=(-e GATE_RTPRIO="$GATE_RTPRIO")
 [ -t 0 ] && [ -t 1 ] && args+=(-it)
 
 if [ "${L3_X:-0}" = "1" ]; then
