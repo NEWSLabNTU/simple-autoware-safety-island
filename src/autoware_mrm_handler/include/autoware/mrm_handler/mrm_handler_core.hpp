@@ -59,6 +59,8 @@ struct Param
   // phase8-W7 demo extension (not upstream): the takeover request.
   bool use_takeover_request;
   double takeover_request_timeout;
+  // phase8-W27 (not upstream): the INIT budget, seconds from construction.
+  double init_timeout;
 };
 
 class MrmHandler : public ::nros::NodeWithTimers<1>
@@ -110,8 +112,6 @@ private:
 
   tier4_system_msgs::msg::OperationModeAvailability operation_mode_availability_{};
   bool has_operation_mode_availability_{false};
-  // phase8-W10: when the first availability sample arrived (the join grace below)
-  double stamp_first_operation_mode_availability_{0.0};
   nav_msgs::msg::Odometry odom_{};
   bool has_odom_{false};
   autoware_vehicle_msgs::msg::ControlModeReport control_mode_{};
@@ -152,7 +152,28 @@ private:
   // Parameters
   Param param_;
 
-  bool isDataReady();
+  // Start-up lifecycle (phase8-W27, replaces upstream's isDataReady() gate
+  // and phase8-W10's join grace; docs/porting-notes.md). INIT from
+  // construction until every required input has been heard (publish nothing);
+  // RUN from then on, for good. INIT that outlasts `init_timeout` enters RUN
+  // as an init FAILURE, which the state machine treats like a lost
+  // availability stream until the missing inputs arrive.
+  enum class Phase { Init, Run };
+  Phase phase_{Phase::Init};
+  double stamp_boot_{0.0};
+  bool has_stamp_init_log_{false};
+  double stamp_init_log_{0.0};
+  bool is_init_failed_{false};
+  // One bit per required input, in this order (names: kRequiredInputNames).
+  enum RequiredInput : uint32_t {
+    INPUT_OPERATION_MODE_AVAILABILITY = 1u << 0,
+    INPUT_OPERATION_MODE_STATE = 1u << 1,
+    INPUT_COMFORTABLE_STOP_STATUS = 1u << 2,
+    INPUT_EMERGENCY_STOP_STATUS = 1u << 3,
+  };
+  uint32_t getMissingInputs();
+  bool updatePhase();
+  bool isInputLost();
   void onTimer();
 
   // Heartbeat (porting-notes 05: double-seconds monotonic timestamps)

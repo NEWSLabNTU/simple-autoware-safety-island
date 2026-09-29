@@ -175,3 +175,52 @@ Template:
   (`just host-env` prints it). With that, the FULL P3 e2e passes against
   zephyr.exe — heartbeat loss → cancel comfortable → call emergency →
   ramp + hazards, all four nodes in one Zephyr image.
+
+## Confirmed entries (phase 8 -- mrm_handler start-up, 2026-09-29)
+
+## 20 -- an explicit INIT/RUN lifecycle replaces isDataReady()  **[island, not upstream]**
+- Upstream gates every tick on `isDataReady()`: until the availability and
+  each operator status in use (reporting anything but NOT_AVAILABLE) have
+  been heard, the tick returns and nothing is published, with no deadline.
+  phase8-W10 added a join grace for the operation mode on top of it. Both
+  mixed start-up with failure: an input that never arrived kept the handler
+  silent for ever, with no fault; the grace clock started at the first
+  availability sample, not at boot; and a real fault present at join was
+  seen up to 0.5 s late, undeclared.
+- phase8-W27 (`mrm_handler_core.cpp`, `updatePhase()`): two phases in an
+  explicit member, `Phase::Init` and `Phase::Run`.
+
+      boot --> INIT   publishes nothing; logs the missing inputs once a second
+      INIT --(every required input heard)--> RUN          marker INIT_DONE (arg: ms since boot)
+      INIT --(init_timeout, 3.0 s from construction)--> RUN + init failure
+                                                          marker INIT_TIMEOUT (arg: missing bitmask)
+      RUN + init failure --(every required input heard)--> RUN (failure cleared)
+      RUN never returns to INIT.
+
+  Required = upstream's `isDataReady()` set plus the operation mode state:
+  `operation_mode_availability`, `operation_mode_state`,
+  `comfortable_stop_status` (when `use_comfortable_stop`) and
+  `emergency_stop_status`, each operator status reporting anything but
+  NOT_AVAILABLE. Odometry and the control mode are not required, as
+  upstream: unheard they read "not stopped" and "not AUTONOMOUS".
+- The init failure is one more input fault, `isInputLost()`, beside the
+  stale availability stream: `isEmergency()` holds, `getCurrentMrmBehavior()`
+  forces EMERGENCY_STOP, and the takeover request is skipped. So the handler
+  takes the availability-loss path: NORMAL -> MRM_OPERATING / EMERGENCY_STOP
+  once the control mode reads AUTONOMOUS (upstream's rule: no MRM for a
+  vehicle not in autonomous control), hazard lights on in any state. If the
+  availability itself was never heard, its stamp is the boot, so the
+  availability timeout holds too.
+- Recovery is the state machine's, as from any fault: on the first tick
+  that has every required input the failure clears, and `isEmergency()` is
+  judged on the inputs alone; if nothing else is wrong `updateMrmState()`
+  returns to NORMAL from MRM_OPERATING, MRM_SUCCEEDED or MRM_FAILED, and
+  `operateMrm()` cancels the emergency stop. It is cleared by the inputs,
+  never by time.
+- In RUN a missing or stale input is a fault judged by the existing
+  timeouts (`timeout_operation_mode_availability`). An operator status that
+  turns NOT_AVAILABLE in RUN no longer silences the handler (upstream's
+  per-tick gate did); nothing watches it there, as before for staleness.
+- The contract declares `init_timeout` in the handler's `params:`. rlm has no
+  key for a start-up budget: the detection budgets apply from RUN, and the
+  INIT budget is `init_timeout`, stated in a comment.

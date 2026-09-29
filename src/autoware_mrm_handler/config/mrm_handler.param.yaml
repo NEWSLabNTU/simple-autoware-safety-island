@@ -19,6 +19,13 @@
     # it (`window-param`).
     use_takeover_request: true
     takeover_request_timeout: 10.0
+    # phase8-W27, not upstream: the start-up budget, seconds from the node's
+    # construction. Until every required input (the availability, the
+    # operation mode state, and each operator status in use) has been heard
+    # the handler is in INIT and publishes nothing; if that lasts longer than
+    # this it raises an init failure and takes the emergency stop, as for a
+    # lost availability stream, until the inputs arrive.
+    init_timeout: 3.0
 
     # setting whether to turn hazard lamp on for each situation
     turning_hazard_on:

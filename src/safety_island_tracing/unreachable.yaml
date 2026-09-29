@@ -34,3 +34,11 @@
   node: /mrm_handler
   param: use_comfortable_stop
   value: false
+
+# phase8-W27: a FAULT-PATH marker, excused without a parameter. A healthy boot
+# hears every required input within init_timeout and fires INIT_DONE instead;
+# INIT_TIMEOUT fires only when an input is withheld at boot (the W27 init
+# test). `fault:` says which fault; the exemption does not lapse.
+- marker: MRM_HANDLER_INIT_TIMEOUT
+  node: /mrm_handler
+  fault: a required input not heard within init_timeout of boot

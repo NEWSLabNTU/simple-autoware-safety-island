@@ -1,7 +1,7 @@
 {
  "generator": "src/safety_island_tracing/gen_markers.py",
- "contract_sha256": "917d7431edd1171504eab3c9ce5cb94128a8e9ab0e0d53dbbc9da7dbbf497ec4",
- "table_sha256": "9cdf1e17cf38db7174df4a4ad5b6092d7a026957830cf4ebbb2e1ce6d1bc87ca",
+ "contract_sha256": "795396d14387de3d99050850b924b1e8aac7eef73eb22d78593c234261fda61a",
+ "table_sha256": "0935f5b7449bb462bf030efefab5094968040c44ebf3493da532c432019944cf",
  "entities": {
   "pub": 8,
   "sub": 7,
@@ -18,6 +18,7 @@
   "CONFIG_ISLAND_TRACE_SPIN_KEEP",
   "CONFIG_LOG_DEFAULT_LEVEL",
   "CONFIG_MAIN_STACK_SIZE",
+  "CONFIG_MAIN_THREAD_PRIORITY",
   "CONFIG_MAX_PTHREAD_COND_COUNT",
   "CONFIG_MAX_PTHREAD_MUTEX_COUNT",
   "CONFIG_NET_BUF_RX_COUNT",
@@ -29,6 +30,7 @@
   "CONFIG_NROS_CYCLONE_DOMAIN_ID",
   "CONFIG_NROS_DOMAIN_ID",
   "CONFIG_NROS_GRAPH_CACHE_SIZE",
+  "CONFIG_NROS_ZENOH_SERIAL_RX_RING_BYTES",
   "CONFIG_NROS_ZEPHYR_HEAP_SIZE",
   "CONFIG_NROS_ZEPHYR_TASK_SLOTS",
   "CONFIG_NROS_ZEPHYR_TASK_STACK_SIZE",
@@ -318,6 +320,22 @@
    "node": "mrm_handler",
    "topic": "/system/takeover_request/state",
    "record": "change"
+  },
+  {
+   "id": 30,
+   "name": "MRM_HANDLER_INIT_DONE",
+   "kind": "lifecycle_done",
+   "element": "/mrm_handler/init",
+   "node": "mrm_handler",
+   "record": "every"
+  },
+  {
+   "id": 31,
+   "name": "MRM_HANDLER_INIT_TIMEOUT",
+   "kind": "lifecycle_timeout",
+   "element": "/mrm_handler/init",
+   "node": "mrm_handler",
+   "record": "every"
   }
  ]
 }

@@ -103,8 +103,16 @@ marker per executing contract element:
 | service call | `CALL_<node>_<endpoint>` | every `cli:` |
 | service callback | `SERVE_<node>_<endpoint>_ENTRY` / `_EXIT` | every `srv:` |
 | publish | `PUB_<node>_<endpoint>` | every contracted `pub:` |
+| lifecycle | `MRM_HANDLER_INIT_DONE` / `_INIT_TIMEOUT` | not the contract: `LIFECYCLE` in gen_markers.py (phase8-W27) |
 
-Ids run from 1, in that group order and sorted inside each group. The output
+Ids run from 1, in that group order and sorted inside each group. The
+lifecycle group comes last so no contract id moves; rlm has no element for a
+node's start-up. Exactly one of its two markers fires per boot: INIT_DONE
+(arg: ms from construction to the last required input) or INIT_TIMEOUT (arg:
+bitmask of the inputs never heard, bit 0 availability, 1 operation mode
+state, 2 comfortable-stop status, 3 emergency-stop status), so start-up is
+told apart from a fault. INIT_TIMEOUT is excused in `unreachable.yaml` as a
+fault-path marker (`fault:`), which does not lapse. The output
 is `include/island_trace_markers.h` (ids, contract digest, table digest, knob
 macros) plus `markers.json` (the same table with trigger, rate and
 `max_latency_ms` for the phase7-W3/W4 analysis). Both are generated and

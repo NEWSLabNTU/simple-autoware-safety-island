@@ -573,6 +573,10 @@ registration is CPU work too, and it ran above the reader.
   emergency. `isDataReady()` now waits for the operation mode, for at most
   `timeout_operation_mode_availability` after the first availability sample;
   after that UNKNOWN is a fault again (a mode that never arrives is G4, W4's).
+  Superseded by phase8-W27: the grace is gone, and the handler has an explicit
+  INIT/RUN lifecycle instead (docs/porting-notes.md, 20). INIT waits for the
+  operation mode with the other required inputs, from boot, for at most
+  `init_timeout` (3.0 s), and a missing input after that is an init failure.
 
 ### 11.4 The gate on 55a65a4 (with the triage of 11.1)
 

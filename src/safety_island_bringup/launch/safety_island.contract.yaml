@@ -92,9 +92,10 @@
 
 # PARAMETERS ARE DECLARED HERE, name and type, one entry per
 # `declare_parameter<T>` call in the node's code (phase 446 in nano-ros). The
-# sizes of the image's parameter store follow from this list: 23 parameters
-# (21 until phase8-W7 added mrm_handler's two takeover parameters) plus one
-# `use_sim_time` per node gives 27 slots, and since every one is a scalar the
+# sizes of the image's parameter store follow from this list: 24 parameters
+# (21 until phase8-W7 added mrm_handler's two takeover parameters, 23 until
+# phase8-W27 added `init_timeout`) plus one `use_sim_time` per node gives 28
+# slots, and since every one is a scalar the
 # string and array capacities are zero. Values stay in each package's
 # `config/*.param.yaml`, loaded by the launch file. Capacities for a string or
 # array parameter would be a board fact, never stated here.
@@ -482,6 +483,14 @@ nodes:
       # phase8-W7, the takeover request (a demo extension, not upstream).
       use_takeover_request: { type: bool }
       takeover_request_timeout: { type: double }
+      # phase8-W27, the start-up lifecycle (not upstream). The detection
+      # budgets in this file (max_age, `within`, the hazards' FDTI) apply from
+      # RUN, when every required input has been heard once; before that the
+      # handler is in INIT and publishes nothing, and the INIT budget is this
+      # parameter (3.0 s from construction), after which a missing input is
+      # an init failure answered like an availability loss. rlm has no key
+      # for a start-up budget, so it is stated here and not checked.
+      init_timeout: { type: double }
     cli:
       comfortable_stop_operate: {}
       emergency_stop_operate: {}

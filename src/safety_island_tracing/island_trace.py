@@ -350,6 +350,11 @@ def check(tr, model_path):
     model = yaml.safe_load(open(model_path)) if os.path.exists(model_path) else None
     exempt = {}
     for e in (yaml.safe_load(open(UNREACHABLE)) or []) if os.path.exists(UNREACHABLE) else []:
+        if "fault" in e:
+            # a fault-path marker (phase8-W27): excused in a healthy run, never
+            # lapses; the run that injects the fault is where it is required
+            exempt[e["marker"]] = (True, e, None)
+            continue
         actual = param_value(model, e["node"], e["param"]) if model else None
         exempt[e["marker"]] = (actual == e["value"], e, actual)
     missing, excused = [], []
@@ -362,7 +367,8 @@ def check(tr, model_path):
             ex = exempt.get(m["name"])
             if ex and ex[0]:
                 excused.append(m["name"])
-                note = f"  unreachable: {ex[1]['node']} {ex[1]['param']}={ex[2]!r} (unreachable.yaml)"
+                note = (f"  fault path: {ex[1]['fault']} (unreachable.yaml)" if "fault" in ex[1] else
+                        f"  unreachable: {ex[1]['node']} {ex[1]['param']}={ex[2]!r} (unreachable.yaml)")
             else:
                 missing.append(m["name"])
                 note = "  MISSING" + (f" (exemption lapsed: {ex[1]['param']} is {ex[2]!r})" if ex else "")
@@ -381,7 +387,7 @@ def check(tr, model_path):
         say(f"FAIL markers: {len(missing)} of {len(tr.table['markers'])} never seen: {', '.join(missing)}")
     else:
         say(f"ok   markers: {len(tr.table['markers']) - len(excused)} of {len(tr.table['markers'])} seen at least once; "
-            f"{len(excused)} unreachable under the configured parameters")
+            f"{len(excused)} unreachable under the configured parameters or fault-path only")
     hbs = [r["seq"] for r in tr.records if r["kind"] == "heartbeat"]
     gaps = [(a, b) for a, b in zip(hbs, hbs[1:]) if b != a + 1]
     if not hbs:

@@ -12,9 +12,13 @@ marker is emitted per contract element that executes:
   service client   CALL_<node>_<endpoint>                every `cli:` call site
   service server   SERVE_<node>_<endpoint>_ENTRY / _EXIT every `srv:` callback
   publisher        PUB_<node>_<endpoint>                 every contracted `pub:`
+  lifecycle        <node>_INIT_DONE / _INIT_TIMEOUT      the handler's start-up
+                                                         (LIFECYCLE below)
 
 Ids are assigned in that order, sorted by contract name inside each group,
-starting at 1 (0 is never a marker). A path's EXIT is always its ENTRY's id
+starting at 1 (0 is never a marker). The lifecycle group is the one group
+that is not read from the contract: rlm has no element for a node's start-up,
+so its markers are listed here, and come last so that no contract id moves. A path's EXIT is always its ENTRY's id
 plus one (the trace window's SPIN rule relies on it).
 
 phase8-W17, the trace window (docs/tracing.md section 8). Each marker also
@@ -70,6 +74,18 @@ KNOB_FILES = [
     "src/native_sim_entry/prj-cyclonedds.conf",
     "src/zephyr_entry/prj.conf",
     "src/zephyr_entry/boards/mr_canhubk3_s32k344.conf",
+]
+
+
+# phase8-W27: mrm_handler's INIT -> RUN transition (docs/porting-notes.md 20).
+# INIT_DONE's arg is the ms from construction to the last required input;
+# INIT_TIMEOUT's is the bitmask of the inputs never heard (bit 0 availability,
+# 1 operation mode state, 2 comfortable-stop status, 3 emergency-stop status).
+# Exactly one of the two fires per boot, so the timeline can tell start-up
+# from a fault.
+LIFECYCLE = [
+    ("/mrm_handler/init", "MRM_HANDLER_INIT_DONE", "lifecycle_done"),
+    ("/mrm_handler/init", "MRM_HANDLER_INIT_TIMEOUT", "lifecycle_timeout"),
 ]
 
 
@@ -142,6 +158,8 @@ def build_table(model):
     for ep in sorted(c.get("pub_endpoints", {})):
         node, name = split_endpoint(ep)
         add(f"PUB_{c_ident(node)}_{c_ident(name)}", "publish", ep, node=node, topic=topics_by_pub.get(ep))
+    for element, name, kind in LIFECYCLE:
+        add(name, kind, element, node=split_endpoint(element)[0])
     return markers
 
 

@@ -171,6 +171,11 @@ nodes:
       # unit W7's two parameters
       use_takeover_request: { type: bool }
       takeover_request_timeout: { type: double }
+      # unit W27's start-up budget. The detection budgets here apply from
+      # RUN (every required input heard once); the INIT budget is
+      # init_timeout (3.0 s from construction). rlm has no key for a
+      # start-up budget, so none is declared.
+      init_timeout: { type: double }
     cli:
       comfortable_stop_operate: {}
       emergency_stop_operate: {}
