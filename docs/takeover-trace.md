@@ -946,3 +946,224 @@ Re-analysis: `/mnt/mx500/aeon/worktrees/w30-reanalysis/<run>/` (`table.md`,
 `table.before.md` = W8's, `timeline.png`, `explain.txt`), `terms.py` and
 `terms.txt` (the terms), `compare.py` and `compare.md` (the tables above),
 `l3-check.txt` and `check-contracts.txt`.
+
+## 11. Fresh runs against the board-derived budgets (phase8-W31)
+
+phase8-W31, 2026-09-30. Section 10 derived the board budgets from W8's
+runs and re-analysed those same runs. This section runs the three acts
+again on the S32K344 with an image built from that contract, so the
+budgets are tested on runs they were not sized from. The rig and method
+are section 9's: `tools/timeline/run-board.sh`, `sai-l3-autoware:1.5.0-w24`,
+the C++ gate from `just demo-host-ws`, and every run flashed and reset
+under `flock /tmp/claude-1000005/sai-demo.lock` at a 1-min load below 35.
+
+**The image.** Main `71743c3` (W30), nano-ros `f03d9d190`, `just board-build`
+in a fresh worktree. `just trace-gen-check`: "header and table current (31
+markers)", every marker has a call site. Board ELF sha256
+`664592d4cdb110ff64a9ef95410c4de7123cae0e006fe8a5bce302c68893289d`
+(hex `13daca9c562a8877dacf8afbd4f65ecfe1e42a12f95e9423fe34abdd2c3d7099`).
+RAM 290,728 of 327,680 B (88.72 %) and FLASH 611,672 B, against
+780195b0's 611,668. Against W8's `780195b0`, the generated entry
+(`zephyr_entry_nros_main_generated.cpp`) differs in two monitor rows,
+and nowhere else except its own path:
+
+```
+<     { "/system/fail_safe/mrm_state", "/mrm_handler/mrm_state", 10000u, 110u },
+<     { "/system/takeover_request/state", "/mrm_handler/takeover_request_state", 10000u, 110u },
+---
+>     { "/system/fail_safe/mrm_state", "/mrm_handler/mrm_state", 10000u, 206u },
+>     { "/system/takeover_request/state", "/mrm_handler/takeover_request_state", 10000u, 206u },
+```
+
+The fourth field is `max_latency_ms`. The hazard-lights row (100) and the
+availability age row (500) are unchanged. The per-node declared-QoS and
+params headers are byte-identical. The resolved model moves in
+`within_ms` 110 -> 206, `call_mrm` 110 -> 206 and `driver_exit`
+100 -> 149, plus the diagnostics that quote them. The marker header
+carries the contract digest `e88319a3...` (was `990442fc...`).
+
+**The heap on the board.** Read as in section 9 (run `w31-bringup`: the
+island joined to the container Autoware through `just l3-peer`, and the
+boot record read over SWD 40 s after the gate came up):
+
+    stage      6  FirstSpin -- registration complete and spinning
+      platform heap PEAK            77160 bytes   (75.0% of the heap)
+      platform heap capacity        102912 bytes   (NROS_ZEPHYR_HEAP_SIZE)
+    HEAP HEADROOM: ok -- 25752 bytes spare (peak 77160 of 102912, floor 24576).
+
+This is the same peak as 780195b0.
+
+### The verdicts
+
+The acts ran in the order a, b, encore, three times. The load is the 1-min
+average at the start of each run:
+
+```
+w31-r01 (5.14) VERDICT: PASS a: v at the fault 3.92 m/s; TOR on True, TOR now 1, control mode 4, mrm (1, 1)
+w31-r02 (5.76) VERDICT: PASS b: v at the fault 3.92 m/s; TOR on True, mrm (3, 3) (3 = COMFORTABLE_STOP), v 0.000
+w31-r03 (3.24) VERDICT: PASS encore: v at the fault 3.92 m/s; mrm (3, 2) (2 = EMERGENCY_STOP), v 0.000, after restore mrm (1, 1)
+w31-r04 (2.27) VERDICT: PASS a: v at the fault 3.88 m/s; TOR on True, TOR now 1, control mode 4, mrm (1, 1)
+w31-r05 (2.54) VERDICT: PASS b: v at the fault 3.89 m/s; TOR on True, mrm (3, 3) (3 = COMFORTABLE_STOP), v 0.000
+w31-r06 (5.07) VERDICT: PASS encore: v at the fault 3.90 m/s; mrm (3, 2) (2 = EMERGENCY_STOP), v 0.000, after restore mrm (1, 1)
+w31-r07 (4.45) VERDICT: PASS a: v at the fault 3.84 m/s; TOR on True, TOR now 1, control mode 4, mrm (1, 1)
+w31-r08 (7.93) VERDICT: PASS b: v at the fault 3.87 m/s; TOR on True, mrm (3, 3) (3 = COMFORTABLE_STOP), v 0.000
+w31-r09 (5.82) VERDICT: PASS encore: v at the fault 3.88 m/s; mrm (3, 2) (2 = EMERGENCY_STOP), v 0.000, after restore mrm (1, 1)
+```
+
+All 9 runs PASS, and `trace-check: PASS` on all 9 traces. Each run's
+`explain.txt` came from this contract: its budget table is identical to
+`tools/timeline/testdata/explain.txt` (routes 206.00, WINDOWS 10206.00).
+Every trace names image `664592d4`. Every Autoware start read `nodes
+31/31, containers 13/13, composable 68/68`. The window's history ran 39-48
+records over 1464-1496 ms. After the trigger the board wrote 464-605 B/s.
+The SWD readout held the core halted 0.181-0.195 s.
+
+One act-A attempt before the r07 that counts never faulted. Its Autoware
+container came up with "0/2 composables loaded" in
+`velocity_smoother_container` (`composable_loaded` 66 of 68, `"ok":false`).
+run-board.sh still saw "Startup complete", and the vehicle never engaged
+("FATAL: the vehicle did not reach 1.0 m/s"). No fault was injected, so
+the trace never triggered. It is kept as `w31-r07-aw6668`, and act A was
+run again as r07.
+
+### The rows, fresh
+
+Every row of every run PASS. The last column is the bound minus the
+largest observation.
+
+**Branch A.**
+
+| term | declared | r01 | r04 | r07 | max observed | declared - max |
+|---|---|---|---|---|---|---|
+| detect (button -> verdict on the wire) | 100.00 | 76.23 | 62.78 | 45.96 | 76.23 | 23.77 |
+| takeover route (verdict -> request on) | 206.00 | 66.77 | 69.76 | 72.52 | 72.52 | 133.48 |
+| driver answered inside the window | 10000.00 | 3030.11 | 3041.02 | 3055.56 | 3055.56 | 6944.44 |
+| exit route (MANUAL taken -> request off) | 149.00 | 16.17 | 104.53 | 20.50 | 104.53 | 44.47 |
+| no MRM | none | none | none | none | - | - |
+| HPC alive: longest availability gap (host) | 500.00 | 113.07 | 107.83 | 105.84 | 113.07 | 386.93 |
+
+**Branch B.**
+
+| term | declared | r02 | r05 | r08 | max observed | declared - max |
+|---|---|---|---|---|---|---|
+| detect (button -> verdict on the wire) | 100.00 | 6.79 | 86.70 | 89.96 | 89.96 | 10.04 |
+| takeover route (verdict -> request on) | 206.00 | 83.06 | 51.78 | 112.75 | 112.75 | 93.25 |
+| window dwell, island clock (request on -> off) | [10000.00, 10206.00] | 10112.04 | 10013.48 | 10111.86 | 10112.04 | 93.96 |
+| window dwell, host (request on -> off as received) | [10000.00, 10206.00] | 10127.99 | 10010.58 | 10103.55 | 10127.99 | 78.01 |
+| windows (verdict -> deadline = request on + window) | 10206.00 | 10083.06 | 10051.78 | 10112.75 | 10112.75 | 93.25 |
+| route, island clock (deadline -> velocity limit) | 206.00 | 113.06 | 14.56 | 112.45 | 113.06 | 92.94 |
+| route, host (deadline -> velocity limit received) | 206.00 | 128.22 | 10.95 | 103.86 | 128.22 | 77.78 |
+| windows + route (verdict -> velocity limit) | 10412.00 | 10196.12 | 10066.34 | 10225.20 | 10225.20 | 186.80 |
+| windows + route, host (verdict -> velocity limit received) | 10412.00 | 10228.93 | 10070.53 | 10225.20 | 10228.93 | 183.07 |
+| settle (velocity limit -> standstill) | 9996.67 | 5422.42 | 5020.11 | 6085.30 | 6085.30 | 3911.37 |
+| total (button -> standstill) | 20508.67 | 15625.33 | 15173.15 | 16400.46 | 16400.46 | 4108.21 |
+| within the FTTI | 30000.00 | 15625.33 | 15173.15 | 16400.46 | 16400.46 | 13599.54 |
+| rung reached | COMFORTABLE_STOP | COMFORTABLE_STOP | COMFORTABLE_STOP | COMFORTABLE_STOP | - | - |
+| HPC alive: longest availability gap (host) | 500.00 | 107.38 | 104.45 | 108.43 | 108.43 | 391.57 |
+| entry speed (m/s) | 8.33 | 3.05 | 3.05 | 3.06 | 3.06 | 5.27 |
+
+**Encore.**
+
+| term | declared | r03 | r06 | r09 | max observed | declared - max |
+|---|---|---|---|---|---|---|
+| detect (last sample -> reaction tick) | 618.00 | 553.91 | 556.82 | 579.60 | 579.60 | 38.40 |
+| route (reaction tick -> braking command) | 239.33 | 17.22 | 7.04 | 8.36 | 17.22 | 222.11 |
+| detect + route (last sample -> braking command) | 739.33 | 571.13 | 563.86 | 587.95 | 587.95 | 151.38 |
+| settle (braking command -> standstill) | 4165.33 | 2915.21 | 2897.72 | 2917.58 | 2917.58 | 1247.75 |
+| total (last sample -> standstill) | 4904.67 | 3486.34 | 3461.58 | 3505.54 | 3505.54 | 1399.13 |
+| within the FTTI | 10000.00 | 3486.34 | 3461.58 | 3505.54 | 3505.54 | 6494.46 |
+| rung reached | EMERGENCY_STOP | EMERGENCY_STOP | EMERGENCY_STOP | EMERGENCY_STOP | - | - |
+| entry speed (m/s) | 8.33 | 4.22 | 4.23 | 4.24 | 4.24 | 4.09 |
+
+Several fresh values go past what the 13 W8 runs showed, and all of them
+stay inside the new bounds:
+
+- r04's exit route, 104.53, is past W8's largest (72.87) and would have
+  failed the old 100 ms bound. Its island trace: the TOR-off publish came
+  7.97 ms into the tick after the take of MANUAL, so the take waited 96.56
+  ms for that tick. That is one full tick of waiting, which is the case
+  `driver_exit`'s 149 = 118 + 31 is sized for.
+- r08's takeover route, 112.75, is past the old 110 ms bound. In the
+  trace it is 27.39 of link, 79.99 of waiting for the tick, and 5.37 into
+  the tick.
+- r09's encore detect, 579.60, is past W8's largest (575.78), and inside
+  618.
+- In r05 the expiry tick came 10,000.13 ms after the on-tick (island
+  clock), not about 10,100 as in r02 (10,100.01), r08 (10,095.73) and all
+  of W8's B runs. So the dwell was 10,013.48 (= 10,000.13 + 21.40 of work
+  in the expiry tick - 8.05 in the on-tick), and the route 14.56. The
+  handler's 100 ms timer hit the deadline tick on or just after it, not
+  just before, so no extra tick was needed. That is tick phase, inside
+  the rung.
+
+### The terms, fresh
+
+These are section 10's `terms.py` on the 9 runs (island clock except
+`link`):
+
+```
+max: link 67.02, wait 79.99, spacing 108.34, work 21.69, tor_on 8.05, call 13.79, tor_off 21.49, operate 0.88, exit 104.53
+```
+
+| term | declared from W8 (section 10) | fresh, 9 runs | inside? |
+|---|---|---|---|
+| link (gate publish -> island take) | 57 (max 47.43) | 8.93-67.02 (12 edges; r01 60.64 and 67.02) | **no, +10.02** |
+| tick spacing | 118 | 90.62-108.34 (1104 gaps) | yes |
+| work (tick -> last publish) | 31 | 0.40-21.69 | yes |
+| `call_mrm` = link + tick + work | 206 | takeover route at most 112.75 | yes |
+| `driver_exit` = tick + work | 149 | 16.17-104.53 | yes |
+| control_mode transport (host MANUAL -> island take) | 143 | 25.79-57.68 (3 edges) | yes |
+
+The one term past its figure is the link. In r01 both of its edges took
+longer than the 57 ms `max_transport` stated on the handler's
+availability subscriber: the fault edge 60.64 ms, the restore edge
+67.02. It is a cross-clock measure: over-stated, never under-stated, by
+the smallest out-link delay (section 10). r01's second anchor disagreed
+with the first by 59.95 ms, and its publish/receipt pair spread was
+0.08 ms. As in section 10, that disagreement tracks the in-link hop
+itself (60.64). No row failed: the island took the fault edge 0.07 ms
+before its tick, so `call_mrm` held 66.77 of 206. Two things follow.
+First, `max_transport: 57ms` is not an upper bound on this link. Once
+more runs size it again, it wants about 81 at +20 % over 67.02. Second,
+`call_mrm`'s 206 stays sound, because it is the sum of three worst cases
+and no run has put them together: the largest link, wait and work in
+these 9 runs sum to 67.02 + 79.99 + 21.69 = 168.70. play_launch 0.13.0
+reads neither number in the fault arithmetic (section 10, F1), so the
+contract's verdicts do not move.
+
+### Runtime contract violations
+
+The image carries the 206 ms `max-latency-runtime` monitors, and nothing
+the board can show says one fired. There is also no channel on which it
+could have been seen, so the offline measure below is the evidence:
+
+- **Console.** The monitor reports with `log_warn` ("contract violation:
+  <rule> <fqn> measured=... declared=...", nros-node
+  `executor/monitor.rs` `log_violation`). The board's console is lpuart0,
+  which is not wired. lpuart2 carries the zenoh link.
+- **The ring.** Nothing drains the executor's violation ring. It keeps the
+  first 8 violations since boot and drops the rest. Read over SWD at
+  bring-up (`w31-bringup/vscan.txt`), it was already full: 8 of 8 slots,
+  all from start-up. That is 4 `timer-overrun-runtime timer`, 1
+  `release-jitter-runtime spin measured=57751 declared=10000`, 1
+  `silence-runtime /mrm_handler/operation_mode_availability declared=500`,
+  and 2 `rate-hierarchy-runtime` on the comfortable-stop operator's
+  clear_velocity_limit and max_velocity_candidates (on-demand topics with
+  a 10 Hz `min_rate_hz`). So a latency violation during an act would not
+  be stored.
+- **The trace.** No marker records a violation. What the monitor measures
+  is one dispatch's elapsed time, charged to each monitored publisher
+  whose count advanced in it (`attribute_latency` in `executor/spin.rs`),
+  and the trace brackets every handler callback with ENTRY/EXIT. The
+  longest handler callback that published `mrm_state` or the TOR state
+  was 6.86-24.93 ms per run (r03's EMERGENCY_STOP tick, 24.93). The
+  longest handler callback of any kind was 24.93 ms. So none came within
+  181 ms of the 206 ms rows, and none would have tripped W8's 110 either.
+  The monitor bounds the handler's work in one callback. It does not
+  bound the route, which is waiting for the tick plus crossing the link.
+
+Runs, tables and plots are in `build/timeline/w31-{bringup,r01..r09,r07-aw6668}/`
+in the W31 worktree (`timeline.png`, `table.md`, `explain.txt`,
+`island.trace*`, the JSONL files). The per-run logs, `terms.txt`, and the
+tools (`vscan.py` for the ring, `mon.py` for the callback times, `agg.py`
+for the tables above) are in `/mnt/mx500/aeon/worktrees/w31-logs/`.

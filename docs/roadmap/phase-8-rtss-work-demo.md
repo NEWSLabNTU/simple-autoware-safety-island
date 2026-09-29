@@ -595,6 +595,31 @@ the others by fast-forward push once implementation starts.
   timer jitter key, F3 service-edge queueing, F4 the unmeasured link hops,
   F5 an image built from this contract on the board.
 
+- **W31 - the board budgets on fresh board runs.** Status (2026-09-30):
+  docs/takeover-trace.md section 11 (W30's F5). The board image is built
+  from 71743c3 (ELF sha256 664592d4..., RAM 290,728 B, 88.72 %). Against
+  780195b0 the generated entry changes only the `mrm_state` and
+  `takeover_request_state` monitor rows, 110 -> 206 ms. Heap on the
+  board, joined through `just l3-peer`: FirstSpin peak 77,160 of 102,912
+  B, headroom ok (25,752 spare). Nine acts (a, b, encore x3, load
+  2.27-7.93), each flashed and reset under the demo lock: 9/9 VERDICT
+  PASS, trace-check PASS, every analysis row PASS against W30's contract
+  (each run's explain.txt budget table equals testdata/explain.txt).
+  Largest against bound: takeover route 112.75/206, exit route
+  104.53/149 (past the old 100), dwell 10,112.04 in [10,000, 10,206],
+  B total 16,400.46/20,508.67, encore detect 579.60/618 and total
+  3,505.54/4,904.67. One term went past its W30 figure: the serial link
+  (cross-clock) reached 67.02 ms in r01 against the stated
+  `max_transport` 57. No row failed, since r01 took the edge 0.07 ms
+  before its tick. No runtime violation was seen: the console (lpuart0)
+  is unwired, and the executor's never-drained violation ring was full (8
+  start-up entries) by bring-up. The longest handler callback that
+  published a 206 ms-monitored topic was 24.93 ms (trace ENTRY/EXIT). One
+  act-A attempt was void: Autoware came up at 66/68 composables and never
+  engaged. It was rerun. Open: re-size the link's `max_transport` (about
+  81 at +20 %) once more runs exist; a violation channel the board can
+  show (drain the ring, or a trace marker per violation).
+
 Order: W0 first; W1, W2, W3, W6 in parallel; W4 and W5 after W1; W7 after
 W6; W8 after W2, W4, W5, W7; W9 last. Rough effort 6-7 weeks on the core
 path (D); the board path 1-1.5 weeks once W1 and W2 land (B); the link is
