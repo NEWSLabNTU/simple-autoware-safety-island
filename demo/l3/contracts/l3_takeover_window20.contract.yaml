@@ -165,11 +165,9 @@ nodes:
       timeout_cancel_mrm_behavior: { type: double }
       use_emergency_holding: { type: bool }
       timeout_emergency_recovery: { type: double }
-      use_parking_after_stopped: { type: bool }
       use_pull_over: { type: bool }
       use_comfortable_stop: { type: bool }
       turning_hazard_on.emergency: { type: bool }
-      turning_indicator_on.emergency: { type: bool }
       # unit W7's two parameters
       use_takeover_request: { type: bool }
       takeover_request_timeout: { type: double }

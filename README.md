@@ -18,7 +18,7 @@ easiest → hardest:
 | --- | --- | --- |
 | `autoware_mrm_emergency_stop_operator` | ~156 | jerk-limited hard stop ramp |
 | `autoware_mrm_comfortable_stop_operator` | ~131 | gentle stop via velocity limit |
-| `autoware_stop_mode_operator` | ~110 | continuous safe-command emitter |
+| `autoware_stop_mode_operator` | ~110 | continuous safe-command emitter; ported, but out of the image since phase8-W8a (no reader in the demo) |
 | `autoware_mrm_handler` | ~600 | MRM state machine — the island brain |
 
 Message dependencies are vendored verbatim (subset of files) under `src/`:

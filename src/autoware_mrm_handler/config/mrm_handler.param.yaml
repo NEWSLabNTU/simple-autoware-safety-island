@@ -8,7 +8,6 @@
     timeout_cancel_mrm_behavior: 0.01
     use_emergency_holding: false
     timeout_emergency_recovery: 5.0
-    use_parking_after_stopped: false
     use_pull_over: false
     # true for the phase-8 demo (phase8-W7): the takeover request falls to
     # the comfortable stop, with the emergency stop as the floor. It is also
@@ -23,7 +22,4 @@
 
     # setting whether to turn hazard lamp on for each situation
     turning_hazard_on:
-      emergency: true
-
-    turning_indicator_on:
       emergency: true

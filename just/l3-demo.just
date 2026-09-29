@@ -11,8 +11,8 @@ l3-help:
 # rmw_zenohd, listening on the board's serial line at 921,600 baud and
 # connecting to Autoware's stock router, so every serial-specific setting lives
 # in demo/l3/router/island-gateway.json5 and the stock router stays untouched:
-# keep_alive 6, egress downsampling of kinematic_state / control_mode /
-# gear_cmd, and no liveliness tokens toward the island. docs/serial-link.md has
+# keep_alive 6, egress downsampling of kinematic_state / control_mode, and no
+# liveliness tokens toward the island. docs/serial-link.md has
 # the measurements behind each one.
 #
 # Same traps as `board-peer` (just/board-peer.just), handled the same way: env -i

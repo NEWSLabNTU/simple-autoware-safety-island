@@ -42,7 +42,8 @@ scripts that produced it and the flashed image are under
 - **The gateway** (`just l3-peer`, `demo/l3/router/island-gateway.json5`):
   its own `rmw_zenohd` on the serial port by its `/dev/serial/by-id` path,
   connected to the stock router, keep_alive 6, egress downsampling of
-  kinematic_state / control_mode / gear_cmd, the liveliness ACL, and a
+  kinematic_state / control_mode (and gear_cmd until phase8-W25, after the
+  island stopped reading it), the liveliness ACL, and a
   transmit queue raised from 2 to 16 batches: with the stock queue, zenoh 1.8
   stopped sending data to the board for good 215 s into a soak while its
   keepalives still passed (a false emergency).
@@ -247,8 +248,9 @@ command):
     just l3-peer [tty=/dev/serial/by-id/...FT232R...] [baud=921600] [stock=tcp/127.0.0.1:7447] [port=7449] [log=...]
 
 1. `keep_alive: 6` (router-serial.json5's reason).
-2. Downsampling, serial egress, `put`: kinematic_state, control_mode and
-   gear_cmd limited to 12 Hz. A limit AT the source rate drops samples to
+2. Downsampling, serial egress, `put`: kinematic_state and control_mode
+   limited to 12 Hz (gear_cmd too until phase8-W25; the island has not read
+   it since phase8-W8a). A limit AT the source rate drops samples to
    jitter; 12 Hz passes a 10 Hz source (0.13 % dropped, soak4) and takes one
    in four of the simulator's 40 Hz. steering_status, velocity_status and
    control_cmd are not downsampled: their contract rate is 30 Hz and dropping

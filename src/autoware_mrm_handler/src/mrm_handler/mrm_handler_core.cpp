@@ -80,12 +80,9 @@ MrmHandler::MrmHandler(::nros::NodeHandle handle)
     declare_parameter<double>("timeout_cancel_mrm_behavior", 0.01);
   param_.use_emergency_holding = declare_parameter<bool>("use_emergency_holding", false);
   param_.timeout_emergency_recovery = declare_parameter<double>("timeout_emergency_recovery", 5.0);
-  param_.use_parking_after_stopped = declare_parameter<bool>("use_parking_after_stopped", false);
   param_.use_pull_over = declare_parameter<bool>("use_pull_over", false);
   param_.use_comfortable_stop = declare_parameter<bool>("use_comfortable_stop", true);
   param_.turning_hazard_on.emergency = declare_parameter<bool>("turning_hazard_on.emergency", true);
-  param_.turning_indicator_on.emergency =
-    declare_parameter<bool>("turning_indicator_on.emergency", true);
   // phase8-W7 demo extension (not upstream): the takeover request. The
   // contract's takeover_request window is bound to the timeout.
   param_.use_takeover_request = declare_parameter<bool>("use_takeover_request", true);

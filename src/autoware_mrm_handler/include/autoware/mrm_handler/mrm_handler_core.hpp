@@ -45,11 +45,6 @@ struct HazardLampPolicy
   bool emergency;
 };
 
-struct TurnIndicatorPolicy
-{
-  bool emergency;
-};
-
 struct Param
 {
   int64_t update_rate;
@@ -58,11 +53,9 @@ struct Param
   double timeout_cancel_mrm_behavior;
   bool use_emergency_holding;
   double timeout_emergency_recovery;
-  bool use_parking_after_stopped;
   bool use_pull_over;
   bool use_comfortable_stop;
   HazardLampPolicy turning_hazard_on{};
-  TurnIndicatorPolicy turning_indicator_on{};
   // phase8-W7 demo extension (not upstream): the takeover request.
   bool use_takeover_request;
   double takeover_request_timeout;

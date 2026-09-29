@@ -18,7 +18,7 @@
 //      inside zenoh-pico's 20 s tolerance at a 10 s island lease
 //      (router-serial.json5 explains); the island states 60 s since
 //      phase8-W15 (island-serial/serial.conf), so this is now margin.
-//   2. `downsampling`: serial egress, three rules (see the block).
+//   2. `downsampling`: serial egress, two rules (see the block).
 //   3. `access_control`: serial egress, no liveliness tokens (see the block).
 //   4. transport.link.tx.queue: size.data 16 (stock 2) and
 //      congestion_control.drop.wait_before_drop 50000 us (stock 1000). A
@@ -861,7 +861,6 @@
   /// source rate. Planning simulator sources are 40 Hz (brief C 2.1):
   ///   kinematic_state 40 Hz -> limit 12 Hz -> one in four, 10 Hz (contract 10)
   ///   control_mode    40 Hz -> limit 12 Hz -> 10 Hz               (contract 10)
-  ///   gear_cmd      ~33 Hz -> limit 12 Hz -> ~11 Hz               (contract 10)
   /// NOT downsampled: steering_status, velocity_status (40 Hz) and control_cmd
   /// (~33 Hz). Their contract rate is 30 Hz, and dropping from 40 Hz yields 20
   /// Hz, below the contract; at 921,600 baud they fit at the source rate.
@@ -874,7 +873,6 @@
       rules: [
         { key_expr: "10/localization/kinematic_state/**", freq: 12.0 },
         { key_expr: "10/vehicle/status/control_mode/**", freq: 12.0 },
-        { key_expr: "10/control/command/gear_cmd/**", freq: 12.0 },
       ],
     },
   ],
@@ -888,7 +886,7 @@
   /// read task (docs/serial-link.md). Denying liveliness tokens on egress
   /// keeps every declaration and undeclaration of a HOST token off the wire.
   /// The island's own tokens are ingress and still reach the host graph, so
-  /// `ros2 node list` shows the four island nodes.
+  /// `ros2 node list` shows the three island nodes.
   access_control: {
     enabled: true,
     default_permission: "allow",
