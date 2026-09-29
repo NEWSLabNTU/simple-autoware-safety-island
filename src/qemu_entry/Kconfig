@@ -1,0 +1,5 @@
+# The application Kconfig of this entry (phase8-W17): Zephyr's, plus the
+# island's trace-window options. Nothing else is defined here.
+rsource "../safety_island_tracing/Kconfig.island_trace"
+
+source "Kconfig.zephyr"

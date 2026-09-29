@@ -10,11 +10,19 @@ built from (subsys/tracing/ctf/tsdl/metadata); an id that is in neither the
 TSDL nor island_trace.h stops the decode rather than resynchronising on
 garbage.
 
-Input: a native_sim dump (`ISLTRC01` header, written by the image at exit) or
-a raw `ram_tracing` read from the board (`--zephyr 4.4`, no header).
+Input: a native_sim dump (`ISLTRC01` header, written by the image at exit), a
+raw `ram_tracing` read from the board (`--zephyr 4.4`, no header), or such a
+read wrapped in the same header by `wrap` (tools/timeline/readout.py does, with
+the heartbeat counter it read beside the buffer).
 
   island_trace.py decode <file> [--timeline N] [--perfetto out.json]
   island_trace.py check  <file>
+  island_trace.py wrap   <raw> --zephyr 4.4 --hb-emitted N [--hb-last-uptime MS] -o <out>
+
+A trace recorded with the trace window (phase8-W17, CONFIG_ISLAND_TRACE_WINDOW;
+the provenance says `window=trigger`) starts at its pre-trigger history and
+carries one TRIGGER record; `check` then asks for the trigger instead of every
+marker, and for heartbeats contiguous from the first one kept instead of 0.
 
 `check` exits 0 only if: the decode is clean; the provenance names the marker
 table in markers.json; every marker is present at least once, except those
@@ -111,8 +119,8 @@ def load(path, zephyr=None, tsdl=None):
     tr.tsdl = tsdl_path(zephyr, tsdl)
     id_size, events = parse_tsdl(tr.tsdl)
     base = 0x1E0 if id_size == 2 else 0xE0
-    ev_marker, ev_hb, ev_prov = base, base + 1, base + 2
-    for e in (ev_marker, ev_hb, ev_prov):
+    ev_marker, ev_hb, ev_prov, ev_trig = base, base + 1, base + 2, base + 3
+    for e in (ev_marker, ev_hb, ev_prov, ev_trig):
         if e in events:
             sys.exit(f"island_trace: id {e:#x} collides with a Zephyr CTF event in {tr.tsdl}")
     buf = buf + b"\0" * 64  # the dump trims trailing zeros; a record may end in them
@@ -120,6 +128,7 @@ def load(path, zephyr=None, tsdl=None):
     names = {m["id"]: m["name"] for m in table["markers"]}
     recs, sizes = [], Counter()
     pos, prev_ts, ext = 0, None, 0
+    seg_start = None
     tr.error = None
     hsz = 4 + id_size
     while pos + hsz <= len(buf):
@@ -152,6 +161,11 @@ def load(path, zephyr=None, tsdl=None):
             n, = struct.unpack_from("<H", buf, p)
             rec.update(kind="provenance", text=buf[p + 2:p + 2 + n].decode("ascii", "replace"))
             p += 2 + n
+        elif eid == ev_trig:
+            mk, pre_ms, kept, spin, lost, filt = struct.unpack_from("<HHHHII", buf, p)
+            rec.update(kind="trigger", marker=mk, name=names.get(mk, f"UNKNOWN_{mk}"), pre_ms=pre_ms,
+                       pre_kept=kept, spin_keep=spin, pre_lost=lost, filtered=filt)
+            p += 16
         elif eid in events:
             name, fields = events[eid]
             rec.update(kind=name)
@@ -165,6 +179,20 @@ def load(path, zephyr=None, tsdl=None):
         sizes[rec["kind"]] += p - pos
         recs.append(rec)
         pos = p
+        if rec["kind"] == "provenance" and "window=trigger" in rec["text"]:
+            # phase8-W17: with the trace window nothing else need follow the
+            # provenance until the trigger, an unknown time later (the board
+            # writes nothing in between), so the next record starts a new
+            # segment, anchored below on a heartbeat's uptime.
+            prev_ts, seg_start = None, len(recs)
+    if seg_start is not None:
+        hb = next((r for r in recs[seg_start:] if r["kind"] == "heartbeat"), None)
+        if hb is not None:
+            # the segment's stamps are the island clock mod 2^32; the heartbeat's
+            # uptime_ms (same kernel clock, ms) says which multiple of 2^32 ns
+            k = round((hb["uptime_ms"] * 1_000_000 - hb["t_ns"]) / 2**32)
+            for r in recs[seg_start:]:
+                r["t_ns"] += k * 2**32
     tr.records, tr.bytes_by_kind, tr.used = recs, sizes, pos
     tr.table = table
     return tr
@@ -244,6 +272,56 @@ def param_value(model, node, param):
     return val
 
 
+# bytes of one island record on the board (Zephyr 4.x, u16 event id)
+BOARD_BYTES = dict(marker=12, heartbeat=14, trigger=22)
+
+
+def window_stats(tr):
+    """The window's figures: where the trigger is, what came before it, and the
+    island's own record rate after it, in this trace's bytes and the board's."""
+    recs = tr.records
+    ti = next((i for i, r in enumerate(recs) if r["kind"] == "trigger"), None)
+    if ti is None:
+        return None
+    trig = recs[ti]
+    pre = [r for r in recs[:ti] if r["kind"] in ("marker", "heartbeat")
+           and r["t_ns"] <= trig["t_ns"] and r["t_ns"] >= trig["t_ns"] - 2_100_000_000]
+    post = [r for r in recs[ti + 1:] if r["kind"] in ("marker", "heartbeat")]
+    t_end = post[-1]["t_ns"] if post else trig["t_ns"]
+    span = (t_end - trig["t_ns"]) / 1e9
+    per = {k: tr.bytes_by_kind[k] / n for k, n in Counter(r["kind"] for r in recs).items()}
+    post_bytes = sum(per[r["kind"]] for r in post)
+    post_board = sum(BOARD_BYTES[r["kind"]] for r in post)
+    pre_board = sum(BOARD_BYTES[r["kind"]] for r in pre)
+    prov_board = sum(4 + 2 + 2 + len(r["text"]) for r in recs if r["kind"] == "provenance")
+    return dict(trigger=trig, pre=pre, post=post, span_s=span,
+                pre_span_ms=(trig["t_ns"] - pre[0]["t_ns"]) / 1e6 if pre else 0.0,
+                post_bytes=post_bytes, post_board=post_board, pre_board=pre_board,
+                prov_board=prov_board,
+                board_rate=post_board / span if span > 0 else None)
+
+
+def window_report(tr, kv, say):
+    w = window_stats(tr)
+    if w is None:
+        say("FAIL window: the provenance says window=trigger and there is no TRIGGER record "
+            "(the detector path never ran after the arm, or the buffer was read before the act)")
+        return False
+    t = w["trigger"]
+    say(f"ok   window: trigger {t['name']} (id {t['marker']}); history {len(w['pre'])} records over "
+        f"{w['pre_span_ms']:.0f} ms before it (pre_ms {t['pre_ms']}, kept {t['pre_kept']}, not flushed "
+        f"{t['pre_lost']}); spin_keep {t['spin_keep']}, {t['filtered']} markers dropped by policy before it")
+    if w["board_rate"]:
+        say(f"ok   window: {len(w['post'])} records over {w['span_s']:.2f} s after the trigger, "
+            f"{w['post_bytes']:.0f} B here, {w['post_board']} B in the board's format = "
+            f"{w['board_rate']:.0f} B/s = {1024 / w['board_rate']:.2f} s of act per KiB")
+        fixed = w["prov_board"] + w["pre_board"] + BOARD_BYTES["trigger"]
+        say(f"info window: fixed cost {fixed} B (provenance {w['prov_board']}, history {w['pre_board']}, "
+            f"trigger 22); at this rate 16 KiB holds {(16384 - fixed) / w['board_rate']:.1f} s, "
+            f"24 KiB {(24576 - fixed) / w['board_rate']:.1f} s, 32 KiB {(32768 - fixed) / w['board_rate']:.1f} s")
+    return True
+
+
 def check(tr, model_path):
     ok = True
     lines = []
@@ -254,11 +332,14 @@ def check(tr, model_path):
     else:
         say(f"ok   decode: {len(tr.records)} records, {tr.used} bytes, no unknown event id")
     provs = [r for r in tr.records if r["kind"] == "provenance"]
+    kv = {}
+    if provs:
+        kv = dict(x.split("=", 1) for x in provs[0]["text"].split(";")[1:] if "=" in x)
+    windowed = kv.get("window") == "trigger"
     if not provs:
         ok = False
         say("FAIL provenance: no provenance record")
     else:
-        kv = dict(x.split("=", 1) for x in provs[0]["text"].split(";")[1:] if "=" in x)
         if kv.get("table_sha256") != tr.table["table_sha256"]:
             ok = False
             say(f"FAIL provenance: trace table {kv.get('table_sha256')} != markers.json {tr.table['table_sha256']}")
@@ -291,7 +372,11 @@ def check(tr, model_path):
     if unknown:
         ok = False
         say(f"FAIL markers: ids not in the table: {unknown}")
-    if missing:
+    if missing and windowed:
+        # the window holds one act: markers of the other acts, and of boot, are not in it
+        say(f"info markers: {len(tr.table['markers']) - len(missing) - len(excused)} of "
+            f"{len(tr.table['markers'])} in the window; not in it: {', '.join(missing)}")
+    elif missing:
         ok = False
         say(f"FAIL markers: {len(missing)} of {len(tr.table['markers'])} never seen: {', '.join(missing)}")
     else:
@@ -302,11 +387,13 @@ def check(tr, model_path):
     if not hbs:
         ok = False
         say("FAIL heartbeat: none recorded")
-    elif hbs[0] != 0 or gaps:
+    elif (hbs[0] != 0 and not windowed) or gaps:
         ok = False
         say(f"FAIL heartbeat: first seq {hbs[0]}, {len(gaps)} gap(s): {gaps[:5]}")
     else:
-        say(f"ok   heartbeat: seq 0..{hbs[-1]} contiguous ({len(hbs)} records)")
+        say(f"ok   heartbeat: seq {hbs[0]}..{hbs[-1]} contiguous ({len(hbs)} records)")
+    if windowed:
+        ok = window_report(tr, kv, say) and ok
     if tr.header and hbs:
         emitted = tr.header["heartbeats_emitted"]
         if hbs[-1] + 1 != emitted:
@@ -321,16 +408,43 @@ def check(tr, model_path):
     return ok, lines
 
 
+def wrap(raw_path, out, zephyr, hb_emitted, hb_last_uptime_ms, hb_ms=100):
+    """A raw buffer read off the target (SWD, the QEMU monitor), in the native_sim
+    dump's format: the header carries what the buffer cannot hold about itself
+    -- the heartbeat counter at the read, so `check` can tell a full buffer from
+    a short act. The used length is up to the last non-zero byte, as on
+    native_sim (the backend zeroes the buffer at init; no record id is 0)."""
+    data = open(raw_path, "rb").read()
+    used = len(data.rstrip(b"\0"))
+    major, minor = (int(x) for x in zephyr.split(".")[:2])
+    hdr = MAGIC + struct.pack("<8I", 36, (major << 16) | (minor << 8), len(data), hb_emitted, hb_ms,
+                              hb_last_uptime_ms, used, 0)[:28]
+    with open(out, "wb") as f:
+        f.write(hdr)
+        f.write(data[:used])
+    print(f"island_trace: wrapped {raw_path} ({used} of {len(data)} B used, {hb_emitted} heartbeats "
+          f"emitted) -> {out}")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cmd", choices=["decode", "check"])
+    ap.add_argument("cmd", choices=["decode", "check", "wrap"])
     ap.add_argument("file")
     ap.add_argument("--zephyr", help="major.minor of the tree (needed for a raw board buffer)")
     ap.add_argument("--tsdl", help="explicit path to the CTF TSDL metadata")
     ap.add_argument("--timeline", type=int, default=0, help="print the first N marker/heartbeat records")
     ap.add_argument("--perfetto", help="write a Chrome/Perfetto trace-event JSON here")
     ap.add_argument("--model", default=MODEL)
+    ap.add_argument("--hb-emitted", type=int, help="wrap: island_trace_hb_seq read beside the buffer")
+    ap.add_argument("--hb-last-uptime", type=int, default=0, help="wrap: island_trace_hb_last_uptime_ms")
+    ap.add_argument("--hb-ms", type=int, default=100)
+    ap.add_argument("-o", "--out", help="wrap: the output file")
     a = ap.parse_args()
+    if a.cmd == "wrap":
+        if not a.zephyr or a.hb_emitted is None or not a.out:
+            sys.exit("island_trace: wrap needs --zephyr, --hb-emitted and -o")
+        wrap(a.file, a.out, a.zephyr, a.hb_emitted, a.hb_last_uptime, a.hb_ms)
+        return 0
     tr = load(a.file, a.zephyr, a.tsdl)
     if a.cmd == "decode":
         summarize(tr)

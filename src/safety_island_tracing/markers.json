@@ -1,6 +1,6 @@
 {
  "generator": "src/safety_island_tracing/gen_markers.py",
- "contract_sha256": "a800364f04c84183b5e86f80d8fae019512dc211407f49c754026a297617116a",
+ "contract_sha256": "a1c999f7391f587f6d43cd346251154348108c4de0fc89f7813f20fc0e92dd1b",
  "table_sha256": "9cdf1e17cf38db7174df4a4ad5b6092d7a026957830cf4ebbb2e1ce6d1bc87ca",
  "entities": {
   "pub": 8,
@@ -13,6 +13,9 @@
   "CONFIG_COMMON_LIBC_MALLOC_ARENA_SIZE",
   "CONFIG_DYNAMIC_THREAD_STACK_SIZE",
   "CONFIG_HEAP_MEM_POOL_SIZE",
+  "CONFIG_ISLAND_TRACE_PRE_BYTES",
+  "CONFIG_ISLAND_TRACE_PRE_MS",
+  "CONFIG_ISLAND_TRACE_SPIN_KEEP",
   "CONFIG_LOG_DEFAULT_LEVEL",
   "CONFIG_MAIN_STACK_SIZE",
   "CONFIG_MAX_PTHREAD_COND_COUNT",
@@ -24,8 +27,8 @@
   "CONFIG_NET_PKT_TX_COUNT",
   "CONFIG_NET_SOCKETS_POLL_MAX",
   "CONFIG_NROS_CYCLONE_DOMAIN_ID",
+  "CONFIG_NROS_DOMAIN_ID",
   "CONFIG_NROS_GRAPH_CACHE_SIZE",
-  "CONFIG_NROS_MAX_QUERYABLES",
   "CONFIG_NROS_ZEPHYR_HEAP_SIZE",
   "CONFIG_NROS_ZEPHYR_TASK_SLOTS",
   "CONFIG_NROS_ZEPHYR_TASK_STACK_SIZE",
@@ -38,6 +41,10 @@
   "CONFIG_TRACING_BUFFER_SIZE",
   "CONFIG_TRACING_PACKET_MAX_SIZE"
  ],
+ "window": {
+  "trigger": 7,
+  "arm": 15
+ },
  "markers": [
   {
    "id": 1,
@@ -46,7 +53,8 @@
    "element": "/mrm_comfortable_stop_operator/on_timer",
    "node": "mrm_comfortable_stop_operator",
    "trigger": "timer",
-   "rate_hz": 10.0
+   "rate_hz": 10.0,
+   "record": "spin"
   },
   {
    "id": 2,
@@ -55,7 +63,8 @@
    "element": "/mrm_comfortable_stop_operator/on_timer",
    "node": "mrm_comfortable_stop_operator",
    "trigger": "timer",
-   "rate_hz": 10.0
+   "rate_hz": 10.0,
+   "record": "spin"
   },
   {
    "id": 3,
@@ -63,7 +72,8 @@
    "kind": "path_entry",
    "element": "/mrm_comfortable_stop_operator/operate",
    "node": "mrm_comfortable_stop_operator",
-   "trigger": "input"
+   "trigger": "input",
+   "record": "every"
   },
   {
    "id": 4,
@@ -71,7 +81,8 @@
    "kind": "path_exit",
    "element": "/mrm_comfortable_stop_operator/operate",
    "node": "mrm_comfortable_stop_operator",
-   "trigger": "input"
+   "trigger": "input",
+   "record": "every"
   },
   {
    "id": 5,
@@ -80,7 +91,8 @@
    "element": "/mrm_emergency_stop_operator/on_timer",
    "node": "mrm_emergency_stop_operator",
    "trigger": "timer",
-   "rate_hz": 30.0
+   "rate_hz": 30.0,
+   "record": "spin"
   },
   {
    "id": 6,
@@ -89,7 +101,8 @@
    "element": "/mrm_emergency_stop_operator/on_timer",
    "node": "mrm_emergency_stop_operator",
    "trigger": "timer",
-   "rate_hz": 30.0
+   "rate_hz": 30.0,
+   "record": "spin"
   },
   {
    "id": 7,
@@ -98,7 +111,8 @@
    "element": "/mrm_handler/call_mrm",
    "node": "mrm_handler",
    "trigger": "input",
-   "max_latency_ms": 110.0
+   "max_latency_ms": 110.0,
+   "record": "every"
   },
   {
    "id": 8,
@@ -107,7 +121,8 @@
    "element": "/mrm_handler/call_mrm",
    "node": "mrm_handler",
    "trigger": "input",
-   "max_latency_ms": 110.0
+   "max_latency_ms": 110.0,
+   "record": "every"
   },
   {
    "id": 9,
@@ -116,7 +131,8 @@
    "element": "/mrm_handler/driver_exit",
    "node": "mrm_handler",
    "trigger": "input",
-   "max_latency_ms": 100.0
+   "max_latency_ms": 100.0,
+   "record": "every"
   },
   {
    "id": 10,
@@ -125,7 +141,8 @@
    "element": "/mrm_handler/driver_exit",
    "node": "mrm_handler",
    "trigger": "input",
-   "max_latency_ms": 100.0
+   "max_latency_ms": 100.0,
+   "record": "every"
   },
   {
    "id": 11,
@@ -135,7 +152,8 @@
    "node": "mrm_handler",
    "trigger": "timer",
    "max_latency_ms": 100.0,
-   "rate_hz": 10.0
+   "rate_hz": 10.0,
+   "record": "spin"
   },
   {
    "id": 12,
@@ -145,7 +163,8 @@
    "node": "mrm_handler",
    "trigger": "timer",
    "max_latency_ms": 100.0,
-   "rate_hz": 10.0
+   "rate_hz": 10.0,
+   "record": "spin"
   },
   {
    "id": 13,
@@ -153,7 +172,8 @@
    "kind": "take",
    "element": "/mrm_comfortable_stop_operator/operate",
    "node": "mrm_comfortable_stop_operator",
-   "triggers": "/mrm_comfortable_stop_operator/operate"
+   "triggers": "/mrm_comfortable_stop_operator/operate",
+   "record": "every"
   },
   {
    "id": 14,
@@ -161,7 +181,8 @@
    "kind": "take",
    "element": "/mrm_handler/control_mode",
    "node": "mrm_handler",
-   "triggers": "/mrm_handler/driver_exit"
+   "triggers": "/mrm_handler/driver_exit",
+   "record": "change"
   },
   {
    "id": 15,
@@ -169,7 +190,8 @@
    "kind": "take",
    "element": "/mrm_handler/operation_mode_availability",
    "node": "mrm_handler",
-   "triggers": "/mrm_handler/call_mrm"
+   "triggers": "/mrm_handler/call_mrm",
+   "record": "every"
   },
   {
    "id": 16,
@@ -177,7 +199,8 @@
    "kind": "service_call",
    "element": "/mrm_handler/comfortable_stop_operate",
    "node": "mrm_handler",
-   "service": "/system/mrm/comfortable_stop/operate"
+   "service": "/system/mrm/comfortable_stop/operate",
+   "record": "every"
   },
   {
    "id": 17,
@@ -185,7 +208,8 @@
    "kind": "service_call",
    "element": "/mrm_handler/emergency_stop_operate",
    "node": "mrm_handler",
-   "service": "/system/mrm/emergency_stop/operate"
+   "service": "/system/mrm/emergency_stop/operate",
+   "record": "every"
   },
   {
    "id": 18,
@@ -193,7 +217,8 @@
    "kind": "service_serve_entry",
    "element": "/mrm_comfortable_stop_operator/operate",
    "node": "mrm_comfortable_stop_operator",
-   "service": "/system/mrm/comfortable_stop/operate"
+   "service": "/system/mrm/comfortable_stop/operate",
+   "record": "every"
   },
   {
    "id": 19,
@@ -201,7 +226,8 @@
    "kind": "service_serve_exit",
    "element": "/mrm_comfortable_stop_operator/operate",
    "node": "mrm_comfortable_stop_operator",
-   "service": "/system/mrm/comfortable_stop/operate"
+   "service": "/system/mrm/comfortable_stop/operate",
+   "record": "every"
   },
   {
    "id": 20,
@@ -209,7 +235,8 @@
    "kind": "service_serve_entry",
    "element": "/mrm_emergency_stop_operator/operate",
    "node": "mrm_emergency_stop_operator",
-   "service": "/system/mrm/emergency_stop/operate"
+   "service": "/system/mrm/emergency_stop/operate",
+   "record": "every"
   },
   {
    "id": 21,
@@ -217,7 +244,8 @@
    "kind": "service_serve_exit",
    "element": "/mrm_emergency_stop_operator/operate",
    "node": "mrm_emergency_stop_operator",
-   "service": "/system/mrm/emergency_stop/operate"
+   "service": "/system/mrm/emergency_stop/operate",
+   "record": "every"
   },
   {
    "id": 22,
@@ -225,7 +253,8 @@
    "kind": "publish",
    "element": "/mrm_comfortable_stop_operator/clear_velocity_limit",
    "node": "mrm_comfortable_stop_operator",
-   "topic": "/planning/scenario_planning/clear_velocity_limit"
+   "topic": "/planning/scenario_planning/clear_velocity_limit",
+   "record": "change"
   },
   {
    "id": 23,
@@ -233,7 +262,8 @@
    "kind": "publish",
    "element": "/mrm_comfortable_stop_operator/max_velocity_candidates",
    "node": "mrm_comfortable_stop_operator",
-   "topic": "/planning/scenario_planning/max_velocity_candidates"
+   "topic": "/planning/scenario_planning/max_velocity_candidates",
+   "record": "change"
   },
   {
    "id": 24,
@@ -241,7 +271,8 @@
    "kind": "publish",
    "element": "/mrm_comfortable_stop_operator/status",
    "node": "mrm_comfortable_stop_operator",
-   "topic": "/system/mrm/comfortable_stop/status"
+   "topic": "/system/mrm/comfortable_stop/status",
+   "record": "change"
   },
   {
    "id": 25,
@@ -249,7 +280,8 @@
    "kind": "publish",
    "element": "/mrm_emergency_stop_operator/emergency_control_cmd",
    "node": "mrm_emergency_stop_operator",
-   "topic": "/system/emergency/control_cmd"
+   "topic": "/system/emergency/control_cmd",
+   "record": "change"
   },
   {
    "id": 26,
@@ -257,7 +289,8 @@
    "kind": "publish",
    "element": "/mrm_emergency_stop_operator/status",
    "node": "mrm_emergency_stop_operator",
-   "topic": "/system/mrm/emergency_stop/status"
+   "topic": "/system/mrm/emergency_stop/status",
+   "record": "change"
   },
   {
    "id": 27,
@@ -265,7 +298,8 @@
    "kind": "publish",
    "element": "/mrm_handler/hazard_lights_cmd",
    "node": "mrm_handler",
-   "topic": "/system/emergency/hazard_lights_cmd"
+   "topic": "/system/emergency/hazard_lights_cmd",
+   "record": "change"
   },
   {
    "id": 28,
@@ -273,7 +307,8 @@
    "kind": "publish",
    "element": "/mrm_handler/mrm_state",
    "node": "mrm_handler",
-   "topic": "/system/fail_safe/mrm_state"
+   "topic": "/system/fail_safe/mrm_state",
+   "record": "change"
   },
   {
    "id": 29,
@@ -281,7 +316,8 @@
    "kind": "publish",
    "element": "/mrm_handler/takeover_request_state",
    "node": "mrm_handler",
-   "topic": "/system/takeover_request/state"
+   "topic": "/system/takeover_request/state",
+   "record": "change"
   }
  ]
 }

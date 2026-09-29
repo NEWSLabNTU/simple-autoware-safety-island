@@ -2,7 +2,12 @@
 # Stop the traced native_sim island with SIGTERM and wait (up to 120 s) for
 # its exit-time trace dump to land, before the supervisor tears anything down.
 out="$1"
-pid=$(pgrep -f 'build-zephyr/zephyr/zephyr.exe' | head -1)
+# The island of THIS run: the one writing $out. A bare
+# pgrep -f 'build-zephyr/zephyr/zephyr.exe' matches any worktree's island on
+# the host (phase8-W17, run w17-nb3: it signalled a pid that was not this
+# run's, which then died by the supervisor's KILL with no dump, trace 0 B).
+pid=$(pgrep -f -- "--trace-out=$out" | head -1)
+[ -n "$pid" ] || pid=$(pgrep -f 'build-zephyr/zephyr/zephyr.exe' | head -1)
 [ -n "$pid" ] || { echo "stop-island: no island running"; exit 0; }
 t0=$(date +%s.%N)
 kill -TERM "$pid"

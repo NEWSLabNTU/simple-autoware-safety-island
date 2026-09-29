@@ -4,7 +4,8 @@
   merge.py <trace> <run_dir> [--zephyr 4.4] [--out <run_dir>/island.jsonl]
 
 The trace is the native_sim dump (`just trace-native`, `ISLTRC01` header), or
-later the board's `ram_tracing` read over SWD (`--zephyr 4.4`). Its stamps
+the board's or QEMU's `ram_tracing` as tools/timeline/readout.py wraps it (the
+same header; a bare read needs `--zephyr 4.4`). Its stamps
 are the island's own clock (native_sim: simulated ns since boot; the board:
 cycle-counter time), so they are never subtracted from host stamps. As in
 phase7-W3 (docs/reaction-trace.md), the two clocks are aligned on events both
@@ -17,6 +18,11 @@ sides saw, and the disagreement between two anchors is the error bar:
   anchor 2  an availability sample both received from the gate: the first
             one with autonomous=false (the ODD exit), or the last one before
             the gate was stopped (the HPC loss).
+
+When the island holds more than one onset (a flap of the availability
+before or after the act), the one taken is the one whose offset explains
+the most publish/receipt pairs (best_onset, phase8-W17), and anchor 2 is the
+sample that raised it.
 
 Anchor 1 gives a coarse offset (host receipt - island stamp). It is then
 refined on every island publish the probe also received -- each change of
@@ -59,6 +65,27 @@ def onsets(mk, name, pred):
     return out
 
 
+def best_onset(mk, ev, cands, host):
+    """Of several island onsets, the one that, taken as the host receipt's
+    publish, explains the most other publish/receipt pairs (phase8-W17).
+
+    A run can hold more than one onset: the availability flaps to
+    autonomous=false for one sample before or after the act (run w17-nb2: two
+    before the button, seven after), each flap raising the takeover request for
+    one tick, and a trace from boot holds the boot-time MRM. The last onset,
+    which this used to take, was a flap in w17-nb2 and put the offset 34 s
+    off; the longest-held one is the boot MRM in w8a-e. The right offset is the
+    one under which the island's changes line up with what the probe received,
+    so each candidate is scored by refine()'s pair count; ties go to the last
+    one, the old choice."""
+    best = None
+    for c in cands:
+        n = len(refine(mk, ev, host - c))
+        if best is None or n >= best[1]:
+            best = (c, n)
+    return best[0] if best else None
+
+
 def host_first(ev, marker, pred, after=None):
     for e in ev:
         if e["source"] == "probe" and e.get("marker") == marker and pred(e["value"]):
@@ -74,22 +101,25 @@ def align(mk, ev):
     res = dict(anchor1=None, anchor2=None)
     if "odd_exit" in kinds:
         t_inj = next(e["t_mono_ns"] for e in injects if e["marker"] == "odd_exit")
-        isl = onsets(mk, TOR, lambda a: a == OPERATING)
         host = host_first(ev, "takeover_request_state", lambda v: v == "OPERATING", after=t_inj)
-        if isl and host:
-            # the onset nearest the end that precedes... the fault is the one onset in a run
-            res["anchor1"] = dict(what="takeover_request_state OPERATING", island_ns=isl[-1], host_ns=host)
+        isl = best_onset(mk, ev, onsets(mk, TOR, lambda a: a == OPERATING), host) if host else None
+        if isl is not None and host:
+            res["anchor1"] = dict(what="takeover_request_state OPERATING", island_ns=isl, host_ns=host)
         isl2 = onsets(mk, TAKE_AV, lambda a: a == 0)
+        # the sample that raised the request anchor 1 is on: the last onset
+        # at or before it (the last onset overall can be a later flap)
+        if isl is not None:
+            isl2 = [t for t in isl2 if t <= isl]
         host2 = host_first(ev, "availability", lambda v: v["autonomous"] is False, after=t_inj)
         if isl2 and host2:
             res["anchor2"] = dict(what="first availability sample with autonomous=false",
                                   island_ns=isl2[-1], host_ns=host2)
     if "hpc_loss" in kinds:
         t_inj = next(e["t_mono_ns"] for e in injects if e["marker"] == "hpc_loss")
-        isl = onsets(mk, MRM, lambda a: (a >> 16) == MRM_OPERATING)
         host = host_first(ev, "mrm_state", lambda v: v["state"] == "MRM_OPERATING", after=t_inj)
-        if isl and host:
-            res["anchor1"] = dict(what="mrm_state MRM_OPERATING", island_ns=isl[-1], host_ns=host)
+        isl = best_onset(mk, ev, onsets(mk, MRM, lambda a: (a >> 16) == MRM_OPERATING), host) if host else None
+        if isl is not None and host:
+            res["anchor1"] = dict(what="mrm_state MRM_OPERATING", island_ns=isl, host_ns=host)
         takes = [r["t_ns"] for r in mk if r["name"] == TAKE_AV]
         gaps = [(a, b) for a, b in zip(takes, takes[1:]) if b - a > 500e6]
         host_av = [e["t_mono_ns"] for e in ev if e["source"] == "probe" and e.get("marker") == "availability"
@@ -176,7 +206,8 @@ def main():
         os.remove(out)
     w = tl.Writer(out)
     w.write("island", "align", t_mono_ns=(first_inject or 0), value=res,
-            clock="native_sim simulated ns since boot" if tr.header else "island clock",
+            clock=("native_sim simulated ns since boot" if tr.zephyr.startswith("3.")
+                   else f"island cycle counter (zephyr {tr.zephyr})"),
             trace=os.path.relpath(a.trace, tl.ROOT))
     lo = (first_inject or 0) - 5_000_000_000
     n = 0

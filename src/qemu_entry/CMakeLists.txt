@@ -67,6 +67,18 @@ add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../autoware_mrm_emergency_stop_ope
 add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../autoware_mrm_comfortable_stop_operator" autoware_mrm_comfortable_stop_operator)
 add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../autoware_mrm_handler" autoware_mrm_handler)
 
+# phase8-W17: the component libraries are not Zephyr libraries, so nothing
+# orders them after Zephyr's generated headers. With tracing on, every
+# component includes <zephyr/kernel.h> (include/island_trace.h), which on 4.4
+# includes the generated zephyr/heap_constants.h; a parallel build then
+# compiled a component before that header existed ("zephyr/heap_constants.h:
+# No such file or directory", the traced QEMU image, first build).
+foreach(_island_lib mrm_emergency_stop_operator_lib mrm_comfortable_stop_operator_lib mrm_handler_lib)
+    if(TARGET ${_island_lib} AND TARGET zephyr_generated_headers)
+        add_dependencies(${_island_lib} zephyr_generated_headers)
+    endif()
+endforeach()
+
 # BRINGUP names the package a human authors; the launch tree inside it is what
 # `nros sync` resolves. The same bringup, hence the same contract and the same
 # derived entity counts, as the board image.

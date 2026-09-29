@@ -1,0 +1,45 @@
+# The island's trace window (phase8-W17). Sourced by the Kconfig of each
+# Zephyr entry (src/*_entry/Kconfig); include/island_trace.h is the code and
+# docs/tracing.md section 8 the design and the measurements.
+
+config ISLAND_TRACE_WINDOW
+	bool "Island trace window: pre-trigger ring, trigger, record policy"
+	depends on TRACING_CTF && TRACING_BACKEND_RAM
+	help
+	  Off, the island's markers enter the RAM trace buffer from boot, every
+	  one (phase 7). On, only the provenance does; markers and heartbeats
+	  go to a small ring until the contract's detector path first runs
+	  after the HPC has once reported "autonomous available" (the trigger),
+	  and a per-marker record policy generated from the contract drops the
+	  repeats of timer spins and unchanged publishes. The buffer then holds
+	  an act, not the first seconds after boot.
+
+if ISLAND_TRACE_WINDOW
+
+config ISLAND_TRACE_PRE_MS
+	int "Pre-trigger history kept at the trigger (ms)"
+	range 0 2000
+	default 1500
+	help
+	  Ring records older than this at the trigger are not written. At most
+	  2000: the decoder unwraps u32 ns stamps by signed difference, which
+	  holds for steps under 2.1 s, and the flushed history precedes the
+	  trigger record. The encore needs the last availability sample before
+	  the silence, which is 500 ms plus a tick before the trigger.
+
+config ISLAND_TRACE_PRE_BYTES
+	int "Pre-trigger ring (bytes, two halves)"
+	range 64 16384
+	default 2048
+	help
+	  The history held is between one half and the whole ring, so one half
+	  must cover ISLAND_TRACE_PRE_MS at the pre-trigger record rate.
+
+config ISLAND_TRACE_SPIN_KEEP
+	int "Keep one timer-path tick in N whose state did not change"
+	range 1 1000
+	default 10
+	help
+	  1 keeps every tick (execution-time samples of every spin).
+
+endif

@@ -193,12 +193,13 @@ is required again. No marker is exempted by name alone.
 | `just trace-demo [out]` | Autoware, a traced island and the demo sequence (as `demo-all`). Prints the VERDICT, then runs `trace-check` on the dump |
 | `just trace-decode <file> [zephyr]` | event counts and bytes, the provenance, the first 60 marker/heartbeat records, and `<file>.perfetto.json` for ui.perfetto.dev |
 | `just trace-check <file> [zephyr]` | PASS only if: the decode is clean; the provenance names `markers.json`'s table; every marker is seen or exempted by a confirmed parameter; heartbeats are contiguous from 0; and (native_sim) the last recorded heartbeat is the last one emitted, i.e. the buffer did not fill early |
-| `just trace-board [out]` | read `ram_tracing` over SWD with `pyocd cmd -t s32k344 -c "savemem <addr> <len> <out>"`, taking the address and length from the ELF symbol, and read `island_trace_hb_seq`. Then `trace-check --zephyr 4.4` |
+| `just trace-board [out] [elf]` | phase8-W17: `tools/timeline/readout.py --target board`: halt, read `ram_tracing` and the heartbeat and window counters over SWD (pyocd, attach mode), resume; every address from the ELF's symbol table; the buffer wrapped in the native_sim dump's header; then `trace-check` |
+| `just trace-window-native-build` | phase8-W17: the native_sim island with the trace window (`src/native_sim_entry/trace-window.conf`), into build-zephyr |
+| `just trace-qemu-build` | phase8-W17: the QEMU island with the board's tracing block and window (`src/qemu_entry/trace.conf`), into build-qemu-trace |
 
-**`trace-board` has not been exercised.** No image with the tracing block has
-been flashed; W6's board runs the W8b image, which has none. The recipe is
-written against the ELF built here: `ram_tracing` @ `0x2042fcb3`, 0x4000 B;
-`island_trace_hb_seq` @ `0x20425900`. It has never read a board.
+**`trace-board` has not been exercised against a board** (phase8-W17 did not
+touch it; W10 held it). The same readout code, with the QEMU monitor in place
+of pyocd, has read the QEMU island (section 8).
 
 **Decoder.** The task named nano-ros's Tonbandgeraet as the decoder. It
 cannot decode this trace: it reads only its own COBS-framed binary format,
@@ -387,3 +388,233 @@ string and the marker call sites.
   are from it. The knob is a message-bound fact the tracing block does not
   touch, but no tracing-off build was run to prove the refusal is
   independent of it.
+
+## 8. The trace window (phase8-W17)
+
+Gap G9 of docs/roadmap/phase-8-rtss-work-demo.md: the board's RAM buffer
+filled from boot and held seconds, but act B lasts 20-30 s and the encore
+about 10 s. The fix is in `include/island_trace.h`, switched on by
+`CONFIG_ISLAND_TRACE_WINDOW` (`src/safety_island_tracing/Kconfig.island_trace`,
+sourced by each entry's `Kconfig`). It is on in the board conf and in
+`src/qemu_entry/trace.conf`; native_sim keeps the phase-7 stream by default
+and takes the window from `src/native_sim_entry/trace-window.conf`.
+
+### Design
+
+Three parts, all in the one translation unit that carries the runtime:
+
+- **A pre-trigger ring.** Until the trigger, nothing but the provenance
+  enters the stream. Markers and heartbeats go, already in their stream
+  form, into a 2 KiB ring of two halves (`CONFIG_ISLAND_TRACE_PRE_BYTES`),
+  each filled linearly with whole records; when one half is full the other
+  is cleared and becomes current. At the trigger the older half and the
+  current one are walked by timestamp only, and the records of the last
+  `CONFIG_ISLAND_TRACE_PRE_MS` (1500 ms) go into the stream in **two**
+  `tracing_format_raw_data` calls, a memcpy each in the RAM backend.
+  Writing them one by one would have held `irq_lock` for one backend call
+  per record, some 50-70 of them, at the moment the island reacts.
+- **The trigger**, generated from the contract (`gen_markers.py`): the ENTRY
+  of the detector path, the input-triggered path whose input is a topic in
+  some hazard's `guards:` (`/mrm_handler/call_mrm`, id 7), once the ARM
+  marker, the take of that guarded input (`TAKE_..._OPERATION_MODE_AVAILABILITY`,
+  id 15), has carried a non-zero arg: once the HPC has said "autonomous
+  available". Without the arm the boot-time `call_mrm` ticks (availability
+  not yet autonomous, or stale before Autoware is up) fire it; in the W8a
+  and W14 native_sim traces they do, from 0.0 s to 4.2 s after boot. Both
+  hazards reach the detector path: `odd_exit` on the tick after the first
+  `autonomous: false`, `hpc_loss` 500 ms plus a tick after the last sample.
+  One TRIGGER record follows the history:
+  `u32 ts | id+3 | u16 marker | u16 pre_ms | u16 pre_kept | u16 spin_keep |
+  u32 pre_lost | u32 filtered` (22 B on the board).
+- **A record policy per marker**, generated from the contract into
+  `ISLAND_TRACE_POLICY_TABLE`, applied before and after the trigger:
+  `every` for non-timer paths, service calls and callbacks, and the take of
+  a hazard-guarded input (its gaps are the detection measurement); `change`
+  for every other take and every publish (recorded when the arg differs
+  from the last recorded one of that marker); `spin` for timer-path
+  ENTRY/EXIT (recorded when the ENTRY arg changed, or on every tenth tick,
+  `CONFIG_ISLAND_TRACE_SPIN_KEEP`; the EXIT follows its ENTRY's decision).
+  At the trigger the `change` and `spin` state is cleared, so the first of
+  each after the fault is always kept: "the first X after the fault", which
+  is what `analysis.py` and `merge.py` read, never depends on the history.
+  Every edge they use survives: the guarded take at full rate (the encore's
+  last sample and anchor 2), the changes of the takeover-request state and
+  `mrm_state` (anchor 1 and the pair refinement), the first velocity limit,
+  the first braking command, the first MANUAL, every service call and
+  callback, `call_mrm` and `driver_exit`.
+
+Two smaller changes ride with it. The island's stamp now comes from the
+64-bit cycle count where the timer has one (the board does, at 160 MHz):
+from the 32-bit count the u32 ns value stepped back by 2^30 ns every 2^32
+cycles, 26.8 s at 160 MHz, which no modular unwrap can absorb and which an
+act crosses. And the provenance is written as two raw writes under one lock
+instead of from a 776 B static staging copy (section 6).
+
+The decoder (`island_trace.py`) reads the TRIGGER record, starts a new
+segment after a windowed provenance (the gap to the first flushed record is
+unknown) and anchors it on the first heartbeat's `uptime_ms`; `check` then
+asks for the trigger instead of every marker, heartbeats contiguous from
+the first one kept, and reports the window: history, record rate after the
+trigger in this trace's bytes and in the board's, and how long 16, 24 and
+32 KiB hold at that rate. `wrap` puts a raw target read into the native_sim
+dump's header with the heartbeat counter read beside it, so the `complete`
+check works off the host too.
+
+### Sizing, from the measured rate
+
+Replayed first over the W8a and W14 native_sim traces (window off, every
+marker from boot; the policy applied offline to the recorded stream), in the
+board's record format (12 B a marker, 14 B a heartbeat):
+
+| policy | after the trigger | seconds of act per KiB | 1.5 s of history |
+| --- | ---: | ---: | ---: |
+| every marker (phase 7) | 3.2-3.4 KB/s | 0.30 | about 2.2 KB |
+| window, `spin_keep` 1 (only CHANGE applied) | 1.65-1.69 KB/s | 0.61-0.62 | about 2.2 KB |
+| window, `spin_keep` 10 (the board's) | 576-606 B/s | 1.69-1.78 | 486-582 B |
+
+over w8a-a, w8a-b, w8a-e, w14-b3 and w14-e. The largest remaining shares
+after the trigger are `call_mrm` (ENTRY and EXIT on every handler tick while
+a fault holds, 8.5 Hz), the guarded take (10 Hz) and the heartbeat (10 Hz,
+23 % of the bytes).
+
+The board's buffer is therefore set to **32 KiB**: at 606 B/s, less the
+provenance (about 1 KB), the history and the trigger record, it holds about
+51 s after the trigger. Act B, the longest act, ran 20-30 s from the button
+to standstill and odd-enter (W7 b5-b8, W8a, W17 below).
+
+The board image with the window and the 32 KiB buffer links (`just
+board-build` on `ed2e193`, W17, not flashed): RAM 287,320 of 327,680 B
+(87.68 %), **40,360 B free**; FLASH 609,100 B; ITCM 11,516 B; DTCM 61,528 B.
+The tracing objects in RAM total 35,170 B: `ram_tracing` 32,768, the ring
+`island_trace_pre` 2,048, and 354 B of state, counters and the heartbeat
+timer; the provenance string (950 B) and the policy table (30 B) are in
+flash. (`board-size`'s ram_report failed on the host: the 4.4 venv lacks
+the `anytree` module; the region table is the linker's.)
+
+### Verification: full acts on native_sim and QEMU
+
+All on the tree rebased onto `ed2e193` (nano-ros `da272e419`, the C++ gate),
+under the demo lock. The table's "after the trigger" figures are
+`island_trace.py check`'s, in the board's record format; `merge.py` and
+`analysis.py` (through `render.py --table`) read every trace.
+
+| run | target | act | VERDICT | history kept | after the trigger | board bytes | rate | analysis |
+| --- | --- | --- | --- | --- | --- | ---: | ---: | --- |
+| w17-nb4 | native_sim | B | PASS | 44 records, 1474 ms | 959 records, 19.73 s | 11,902 | 603 B/s | 15 of 15 rows PASS |
+| w17-ne3 | native_sim | encore | PASS | 41 records, 1477 ms | 191 records, 4.13 s | 2,374 | 575 B/s | 8 of 8 PASS |
+| w17-qb5 | QEMU (run-board.sh) | B | PASS | 42 records, 1459 ms | 1065 records, 21.74 s | 13,214 | 608 B/s | 10 of 15 PASS, see below |
+| w17-qe1 | QEMU (run-board.sh) | encore | PASS | 41 records, 1440 ms | 206 records, 4.47 s | 2,562 | 573 B/s | 8 of 8 PASS |
+
+Every trace: `trace-check: PASS` (clean decode, the provenance's table,
+heartbeats contiguous from the first one kept, the last heartbeat recorded
+is the last emitted, one TRIGGER). Fixed cost on the board's format: the
+provenance (about 1,075 B), the history (522-558 B) and the trigger (22 B).
+With them, act B took 13,554-14,845 B of the board's 32 KiB, and the
+measured rates put 32 KiB at 51-54 s after the trigger.
+
+The island's edges the analysis reads all came from the window: in w17-nb4
+`island_take` 88.24 ms (the guarded take, in the history), `tor_on` 162.21,
+`tor_off` 10163.22, `call` 10163.21, `safe_cmd` 10163.22 ms from the button;
+in w17-ne3 the last sample before the silence (-29.79 ms, from the history,
+anchor 2), `detect_tick` 544.18 and `safe_cmd` 574.18 ms.
+
+QEMU's five FAIL rows in w17-qb5 are timing, not the trace: the takeover
+route, 111.79 ms against 110, and the windows row that contains it (10111.79
+against 10110), and three `host` rows 49-61 ms over, with a publish/receipt
+pair spread of 140.5 ms (native_sim: 1.9 ms). The QEMU
+guest runs on TCG without `icount` and its clock is not the host's; the
+same rows on the island clock pass. The encore's rows all pass on QEMU.
+
+Two faults of the first version, both found by these runs and fixed:
+
+- **The history's age in u32.** The first native encore (`w17-ne1`) kept
+  records 5.3 s old and dropped the 1 s after them: `now - ts` in u32 wraps
+  every 4.29 s and a ring half lasts about 3 s at the pre-trigger rate, so a
+  5.3 s-old record looked 1.0 s old. `island_trace_fire` now sums the u32
+  differences of consecutive records (a heartbeat enters the ring every
+  100 ms, so each is small) into a 64-bit age. `w17-ne2` onward: contiguous.
+- **More than one onset.** In `w17-nb2` the availability flapped to
+  `autonomous: false` for single samples before and after the act; each flap
+  is a real takeover-request tick and the first one after the arm triggers
+  the window (37 s before the button in that run; it still held the act).
+  `merge.py` took the LAST onset as anchor 1, a flap, and put the offset
+  34 s off. It now takes the onset whose offset explains the most
+  publish/receipt pairs (`best_onset`); the W8a and W14 runs merge to the
+  same offsets as before.
+
+A negative control: the windowed native_sim island alone for 15 s (`just
+trace-native 15`, no Autoware) never triggers; the dump holds the provenance
+and `check` says `FAIL window: ... no TRIGGER record`.
+
+### The QEMU island, and what differs from the board
+
+`src/qemu_entry/trace.conf` is the board's tracing block with one
+difference, the buffer: 1 MiB instead of 32 KiB. The QEMU island's link is
+Ethernet, and Zephyr 4.4's IP core emits `net_send_data`/`net_recv_data`
+CTF events through `SYS_PORT_TRACING_FUNC`, which no Kconfig masks
+(`CONFIG_TRACING_NETWORKING=n` does not; the type masks act on the `OBJ_`
+macros only). They enter the stream from boot, 22 B each: 32 KiB filled in
+14.5 s with no Autoware attached, before any trigger (w17 smoke run). The
+board's link is the UART with no IP stack (`CONFIG_NETWORKING` is unset in
+the board image), so it has none of them. The island's own bytes after the
+trigger, which is what 32 KiB must hold, are reported separately by `check`.
+
+The QEMU runs also used a 1 MiB heap
+(`CONFIG_NROS_ZEPHYR_HEAP_SIZE=1048576 just --set QEMU_BUILD_DIR
+build-qemu-trace qemu-build` with `EXTRA_CONF_FILE`, W3's precedent): at
+102,400 B the QEMU island died 7.3-8.0 s after boot, when Autoware joined,
+with `HEAP EXHAUSTED` in `_z_slice_init` from `zpico_read`, both straight
+into the stock router and behind the gateway (runs w17-qb1, w17-qb2). Over
+TCP nothing paces Autoware's traffic the way the board's UART does.
+
+`tools/timeline/run-board.sh --target qemu` puts the QEMU island behind the
+gateway router exactly as the board is: `demo/l3/router/island-gateway.json5`
+with its island face moved from `serial` to `unixsock-stream` (so the
+no-graph rule and the downsampling apply to it), and QEMU's `guestfwd` piped
+into that socket by `socat`. The trace is read over QEMU's monitor
+(`readout.py --target qemu`: `stop`, `xp`, `pmemsave`, `cont`), from the same
+ELF symbols the board read uses.
+
+### What is not verified
+
+- **Nothing here ran on the board.** The flash (`pyocd flash`), the gateway
+  on the UART and the reset, and the SWD read (`readout.py --target board`,
+  pyocd's Python API: `session_with_chosen_probe`, `halt`, `read32`,
+  `read_memory_block8`, `resume`) are written, and `--dry-run` resolves every
+  address from the board ELF, but W17 did not touch the board (W10 held it).
+- The interrupts-off cost of the flush at the trigger is not measured. It is
+  two `tracing_format_raw_data` calls (memcpy of at most 2 KiB) after a walk
+  of at most about 170 records that reads timestamps, all under the marker's
+  `irq_lock`; the board's DWT bracket (`island_trace_cost_*`) will include it
+  in its maximum.
+- The trigger fires once per boot. A second act needs a reset, as
+  `run-board.sh` does (it flashes and resets for every act).
+
+### One traced act off the host: `tools/timeline/run-board.sh`
+
+```
+just board-build                                   # the image with the window
+flock <demo lock> tools/timeline/run-board.sh b <id>          # the board: UNTESTED
+flock <demo lock> tools/timeline/run-board.sh --dry-run b <id> # print the steps, resolve the addresses
+just trace-qemu-build
+flock <demo lock> tools/timeline/run-board.sh --target qemu b <id>   # the rehearsal
+just l3-traced-act b <id> [target] [elf] [flags]   # the same, as a recipe
+```
+
+It flashes (board), starts the stock router, the island's link (the gateway
+on the UART and a reset; for QEMU the same gateway config on a unix socket),
+waits for the island's first operator status sample, starts Autoware in the
+container (one restart if it sits at "still constructing"), the gate, the
+probe and the act, reads the trace out, tears down only what it started, and
+writes `build/timeline/<id>/` as `run-native.sh` does: `island.trace` (+
+`.raw`, `.meta`, `.readout.json`, `.check.txt`), the JSONL files,
+`island.jsonl`, `explain.txt`, `table.md`, `timeline.png`. The QEMU runs above
+are its output.
+
+Also changed with the window: the component libraries of the two 4.4 entries
+are ordered after Zephyr's generated headers (a parallel build compiled a
+component, which includes `<zephyr/kernel.h>` once tracing is on, before
+`zephyr/heap_constants.h` existed); and `experiments/reaction-trace/stop-island.sh`
+signals the island that writes this run's trace instead of the first
+`build-zephyr/zephyr/zephyr.exe` on the host (run w17-nb3 signalled another
+process and lost its dump).

@@ -14,7 +14,23 @@ marker is emitted per contract element that executes:
   publisher        PUB_<node>_<endpoint>                 every contracted `pub:`
 
 Ids are assigned in that order, sorted by contract name inside each group,
-starting at 1 (0 is never a marker). A contract change regenerates the table;
+starting at 1 (0 is never a marker). A path's EXIT is always its ENTRY's id
+plus one (the trace window's SPIN rule relies on it).
+
+phase8-W17, the trace window (docs/tracing.md section 8). Each marker also
+gets a RECORD POLICY, from the contract:
+
+  every   a path that is not timer-triggered, a service call or callback, the
+          take of a service request, and the take of a hazard-guarded input
+          (a topic in some hazard's `guards:`): its gaps are what the
+          detector measures;
+  change  every other take and every publish: recorded when the arg changes;
+  spin    a timer-triggered path's ENTRY/EXIT: recorded when the ENTRY arg
+          changes or on every Nth tick (N is CONFIG_ISLAND_TRACE_SPIN_KEEP).
+
+and the header names the window's two markers: the TRIGGER is the ENTRY of
+the detector path (the input-triggered path whose input is a hazard-guarded
+input), the ARM is the take of that input. A contract change regenerates the table;
 the header carries the model digest and the table digest, and the running
 image writes both into the trace buffer, so a trace names the table it was
 recorded against.
@@ -129,6 +145,62 @@ def build_table(model):
     return markers
 
 
+REC_EVERY, REC_CHANGE, REC_SPIN_ENTRY, REC_SPIN_EXIT = 0, 1, 2, 3
+REC_NAME = {REC_EVERY: "every", REC_CHANGE: "change", REC_SPIN_ENTRY: "spin", REC_SPIN_EXIT: "spin"}
+
+
+def guarded_inputs(model):
+    """Subscriber endpoints of the topics some hazard guards."""
+    topics = model["structure"].get("topics", {})
+    out = set()
+    for hz in (model["contracts"].get("hazards") or {}).values():
+        for g in hz.get("guards", []) or []:
+            for t in g.get("members", []) or []:
+                out.update(topics.get(t, {}).get("sub", []))
+    return out
+
+
+def window_policy(model, markers):
+    """(policy by id, trigger id, arm id) -- the trace window's inputs."""
+    guarded = guarded_inputs(model)
+    served = {ep for v in model["structure"].get("services", {}).values() for ep in v.get("server", [])}
+    paths = model["contracts"].get("node_paths", {})
+    policy = {}
+    detectors = []
+    for m in markers:
+        k = m["kind"]
+        if k in ("path_entry", "path_exit"):
+            if m.get("trigger") == "timer":
+                policy[m["id"]] = REC_SPIN_ENTRY if k == "path_entry" else REC_SPIN_EXIT
+            else:
+                policy[m["id"]] = REC_EVERY
+            trig = paths.get(m["element"], {}).get("trigger", {})
+            if k == "path_entry" and trig.get("kind") == "input" and \
+                    set(trig.get("value") or []) & guarded:
+                detectors.append(m)
+        elif k == "take":
+            # a hazard-guarded input, or a service request (event-driven): every one
+            policy[m["id"]] = REC_EVERY if m["element"] in guarded or m["element"] in served else REC_CHANGE
+        elif k == "publish":
+            policy[m["id"]] = REC_CHANGE
+        else:
+            policy[m["id"]] = REC_EVERY
+    for m in markers:
+        if policy[m["id"]] == REC_SPIN_EXIT:
+            prev = next(x for x in markers if x["id"] == m["id"] - 1)
+            assert prev["kind"] == "path_entry" and prev["element"] == m["element"], m["name"]
+    if len(detectors) != 1:
+        sys.exit(f"gen_markers: the trace window needs exactly one detector path (an input-triggered path "
+                 f"on a hazard-guarded input); the model has {[d['element'] for d in detectors]}")
+    det = detectors[0]
+    trig_inputs = set(paths[det["element"]]["trigger"]["value"]) & guarded
+    arms = [m for m in markers if m["kind"] == "take" and m["element"] in trig_inputs]
+    if len(arms) != 1:
+        sys.exit(f"gen_markers: the trace window needs one take of the detector's guarded input, found "
+                 f"{[a['name'] for a in arms]}")
+    return policy, det["id"], arms[0]["id"]
+
+
 def knob_names():
     names = set()
     for rel in KNOB_FILES:
@@ -159,6 +231,9 @@ def entity_counts(model):
 
 
 def render(model, markers):
+    policy, trigger_id, arm_id = window_policy(model, markers)
+    for m in markers:
+        m["record"] = REC_NAME[policy[m["id"]]]
     inputs = {i["path"]: i["sha256"] for i in model["meta"]["inputs"]}
     contract_sha = inputs.get("launch/safety_island.contract.yaml", "unknown")
     table_sha = hashlib.sha256(
@@ -186,6 +261,17 @@ def render(model, markers):
     for m in markers:
         w(f"#define {('ISLAND_MK_' + m['name']).ljust(width)} {m['id']:3d} /* {m['kind']:<20} {m['element']} */")
     w("")
+    w("/* The trace window (phase8-W17, include/island_trace.h, docs/tracing.md")
+    w(" * section 8): the record policy of every id (index 0 unused), the trigger")
+    w(" * (the detector path's ENTRY) and the arm (the take of its guarded input). */")
+    w("#define ISLAND_TRACE_REC_EVERY 0")
+    w("#define ISLAND_TRACE_REC_CHANGE 1")
+    w("#define ISLAND_TRACE_REC_SPIN_ENTRY 2")
+    w("#define ISLAND_TRACE_REC_SPIN_EXIT 3")
+    w("#define ISLAND_TRACE_POLICY_TABLE { 0, " + ", ".join(str(policy[m["id"]]) for m in markers) + " }")
+    w(f"#define ISLAND_TRACE_TRIGGER_MARKER {trigger_id} /* {markers[trigger_id - 1]['name']} */")
+    w(f"#define ISLAND_TRACE_ARM_MARKER {arm_id} /* {markers[arm_id - 1]['name']} */")
+    w("")
     w("/* Knobs that size the image, as the build delivered them (autoconf.h). */")
     for k in knobs:
         short = k[len("CONFIG_"):]
@@ -207,6 +293,7 @@ def render(model, markers):
         table_sha256=table_sha,
         entities=counts,
         knobs=knobs,
+        window=dict(trigger=trigger_id, arm=arm_id),
         markers=markers,
     ), indent=1) + "\n"
     return header, table

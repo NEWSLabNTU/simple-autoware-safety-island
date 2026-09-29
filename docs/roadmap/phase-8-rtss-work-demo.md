@@ -497,6 +497,21 @@ the others by fast-forward push once implementation starts.
   release-jitter-runtime spin measured=578000 declared=10000"), not a
   late-join fault. Logs: /mnt/mx500/aeon/worktrees/w23/runs/.
 
+- **W17 - the trace window (G9) and run-board.sh.** Status (2026-09-29):
+  G9 closed in design and on native_sim/QEMU (docs/tracing.md section 8);
+  board untested. Before the trigger only a 2 KiB ring of markers is kept;
+  the first detector-path ENTRY after the guarded take has carried a fault
+  writes the last 1500 ms and records straight through after it, with a
+  per-marker policy (every / change / spin 1-in-10) generated from the
+  contract; 64-bit cycle-counter stamps. Measured 1.68-1.79 s of act per
+  KiB, so the board's 32 KiB buffer holds 51-54 s after the trigger (board
+  image links at RAM 287,320 of 327,680 B). Act B and the encore PASS with
+  trace-check PASS on native_sim and QEMU through tools/timeline/run-board.sh
+  (flash, gateway + reset and SWD readout untested). Open: QEMU needed a
+  1 MiB heap when Autoware joined through run-board's gateway path (heap
+  exhausted in zpico_read at 102,400); the trigger fires once per boot; a
+  pre-act availability flap can fire it early.
+
 Order: W0 first; W1, W2, W3, W6 in parallel; W4 and W5 after W1; W7 after
 W6; W8 after W2, W4, W5, W7; W9 last. Rough effort 6-7 weeks on the core
 path (D); the board path 1-1.5 weeks once W1 and W2 land (B); the link is

@@ -90,27 +90,42 @@ trace-decode file zephyr="":
 trace-check file zephyr="":
     python3 {{TRACE_PY}} check "{{file}}" {{ if zephyr != "" { "--zephyr " + zephyr } else { "" } }}
 
-# NOT EXERCISED in phase7-W1 -- no board had been flashed. The address and length
-# come from the ELF symbol, never a literal; the buffer is one-shot from boot, so
-# read it after the window you care about. `island_trace_hb_seq` (the heartbeat
-# counter) is read too, which is what tells a full buffer from a short run.
+# phase8-W17: the trace window (docs/tracing.md section 8) on native_sim, for
+# verification. EXTRA_CONF_FILE adds src/native_sim_entry/trace-window.conf to
+# the build in build-zephyr; zephyr_get() caches the value, so a later plain
+# `just zephyr-build` keeps it until `west build -p -d build-zephyr`.
+#
+# Build the native_sim island with the board's trace window (build-zephyr).
+trace-window-native-build:
+    EXTRA_CONF_FILE="$PWD/src/native_sim_entry/trace-window.conf" just zephyr-build
+
+# phase8-W17: the QEMU island with the board's tracing block and window, into
+# build-qemu-trace (src/qemu_entry/trace.conf). Its buffer is read over the
+# QEMU monitor (tools/timeline/readout.py --target qemu); one traced act:
+#   tools/timeline/run-board.sh --target qemu --elf build-qemu-trace/zephyr/zephyr.elf b <id>
+# The heap is 1 MiB, through qemu-build's triage lever (W3's precedent): at
+# the stated 102,400 B the QEMU island died of HEAP EXHAUSTED in zpico_read
+# when Autoware joined, over a TCP link that nothing paces (docs/tracing.md
+# section 8). Not a board fact.
+#
+# Build the QEMU island with the board's tracing block and window (build-qemu-trace).
+trace-qemu-build:
+    EXTRA_CONF_FILE="$PWD/src/qemu_entry/trace.conf" CONFIG_NROS_ZEPHYR_HEAP_SIZE=1048576 just --set QEMU_BUILD_DIR build-qemu-trace qemu-build
+
+# phase8-W17: the read goes through tools/timeline/readout.py: every address
+# from the ELF symbol table, the core halted for the read (buffer and
+# counters are one instant) and resumed, the heartbeat counter and the trace
+# window's counters beside the buffer, and the buffer wrapped in the
+# native_sim dump's header so `trace-check` can tell a full buffer from a
+# short act. NOT EXERCISED: no board was touched in W17 (W10 held it); the
+# same readout runs against QEMU (`readout.py --target qemu`).
 #
 # Board: read `ram_tracing` over SWD (MCU-Link + pyocd) from a flashed, running image.
-trace-board out=(TRACE_DIR / "board.bin"):
+trace-board out=(TRACE_DIR / "board.trace") elf=(BOARD_BUILD_DIR / "zephyr/zephyr.elf"):
     #!/usr/bin/env bash
     set -e
-    source scripts/board-env.sh "{{NANO_ROS_ROOT}}"
-    elf="{{BOARD_BUILD_DIR}}/zephyr/zephyr.elf"
-    [ -f "$elf" ] || { echo "trace-board: no $elf -- just board-build"; exit 1; }
-    # SDK 1.0 keeps the toolchain under gnu/; older SDKs at the top level.
-    nm="$ZEPHYR_SDK_INSTALL_DIR/gnu/arm-zephyr-eabi/bin/arm-zephyr-eabi-nm"
-    [ -x "$nm" ] || nm="$ZEPHYR_SDK_INSTALL_DIR/arm-zephyr-eabi/bin/arm-zephyr-eabi-nm"
-    [ -x "$nm" ] || { echo "trace-board: no arm-zephyr-eabi-nm under $ZEPHYR_SDK_INSTALL_DIR"; exit 1; }
-    read -r addr len _ < <("$nm" -S "$elf" | awk '$4=="ram_tracing"{print $1, $2}')
-    read -r hbaddr _ < <("$nm" -S "$elf" | awk '$4=="island_trace_hb_seq"{print $1}')
-    [ -n "$addr" ] || { echo "trace-board: $elf has no ram_tracing (tracing not in this image)"; exit 1; }
+    [ -f "{{elf}}" ] || { echo "trace-board: no {{elf}} -- just board-build"; exit 1; }
     mkdir -p "$(dirname "{{out}}")"
-    echo "trace-board: ram_tracing @0x$addr, 0x$len bytes; heartbeat counter @0x$hbaddr"
-    just _trace-meta "{{out}}" "$elf"
-    pyocd cmd -t s32k344 -c "savemem 0x$addr $((16#$len)) {{out}}" -c "read32 0x$hbaddr"
-    python3 {{TRACE_PY}} check "{{out}}" --zephyr 4.4
+    just _trace-meta "{{out}}" "{{elf}}"
+    python3 tools/timeline/readout.py --target board --elf "{{elf}}" --out "{{out}}"
+    python3 {{TRACE_PY}} check "{{out}}"

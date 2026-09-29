@@ -4,7 +4,7 @@
 
 # List the phase-8 recipes.
 l3-help:
-    @echo "phase 8 recipes land here: l3-container (W3), l3-peer (W2), l3-run (W3), l3-timeline (W7), l3-board (W8)"
+    @echo "phase 8 recipes land here: l3-container (W3), l3-peer (W2), l3-run (W3), l3-timeline (W7), l3-traced-act (W17), l3-board (W8)"
 
 # ---- l3-peer (phase8-W2) ------------------------------------------------------
 # The ISLAND GATEWAY router of design D1 (brief C option (a')): its own
@@ -160,7 +160,12 @@ l3-rviz config="/opt/autoware/1.5.0/share/autoware_launch/rviz/autoware.rviz":
 
 # The QEMU island (an existing image; default build-qemu) into a router on the
 # host: guestfwd 10.0.2.100:7447 -> {{host}}:{{port}} (bounded). phase8-W3
-l3-island-qemu elf="build-qemu/zephyr/zephyr.elf" port="7447" secs="60" host="127.0.0.1":
+# monitor=<path>: QEMU's monitor on that unix socket, for the trace readout
+# (tools/timeline/readout.py --target qemu). fwd=<target>: the guestfwd
+# target instead of tcp:{{host}}:{{port}}, e.g. "cmd:socat - UNIX-CONNECT:<sock>"
+# to reach a router's unix-socket listener (tools/timeline/run-board.sh puts
+# the island behind the gateway that way). phase8-W17
+l3-island-qemu elf="build-qemu/zephyr/zephyr.elf" port="7447" secs="60" host="127.0.0.1" monitor="" fwd="":
     #!/usr/bin/env bash
     set -eo pipefail
     [ -f "{{elf}}" ] || { echo "l3-island-qemu: no {{elf}} (just qemu-build)"; exit 1; }
@@ -168,9 +173,11 @@ l3-island-qemu elf="build-qemu/zephyr/zephyr.elf" port="7447" secs="60" host="12
     qemu="${qemu_dir:+$qemu_dir/bin/}qemu-system-arm"
     mkdir -p build/emulation; log="build/emulation/l3-island-$(date +%Y%m%dT%H%M%S).log"
     echo "l3-island-qemu: {{elf}} ($(sha256sum "{{elf}}" | cut -c1-12)) -> tcp/{{host}}:{{port}}, console $log, {{secs}} s"
+    mon_args=(); [ -n "{{monitor}}" ] && mon_args=(-monitor "unix:{{monitor}},server,nowait")
+    fwd="{{fwd}}"; [ -n "$fwd" ] || fwd="tcp:{{host}}:{{port}}"
     timeout --foreground -s INT {{secs}} "$qemu" -cpu cortex-m3 -machine mps2-an385 -nographic -vga none \
-        -nic "user,model=lan9118,guestfwd=tcp:10.0.2.100:7447-tcp:{{host}}:{{port}}" \
-        -kernel "{{elf}}" </dev/null 2>&1 | tee "$log" || true
+        -nic "user,model=lan9118,guestfwd=tcp:10.0.2.100:7447-$fwd" \
+        ${mon_args[@]+"${mon_args[@]}"} -kernel "{{elf}}" </dev/null 2>&1 | tee "$log" || true
 
 # play_launch check on every contract with the CI's pinned wheel (build/l3-ci). phase8-W3
 l3-check:
@@ -210,3 +217,16 @@ l3-timeline dir="build/timeline/live" png="":
     if [ -n "{{png}}" ]; then exec python3 tools/timeline/render.py "{{dir}}" --out "{{png}}" --table; fi
     export DISPLAY="${DISPLAY:-{{VNC_DISPLAY}}}"
     exec python3 tools/timeline/timeline.py "{{dir}}"
+
+# ---- phase8-W17: one traced act with the island off the host ---------------------
+# tools/timeline/run-board.sh: flash, gateway, reset, join, Autoware in the
+# container, gate, probe, the act, the trace read over SWD (or the QEMU
+# monitor), merged and analysed into build/timeline/<id>/ as run-native.sh
+# does. target=qemu runs the same act against the QEMU island (just
+# trace-qemu-build first) and flashes nothing; flags="--dry-run" prints the
+# steps. The board steps (flash, gateway + reset, SWD readout) are UNTESTED.
+# Run it under the demo lock (flock) when other runs share the host.
+#
+# One traced act: a | b | encore, on the board or QEMU, into build/timeline/<id>. phase8-W17
+l3-traced-act act id target="board" elf="" flags="":
+    tools/timeline/run-board.sh --target {{target}} {{ if elf != "" { "--elf " + elf } else { "" } }} {{flags}} {{act}} {{id}}

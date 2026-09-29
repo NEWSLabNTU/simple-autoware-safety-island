@@ -129,6 +129,18 @@ add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../autoware_mrm_emergency_stop_ope
 add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../autoware_mrm_comfortable_stop_operator" autoware_mrm_comfortable_stop_operator)
 add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../autoware_mrm_handler" autoware_mrm_handler)
 
+# phase8-W17: the component libraries are not Zephyr libraries, so nothing
+# orders them after Zephyr's generated headers. With tracing on, every
+# component includes <zephyr/kernel.h> (include/island_trace.h), which on 4.4
+# includes the generated zephyr/heap_constants.h; a parallel build then
+# compiled a component before that header existed ("zephyr/heap_constants.h:
+# No such file or directory", the traced QEMU image, first build).
+foreach(_island_lib mrm_emergency_stop_operator_lib mrm_comfortable_stop_operator_lib mrm_handler_lib)
+    if(TARGET ${_island_lib} AND TARGET zephyr_generated_headers)
+        add_dependencies(${_island_lib} zephyr_generated_headers)
+    endif()
+endforeach()
+
 # Relocate the entry's .bss into DTCM. The S32K344 has 64 KiB ITCM + 128 KiB
 # DTCM that this image otherwise leaves idle while SRAM runs near capacity. The
 # app library's .bss is the executor storage (~68 KiB) plus the four per-node
