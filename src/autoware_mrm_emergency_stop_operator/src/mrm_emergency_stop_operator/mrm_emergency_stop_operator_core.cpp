@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "autoware/mrm_emergency_stop_operator/mrm_emergency_stop_operator_core.hpp"
+#include <nros/clock.hpp>
 
 // phase7-W1 trace markers (no-op unless the image enables CTF tracing).
 #include "../../../safety_island_tracing/include/island_trace.h"
@@ -26,9 +27,17 @@ namespace
 {
 double max_d(double a, double b) { return a > b ? a : b; }
 
+// phase8-W18: a STAMP is read by the host, so it comes from the wall clock
+// when the image has one (nano-ros issue 0758: the SNTP epoch, installed
+// before any component is constructed). Autoware's vehicle_cmd_gate keeps its
+// previous hazard/turn/gear command when the new one is stamped earlier
+// (getContinuousTopic), so a boot-relative stamp is silently dropped. With no
+// epoch the system clock reads 0 and the stamp stays monotonic, knowingly.
+// Durations (now_sec) stay on the monotonic clock either way.
 builtin_interfaces::msg::Time now_stamp()
 {
-  const uint64_t ns = nros_cpp_time_ns();
+  const int64_t wall = ::nros::Clock(NROS_CLOCK_SYSTEM_TIME).now().nanoseconds();
+  const uint64_t ns = wall > 0 ? static_cast<uint64_t>(wall) : nros_cpp_time_ns();
   builtin_interfaces::msg::Time t;
   t.sec = static_cast<int32_t>(ns / 1000000000ull);
   t.nanosec = static_cast<uint32_t>(ns % 1000000000ull);

@@ -24,6 +24,7 @@
   <exec_depend>autoware_pipeline_latency_monitor</exec_depend>
   <exec_depend>autoware_processing_time_checker</exec_depend>
   <exec_depend>autoware_system_monitor</exec_depend>
+  <exec_depend>topic_tools</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>autoware_lint_common</test_depend>

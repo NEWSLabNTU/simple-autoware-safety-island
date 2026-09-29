@@ -164,6 +164,22 @@
     </group>
 
     <!-- MRM Handler — DISABLED: provided by the safety island. -->
+
+    <!-- phase8-W18: the island's hazard lights, into the path that is live in
+         every MRM. vehicle_cmd_gate takes /system/emergency/hazard_lights_cmd
+         ONLY while mrm_state.behavior == EMERGENCY_STOP (onMrmState); in a
+         takeover request (MRM NORMAL) and in COMFORTABLE_STOP it forwards the
+         AUTO hazard command, /planning/hazard_lights_cmd, which
+         autoware_hazard_lights_selector ORs from the path planner and from
+         `input/system/hazard_lights_command` = /system/hazard_lights_cmd. Stock
+         1.5.0 publishes nothing on that input, so the island's ENABLE never
+         reached the vehicle outside an emergency stop. The relay feeds it; the
+         selector restamps with host time, so no clock question arises on this
+         path. The emergency-stop path is unchanged. -->
+    <node pkg="topic_tools" exec="relay" name="island_hazard_lights_relay">
+      <param name="input_topic" value="/system/emergency/hazard_lights_cmd"/>
+      <param name="output_topic" value="/system/hazard_lights_cmd"/>
+    </node>
   </group>
 
   <!-- Dummy Diag Publisher -->

@@ -915,3 +915,94 @@ and router version do not. Fix: `CONFIG_NROS_ZENOH_LEASE_MS=60000` stated in
 qemu-ethernet, island-ethernet and island-serial, and the Zephyr default
 moved in nano-ros (issue 1574). On 0.1.10 the host `ros2 node list` did not
 hang: 6 of 6 runs returned, each session open 0.8-2.9 s (run J).
+
+### phase8-W26: the pin that carries 1443, 1447, 1449, 1459 and 1461
+
+nano-ros moved from `da272e419` to `f03d9d190` (main), which contains
+#1443 `8d59adba7` (the serial reader no longer outranked by the Zephyr
+tx-flush task; zenoh-pico `52f60b79` -> `e28ff603`), #1447 `add6ed21e8`
+(the boot record names the allocator that refused: VERSION 7 -> 8, 104 B),
+#1449 `00fbcb4056` (a refused transient-local count sizes for the worst
+case), #1459 `72452f74a3` (single-executor Zephyr images acquire the SNTP
+epoch and the wall clock reads it) and #1461 `58541dc14c` (the Zephyr zenoh
+lease defaults to 60 s). The three `CONFIG_NROS_ZENOH_LEASE_MS=60000` lines
+(W15) stay, now equal to the default; W10's board lines (main priority 5,
+RX ring 4096) stay, since #1443 does not change main's priority. Measured
+on island main `53f032e` (W27's INIT/RUN handler) with W18's changes.
+
+**QEMU** (`build-qemu-w26`, heap 102,400): the entity inventory derives as
+on W14 (`NROS_MAX_QUERYABLES=4`, `NROS_MAX_SUBSCRIBERS=7`,
+`NROS_MAX_PUBLISHERS=8`, `NROS_DECLARED_TL_PUBLISHERS=2`).
+
+               FLASH:      584576 B         4 MB     13.94%
+                 RAM:      361588 B         4 MB      8.62%
+
+RAM 64 B above W14's 361,524. `just qemu-run 40` (`qemu-20260929T230531.*`):
+
+    qemu-run: boot report (0x200356bc, 104 B) decoded into build/emulation/qemu-20260929T230531.boot-report.txt:
+    read-boot-report --self-test: OK
+    stage      6  FirstSpin -- registration complete and spinning
+      platform heap PEAK            71352 bytes   (69.3% of the heap)
+      platform heap capacity        102912 bytes   (NROS_ZEPHYR_HEAP_SIZE)
+    HEAP HEADROOM: ok -- 31560 bytes spare (peak 71352 of 102912, floor 24576).
+
+The dump's header words are magic `0x4e525352`, version `0x8`, length
+`0x68` (104), stage `0x6`: the v8 record, decoded by the pin's
+read-boot-report.py (`KNOWN_VERSION = 8`). The host lists all three nodes
+at +20 s. The peak is 2,664 B below W14's 74,016 (71,128 B on the same pin
+before W27); the heap stays 102,400.
+
+**The board image** (`just BOARD_BUILD_DIR=build-board-w26 board-build`,
+island-serial, not flashed):
+
+    Memory region         Used Size  Region Size  %age Used
+          IVT_HEADER:         256 B        256 B    100.00%
+               FLASH:      611144 B    4144896 B     14.74%
+                 RAM:      290728 B       320 KB     88.72%
+                ITCM:       12100 B        64 KB     18.46%
+                DTCM:       61576 B       128 KB     46.98%
+            IDT_LIST:           0 B        32 KB      0.00%
+
+SRAM 336 B above W10's image (290,392), 36,952 B free; W17's 32 KiB trace
+buffer and W10's 4,096 B RX ring are in both. The `.config` carries
+`CONFIG_NROS_ZENOH_LEASE_MS=60000` and
+`CONFIG_NROS_ZENOH_SERIAL_RX_RING_BYTES=4096`. `just board-doctor` with
+`ROS_DOMAIN_ID=10` and a pyocd stub: `[OK]      one ROS domain everywhere: 10`.
+
+**native_sim** (`just zephyr-build`, with W18's SNTP epoch: prj.conf states
+`CONFIG_NROS_SNTP_EPOCH=y` against `scripts/sntp-server.py` on
+127.0.0.1:12323, which every zephyr.exe launch site starts). Every run
+printed `nros: wall-clock epoch acquired from 127.0.0.1:12323`, and the
+island's stamps are UNIX time (host receive minus stamp -0.05 s in steady
+state; up to +0.5 s on the first message). W7's acts, one each, under the
+demo lock:
+
+    VERDICT: PASS encore: v at the fault 3.90 m/s; mrm (3, 2) (2 = EMERGENCY_STOP), v 0.000, after restore mrm (1, 1)
+    VERDICT: PASS b: v at the fault 3.93 m/s; TOR on True, mrm (3, 3) (3 = COMFORTABLE_STOP), v 0.000
+    VERDICT: PASS a: v at the fault 3.88 m/s; TOR on True, TOR now 1, control mode 4, mrm (1, 1)
+
+(1-min load at the start 13.27, 32.66, 16.79.) The hazard lights now reach
+the vehicle (W18's measure, host receive times from the act's own
+recorder; HazardLightsCommand 2 = ENABLE):
+
+| run | island ENABLE | vehicle_cmd_gate ENABLE | simulator status ENABLE | MRM |
+| --- | --- | --- | --- | --- |
+| encore | 48.022 s | 48.060 s (+38 ms) | 48.063 s (+41 ms) | OPERATING/EMERGENCY_STOP 48.022 s |
+| b | 47.317 s (TOR) | 47.460 s (+143 ms) | 47.484 s (+167 ms) | OPERATING/COMFORTABLE_STOP 57.317 to 65.317 s; the gate holds ENABLE to 65.461 s |
+| a | 52.316 s (TOR) | 52.432 s (+116 ms) | 52.450 s (+134 ms) | none (the driver took over) |
+
+In b and a the island's ENABLE goes through W18's relay
+(`/system/emergency/hazard_lights_cmd` -> `/system/hazard_lights_cmd` ->
+autoware_hazard_lights_selector -> `/planning/hazard_lights_cmd`), because
+vehicle_cmd_gate reads the emergency topic only in an EMERGENCY_STOP. The
+encore: last sample to braking command 622.99 ms against 643.33, to
+standstill 3,437.37 ms. b's window dwell is 10,000 ms island / 10,000.36 ms
+host; the longest host availability gap was 104.67 ms (b) and 103.77 ms (a).
+
+Open: in the encore the island, which joined while the inputs already
+flowed (`INIT -> RUN: every input heard 0 ms after boot`), went NORMAL ->
+MRM_OPERATING (EMERGENCY_STOP) at 15.565 s and back to NORMAL at 15.719 s,
+80 ms after its first message and 32 s before the act; the gate forwarded
+that ENABLE for 100 ms. The same 100 ms episode appeared in act a before
+W27 (on `b332438`). The handler's judgement is on the monotonic clock
+(`now_sec`), not on the stamps this unit moved to the wall clock.

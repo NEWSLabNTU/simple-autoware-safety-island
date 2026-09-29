@@ -36,6 +36,7 @@ trace-native secs="120" out=(TRACE_DIR / "island.trace"): (_not-running "demo/.i
     ps -o pgid= -p $$ | tr -d ' ' > demo/.island.pgid
     echo "trace-native: island for {{secs}} s -> {{out}} (log {{out}}.log)"
     set +e
+    python3 scripts/sntp-server.py >> tmp_sntp.log 2>&1 &  # phase8-W18: the epoch (prj.conf)
     ./build-zephyr/zephyr/zephyr.exe --stop_at={{secs}} --trace-out="$PWD/{{out}}" > "{{out}}.log" 2>&1
     rc=$?
     rm -f demo/.island.pgid
@@ -70,6 +71,7 @@ _job-traced-island out:
     just _wait-sim > /dev/null
     source scripts/env.sh
     ps -o pgid= -p $$ | tr -d ' ' > demo/.island.pgid
+    python3 scripts/sntp-server.py >> tmp_sntp.log 2>&1 &  # phase8-W18: the epoch (prj.conf)
     exec ./build-zephyr/zephyr/zephyr.exe --trace-out="{{out}}" > tmp_island.log 2>&1
 
 [private]

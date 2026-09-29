@@ -283,8 +283,11 @@ zephyr-build: sync
         -Dnano_ros_ROOT={{NANO_ROS_ROOT}} -DCMAKE_PREFIX_PATH={{NANO_ROS_ROOT}}
 
 # Run the Zephyr island (domain 2 baked; host side: `just host-env`).
+# One line on purpose: each recipe line is its own shell, and the SNTP responder
+# exits once its parent is gone, so it must share the island's line and the
+# island must be that shell (exec) -- phase8-W18's epoch (prj.conf).
 zephyr-run:
-    ./build-zephyr/zephyr/zephyr.exe
+    python3 scripts/sntp-server.py >> tmp_sntp.log 2>&1 & exec ./build-zephyr/zephyr/zephyr.exe
 
 # ── The board: NXP MR-CANHUBK344 (S32K344) on Zephyr 4.4 ────────────────────
 # Separate recipes rather than parameters on zephyr-build, because all three of
@@ -833,6 +836,7 @@ _svc-island target="zephyr":
     set -e
     ps -o pgid= -p $$ | tr -d ' ' > demo/.island.pgid
     if [ "{{target}}" = "zephyr" ]; then
+        python3 scripts/sntp-server.py >> tmp_sntp.log 2>&1 &  # phase8-W18: the epoch (prj.conf)
         exec ./build-zephyr/zephyr/zephyr.exe > tmp_island.log 2>&1
     else
         exec env LD_LIBRARY_PATH="{{CYCLONEDDS_HOME}}/lib" \

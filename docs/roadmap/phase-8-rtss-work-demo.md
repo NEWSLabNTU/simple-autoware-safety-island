@@ -532,6 +532,25 @@ the others by fast-forward push once implementation starts.
   demo/l3/contracts compositions still model the gate as input-triggered
   (`trigger: input`, 20 ms); the acts ran on the pre-W15 island.
 
+- **W26 - one pin move, and W18's wall clock.** Status (2026-09-29):
+  docs/boot-through.md ("phase8-W26"). nano-ros `f03d9d190` (main; carries
+  #1443, #1447, #1449, #1459, #1461; zenoh-pico `e28ff603`), on island
+  `53f032e` (W27). W18 merged: `now_stamp()` on the system clock in
+  mrm_handler and both operators (monotonic when no epoch), SNTP for
+  native_sim (`scripts/sntp-server.py` beside every zephyr.exe launch), and
+  the hazard relay in the demo's tier4_system_launch. The lease lines stay
+  (now the default); W10's board lines stay. QEMU: FirstSpin, heap peak
+  71,352 B of 102,912, boot record v8 (104 B) decoded. Board image RAM
+  290,728 of 327,680 B (88.72 %), not flashed; `board-doctor` one domain:
+  10. native_sim, one run each, load 13-33: encore, b and a PASS; the
+  island's hazard ENABLE reaches vehicle_cmd_gate and the simulator 38-167
+  ms later in all three (in the encore's EMERGENCY_STOP directly, in b and a
+  through the relay). CI script 14/14 on play_launch 0.13.0. Open: in the
+  encore a late-joining island ran a 150 ms EMERGENCY_STOP 80 ms after
+  INIT -> RUN, 32 s before the act (seen in act a before W27 too); the
+  metadata probe still finds no producer for the four components
+  (unbounded frame_id), as before.
+
 Order: W0 first; W1, W2, W3, W6 in parallel; W4 and W5 after W1; W7 after
 W6; W8 after W2, W4, W5, W7; W9 last. Rough effort 6-7 weeks on the core
 path (D); the board path 1-1.5 weeks once W1 and W2 land (B); the link is
