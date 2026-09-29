@@ -425,6 +425,53 @@ board-doctor:
         echo "            cd $ISLAND_ZEPHYR_WS/zephyr && git apply {{justfile_directory()}}/patches/zephyr/*.patch"
         fail=1
     fi
+    # The ROS domain, from every place that states it (nano-ros issue 1550;
+    # docs/boot-through.md F6). The image bakes CONFIG_NROS_DOMAIN_ID and
+    # nothing else reaches it; the transport snippet is where it is stated;
+    # system.toml is a check, not a writer; ROS_DOMAIN_ID is what every host
+    # ros2 / rmw_zenoh_cpp process in THIS shell joins. A mismatch is silent at
+    # run time -- the session opens and the graph is simply empty -- so all of
+    # them must say the same number.
+    conf_dom() { sed -n 's/^CONFIG_NROS_DOMAIN_ID=\([0-9]*\).*/\1/p' "$@" 2>/dev/null | tail -1; }
+    doms=()
+    sys_dom="$(sed -n 's/^domain_id *= *\([0-9]*\).*/\1/p' src/zephyr_entry/system.toml | head -1)"
+    printf '  %-9s %-44s %s\n' domain "system.toml (src/zephyr_entry)" "${sys_dom:-not stated}"
+    [ -n "$sys_dom" ] && doms+=("$sys_dom")
+    board_dom="$(conf_dom src/zephyr_entry/boards/mr_canhubk3_s32k344.conf)"
+    printf '  %-9s %-44s %s\n' domain "board conf" "${board_dom:-not stated}"
+    for snip in src/zephyr_entry/snippets/*/; do
+        name="$(basename "$snip")"
+        d="$(conf_dom "$snip"*.conf)"
+        if [ -n "$d" ]; then
+            printf '  %-9s %-44s %s\n' domain "snippet $name" "$d"
+            doms+=("$d")
+        else
+            eff="${board_dom:-0}"
+            printf '  %-9s %-44s %s\n' domain "snippet $name" \
+                "not stated -> the image falls to $eff${board_dom:+ (the board conf)}${board_dom:- (Kconfig default)}"
+            doms+=("$eff")
+        fi
+    done
+    cfg="{{BOARD_BUILD_DIR}}/zephyr/.config"
+    if [ -f "$cfg" ]; then
+        link=ethernet; grep -q '^CONFIG_NROS_TRANSPORT_SERIAL=y' "$cfg" && link=serial
+        img_dom="$(conf_dom "$cfg")"
+        printf '  %-9s %-44s %s\n' domain "image {{BOARD_BUILD_DIR}} ($link)" "${img_dom:-0 (Kconfig default)}"
+        doms+=("${img_dom:-0}")
+    else
+        printf '  %-9s %-44s %s\n' domain "image {{BOARD_BUILD_DIR}}" "not built"
+    fi
+    printf '  %-9s %-44s %s\n' domain "ROS_DOMAIN_ID in this shell" "${ROS_DOMAIN_ID:-unset (ros2 joins 0)}"
+    doms+=("${ROS_DOMAIN_ID:-0}")
+    uniq_doms="$(printf '%s\n' "${doms[@]}" | sort -u | tr '\n' ' ')"
+    if [ "$(printf '%s\n' "${doms[@]}" | sort -u | wc -l)" -eq 1 ]; then
+        echo "  [OK]      one ROS domain everywhere: ${doms[0]}"
+    else
+        echo "  [MISMATCH] the image, a snippet, system.toml and the shell name different"
+        echo "            domains ($uniq_doms). State CONFIG_NROS_DOMAIN_ID once per transport"
+        echo "            snippet and export ROS_DOMAIN_ID to match (source scripts/env.sh)."
+        fail=1
+    fi
     exit $fail
 
 # Exercises the IVT header, the FS26 watchdog and the flash chain, so a failure
