@@ -175,15 +175,26 @@ version: 1
 #     composition declares 20 ms for it and reads 120 ms). The value is read
 #     on the handler's next tick, which is the first term of the route below.
 #
-#   reaction route = 110 ms.
-#     `update_rate: 10` gives a 100 ms tick and `timeout_call_mrm_behavior:
-#     0.01` gives 10 ms to get the behaviour called. 100 + 10 = 110. Both
-#     numbers come from the same parameter file. The handler notices the
-#     stale stamp, or the cleared `autonomous`, on a tick, so the tick period
-#     is genuinely the first term and not a padding allowance. The emergency
-#     operator adds its 30 Hz tick as a sampling hop across the operate
-#     service (33.33 ms, play_launch phase 82); the comfortable operator
-#     publishes its velocity limit inside the operate callback itself.
+#   reaction route = 206 ms, the handler's `call_mrm` hop ON THE BOARD
+#     (phase8-W30). It was 110 ms until W30: `update_rate: 10` gives a
+#     100 ms tick and `timeout_call_mrm_behavior: 0.01` gave 10 ms to get the
+#     behaviour called. That was set on native_sim, where a callback takes
+#     zero time and the link is the host's loopback. The island is an
+#     S32K344 behind a gateway and a 921,600-baud UART, and there the hop
+#     has three costs, each measured on every W8 board run and sized as the
+#     observed maximum plus 20 %, rounded up to the next ms (the 100 ms
+#     period is the parameter and takes no margin):
+#       link 57 = the serial hop in, max 47.43 ms;
+#       tick 118 = the period 100 + jitter 18 (ticks up to 114.84 ms apart);
+#       work 31 = the tick's start to the reaction's last publish, max 25.04.
+#     57 + 118 + 31 = 206. The derivation, term by term, with the runs, is
+#     at `call_mrm` below. The handler notices the stale stamp, or the
+#     cleared `autonomous`, on a tick, so the tick is genuinely a term and
+#     not a padding allowance. The emergency operator adds its 30 Hz tick as
+#     a sampling hop across the operate service (33.33 ms, play_launch phase
+#     82); the comfortable operator publishes its velocity limit inside the
+#     operate callback, served right after the handler's tick returns
+#     (inside the work term).
 #
 #   window = 10 s.
 #     Decision 3 of the phase-8 doc (Drive Pilot's figure), bound to
@@ -196,11 +207,15 @@ version: 1
 #     one clock). How LATE the MRM may start is not a second number: the
 #     checker charges the window up to its deadline (request on + 10 s) and
 #     the rung below its own route from there, and that route's first hop is
-#     this handler's `call_mrm`, 110 ms = the 100 ms tick the expiry is read
-#     on + the 10 ms call. `window-expiry` (play_launch phase 84) checks that
+#     this handler's `call_mrm`, 206 ms on the board (above; 110 ms until
+#     phase8-W30). `window-expiry` (play_launch phase 84) checks that
 #     the hop holds the tick of the timer that publishes the request
-#     (`on_timer`, 10 Hz), so the request ends within 10 000 to 10 110 ms of
-#     going on and the late notice is charged exactly once. The W7 runs cut
+#     (`on_timer`, 10 Hz), so the request ends within 10 000 to 10 206 ms of
+#     going on and the late notice is charged exactly once. After the
+#     deadline no message crosses the link (the handler reads its own
+#     clock), so there the 57 ms link term inside `call_mrm` is slack:
+#     play_launch 0.13.0 charges one number per hop and cannot tell the two
+#     cases apart (docs/takeover-trace.md section 10, follow-up F1). The W7 runs cut
 #     at the request-off edge instead of the deadline and so counted the
 #     tick twice (docs/takeover-trace.md, finding 1 and section 6).
 #
@@ -230,11 +245,12 @@ version: 1
 # matters is that they are written down and checked. The old 3 s cannot be
 # met at the decided bound by any island: from 8.33 m/s the emergency stop
 # alone takes 4165.33 ms to standstill; 3 s was chosen for the 3.0 m/s the
-# old settle assumed. 10 s (brief D's figure) leaves the floor 5191.33 ms of
-# slack. odd_exit's 30 s is decision 3, a stated judgement like the old 3 s:
+# old settle assumed. 10 s (brief D's figure) leaves the floor 5095.33 ms of
+# slack with the board's 206 ms handler hop (5191.33 before phase8-W30). odd_exit's 30 s is decision 3, a stated judgement like the old 3 s:
 # the takeover window is 10 s of it, and the comfortable stop at the bound
-# fits the rest with 9683.33 ms to spare (the demo composition, with its
-# 20 ms gate path and the 300 ms planner placeholder, reads 9363.33).
+# fits the rest with 9491.33 ms to spare (the demo composition, with its
+# 20 ms gate path and the 300 ms planner placeholder, reads 9171.33; before
+# phase8-W30's board budget, 9683.33 and 9363.33).
 # `play_launch check --explain` prints every term; docs/takeover-trace.md
 # sets the observed runs against them.
 #
@@ -301,11 +317,16 @@ version: 1
 #     "something outside this image, and it is not declared anywhere yet".
 #     Silencing it would be worse than carrying it.
 #
-#   info[path-exclusion]: `on_timer` may wait up to 110 ms for `call_mrm` and
-#     `driver_exit`, because every path of a node is assumed to serialise
-#     unless the node declares otherwise. For mrm_handler that assumption is
-#     exactly right -- the three paths ARE the same callback body -- so there
-#     is nothing to declare and nothing to fix.
+#   info[path-exclusion] is no longer printed (phase8-W30). Until then it
+#     said `on_timer` may wait up to 110 ms for `call_mrm` and `driver_exit`,
+#     because every path of a node is assumed to serialise unless the node
+#     declares otherwise; for mrm_handler that is exactly right -- the three
+#     paths ARE the same callback body. With the board's 206 ms, island.tor's
+#     nominal critical path runs through `call_mrm` itself instead of the
+#     tick (206 > 100 sampling + 100), and 0.13.0 prints no note for it here
+#     (the demo composition, with the gate in the tree, still prints one:
+#     `call_mrm` may wait for `driver_exit` and `on_timer`, up to 149 ms).
+#     Nothing was declared to make it go away.
 #
 # One more thing worth knowing, because it is invisible in the output: the
 # hazards make the checker DERIVE criticality, which is what carries the
@@ -411,6 +432,14 @@ nodes:
       # phase 83, F3). The limit IS the stop the planner then executes, so
       # the braking profile is this node's: the settle is derived from its
       # own `min_acceleration` and `min_jerk` and the hazard's entry speed.
+      # No `max_latency`, on purpose (phase8-W30). On the board the request
+      # is served on the same executor right after the handler's tick
+      # returns, and the limit leaves 0.02 ms after the take (0.85-1.18 ms
+      # after the handler's `call_mrm` EXIT, runs w8-b1/r02/r05/r08). That
+      # cost is inside `call_mrm`'s work term below, measured to this
+      # publish. A number here would also become a node deadline and a
+      # 2 ms runtime latency monitor on the limit in the image (nros
+      # derives both from path latencies), which is not what is meant.
       operate:
         trigger: { input: [operate] }
         output: [max_velocity_candidates]
@@ -516,12 +545,44 @@ nodes:
       # subscription callback in the code. It is declared as an
       # input-triggered path because that is the shape a detector reaction
       # has: it is caused by the fault on `operation_mode_availability`, not
-      # by the clock. The 110 ms is the tick it waits for (100 ms) plus
-      # `timeout_call_mrm_behavior` (10 ms), so the periodic implementation is
-      # accounted for inside the number rather than hidden by the
+      # by the clock. The tick it waits for is inside the number, so the
+      # periodic implementation is accounted for rather than hidden by the
       # declaration. Both faults start it; it enters the takeover request,
       # calls an operator, or both in turn, and the outputs name all three so
       # the walk can follow each rung (phase8-W7).
+      #
+      # THE BOARD BUDGET (phase8-W30): 206 ms = link 57 + tick 118 + work 31.
+      # Until W30 it was 110 ms, the 100 ms tick plus the 10 ms of
+      # `timeout_call_mrm_behavior`, set on native_sim. Each term below is
+      # the maximum over the 13 W8 board runs (image 780195b0, main 88a336f;
+      # w8-a1, b1, e1, r01..r10; docs/takeover-trace.md sections 9 and 10)
+      # plus 20 %, rounded up to the next ms. The 100 ms period is
+      # `update_rate: 10` and takes no margin.
+      #   link 57 ms: the serial hop in, the gate's publish on the host to
+      #     this subscriber's take on the island (gateway, 921,600-baud
+      #     UART, rx). 12.29-47.43 ms over 18 edges of the gate's verdict
+      #     (a/b runs, both edges; max w8-r01 47.43). 47.43 x 1.2 = 56.92.
+      #     It is the same fact as `max_transport` on the subscriber below,
+      #     stated here too because play_launch 0.13.0 walks a reaction
+      #     without transport (follow-up F1); counted once either way.
+      #     Cross-clock: an island stamp moved onto the host clock by the
+      #     smallest publish->receipt pair is never early, so this term is
+      #     over-stated by the smallest out-link delay, never under-stated.
+      #   tick 118 ms: a take waits for the next tick. Consecutive ticks
+      #     came 81.96-114.84 ms apart (1641 gaps; max w8-a1, whose ticks
+      #     run on the 100 ms grid up to 14.84 ms late; 110.11 elsewhere).
+      #     100 + 14.84 x 1.2 = 100 + 17.81.
+      #   work 31 ms: from the tick's start to the reaction's last publish.
+      #     The request goes on 5.41-9.66 ms in; the expiry tick calls
+      #     comfortable_stop/operate 11.23-17.76 ms in, publishes the
+      #     request off 17.44-23.97 ms in and returns at 17.64-24.16; the
+      #     operator, served next on the same executor, publishes the
+      #     velocity limit 18.48-25.04 ms after the tick began (max
+      #     w8-b1). 25.04 x 1.2 = 30.05.
+      # 57 + 118 + 31 = 206: the takeover route, and the first hop after
+      # the window's deadline (window-expiry), where the link is slack.
+      # Before W30 the board went over 110 in 6 of 13 runs (max 145.35,
+      # w8-b1 = 42.18 link + 93.51 wait + 9.66 work).
       call_mrm:
         trigger: { input: [operation_mode_availability] }
         output:
@@ -529,7 +590,7 @@ nodes:
           - takeover_request_state
           - comfortable_stop_operate
           - emergency_stop_operate
-        max_latency: 110ms
+        max_latency: 206ms
         # The client calls to the operators are named in `output` so the
         # reaction walk can follow the service edges (phase 82). The safe
         # states are declared on the operators, whose outputs command the
@@ -538,10 +599,15 @@ nodes:
       # control_mode input and answered on the takeover-request state, again
       # on a tick. Declaring it is what makes the image trace the take
       # (TAKE_MRM_HANDLER_CONTROL_MODE) and what `mode-exit-unwired` checks.
+      # 149 ms on the board (phase8-W30; 100 until then) = tick 118 + work
+      # 31, the two on-island terms of `call_mrm` above: the path starts at
+      # the island's take, so the link is not in it. Observed take of MANUAL
+      # to request off 46.18-72.87 ms (a runs; request off 6.41-9.04 ms
+      # into the exit tick).
       driver_exit:
         trigger: { input: [control_mode] }
         output: [takeover_request_state]
-        max_latency: 100ms
+        max_latency: 149ms
     sub:
       # `lease_duration` is `timeout_operation_mode_availability: 0.5` from
       # this node's own parameter file, restated as the middleware fact it
@@ -557,6 +623,19 @@ nodes:
         # lease stays declared because it is the same fact in QoS terms and
         # nano-ros's inventory reads it; both give a 500 ms detection.
         max_age: 500ms
+        # THE SERIAL LINK (phase8-W30). This subscriber sits behind the
+        # island gateway and the UART, so its transport is its own, not the
+        # topic's (a host subscriber of the same topic has none): the
+        # per-subscriber `max_transport` is rlm's key for exactly that.
+        # 57 ms = the measured hop in, max 47.43 + 20 % (derivation at
+        # `call_mrm`). play_launch 0.13.0 charges it nowhere in the fault
+        # arithmetic (the reaction walk sums path latencies only, and an
+        # external publisher gives the nominal graph no edge to weigh; the
+        # --explain output is byte-identical with and without it), so the
+        # same 57 ms is also inside `call_mrm`. Follow-up F1: when the
+        # reaction walk charges the guard edge's transport, take it out of
+        # `call_mrm` (149 ms), or it is counted twice.
+        max_transport: 57ms
         qos: { depth: 1, liveliness: manual_by_topic, lease_duration: 500ms }
         on_violation:
           # `reported` since phase8-W7: the handler also reacts to the VALUE
@@ -564,9 +643,16 @@ nodes:
           on: [omission, reported]
           mechanism: application
           reaction: call_mrm
-          within: 110ms
+          within: 206ms   # the reaction path's own budget (`reaction-within`)
       kinematic_state: { min_rate_hz: 10, qos: { depth: 1 } }
-      control_mode: { min_rate_hz: 10, qos: { depth: 1 } }
+      # Behind the same link, and downsampled 40 -> 10 Hz by the gateway
+      # (demo/l3/router/island-gateway.json5), so a change of mode waits
+      # for the next sample the downsampler passes: the host probe's receipt
+      # of MANUAL to the island's take was 63.65-118.78 ms in the five a
+      # runs (cross-clock, as the link above). 118.78 x 1.2 = 142.54 -> 143.
+      # Nothing in the fault arithmetic reads it: the driver's answer is
+      # bounded by the window, on the host (phase8-W30).
+      control_mode: { min_rate_hz: 10, max_transport: 143ms, qos: { depth: 1 } }
       comfortable_stop_status: { min_rate_hz: 10, qos: { depth: 1 } }
       emergency_stop_status: { min_rate_hz: 10, qos: { depth: 1 } }
       # Latched, published on CHANGE by default_adapi: no rate is claimed.
@@ -594,17 +680,18 @@ nodes:
 # take, which the checker derives; a scope path's own `max_latency` is the
 # NOMINAL traversal.
 #
-# 210 ms, not the 110 ms of the reaction route, and the difference is not
-# slack. A scope path's budget is checked against the NOMINAL traversal, and
-# the nominal traversal of a 10 Hz node is one sampling wait (100 ms, because
-# an arriving message waits for the next tick) plus the tick's own budget
-# (100 ms). The fault route is shorter than the nominal route here, which is
-# the right way round and worth saying out loud: the handler does not have to
-# wait for fresh data to react to its absence. Declaring 110 ms here instead
-# makes `scope-budget` reject the file against a 200 ms critical path, which
-# is the checker being correct about a different question. island.tor has
-# the same shape and the same 210 ms. island.comfortable_stop declares none:
-# it crosses the operate service, which the nominal graph does not walk.
+# 210 ms, the NOMINAL traversal, which a scope path's budget is checked
+# against: for a 10 Hz node, one sampling wait (100 ms, because an arriving
+# message waits for the next tick) plus the tick's own budget (100 ms). Until
+# phase8-W30 the fault route (110 ms) was shorter than that, and declaring
+# 110 here made `scope-budget` reject the file against the 200 ms critical
+# path. With the board's `call_mrm` (206 ms) the critical path is `call_mrm`
+# itself, 206 ms, and 210 still holds it. It is the scope's own budget, from
+# the handler's take: the link in front of the take is not in it, and the
+# 57 ms `max_transport` on that subscriber is not charged here (0.13.0 has no
+# edge to weigh from an external publisher). island.emergency_stop has the
+# same 210 ms. island.comfortable_stop declares none: it crosses the operate
+# service, which the nominal graph does not walk.
 paths:
   island.tor:
     trigger: { input: [/system/operation_mode/availability] }

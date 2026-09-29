@@ -1,6 +1,6 @@
 {
  "generator": "src/safety_island_tracing/gen_markers.py",
- "contract_sha256": "990442fc5e0fce3fee6d60f3ca6df9324d2dbd1423b63d738cd25530ca74509b",
+ "contract_sha256": "e88319a3be0566f4d93da57a6a727a9af77875311e45624c0e21d7cb4cb4c9cb",
  "table_sha256": "0935f5b7449bb462bf030efefab5094968040c44ebf3493da532c432019944cf",
  "entities": {
   "pub": 8,
@@ -114,7 +114,7 @@
    "element": "/mrm_handler/call_mrm",
    "node": "mrm_handler",
    "trigger": "input",
-   "max_latency_ms": 110.0,
+   "max_latency_ms": 206.0,
    "record": "every"
   },
   {
@@ -124,7 +124,7 @@
    "element": "/mrm_handler/call_mrm",
    "node": "mrm_handler",
    "trigger": "input",
-   "max_latency_ms": 110.0,
+   "max_latency_ms": 206.0,
    "record": "every"
   },
   {
@@ -134,7 +134,7 @@
    "element": "/mrm_handler/driver_exit",
    "node": "mrm_handler",
    "trigger": "input",
-   "max_latency_ms": 100.0,
+   "max_latency_ms": 149.0,
    "record": "every"
   },
   {
@@ -144,7 +144,7 @@
    "element": "/mrm_handler/driver_exit",
    "node": "mrm_handler",
    "trigger": "input",
-   "max_latency_ms": 100.0,
+   "max_latency_ms": 149.0,
    "record": "every"
   },
   {

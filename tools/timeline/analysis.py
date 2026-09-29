@@ -12,18 +12,34 @@ odd_exit alone branch B, hpc_loss the encore.
 The window (phase8-W12). `window:` is a LEAST time: the request lasts at
 least the window, and the checker charges it up to the DEADLINE (request on
 + window); the rung below is charged its route FROM the deadline, and that
-route's first hop (mrm_handler/call_mrm, 110 ms = the 100 ms tick + the
-10 ms call) is where the late notice of the deadline is charged
-(play_launch `window-expiry`). So branch B is cut at the deadline, a derived
+route's first hop (mrm_handler/call_mrm) is where the late notice of the
+deadline is charged (play_launch `window-expiry`). On the board that hop is
+206 ms = the serial link in 57 + the tick 118 (100 + jitter) + in-tick work
+31 (phase8-W30; 110 ms, the tick + a 10 ms call, until then; the derivation
+is in the island contract at `call_mrm`). So branch B is cut at the deadline, a derived
 instant (the request-on edge plus the declared, parameter-bound window),
 never at the request-off edge, which lies inside the route below; the
 verdict -> velocity limit row needs no derived instant at all.
+
+Clocks (phase8-W30). The detect, host and `windows + route, host` rows are
+host clock only; the dwell, route and exit rows are island clock only. The
+takeover route, `windows` and `windows + route` compare an island edge with
+the gate's host stamp, through merge.py's offset, the smallest
+publish->receipt pair: a receipt is never before its publish, so that offset
+never puts an island edge EARLIER than it happened, and those rows are
+over-stated by the smallest out-link delay, never under-stated. They say so
+in their note.
 """
 import re
 
 import tlcommon as tl
 
-TICK_MS = 100.0  # mrm_handler update_rate 10: the encore's detect row adds it back (below)
+# The tick share of mrm_handler/call_mrm on the board: the 100 ms period of
+# update_rate 10 plus 18 ms of jitter (ticks up to 114.84 ms apart on the
+# S32K344; island contract, phase8-W30). The encore's detect row adds it back
+# (below). rlm has no key for the share, so it is stated here.
+TICK_MS = 118.0
+CROSS = "island vs host clock"  # the note on a cross-clock row (module doc)
 HPC_TIMEOUT_MS = 500.0  # mrm_handler timeout_operation_mode_availability: hpc_loss
 
 
@@ -265,11 +281,11 @@ def verdicts(r):
     if r["act"] in ("a", "b"):
         tr = dr.get("takeover_request", {})
         add("detect (button -> verdict on the wire)", o.get("detect"), tr.get("detect"))
-        add("takeover route (verdict -> request on)", o.get("tor_route"), tr.get("route"))
+        add("takeover route (verdict -> request on)", o.get("tor_route"), tr.get("route"), CROSS)
         if r["act"] == "a":
             add("driver answered inside the window", o.get("response"), w, "response time")
-            add("exit route (MANUAL taken -> request off)", o.get("exit_route"), 100.0,
-                "driver_exit max_latency")
+            add("exit route (MANUAL taken -> request off)", o.get("exit_route"),
+                tl.path_latency_ms("mrm_handler", "driver_exit"), "driver_exit max_latency")
             ok_nomrm = r["edges"].get("mrm_operating") is None
             out.append(dict(term="no MRM", observed="none" if ok_nomrm else "MRM_OPERATING",
                             declared="none", ok=ok_nomrm, note=""))
@@ -285,11 +301,13 @@ def verdicts(r):
                                 ok=None if dw is None else (w <= dw and (end is None or dw <= end)),
                                 note="at least the window; ends within the checker's `ends within`"))
             cs = dr.get("comfortable_stop", {})
-            add("windows (verdict -> deadline = request on + window)", o.get("windows"), cs.get("windows"))
+            add("windows (verdict -> deadline = request on + window)", o.get("windows"), cs.get("windows"),
+                CROSS)
             add("route, island clock (deadline -> velocity limit)", o.get("route"), cs.get("route"))
             add("route, host (deadline -> velocity limit received)", o.get("route_host"), cs.get("route"))
             wr = None if cs.get("windows") is None or cs.get("route") is None else cs["windows"] + cs["route"]
-            add("windows + route (verdict -> velocity limit)", o.get("windows_route"), wr, "no derived instant")
+            add("windows + route (verdict -> velocity limit)", o.get("windows_route"), wr,
+                "no derived instant; " + CROSS)
             add("windows + route, host (verdict -> velocity limit received)", o.get("windows_route_host"), wr,
                 "no derived instant")
             add("settle (velocity limit -> standstill)", o.get("settle"), cs.get("settle"),
@@ -299,7 +317,7 @@ def verdicts(r):
     else:
         fl = dr.get("emergency_stop", {})
         add("detect (last sample -> reaction tick)", o.get("detect"), (fl.get("detect") or 0) + TICK_MS,
-            "500 + the tick the route's 110 already holds")
+            "500 + the tick the route's call_mrm already holds")
         add("route (reaction tick -> braking command)", o.get("route"), fl.get("route"))
         dr_ = None if o.get("detect") is None or o.get("route") is None else o["detect"] + o["route"]
         dd_ = None if fl.get("detect") is None else fl["detect"] + fl["route"]

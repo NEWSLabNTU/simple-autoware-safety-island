@@ -219,6 +219,17 @@ def declared(model=None):
                 entry_speed=entry, hazards=hazards, contract=contract_path(model))
 
 
+def path_latency_ms(node, path, contract=None):
+    """A node path's declared `max_latency` in ms, read from the island's
+    contract sidecar (phase8-W30: the exit row's bound, which the --explain
+    table does not print). None when the path declares none."""
+    p = contract or LAUNCH.replace(".launch.xml", ".contract.yaml")
+    with open(p) as f:
+        c = yaml.load(f, Loader=YamlLoader)
+    v = (((c.get("nodes") or {}).get(node) or {}).get("paths") or {}).get(path, {}).get("max_latency")
+    return duration_ms(v)
+
+
 def duration_ms(v):
     if v is None:
         return None
@@ -353,7 +364,8 @@ def selftest(path=os.path.join(HERE, "testdata/explain.txt")):
     testdata/explain.txt is the `--explain` output of play_launch on the live
     contract (the settle-derived lines and the budget table): 92043c82 for
     the W7 runs, the phase-84 checker since phase8-W12, which adds the
-    window's `ends within` note. The timeline's declared bars are parse_explain()
+    window's `ends within` note; since phase8-W30 the pinned 0.13.0 on the
+    board budget (the handler's hop 206 ms). The timeline's declared bars are parse_explain()
     of that table and its dashed stop curve is settle_s(); both must agree
     with the checker's own numbers, or every bar drawn is wrong.
     """

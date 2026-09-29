@@ -719,3 +719,230 @@ at the TOR-on tick. Braking is unaffected.
 Runs, tables and plots: `build/timeline/w8-{a1,b1,e1,r01..r10}/` in the W8
 worktree (`timeline.png`, `table.md`, `island.trace*`, the JSONL files).
 The render labels the rung from `island.trace.meta` (`target=board`).
+
+## 10. The board budget (phase8-W30)
+
+phase8-W30, 2026-09-30. Decision (the user's): the contract's budgets
+respect the hardware the island runs on, the S32K344 behind the gateway
+and the UART, not the native_sim calibration. Section 9 found three costs
+the 110 ms handler hop did not hold. This section sizes each one from all
+13 W8 board runs, states it in the contract, and re-analyses every run
+offline against the new contract. Nothing here touched the board or W8's
+run directories.
+
+### The terms
+
+Measured by `terms.py` (in the re-analysis directory below) from each
+run's merged `island.jsonl` (the island's own clock, `island_ns`), and
+`gate.jsonl`. Each term is the maximum over the 13 runs plus 20 %, rounded
+up to the next ms. The 100 ms period is `update_rate: 10` and takes no
+margin.
+
+| term | what | observed (all 13 runs) | max (run) | +20 % | declared | over the max |
+|---|---|---|---|---|---|---|
+| link | gate publish (host) -> island take of the same verdict edge | 12.29-47.43 ms, 18 edges | 47.43 (r01) | 56.92 | 57 | +9.57 |
+| tick | a take waits for the next tick: consecutive ticks | 81.96-114.84 ms, 1641 gaps | 114.84 (a1) | 100 + 17.81 | 118 | +3.16 |
+| work | tick start -> the reaction's last publish (the velocity limit on the expiry tick) | 0.40-25.04 ms | 25.04 (b1) | 30.05 | 31 | +5.96 |
+| **call_mrm** | link + tick + work | sum of maxima 187.31 | - | - | **206** | +18.69 |
+| driver_exit | tick + work (starts at the island's take: no link) | observed 46.18-72.87 | 72.87 (a1) | - | 149 | +9.12 over tick + work maxima |
+| control_mode transport | host receipt of MANUAL -> island take (link + the gateway's 40 -> 10 Hz downsampler) | 63.65-118.78 ms, 5 edges | 118.78 (r07) | 142.54 | 143 | +24.22 |
+
+The pieces of `work`: the request goes on 5.41-9.66 ms into its tick; the
+expiry tick calls `comfortable_stop/operate` 11.23-17.76 ms in, publishes
+the request off 17.44-23.97 ms in and returns 17.64-24.16 ms in; the
+operator is served next on the same executor and publishes the velocity
+limit 0.85-1.18 ms after the handler returns (18.48-25.04 ms after the
+tick began). a1's ticks run on the 100 ms grid up to 14.84 ms late (a late
+tick is followed by a short one, 81.96 ms); every other run stays within
+88.07-110.11 ms.
+
+### Where each term is stated, and why there
+
+- `call_mrm: max_latency: 206ms` (it was 110) and the subscriber's
+  `on_violation.within: 206ms` (`reaction-within` requires within >= the
+  path). The walk charges it as the takeover route and as the first hop
+  after the window's deadline (`window-expiry`), so the request now ends
+  within 10,206 ms of going on. The derivation, with the runs, is the
+  comment at `call_mrm` in `safety_island.contract.yaml`.
+- The link is ALSO `max_transport: 57ms` on `mrm_handler/
+  operation_mode_availability`, the per-subscriber key rlm has for exactly
+  this (the island's subscriber is behind the UART; a host subscriber of
+  the same topic is not). play_launch 0.13.0 does not charge transport in
+  the fault arithmetic: `walk_reaction` sums path latencies and sampling
+  periods only, and a reported fault's detection is the publisher's period
+  plus its path latency (manifest_loader.rs at v0.13.0). With an external
+  publisher the nominal graph has no edge to weigh either: the island
+  contract's `--explain` output is byte-identical with and without the
+  key. So the 57 ms is counted once, inside `call_mrm`. That is follow-up
+  F1. The cost is stated in the contract: after the deadline no message
+  crosses the link, so there the 57 ms is slack, and 0.13.0 has one number
+  per hop.
+- `driver_exit: max_latency: 149ms` (it was 100): the same tick and work,
+  no link.
+- `control_mode: max_transport: 143ms`: stated as the fact; nothing in the
+  fault arithmetic reads it (the driver's answer is bounded by the window,
+  on the host).
+- The comfortable operator's `operate` path gets NO `max_latency`. Its
+  cost is inside `call_mrm`'s work term, measured to the limit publish. A
+  number there would also become the node's derived deadline and a 2 ms
+  runtime latency monitor on the velocity limit in the image: nano-ros
+  derives both from node-path latencies (the 780195b0 build's generated
+  entry bakes `mrm_state` and `takeover_request_state` at 110 ms, the max
+  of the paths that publish them).
+- The demo compositions (`demo/l3/contracts/*`) state the same 206 / 149 /
+  143. They do NOT declare the 57 ms `max_transport`: there the gate is in
+  the tree, the nominal walk weighs the gate -> handler edge, and the link
+  would be charged twice (island.tor's critical path read 283 ms with it,
+  226 ms without). island.tor's nominal budget there is 226 ms (the gate's
+  20 + `call_mrm` 206; it was 210).
+
+rlm has no key for a timer's release jitter or for a service edge's
+queueing; both are stated inside `call_mrm` (F2, F3). `tools/timeline/
+analysis.py` adds the tick share (118) back to the encore's detect row, as
+it added 100 before, and reads the exit row's bound from the contract.
+
+### Which rows compare the island clock with the host clock
+
+- Host clock only: detect (A, B), dwell as received, route as received,
+  `windows + route` as received, settle, total, the availability gap.
+- Island clock only: dwell, route (deadline -> velocity limit), the exit
+  route, and the whole encore up to the braking command.
+- Cross-clock: the takeover route, `windows`, `windows + route` (an island
+  edge against the gate's host stamp). The re-analysed tables mark them
+  "island vs host clock".
+
+How the uncertainty is treated: merge.py moves island stamps onto the host
+clock by the SMALLEST publish -> receipt pair. A receipt is never before
+its publish, so that offset never places an island event earlier than it
+happened; a cross-clock row is over-stated by the smallest out-link delay
+and never under-stated. The link term is sized from those same
+cross-clock edges, so it carries the same (conservative) error. Section
+9's "the two anchors disagreed by 13.05-47.62 ms" is, in the A and B runs,
+the in-link hop itself rather than an error: anchor 2 is an availability
+sample both sides saw, which assumes it reached both at once, and its
+disagreement matches the measured link edge to 0.13-0.62 ms in all nine A
+and B runs (b1 41.92 against 42.18, r01 46.81 against 47.43, a1 15.13
+against 15.29).
+
+### The checker
+
+`just l3-check` and `.github/check-contracts.sh` with the pinned
+play_launch 0.13.0: 14 contracts, every verdict as expected. The island
+contract is clean (0 errors, the same 5 warnings without Autoware's `.msg`
+files on the index, 2 with). The two variants still fail their
+comfortable-stop rung and nothing else: `l3_takeover_window20` 30,828.67 ms
+and `l3_takeover_65kmh` 30,558.67 ms against 30,000 (were 30,636.67 and
+30,366.67); their floors fit (24,730.67 and 18,622.67; hpc_loss 4,904.67
+and 8,796.67). No variant needed a change: the smallest breaks moved to a
+window above 19.17 s and a bound above 63.0 km/h. The island contract's
+table, as `tools/timeline/testdata/explain.txt` now holds it:
+
+```
+HAZARD    RUNG              ROLE     DETECT   WINDOWS   ROUTE             SETTLE     TOTAL      FTTI     SLACK
+hpc_loss  takeover_request  skipped       -         -       -                  -         -  10000.00         -
+hpc_loss  comfortable_stop  skipped       -         -       -                  -         -  10000.00         -
+hpc_loss  emergency_stop    floor    500.00      0.00  239.33    4165.33 derived   4904.67  10000.00   5095.33
+odd_exit  takeover_request  window   100.00      0.00  206.00  window >=10000.00         -  30000.00         -
+odd_exit  comfortable_stop  rung     100.00  10206.00  206.00    9996.67 derived  20508.67  30000.00   9491.33
+odd_exit  emergency_stop    floor    100.00  10206.00  239.33    4165.33 derived  14710.67  30000.00  15289.33
+  odd_exit/takeover_request: lasts at least 10000.00ms once on, and ends within 10206.00ms: /mrm_handler reads the deadline on its 100.00ms timer ('on_timer'), charged inside /mrm_handler/call_mrm 206.00ms, the first hop of the route below
+```
+
+(Before: routes 110.00 and 143.33, WINDOWS 10110.00, totals 20316.67,
+14518.67 and 4808.67.) The resolved model moves in three numbers only:
+`within_ms` 110 -> 206, `call_mrm` 110 -> 206, `driver_exit` 100 -> 149;
+it carries no transport. `just trace-gen` regenerated the marker header
+and table for the new contract digest (`e88319a3...`); the next board
+image bakes it, and by the rule above its `mrm_state` and
+`takeover_request_state` monitors at 206 ms (not built here).
+
+### Before and after, every board run
+
+`analysis.py` and `render.py` on a copy of each run's JSONL files, with the
+new `--explain`. "FAIL->PASS" is a verdict the new budget changed; the
+last column is the new bound minus the largest observation.
+
+**Branch A.**
+
+| term | declared before | declared after | a1 | r01 | r04 | r07 | r10 | max observed | after - max |
+|---|---|---|---|---|---|---|---|---|---|
+| detect (button -> verdict on the wire) | 100.00 | 100.00 | 34.18 PASS | 81.09 PASS | 25.10 PASS | 55.95 PASS | 29.90 PASS | 81.09 | 18.91 |
+| takeover route (verdict -> request on) | 110.00 | 206.00 | 108.95 PASS | 73.80 PASS | 113.56 FAIL->PASS | 119.26 FAIL->PASS | 88.29 PASS | 119.26 | 86.74 |
+| driver answered inside the window | 10000.00 | 10000.00 | 3033.92 PASS | 3045.75 PASS | 3085.41 PASS | 3027.94 PASS | 3032.06 PASS | 3085.41 | 6914.59 |
+| exit route (MANUAL taken -> request off) | 100.00 | 149.00 | 72.87 PASS | 58.99 PASS | 46.18 PASS | 54.55 PASS | 63.33 PASS | 72.87 | 76.13 |
+| no MRM | none | none | none PASS | none PASS | none PASS | none PASS | none PASS | - | - |
+| HPC alive: longest availability gap (host) | 500.00 | 500.00 | 110.95 PASS | 103.31 PASS | 108.91 PASS | 101.45 PASS | 104.84 PASS | 110.95 | 389.05 |
+
+**Branch B.**
+
+| term | declared before | declared after | b1 | r02 | r05 | r08 | max observed | after - max |
+|---|---|---|---|---|---|---|---|---|
+| detect (button -> verdict on the wire) | 100.00 | 100.00 | 60.30 PASS | 30.49 PASS | 53.93 PASS | 40.33 PASS | 60.30 | 39.70 |
+| takeover route (verdict -> request on) | 110.00 | 206.00 | 145.35 FAIL->PASS | 51.18 PASS | 60.23 PASS | 118.82 FAIL->PASS | 145.35 | 60.65 |
+| window dwell, island clock (request on -> off) | [10000.00, 10110.00] | [10000.00, 10206.00] | 10114.30 FAIL->PASS | 10113.35 FAIL->PASS | 10114.26 FAIL->PASS | 10116.42 FAIL->PASS | 10116.42 | 89.58 |
+| window dwell, host (request on -> off as received) | [10000.00, 10110.00] | [10000.00, 10206.00] | 10109.94 PASS | 10095.38 PASS | 10139.04 FAIL->PASS | 10108.70 PASS | 10139.04 | 66.96 |
+| windows (verdict -> deadline = request on + window) | 10110.00 | 10206.00 | 10145.35 FAIL->PASS | 10051.18 PASS | 10060.23 PASS | 10118.82 FAIL->PASS | 10145.35 | 60.65 |
+| route, island clock (deadline -> velocity limit) | 110.00 | 206.00 | 115.38 FAIL->PASS | 114.73 FAIL->PASS | 115.30 FAIL->PASS | 117.47 FAIL->PASS | 117.47 | 88.53 |
+| route, host (deadline -> velocity limit received) | 110.00 | 206.00 | 110.17 FAIL->PASS | 95.75 PASS | 139.26 FAIL->PASS | 109.01 PASS | 139.26 | 66.74 |
+| windows + route (verdict -> velocity limit) | 10220.00 | 10412.00 | 10260.73 FAIL->PASS | 10165.90 PASS | 10175.53 PASS | 10236.28 FAIL->PASS | 10260.73 | 151.27 |
+| windows + route, host (verdict -> velocity limit received) | 10220.00 | 10412.00 | 10260.73 FAIL->PASS | 10165.90 PASS | 10199.49 PASS | 10236.28 FAIL->PASS | 10260.73 | 151.27 |
+| settle (velocity limit -> standstill) | 9996.67 | 9996.67 | 6722.64 PASS | 5128.49 PASS | 5545.83 PASS | 6372.61 PASS | 6722.64 | 3274.03 |
+| total (button -> standstill) | 20316.67 | 20508.67 | 17043.67 PASS | 15324.88 PASS | 15775.29 PASS | 16649.22 PASS | 17043.67 | 3465.00 |
+| within the FTTI | 30000.00 | 30000.00 | 17043.67 PASS | 15324.88 PASS | 15775.29 PASS | 16649.22 PASS | 17043.67 | 12956.33 |
+| rung reached | COMFORTABLE_STOP | COMFORTABLE_STOP | COMFORTABLE_STOP PASS | COMFORTABLE_STOP PASS | COMFORTABLE_STOP PASS | COMFORTABLE_STOP PASS | - | - |
+| HPC alive: longest availability gap (host) | 500.00 | 500.00 | 101.54 PASS | 104.87 PASS | 106.12 PASS | 108.81 PASS | 108.81 | 391.19 |
+| entry speed (m/s) | 8.33 | 8.33 | 3.09 PASS | 3.03 PASS | 3.05 PASS | 3.08 PASS | 3.09 | 5.24 |
+
+**Encore.**
+
+| term | declared before | declared after | e1 | r03 | r06 | r09 | max observed | after - max |
+|---|---|---|---|---|---|---|---|---|
+| detect (last sample -> reaction tick) | 600.00 | 618.00 | 567.56 PASS | 575.78 PASS | 534.90 PASS | 535.40 PASS | 575.78 | 42.22 |
+| route (reaction tick -> braking command) | 143.33 | 239.33 | 8.37 PASS | 7.32 PASS | 7.43 PASS | 6.88 PASS | 8.37 | 230.96 |
+| detect + route (last sample -> braking command) | 643.33 | 739.33 | 575.93 PASS | 583.10 PASS | 542.34 PASS | 542.29 PASS | 583.10 | 156.23 |
+| settle (braking command -> standstill) | 4165.33 | 4165.33 | 2963.67 PASS | 2941.53 PASS | 2923.25 PASS | 2907.50 PASS | 2963.67 | 1201.66 |
+| total (last sample -> standstill) | 4808.67 | 4904.67 | 3539.60 PASS | 3524.63 PASS | 3465.59 PASS | 3449.79 PASS | 3539.60 | 1365.07 |
+| within the FTTI | 10000.00 | 10000.00 | 3539.60 PASS | 3524.63 PASS | 3465.59 PASS | 3449.79 PASS | 3539.60 | 6460.40 |
+| rung reached | EMERGENCY_STOP | EMERGENCY_STOP | EMERGENCY_STOP PASS | EMERGENCY_STOP PASS | EMERGENCY_STOP PASS | EMERGENCY_STOP PASS | - | - |
+| entry speed (m/s) | 8.33 | 8.33 | 4.21 PASS | 4.22 PASS | 4.22 PASS | 4.23 PASS | 4.23 | 4.10 |
+
+21 row verdicts moved FAIL -> PASS (b1 7, r08 6, r05 4, r02 2, r04 1,
+r07 1); none moved the other way; the 13 act verdicts were PASS before and
+are PASS now. Every row of every run passes.
+
+Why the rows keep 60-90 ms over their largest observation when each term
+keeps only 3-10 ms: the budget is the sum of three worst cases, and no run
+put all three in one reaction (b1's 145.35 was a 42.18 link, a 93.51
+wait and 9.66 of work; the largest work, 25.04, came on an expiry
+tick, where the link is not in the route at all). After the deadline the
+57 ms link term is slack by construction (F1). The encore's routes keep
+the most (231 ms): an omission never crosses the link, and the emergency
+operator's tick is charged in full by the walk.
+
+### Follow-ups
+
+- F1 (play_launch): charge `sub.max_transport ?? topic.max_transport` on
+  the guard edge in `walk_reaction` and in a reported fault's detection,
+  but not on the first hop after a window's deadline (the owner reads its
+  own clock). Then `call_mrm` drops to 149 ms and the window ends within
+  10,149 ms; the island contract says where to take the 57 out.
+- F2 (rlm): a timer trigger has a rate and no release jitter. The tick
+  share (100 + 18) is stated inside `call_mrm` and as `analysis.TICK_MS`;
+  a jitter key on the timer would let the walk and `window-expiry` charge
+  period + jitter themselves.
+- F3 (rlm / nano-ros): a service edge has no transport or queueing key, and
+  a node-path `max_latency` doubles as nano-ros's node deadline and runtime
+  monitor, so the operator's serve-after-tick cost (0.85-1.18 ms) cannot
+  be stated where it happens without changing the image's scheduling.
+- F4 (measure): the link hop of kinematic_state, operation_mode_state and
+  control_cmd (the trace keeps no per-sample take for them), and the
+  emergency operator's 30 Hz tick jitter (its ticks are kept one in ten).
+- F5 (board): run the three acts on an image built from this contract (the
+  206 ms monitors, the new marker digest). What the handler does for
+  5.4-9.7 ms before its first publish, and 11-18 ms before the operate
+  call, is not profiled.
+
+Re-analysis: `/mnt/mx500/aeon/worktrees/w30-reanalysis/<run>/` (`table.md`,
+`table.before.md` = W8's, `timeline.png`, `explain.txt`), `terms.py` and
+`terms.txt` (the terms), `compare.py` and `compare.md` (the tables above),
+`l3-check.txt` and `check-contracts.txt`.

@@ -1,19 +1,19 @@
-  info[settle-derived]: safety_island.contract.yaml:418: hazard 'odd_exit', rung 'comfortable_stop': settle from /mrm_comfortable_stop_operator's braking profile, a = |min_acceleration| = 1 m/s^2, j = |min_jerk| = 0.3 m/s^3, v0 = entry_speed 8.33 m/s: v_r = a^2/(2j) = 1^2/(2*0.3) = 1.6667 m/s; v0 = 8.33 > v_r, so t = a/j + (v0 - v_r)/a = 1/0.3 + (8.33 - 1.6667)/1 = 3333.33 + 6663.33 = 9996.67ms
-  info[settle-derived]: safety_island.contract.yaml:454: hazard 'hpc_loss', rung 'emergency_stop': settle from /mrm_emergency_stop_operator's braking profile, a = |target_acceleration| = 2.5 m/s^2, j = |target_jerk| = 1.5 m/s^3, v0 = entry_speed 8.33 m/s: v_r = a^2/(2j) = 2.5^2/(2*1.5) = 2.0833 m/s; v0 = 8.33 > v_r, so t = a/j + (v0 - v_r)/a = 2.5/1.5 + (8.33 - 2.0833)/2.5 = 1666.67 + 2498.67 = 4165.33ms
-  info[settle-derived]: safety_island.contract.yaml:454: hazard 'odd_exit', rung 'emergency_stop': settle from /mrm_emergency_stop_operator's braking profile, a = |target_acceleration| = 2.5 m/s^2, j = |target_jerk| = 1.5 m/s^3, v0 = entry_speed 8.33 m/s: v_r = a^2/(2j) = 2.5^2/(2*1.5) = 2.0833 m/s; v0 = 8.33 > v_r, so t = a/j + (v0 - v_r)/a = 2.5/1.5 + (8.33 - 2.0833)/2.5 = 1666.67 + 2498.67 = 4165.33ms
+  info[settle-derived]: safety_island.contract.yaml:448: hazard 'odd_exit', rung 'comfortable_stop': settle from /mrm_comfortable_stop_operator's braking profile, a = |min_acceleration| = 1 m/s^2, j = |min_jerk| = 0.3 m/s^3, v0 = entry_speed 8.33 m/s: v_r = a^2/(2j) = 1^2/(2*0.3) = 1.6667 m/s; v0 = 8.33 > v_r, so t = a/j + (v0 - v_r)/a = 1/0.3 + (8.33 - 1.6667)/1 = 3333.33 + 6663.33 = 9996.67ms
+  info[settle-derived]: safety_island.contract.yaml:484: hazard 'hpc_loss', rung 'emergency_stop': settle from /mrm_emergency_stop_operator's braking profile, a = |target_acceleration| = 2.5 m/s^2, j = |target_jerk| = 1.5 m/s^3, v0 = entry_speed 8.33 m/s: v_r = a^2/(2j) = 2.5^2/(2*1.5) = 2.0833 m/s; v0 = 8.33 > v_r, so t = a/j + (v0 - v_r)/a = 2.5/1.5 + (8.33 - 2.0833)/2.5 = 1666.67 + 2498.67 = 4165.33ms
+  info[settle-derived]: safety_island.contract.yaml:484: hazard 'odd_exit', rung 'emergency_stop': settle from /mrm_emergency_stop_operator's braking profile, a = |target_acceleration| = 2.5 m/s^2, j = |target_jerk| = 1.5 m/s^3, v0 = entry_speed 8.33 m/s: v_r = a^2/(2j) = 2.5^2/(2*1.5) = 2.0833 m/s; v0 = 8.33 > v_r, so t = a/j + (v0 - v_r)/a = 2.5/1.5 + (8.33 - 2.0833)/2.5 = 1666.67 + 2498.67 = 4165.33ms
 -- Fault-reaction budgets (--explain, ms) --
 HAZARD    RUNG              ROLE     DETECT   WINDOWS   ROUTE             SETTLE     TOTAL      FTTI     SLACK
 hpc_loss  takeover_request  skipped       -         -       -                  -         -  10000.00         -
 hpc_loss  comfortable_stop  skipped       -         -       -                  -         -  10000.00         -
-hpc_loss  emergency_stop    floor    500.00      0.00  143.33    4165.33 derived   4808.67  10000.00   5191.33
-odd_exit  takeover_request  window   100.00      0.00  110.00  window >=10000.00         -  30000.00         -
-odd_exit  comfortable_stop  rung     100.00  10110.00  110.00    9996.67 derived  20316.67  30000.00   9683.33
-odd_exit  emergency_stop    floor    100.00  10110.00  143.33    4165.33 derived  14518.67  30000.00  15481.33
+hpc_loss  emergency_stop    floor    500.00      0.00  239.33    4165.33 derived   4904.67  10000.00   5095.33
+odd_exit  takeover_request  window   100.00      0.00  206.00  window >=10000.00         -  30000.00         -
+odd_exit  comfortable_stop  rung     100.00  10206.00  206.00    9996.67 derived  20508.67  30000.00   9491.33
+odd_exit  emergency_stop    floor    100.00  10206.00  239.33    4165.33 derived  14710.67  30000.00  15289.33
   TOTAL = DETECT + WINDOWS + ROUTE + SETTLE; WINDOWS is the route and window of every windowed rung passed on the way, up to its deadline.
   A window is a least time (`window >=`); noticing its deadline is the first hop of the ROUTE below it (`window-expiry`), never a second charge.
   hpc_loss/takeover_request: requires hpc_alive, which this fault removes
   hpc_loss/comfortable_stop: requires hpc_alive, which this fault removes
-  odd_exit/takeover_request: lasts at least 10000.00ms once on, and ends within 10110.00ms: /mrm_handler reads the deadline on its 100.00ms timer ('on_timer'), charged inside /mrm_handler/call_mrm 110.00ms, the first hop of the route below
+  odd_exit/takeover_request: lasts at least 10000.00ms once on, and ends within 10206.00ms: /mrm_handler reads the deadline on its 100.00ms timer ('on_timer'), charged inside /mrm_handler/call_mrm 206.00ms, the first hop of the route below
 
 1 manifest(s) checked: 1 clean, 0 with errors (0 errors, 2 warnings)
 1 contract(s): 0 overlay, 1 provider

@@ -34,7 +34,7 @@
 #                               request lasts at least the window; the
 #                               handler reads the deadline on its 100 ms
 #                               tick, and that late notice is charged in the
-#                               110 ms handler reaction of the rung below,
+#                               206 ms handler reaction of the rung below,
 #                               from the deadline (`window-expiry`), once.
 #   odd_exit interval 30 s      decision 3, a stated judgement like the 3 s
 #                               of the island contract.
@@ -48,7 +48,15 @@
 #                               20 ms path (declared, not measured).
 #   hpc_loss detection 500 ms   mrm_handler's
 #                               `timeout_operation_mode_availability: 0.5`.
-#   handler reaction 110 ms     tick 100 ms + `timeout_call_mrm_behavior`.
+#   handler reaction 206 ms     ON THE BOARD (phase8-W30; 110 ms, the tick
+#                               + `timeout_call_mrm_behavior`, until then):
+#                               the serial link in 57 + the tick 118 (100 +
+#                               jitter) + in-tick work 31, each the maximum
+#                               over the 13 W8 board runs + 20 %. The
+#                               derivation is at `call_mrm` in the island
+#                               contract, src/safety_island_bringup/launch/
+#                               safety_island.contract.yaml, and this file
+#                               states the same numbers.
 #   operator tick 33.33 ms      the emergency operator's 30 Hz timer, walked
 #                               as a sampling hop across the operate service.
 #   planner hop 300 ms          PLACEHOLDER, see `planning_hop` below.
@@ -135,16 +143,19 @@ modes:
 # The reactions, as scope paths from the guarded input to the topic that
 # commits each rung. What each rung costs is the REACTION walk the hazards
 # take, which the checker derives; a scope path's own `max_latency` is the
-# NOMINAL traversal, and only island.tor declares one: 210 ms, one sampling
-# wait of the 10 Hz handler plus the tick's budget, the island contract's
-# argument. The other two cross an operate service, which the nominal graph
+# NOMINAL traversal, and only island.tor declares one. 226 ms on the board
+# (phase8-W30): the checker's critical path is the gate's 20 ms path and the
+# handler's `call_mrm`, 206 ms, which holds the serial link, the tick and the
+# in-tick work. Until W30 it was 210 ms, one sampling wait of the 10 Hz
+# handler plus the tick's budget, the island contract's argument, when
+# `call_mrm` was 110. The other two cross an operate service, which the nominal graph
 # does not walk, so a budget there would be checked against a flat sum of
 # every node in this file (the planner placeholder included) and say nothing.
 paths:
   island.tor:
     trigger: { input: [/system/operation_mode/availability] }
     output: [/system/takeover_request/state]
-    max_latency: 210ms
+    max_latency: 226ms
   island.comfortable_stop:
     trigger: { input: [/system/operation_mode/availability] }
     output: [/control/trajectory_follower/control_cmd]
@@ -190,6 +201,11 @@ nodes:
       # The reaction: the value fault and the silence fault both start it.
       # It enters the takeover request, calls an operator, or both, and the
       # outputs name all three so the walk can follow each rung.
+      # 206 ms on the board (phase8-W30; 110 until then) = link 57 + tick
+      # 118 + work 31: the island contract's derivation (at its `call_mrm`),
+      # from the 13 W8 board runs. The link is in here as well as in the
+      # subscriber's `max_transport` because play_launch 0.13.0's reaction
+      # walk charges no transport (follow-up F1).
       call_mrm:
         trigger: { input: [operation_mode_availability] }
         output:
@@ -197,26 +213,36 @@ nodes:
           - takeover_request_state
           - comfortable_stop_operate
           - emergency_stop_operate
-        max_latency: 110ms
+        max_latency: 206ms
       # The exit: the driver's MANUAL, taken on the handler's own input and
       # answered on the takeover-request state. Declaring it is what makes
       # the image trace the take (TAKE_MRM_HANDLER_CONTROL_MODE).
+      # 149 ms on the board = tick 118 + work 31 (phase8-W30; 100 until then).
       driver_exit:
         trigger: { input: [control_mode] }
         output: [takeover_request_state]
-        max_latency: 100ms
+        max_latency: 149ms
     sub:
       operation_mode_availability:
         min_rate_hz: 10
         max_age: 500ms
+        # The serial hop in (gateway + UART, 57 ms on the board, phase8-W30)
+        # is NOT declared here as `max_transport`, although the island
+        # contract declares it. In this composition the gate is in the tree,
+        # so the nominal walk weighs the gate -> handler edge and would
+        # charge the 57 ms a second time on top of `call_mrm`, which holds it
+        # for the reaction walk (play_launch 0.13.0 charges no transport
+        # there; follow-up F1).
         qos: { depth: 1, liveliness: manual_by_topic, lease_duration: 500ms }
         on_violation:
           on: [omission, reported]
           mechanism: application
           reaction: call_mrm
-          within: 110ms
+          within: 206ms
       kinematic_state: { min_rate_hz: 10, qos: { depth: 1 } }
-      control_mode: { min_rate_hz: 10, qos: { depth: 1 } }
+      # Behind the link and the gateway's 40 -> 10 Hz downsampler: 63.65-118.78
+      # ms from the host's receipt to the island's take (+20 %, phase8-W30).
+      control_mode: { min_rate_hz: 10, max_transport: 143ms, qos: { depth: 1 } }
       comfortable_stop_status: { min_rate_hz: 10, qos: { depth: 1 } }
       emergency_stop_status: { min_rate_hz: 10, qos: { depth: 1 } }
       operation_mode_state: { min_rate_hz: 10, qos: { depth: 1 } }

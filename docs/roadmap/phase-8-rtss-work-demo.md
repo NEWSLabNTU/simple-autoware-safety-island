@@ -576,6 +576,25 @@ the others by fast-forward push once implementation starts.
   metadata probe still finds no producer for the four components
   (unbounded frame_id), as before.
 
+- **W30 - the budgets respect the board.** Status (2026-09-30):
+  docs/takeover-trace.md section 10. The handler's `call_mrm` hop is sized
+  from all 13 W8 board runs, each term its observed maximum + 20 %: the
+  serial link in 57 ms (max 47.43), the tick 118 (100 + jitter; ticks up
+  to 114.84 apart), in-tick work to the reaction's last publish 31 (max
+  25.04): 206 ms (was 110). `driver_exit` 149 (tick + work; was 100);
+  `max_transport` 57 ms on the handler's availability subscriber and
+  143 ms on its control_mode (downsampled 40 -> 10 Hz) as the facts;
+  play_launch 0.13.0 charges transport nowhere in the fault arithmetic, so
+  the link is also inside `call_mrm`. Island contract clean; the demo
+  compositions carry the same numbers (island.tor 226 ms); the two
+  variants still fail only their comfortable-stop rung (30,828.67 and
+  30,558.67 ms); CI script 14/14; timeline selftest OK; trace markers
+  regenerated for the new digest. Re-analysed offline, every row of all 13
+  board runs passes (21 row verdicts FAIL -> PASS, none the other way).
+  Open: F1 transport on the reaction walk (then `call_mrm` 149), F2 a
+  timer jitter key, F3 service-edge queueing, F4 the unmeasured link hops,
+  F5 an image built from this contract on the board.
+
 Order: W0 first; W1, W2, W3, W6 in parallel; W4 and W5 after W1; W7 after
 W6; W8 after W2, W4, W5, W7; W9 last. Rough effort 6-7 weeks on the core
 path (D); the board path 1-1.5 weeks once W1 and W2 land (B); the link is
