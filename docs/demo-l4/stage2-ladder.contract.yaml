@@ -203,8 +203,15 @@ severity_levels: [QM, ASIL_A, ASIL_B, ASIL_C, ASIL_D]
 # section 8.1's degradability rule ("every input on this table is now
 # degradable") expressed as a detector.
 functions:
-  # B1's precondition: "The HPC is alive and responsive." Section 8.1's row
-  # for the ODD status is the channel the declared active domain arrives on.
+  # B1's precondition: "The HPC is alive and responsive." Section 8.1's
+  # heartbeat row is the channel that says so, and it is NOT the channel this
+  # file's hazard silences: an HPC that has stopped declaring a domain but
+  # still beats is the HPC B1 negotiates with. Stage 1's `hpc_loss` is the
+  # hazard that silences this one.
+  hpc_alive: [/si/in/heartbeat]
+  # ADS_ACTIVE's second condition. Section 8.1's row for the ODD status is the
+  # channel the declared active domain arrives on, and its silence is this
+  # file's hazard, so it is what ADS_ACTIVE loses and B1 does not need.
   hpc_odd_status: [/si/in/odd_status]
   # B2's precondition: "A valid corridor exists". Section 8.1's preferred
   # source; N5 degrades to N14's perceived boundaries when it goes stale.
@@ -222,18 +229,22 @@ modes:
     description: >-
       the HPC drives inside an operating domain the island has accepted, and
       the island supervises without taking control
-    requires: [hpc_odd_status]
+    requires: [hpc_alive, hpc_odd_status]
     fallback: [b1_degrade_ads, b2_lane_keep_hold, b3_pull_over, b4_emergency_stop]
 
   # B1. Section 3.1: "require the ADS to move to an operating domain it CAN
   # satisfy ... before any authority is taken". Cooperative by construction:
-  # every rung of it is executed by the HPC, so it requires the HPC.
+  # every rung of it is executed by the HPC, so it requires the HPC: alive,
+  # not the ODD status whose silence opened the ladder. Requiring that status
+  # instead would make B1 a rung the hazard can never land on, and the
+  # checker then skips it (play_launch phase 83, F1) -- neither checked nor
+  # charged.
   b1_degrade_ads:
     description: >-
       degrade the ADS when the ODD cannot be held; the island constrains and
       demands a domain switch, the HPC executes, and the island verifies the
       answer against its own measurements
-    requires: [hpc_odd_status]
+    requires: [hpc_alive]
     reaction: island.b1_degrade_ads
 
   # B2. Section 3.1: "take authority and hold the vehicle in its current lane
@@ -345,6 +356,7 @@ nodes:
       # source in use are state N3 reads, not events it reacts to.
       odd_compliance: { min_rate_hz: 10, qos: { depth: 1 }, state: true }
       corridor_source: { min_rate_hz: 10, qos: { depth: 1 }, state: true }
+      hpc_liveness: { min_rate_hz: 100, qos: { depth: 1 }, state: true }
     pub:
       constraint_cmd: { min_rate_hz: 50 }
       island_mode: { min_rate_hz: 50 }
@@ -382,10 +394,32 @@ nodes:
         # it can say whether the ADS complied; until it expires there is no
         # verdict, and B1 is not yet committed either way.
         max_latency: 3s
+      # Section 6.1's other N2 duty: "HPC liveness and deadline supervision:
+      # heartbeat timeout". Stage 1's detector, unchanged: one cycle of the
+      # 100 Hz P0 partition.
+      declare_hpc_lost:
+        trigger: { input: [heartbeat] }
+        output: [hpc_liveness]
+        max_latency: 10ms
     sub:
       constraints: { min_rate_hz: 50, qos: { depth: 1 } }
+      # B1's precondition, and stage 1's detector for it, verbatim. Section
+      # 8.1's row for /si/in/heartbeat: 100 Hz, 20 ms; the lease is section
+      # 9.2's "3 missed 100 Hz heartbeats". What the island does about that
+      # silence is stage 1's `hpc_loss`, in `l4_designed.contract.yaml`, and
+      # not a rung of this ladder; what matters here is that losing it is
+      # noticed, so that B1 can be declared unavailable.
+      heartbeat:
+        min_rate_hz: 100
+        max_age: 20ms
+        qos: { depth: 1, liveliness: manual_by_topic, lease_duration: 30ms }
+        on_violation:
+          on: [omission]
+          reaction: declare_hpc_lost
+          within: 30ms
     pub:
       odd_compliance: { min_rate_hz: 10 }
+      hpc_liveness: { min_rate_hz: 100 }
 
   # N5, si_corridor_monitor. Section 6.1, T1, 50 Hz. "Prefers the compact
   # map-derived corridor from H3 while it is fresh, degrades to the island's
@@ -558,6 +592,11 @@ paths:
 
 topics:
   # --- section 8.1, HPC -> island. Rate and age are the design's, verbatim --
+  /si/in/heartbeat:
+    type: safety_island_msgs/msg/HpcHeartbeat
+    external: pub
+    sub: [si_hpc_supervisor/heartbeat]
+    rate_hz: 100
   /si/in/odd_status:
     type: safety_island_msgs/msg/OddStatus
     external: pub
@@ -617,6 +656,11 @@ topics:
     pub: [si_state_machine/constraint_cmd]
     sub: [si_safety_gateway/constraint_cmd]
     rate_hz: 50
+  /si/internal/hpc_liveness:
+    type: safety_island_msgs/msg/HpcLiveness
+    pub: [si_hpc_supervisor/hpc_liveness]
+    sub: [si_state_machine/hpc_liveness]
+    rate_hz: 100
   /si/internal/odd_compliance:
     type: safety_island_msgs/msg/OddCompliance
     pub: [si_hpc_supervisor/odd_compliance]

@@ -461,9 +461,10 @@ the others by fast-forward push once implementation starts.
   drop moved to W15 (/mnt/mx500/aeon/worktrees/w15-handoff.md: a lease
   mismatch, 30 s router keepalives against a 10 s island lease); CI's
   EXPECT cannot flip until a play_launch past 0.12.0 is on the package
-  index, and under bbf9c044 `docs/demo-l4/stage2-rungBudget` exits 0
-  where it must exit 1 (its `ladder-rung-budget` error on rung
-  `b1_degrade_ads` is gone; the table no longer lists that rung); re-measure the serial link without the gateway ACL
+  index (W20: the stage2 fixtures were wrong, not the checker -- phase 83
+  F1 skips a rung that requires a function its fault removes, and B1 used
+  the silenced odd_status as its HPC-alive evidence; B1 now requires an
+  `hpc_alive` heartbeat and stage2-rungBudget fails on b1 again); re-measure the serial link without the gateway ACL
   on the board (W10).
 
 Order: W0 first; W1, W2, W3, W6 in parallel; W4 and W5 after W1; W7 after
