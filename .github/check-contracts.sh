@@ -25,19 +25,13 @@ declare -A EXPECT=(
     [docs/demo-l4/l4_current]=1                # fault-reaction-budget (500 ms watchdog)
     [docs/demo-l4/stage2-noFloor]=1            # ladder-unterminated
     [docs/demo-l4/stage2-rungBudget]=1         # ladder-rung-budget
-    # The island's own contract needs the reaction walk to cross a SERVICE
-    # edge (mrm_handler -> operate -> the operator; play_launch phase 82),
-    # which landed after v0.12.0: the published 0.12.0 wheel reports
-    # `reaction-unreachable` (exit 1), while the demo host's play_launch,
-    # a source-built wheel that also calls itself 0.12.0 (file://.../
-    # play_launch/dist, 2026-09-25), passes it. Measured 2026-09-28 in a
-    # clean ros:humble container. Since 20:45 the same day the file also
-    # carries W6's `entry_speed` key, and since phase8-W7 the takeover
-    # (`when:`, `window:`, `exit:`, settle by parameters), which 0.12.0
-    # refuses to parse; either way the pinned verdict is exit 1. play_launch
-    # 92043c82 (nano-ros's vendored pin from PR 1394) passes it. Flip to 0
-    # with the pin, when the next play_launch release is on the package index.
-    [src/safety_island_bringup/launch/safety_island]=1
+    # phase8-W6's one-line variants of the takeover contract: each must
+    # fail its comfortable-stop rung and nothing else (demo/l3/contracts/
+    # README.md). The base contract and the island's own contract pass
+    # since play_launch 0.13.0 (phases 82-84: the service-edge walk, the
+    # takeover keys, window-expiry).
+    [demo/l3/contracts/l3_takeover_window20]=1 # ladder-rung-budget 30636.67 ms
+    [demo/l3/contracts/l3_takeover_65kmh]=1    # ladder-rung-budget 30366.67 ms
 )
 
 echo "play_launch: $(command -v "$PL") ($("$PL" --version 2>/dev/null))"
@@ -46,12 +40,6 @@ while IFS= read -r c; do
     stem="${c%.contract.yaml}"; stem="${stem#./}"
     launch="$stem.launch.xml"
     want="${EXPECT[$stem]:-0}"
-    # phase8-W6's demo contracts (and their one-line variants) use the four
-    # new keys (when:, window:, exit:, entry_speed/settle:) that the pinned
-    # play_launch does not parse ("unknown key in hazards.<name>"). W6 moves
-    # PLAY_LAUNCH_VERSION in check.yml, lists each variant's own verdict in
-    # EXPECT and deletes this case in the same change.
-    case "$stem" in demo/l3/contracts/*) [ -z "${EXPECT[$stem]:-}" ] && want=1;; esac
     n=$((n + 1))
     if [ ! -f "$launch" ]; then
         echo "FAIL $stem: no $launch beside the contract"; fail=1; continue
