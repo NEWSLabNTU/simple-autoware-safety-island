@@ -484,6 +484,19 @@ the others by fast-forward push once implementation starts.
   `hpc_alive` heartbeat and stage2-rungBudget fails on b1 again); re-measure the serial link without the gateway ACL
   on the board (W10).
 
+- **W23 - late join against the full Autoware stack.** Status (2026-09-29):
+  gate MET on QEMU (nano-ros da272e419, graph discovery off, no gateway
+  ACL, a keep_alive-6 router as the lease workaround, host rmw_zenoh
+  0.1.10). Autoware engaged and driving before the island boots; the
+  island reads default_adapi's latched /api/operation_mode/state at about
+  2.3 s uptime (stamp older than its boot) and stays NORMAL for 120 s in
+  3 of 3 runs (1183-1189 samples, largest gap 140-181 ms, 139 nodes
+  listed); a mode-change run follows MANUAL and back within about 0.1 s.
+  An earlier run had a false MRM at 77 s from a 578 ms spin stall of the
+  QEMU guest under host load (nano-ros reported "contract violation:
+  release-jitter-runtime spin measured=578000 declared=10000"), not a
+  late-join fault. Logs: /mnt/mx500/aeon/worktrees/w23/runs/.
+
 Order: W0 first; W1, W2, W3, W6 in parallel; W4 and W5 after W1; W7 after
 W6; W8 after W2, W4, W5, W7; W9 last. Rough effort 6-7 weeks on the core
 path (D); the board path 1-1.5 weeks once W1 and W2 land (B); the link is
