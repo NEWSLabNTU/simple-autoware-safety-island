@@ -269,7 +269,18 @@ def render(run_dir, out, explain_path=None, title=None):
                                               else ("aligned on one anchor" if al else "none in this file")),
              fontsize=7.5, color=INK2)
     yv -= 0.03
-    fig.text(0.74, yv, "rung: native_sim (simulated time; zero-time callbacks)", fontsize=7.5, color=INK2)
+    # the rung from the trace's meta (run-board.sh writes target=board|qemu; run-native.sh none)
+    target = "native_sim"
+    try:
+        for ln in open(os.path.join(run_dir, "island.trace.meta")):
+            if ln.startswith("target="):
+                target = ln.split("=", 1)[1].strip()
+    except OSError:
+        pass
+    rung = {"board": "S32K344 silicon (island clock real)",
+            "qemu": "QEMU (TCG, no icount; island clock not the host's)"}.get(
+        target, "native_sim (simulated time; zero-time callbacks)")
+    fig.text(0.74, yv, "rung: " + rung, fontsize=7.5, color=INK2)
     names = {"a": "Branch A: ODD exit, the driver takes over", "b": "Branch B: ODD exit, nobody answers",
              "encore": "Encore: HPC loss"}
     fig.suptitle(title or f"{names[r['act']]}  ({os.path.basename(os.path.normpath(run_dir))})", x=0.07,

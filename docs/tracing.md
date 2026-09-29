@@ -587,11 +587,12 @@ ELF symbols the board read uses.
 
 ### What is not verified
 
-- **Nothing here ran on the board.** The flash (`pyocd flash`), the gateway
-  on the UART and the reset, and the SWD read (`readout.py --target board`,
-  pyocd's Python API: `session_with_chosen_probe`, `halt`, `read32`,
-  `read_memory_block8`, `resume`) are written, and `--dry-run` resolves every
-  address from the board ELF, but W17 did not touch the board (W10 held it).
+- W17 did not touch the board. phase8-W8 has since run the board steps
+  (docs/takeover-trace.md section 9): the flash (`pyocd flash`), the
+  gateway on the UART and the reset, and the SWD read (`readout.py
+  --target board`) worked unchanged in 13 acts and one bring-up run.
+  Every trace gave `trace-check: PASS`. After the trigger the board wrote
+  534-607 B/s, and each read halted the core for 0.18-0.23 s.
 - The interrupts-off cost of the flush at the trigger is not measured. It is
   two `tracing_format_raw_data` calls (memcpy of at most 2 KiB) after a walk
   of at most about 170 records that reads timestamps, all under the marker's
@@ -604,7 +605,7 @@ ELF symbols the board read uses.
 
 ```
 just board-build                                   # the image with the window
-flock <demo lock> tools/timeline/run-board.sh b <id>          # the board: UNTESTED
+flock <demo lock> tools/timeline/run-board.sh b <id>          # the board (phase8-W8)
 flock <demo lock> tools/timeline/run-board.sh --dry-run b <id> # print the steps, resolve the addresses
 just trace-qemu-build
 flock <demo lock> tools/timeline/run-board.sh --target qemu b <id>   # the rehearsal

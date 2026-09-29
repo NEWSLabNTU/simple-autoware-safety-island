@@ -28,8 +28,8 @@
 #      "Startup complete"
 #   6. the availability gate ($RB_GATE), the probe ($RB_PROBE)
 #   7. the act ($RB_ACT, after RB_SETTLE s): tools/timeline/scenario.py run
-#   8. the readout: tools/timeline/readout.py (board: pyocd over SWD, NOT
-#      EXERCISED; qemu: the QEMU monitor) -> island.trace, wrapped
+#   8. the readout: tools/timeline/readout.py (board: pyocd over SWD;
+#      qemu: the QEMU monitor) -> island.trace, wrapped
 #   9. teardown: act helpers, Autoware, the link, the router if this started it
 #  10. island_trace.py check, merge.py, render.py --table, the VERDICT
 #
@@ -46,16 +46,18 @@
 # RB_ACT (the act command, $act and $dir expanded), RB_SETTLE (15 s after
 # Startup complete), RB_JOIN_TIMEOUT (120 s), RB_AW_TIMEOUT (300 s),
 # RB_QEMU_SECS (900, QEMU's own bound), L3_PEER_TTY (the gateway's tty),
-# L3_IMAGE (the Autoware image; on this host the tag sai-l3-autoware:1.5.0 is
-# still W3's build without W11's rmw_zenoh 0.1.10 and rclcpp patch, and sat
-# at 63-64/68 composables in 3 of 5 starts; W17's QEMU runs used
-# sai-l3-autoware:1.5.0-w11d; `just l3-container` rebuilds the tag),
+# L3_IMAGE (the Autoware image; default sai-l3-autoware:1.5.0-w24, W24's C++
+# gate image: on this host the bare tag sai-l3-autoware:1.5.0 is still W3's
+# build without W11's rmw_zenoh 0.1.10 and rclcpp patch, and sat at 63-64/68
+# composables in 3 of 5 starts; `just l3-container` rebuilds the tag),
 # DRIVE_SECS / OBSERVE_SECS / RESPOND_AFTER (scenario.py's).
 #
-# UNTESTED ON THE BOARD: steps 1, 3 (board) and 8 (board) were written
-# without touching the board (W10 held it). Everything else ran against the
-# QEMU island (docs/tracing.md section 8 has the run).
+# The board steps (1, 3 and 8) ran on the S32K344 in phase8-W8
+# (docs/takeover-trace.md, section 9); W17 wrote them against the QEMU island.
 set -u
+# the image that starts (W24); the justfile's default tag is W3's (above)
+: "${L3_IMAGE:=sai-l3-autoware:1.5.0-w24}"
+export L3_IMAGE
 target=board elf="" flash=1 dry=0
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -63,7 +65,7 @@ while [ $# -gt 0 ]; do
         --elf) elf="$2"; shift 2;;
         --no-flash) flash=0; shift;;
         --dry-run) dry=1; shift;;
-        -h|--help) sed -n '2,47p' "$0"; exit 0;;
+        -h|--help) sed -n '2,/^set -u/p' "$0" | sed '$d'; exit 0;;
         --*) echo "run-board: unknown option $1" >&2; exit 2;;
         *) break;;
     esac
@@ -151,7 +153,6 @@ trap 'teardown; exit 130' INT TERM
 
 step "1. flash"
 if [ "$target" = board ] && [ "$flash" = 1 ]; then
-    # UNTESTED (W17 did not touch the board). brief B flashed this way.
     run pyocd flash -t s32k344 "$elf" || { echo "run-board: flash failed"; exit 1; }
 else
     echo "   (nothing to flash: target $target, flash=$flash)"
@@ -167,8 +168,8 @@ fi
 
 step "3. the island's link"
 if [ "$target" = board ]; then
-    # UNTESTED: the gateway on the UART, then the reset (the board must be
-    # reset AFTER the gateway listens; just/l3-demo.just).
+    # the gateway on the UART, then the reset (the board must be reset AFTER
+    # the gateway listens; just/l3-demo.just).
     bg "$dir/l3-peer.stdout" just l3-peer "${L3_PEER_TTY:-/dev/serial/by-id/usb-FTDI_FT232R_USB_UART_B001UCTE-if00-port0}" \
         921600 tcp/127.0.0.1:7447 7449 "$repo/$dir/l3-peer-router.log"
     wait_for 60 "the gateway on the serial line" grep -q "reached at: serial" "$dir/l3-peer-router.log" || { teardown; exit 1; }
@@ -230,7 +231,7 @@ if [ "$dry" = 1 ] && [ -f "$elf" ]; then
     python3 tools/timeline/readout.py --target "$target" --elf "$elf" --out /dev/null --dry-run | sed 's/^/   /'
 fi
 if [ "$target" = board ]; then
-    # UNTESTED: pyocd over SWD (tools/timeline/readout.py says which calls).
+    # pyocd over SWD, attach mode, the core halted for the read (about 0.2 s)
     run python3 tools/timeline/readout.py --target board --elf "$elf" --out "$out"
 else
     run python3 tools/timeline/readout.py --target qemu --elf "$elf" --out "$out" --monitor "$mon"
@@ -250,7 +251,7 @@ grep -E "^(ok|FAIL|info) +window|trace-check" "$out.check.txt"
 python3 -c 'import sys; sys.path.insert(0,"tools/timeline"); import tlcommon as tl; open(sys.argv[1],"w").write(tl.explain_text())' "$dir/explain.txt"
 python3 tools/timeline/merge.py "$out" "$dir" || echo "merge failed: the plot has host events only"
 python3 tools/timeline/render.py "$dir" --table | tee "$dir/table.md"
-python3 -c 'import json,sys
+[ -f "$dir/scenario.jsonl" ] && python3 -c 'import json,sys
 for l in open(sys.argv[1]):
     e = json.loads(l)
     if e["kind"] == "verdict":

@@ -14,8 +14,8 @@ marker self-cost statistics (DWT). The core is halted for the read, so the
 buffer and the counters are one instant, then resumed.
 
   board  pyocd's Python API on the MCU-Link (target s32k344), attach mode: no
-         reset. NOT EXERCISED: W17 did not touch the board (W10 held it).
-         It uses the calls experiments/serial-interop/w2/tools/swd_poll.py
+         reset. Exercised on the board by phase8-W8 (13 acts, the core
+         halted 0.18-0.23 s per read). It uses the calls experiments/serial-interop/w2/tools/swd_poll.py
          ran against this board (session_with_chosen_probe, read32,
          read_memory_block8) plus halt/resume.
   qemu   the QEMU human monitor on a unix socket (`-monitor
@@ -113,7 +113,7 @@ class Qemu:
 
 
 class Board:
-    """pyocd on the MCU-Link, attach mode. NOT EXERCISED (see the module doc)."""
+    """pyocd on the MCU-Link, attach mode (phase8-W8 ran it; see the module doc)."""
 
     def __init__(self, target="s32k344"):
         from pyocd.core.helpers import ConnectHelper

@@ -384,6 +384,31 @@ the others by fast-forward push once implementation starts.
   (G9); the encore (HPC loss) traced on the MCU with the live plot; ten
   consecutive scripted runs. Gate: the ten runs, every one green or
   explained.
+  Status (2026-09-30): gate MET on silicon, docs/takeover-trace.md section 9.
+  Image: main `88a336f` (W28), board ELF sha256 `780195b0...5c80cde6`, RAM
+  290,728 of 327,680 B. Container `sai-l3-autoware:1.5.0-w24` (31/31 nodes,
+  68/68 composables in every start). All runs went through
+  tools/timeline/run-board.sh; its board steps (pyocd flash, gateway plus
+  reset, SWD readout) worked on the first run and needed no change beyond
+  the default image and the notes. Heap on the board, island joined to the
+  container Autoware through `just l3-peer`: FirstSpin, PEAK 77,160 of
+  102,912 B, headroom ok (25,752 spare). It was unchanged after ten acts,
+  so the heap stays 102,400. Three single acts and ten consecutive runs
+  (a, b, encore cycled; loads 4.0-17.5) gave 13 of 13 VERDICT PASS and
+  13/13 trace-check PASS. After the trigger the board wrote 534-607 B/s
+  into the 32 KiB window.
+  Encore on silicon: last sample to braking command 542.29-583.10 ms
+  (declared 643.33); tick to braking command 6.88-8.37 ms (native_sim
+  26-32); total 3,449.79-3,539.60 ms against the 10 s FTTI.
+  Six runs have intermediate route/window rows 0.17-40.73 ms past the 110 ms
+  route or the 10,110 ms window end. The trace shows three causes: the
+  serial hop in, 13-47 ms; the handler's synchronous comfortable-stop
+  call before its publishes, 11-18 ms into the tick; one 25 ms hop out.
+  The contract's 110 ms route charges neither the link nor that call.
+  Open: that route term; hazard lights never reach the simulator from the
+  board (boot-relative stamps, no SNTP over serial); the merge's anchors
+  disagree 13-48 ms over serial; `island_trace_cost_max` read 0 in two
+  runs.
 - **W8a - the demo image, shrunk to what the demo shows.**
   Status (2026-09-29): docs/boot-through.md ("The demo image").
   `stop_mode_operator` out (D4, G10's `/system/stop_mode/*`, G9's 34 % of

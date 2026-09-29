@@ -539,3 +539,183 @@ appears once, 500 ms after the first spin, in every native_sim run and in all fi
 It does so even when the trace shows takes every 100 ms, so it is not
 evidence of a gap. The silence rule counts only the takes its age monitor
 observes, and here it observes none.
+
+## 9. On silicon (phase8-W8)
+
+phase8-W8, 2026-09-30. The three acts on the S32K344 (NXP MR-CANHUBK3, the
+DCD-LZ serial cable at 921,600 baud, `just l3-peer` as the island gateway),
+with Autoware 1.5.0 in the container, all driven by
+`tools/timeline/run-board.sh`. The script flashes the board, starts the
+gateway and resets the board, waits for the island, then starts Autoware,
+the gate, the probe and the act. At the end it reads the trace over SWD
+and merges it.
+
+- Island: main `88a336f` (W28: INIT ends when every input is
+  established), nano-ros `f03d9d190`. `just board-build`, board ELF sha256
+  `780195b0c8effb43f4e7ac09bf3580cd0fcb9d9ffee374adf29c7c525c80cde6`
+  (hex `9c4d72a419fff86a417d5fffbb9ceab86a7f43a9d5e6e1e8c0cbcd3bfdc0117a`).
+  RAM 290,728 of 327,680 B (88.72 %). The trace window has a 32 KiB
+  buffer. The heap is 102,400 B, main runs at priority 5, the RX ring is
+  4096 B and the lease 60 s.
+- Autoware: `sai-l3-autoware:1.5.0-w24`. Every start read `nodes 31/31,
+  containers 13/13, composable 68/68`, on the first attempt.
+- Gate: `scenario.py gate` on the host, the C++ `availability_gate` from
+  `just demo-host-ws`.
+- Every run was flashed and reset. Each started under
+  `flock /tmp/claude-1000005/sai-demo.lock` at a 1-min load below 35.
+
+**The heap on the board.** The boot record was read over SWD (attach mode,
+no halt) with the island joined to the running container Autoware
+through the gateway, 40 s after the gate came up (run `w8-bringup`):
+
+    stage      6  FirstSpin -- registration complete and spinning
+      platform heap PEAK            77160 bytes   (75.0% of the heap)
+      platform heap capacity        102912 bytes   (NROS_ZEPHYR_HEAP_SIZE)
+    HEAP HEADROOM: ok -- 25752 bytes spare (peak 77160 of 102912, floor 24576).
+
+The record's peak is a running maximum: `nros_platform_alloc` updates it on
+every allocation. Read again after the tenth run (w8-r10, act A), it still
+said 77,160. So 102,400 B stays. The board's peak is 5,808 B above
+QEMU's FirstSpin peak on the same pin (W26: 71,352), and it does not
+exhaust the way W17's QEMU island did through the gateway. W17 expected
+this: over TCP nothing paces Autoware's traffic the way the UART does.
+
+### The verdicts
+
+The three single acts, then the ten consecutive runs, all on the same
+image (verbatim, from each run's `scenario.jsonl`; the load is the 1-min
+average at the start):
+
+```
+w8-a1  (4.58) VERDICT: PASS a: v at the fault 3.84 m/s; TOR on True, TOR now 1, control mode 4, mrm (1, 1)
+w8-b1  (4.79) VERDICT: PASS b: v at the fault 3.86 m/s; TOR on True, mrm (3, 3) (3 = COMFORTABLE_STOP), v 0.000
+w8-e1  (8.10) VERDICT: PASS encore: v at the fault 3.88 m/s; mrm (3, 2) (2 = EMERGENCY_STOP), v 0.000, after restore mrm (1, 1)
+w8-r01 (4.00) VERDICT: PASS a: v at the fault 3.86 m/s; TOR on True, TOR now 1, control mode 4, mrm (1, 1)
+w8-r02 (9.09) VERDICT: PASS b: v at the fault 3.85 m/s; TOR on True, mrm (3, 3) (3 = COMFORTABLE_STOP), v 0.000
+w8-r03 (8.83) VERDICT: PASS encore: v at the fault 3.88 m/s; mrm (3, 2) (2 = EMERGENCY_STOP), v 0.000, after restore mrm (1, 1)
+w8-r04 (8.13) VERDICT: PASS a: v at the fault 3.92 m/s; TOR on True, TOR now 1, control mode 4, mrm (1, 1)
+w8-r05 (8.82) VERDICT: PASS b: v at the fault 3.90 m/s; TOR on True, mrm (3, 3) (3 = COMFORTABLE_STOP), v 0.000
+w8-r06 (6.15) VERDICT: PASS encore: v at the fault 3.90 m/s; mrm (3, 2) (2 = EMERGENCY_STOP), v 0.000, after restore mrm (1, 1)
+w8-r07 (4.61) VERDICT: PASS a: v at the fault 3.92 m/s; TOR on True, TOR now 1, control mode 4, mrm (1, 1)
+w8-r08 (4.82) VERDICT: PASS b: v at the fault 3.86 m/s; TOR on True, mrm (3, 3) (3 = COMFORTABLE_STOP), v 0.000
+w8-r09 (7.94) VERDICT: PASS encore: v at the fault 3.92 m/s; mrm (3, 2) (2 = EMERGENCY_STOP), v 0.000, after restore mrm (1, 1)
+w8-r10 (17.46) VERDICT: PASS a: v at the fault 3.90 m/s; TOR on True, TOR now 1, control mode 4, mrm (1, 1)
+```
+
+13 of 13 PASS, and `trace-check: PASS` on all 13 traces. Every act's
+trigger was the detector path's ENTRY. The window's history ran 37-48
+records over 1469-1500 ms. After the trigger the board wrote 534-607 B/s,
+a 4.57-24.83 s act in 2,540-13,626 B of the 32 KiB buffer. The SWD
+readout held the core halted 0.181-0.225 s.
+
+### Encore: HPC loss, board next to native_sim
+
+| term | declared | e1 | r03 | r06 | r09 | native_sim (W7 e1-e3) |
+|---|---|---|---|---|---|---|
+| detect (last sample -> reaction tick) | 600.00 | 567.56 | 575.78 | 534.90 | 535.40 | 520.00-537.99 |
+| route (reaction tick -> braking command) | 143.33 | 8.37 | 7.32 | 7.43 | 6.88 | 26.00-32.04 |
+| detect + route (last sample -> braking command) | 643.33 | 575.93 | 583.10 | 542.34 | 542.29 | 546.98-570.02 |
+| settle (braking command -> standstill) | 4165.33 | 2963.67 | 2941.53 | 2923.25 | 2907.50 | 2924.79-2958.15 |
+| total (last sample -> standstill) | 4808.67 | 3539.60 | 3524.63 | 3465.59 | 3449.79 | 3473.23-3507.14 |
+| within the FTTI | 10000.00 | 3539.60 | 3524.63 | 3465.59 | 3449.79 | same as total |
+| rung reached | EMERGENCY_STOP | EMERGENCY_STOP | EMERGENCY_STOP | EMERGENCY_STOP | EMERGENCY_STOP | EMERGENCY_STOP |
+| entry speed (m/s) | 8.33 | 4.21 | 4.22 | 4.22 | 4.23 | 4.16-4.20 |
+
+Every row PASS in all four. On the board the detect is real time. It is
+the 500 ms staleness bound plus the handler's tick phase, 34.90-75.78 ms
+of it. The route is the handler's EMERGENCY_STOP tick to the braking
+command received on the host, 6.88-8.37 ms. On native_sim the same row was
+26-32 ms of loopback and host scheduling. (W26 on native_sim: last
+sample to braking 622.99 ms, to standstill 3,437.37; W28: detect 560.98,
+total 3,406.56.)
+
+### Branch A: ODD exit, the driver takes over
+
+| term | declared | a1 | r01 | r04 | r07 | r10 |
+|---|---|---|---|---|---|---|
+| detect (button -> verdict on the wire) | 100.00 | 34.18 | 81.09 | 25.10 | 55.95 | 29.90 |
+| takeover route (verdict -> request on) | 110.00 | 108.95 | 73.80 | 113.56 FAIL | 119.26 FAIL | 88.29 |
+| driver answered inside the window | 10000.00 | 3033.92 | 3045.75 | 3085.41 | 3027.94 | 3032.06 |
+| exit route (MANUAL taken -> request off) | 100.00 | 72.87 | 58.99 | 46.18 | 54.55 | 63.33 |
+| no MRM | none | none | none | none | none | none |
+| HPC alive: longest availability gap (host) | 500.00 | 110.95 | 103.31 | 108.91 | 101.45 | 104.84 |
+
+### Branch B: ODD exit, nobody answers
+
+| term | declared | b1 | r02 | r05 | r08 |
+|---|---|---|---|---|---|
+| detect (button -> verdict on the wire) | 100.00 | 60.30 | 30.49 | 53.93 | 40.33 |
+| takeover route (verdict -> request on) | 110.00 | 145.35 FAIL | 51.18 | 60.23 | 118.82 FAIL |
+| window dwell, island clock (request on -> off) | [10000.00, 10110.00] | 10114.30 FAIL | 10113.35 FAIL | 10114.26 FAIL | 10116.42 FAIL |
+| window dwell, host (as received) | [10000.00, 10110.00] | 10109.94 | 10095.38 | 10139.04 FAIL | 10108.70 |
+| windows (verdict -> deadline) | 10110.00 | 10145.35 FAIL | 10051.18 | 10060.23 | 10118.82 FAIL |
+| route, island clock (deadline -> velocity limit) | 110.00 | 115.38 FAIL | 114.73 FAIL | 115.30 FAIL | 117.47 FAIL |
+| route, host (deadline -> velocity limit received) | 110.00 | 110.17 FAIL | 95.75 | 139.26 FAIL | 109.01 |
+| windows + route (verdict -> velocity limit) | 10220.00 | 10260.73 FAIL | 10165.90 | 10175.53 | 10236.28 FAIL |
+| settle (velocity limit -> standstill) | 9996.67 | 6722.64 | 5128.49 | 5545.83 | 6372.61 |
+| total (button -> standstill) | 20316.67 | 17043.67 | 15324.88 | 15775.29 | 16649.22 |
+| within the FTTI | 30000.00 | 17043.67 | 15324.88 | 15775.29 | 16649.22 |
+| rung reached | COMFORTABLE_STOP | COMFORTABLE_STOP | COMFORTABLE_STOP | COMFORTABLE_STOP | COMFORTABLE_STOP |
+| HPC alive: longest availability gap (host) | 500.00 | 101.54 | 104.87 | 106.12 | 108.81 |
+| entry speed (m/s) | 8.33 | 3.09 | 3.03 | 3.05 | 3.08 |
+
+(The host form of `windows + route` equals the island form in every run
+and is left out.)
+
+### What the FAIL rows are
+
+Every act reached its rung and every total stayed inside its FTTI. Six
+of the 13 runs (b1, r02, r04, r05, r07, r08) have at least one
+intermediate row that goes 0.17-40.73 ms past a 110 ms route or the window's 10,110 ms end. The island trace shows
+three costs. Each one is real on silicon and is zero, or nearly zero, on
+native_sim, where the contract's 110 ms (the handler's 100 ms tick plus
+10 ms) was set:
+
+1. **The serial hop in.** From the gate's publish on the host to the
+   island's take of the first `autonomous: false` sample took 13.25-47.43 ms
+   (a1 15.29, b1 42.18, r01 47.43, r02 30.32, r04 13.25, r05 30.22, r07
+   33.51, r08 30.76, r10 34.23; host edge against the merged island edge).
+   The takeover route is that hop plus the wait for the next handler tick
+   (20.85-103.17 ms). It passes when the tick comes soon after the take
+   (r01, r02, r05, r10) and fails when it does not (b1: 42.18 + 103.17;
+   r08: 30.76 + 88.05).
+2. **Work inside the tick, before the publish.** The on-tick publishes the
+   TOR state 5.41-9.66 ms after the tick's `call_mrm` ENTRY. The expiry
+   tick first makes the synchronous `comfortable_stop/operate` call
+   (11.23-17.76 ms into the tick), then publishes `mrm_state` and the TOR
+   state (17.44-23.97 ms in). The expiry tick itself came 10,097.39-10,102.24 ms
+   after the on-tick: the window plus one tick, as on native_sim. The
+   in-tick difference makes the island-clock dwell 10,113.35-10,116.42 ms.
+   The velocity limit follows from the operator's service handler,
+   114.73-117.47 ms after the deadline. native_sim runs that work in zero time; the MCU
+   does not.
+3. **The serial hop out.** In r05 the host received `mrm_state`, the TOR
+   state and the velocity limit together, 24.8 ms after the island
+   published TOR off. That is why r05's host dwell (10,139.04) and host
+   route (139.26) exceed their island-clock values.
+
+Also, the handler's tick on the board is spaced 81.96-114.84 ms (in a1;
+90.13-106.60 in the other A and B runs). Merging the island clock onto the host
+clock costs more over serial than on loopback: the publish/receipt pair
+spread was 0.15-43.22 ms, and the two anchors disagreed by 13.05-47.62 ms
+(native_sim: under 1 ms). So a cross-clock row (the takeover route,
+`windows`) carries that much uncertainty. The island-clock rows (dwell,
+route) and the host-only rows do not.
+
+The contract's route terms were derived from the handler's tick. They do
+not charge the link or the in-tick service call, so on silicon they are
+10-40 ms short. The fault reaction as a whole has seconds of slack against
+its FTTI: B's total 15.3-17.0 s against 30 s, the encore's 3.45-3.54 s
+against 10 s. Charging the link's measured hop and the in-tick call to
+the route is a contract change, which is a separate decision; nothing here
+changes it.
+
+Not seen on the board: the simulator's hazard-lights status never showed
+ENABLE (`hazard_lights_on -` in every table). The board stamps from boot
+(no SNTP over serial), so its hazard command carries a boot-relative
+stamp. The island's own ENABLE (`island_hazard_cmd_on`) is in every trace,
+at the TOR-on tick. Braking is unaffected.
+
+Runs, tables and plots: `build/timeline/w8-{a1,b1,e1,r01..r10}/` in the W8
+worktree (`timeline.png`, `table.md`, `island.trace*`, the JSONL files).
+The render labels the rung from `island.trace.meta` (`target=board`).
