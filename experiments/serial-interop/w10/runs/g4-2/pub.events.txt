@@ -1,0 +1,8 @@
+[INFO] [1790680018.435921265] [w10_island_inputs]: island first mrm_state (this instance) at t=22.672s wall=1790680018.428
+[INFO] [1790680018.436098044] [w10_island_inputs]: mrm_state -> state=1 behavior=1 at t=22.680s wall=1790680018.435984
+GAP mrm_state 0.412s ending t=267.146s wall=1790680262.902
+GAP mrm_state 0.395s ending t=267.744s wall=1790680263.500
+GAP mrm_state 0.366s ending t=591.657s wall=1790680587.413
+GAP mrm_state 0.567s ending t=592.224s wall=1790680587.980
+GAP mrm_state 2.176s ending t=642.964s wall=1790680638.720
+SUMMARY {"duration": 1228.744557662867, "sent": {"availability": 12271, "kinematic_state": 12269, "control_mode": 12269, "gear_cmd": 12268, "operation_mode_state": 12269, "control_cmd": 36758, "steering_status": 36756, "velocity_status": 36755, "route_state": 36753}, "recv": {"mrm_state": 12019, "emergency_control_cmd": 22562, "emergency_gear_cmd": 0, "emergency_hazard": 12016, "emergency_turn": 0}, "mrm_states": [[22.68, 1, 1]], "mrm_gap_max": 2.176, "avail_stopped_at": null, "last_avail": [4668231.442752261, 1790681224.4576602], "operating_seen": null, "brake_seen": null, "host_last_avail_to_operating_ms": null, "host_last_avail_to_brake_ms": null}

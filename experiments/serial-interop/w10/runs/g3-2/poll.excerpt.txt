@@ -1,0 +1,10 @@
+18:07:09.849 RESET issued wall=1790676429.410 done=1790676429.850 rc=0
+18:07:09.952 wall=1790676429.932 tick=169 rx_bytes=264 rx_frames=11 rx_bad_frames=0 rx_partial=0 overruns=0 ring_overflows=0 ring_high_water=32 tx_bytes=8253 tx_frames=84 tx_busy_cycles=2423422 framing_errors=0 noise_errors=0 parity_errors=0 tx_irq_bytes=8253 tx_waits=918 tx_timeouts=0 tx_ring_high_water=256 rej=0 rej_err=0 ring=0 ring_size=4096 tails=[0 0 0 0 1 4 0]
+18:07:11.948 wall=1790676431.934 tick=2170 rx_bytes=264 rx_frames=11 rx_bad_frames=0 rx_partial=0 overruns=0 ring_overflows=0 ring_high_water=32 tx_bytes=13002 tx_frames=123 tx_busy_cycles=2609444 framing_errors=0 noise_errors=0 parity_errors=0 tx_irq_bytes=13002 tx_waits=918 tx_timeouts=0 tx_ring_high_water=256 rej=0 rej_err=0 ring=0 ring_size=4096 tails=[0 0 0 0 21 64 0]
+18:07:09.849 RESET issued wall=1790676429.410 done=1790676429.850 rc=0
+18:07:09.952 wall=1790676429.932 tick=169 rx_bytes=264 rx_frames=11 rx_bad_frames=0 rx_partial=0 overruns=0 ring_overflows=0 ring_high_water=32 tx_bytes=8253 tx_frames=84 tx_busy_cycles=2423422 framing_errors=0 noise_errors=0 parity_errors=0 tx_irq_bytes=8253 tx_waits=918 tx_timeouts=0 tx_ring_high_water=256 rej=0 rej_err=0 ring=0 ring_size=4096 tails=[0 0 0 0 1 4 0]
+--
+18:19:27.874 RESET issued wall=1790677029.413 done=1790677167.875 rc=0
+18:19:27.982 wall=1790677167.974 tick=1600 rx_bytes=0 rx_frames=0 rx_bad_frames=0 rx_partial=0 overruns=0 ring_overflows=0 ring_high_water=0 tx_bytes=18 tx_frames=2 tx_busy_cycles=8975 framing_errors=0 noise_errors=0 parity_errors=0 tx_irq_bytes=18 tx_waits=0 tx_timeouts=0 tx_ring_high_water=9 rej=0 rej_err=0 ring=0 ring_size=4096 tails=[-1 -1 -1 -1 -1 -1 -1]
+18:27:14.346 wall=1790677634.339 tick=468000 rx_bytes=0 rx_frames=0 rx_bad_frames=0 rx_partial=0 overruns=0 ring_overflows=0 ring_high_water=0 tx_bytes=900 tx_frames=100 tx_busy_cycles=440233 framing_errors=0 noise_errors=0 parity_errors=0 tx_irq_bytes=900 tx_waits=0 tx_timeouts=0 tx_ring_high_water=9 rej=0 rej_err=0 ring=0 ring_size=4096 tails=[-1 -1 -1 -1 -1 -1 -1]
+    kus=3310483 shell_uart:14:280347 sysworkq:-1:1933 idle:15:20063578056

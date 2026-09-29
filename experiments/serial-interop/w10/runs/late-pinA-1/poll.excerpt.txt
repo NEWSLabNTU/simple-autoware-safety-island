@@ -1,0 +1,13 @@
+11:21:44.695 RESET issued wall=1790652104.226 done=1790652104.696 rc=0
+11:21:44.814 wall=1790652104.788 tick=186 rx_bytes=2227 rx_frames=15 rx_bad_frames=0 rx_partial=0 overruns=0 ring_overflows=0 ring_high_water=6 tx_bytes=10918 tx_frames=110 tx_busy_cycles=22927057 rej=0 rej_err=0 ring=0 ring_size=1024 tails=[4 1 1 1 1 1 0 0 0 1 1]
+11:21:46.814 wall=1790652106.789 tick=2183 rx_bytes=62517 rx_frames=142 rx_bad_frames=0 rx_partial=0 overruns=0 ring_overflows=0 ring_high_water=6 tx_bytes=28110 tx_frames=159 tx_busy_cycles=70841929 rej=0 rej_err=0 ring=0 ring_size=1024 tails=[62 61 61 62 21 21 21 20 61 21 21]
+11:21:44.695 RESET issued wall=1790652104.226 done=1790652104.696 rc=0
+11:21:44.814 wall=1790652104.788 tick=186 rx_bytes=2227 rx_frames=15 rx_bad_frames=0 rx_partial=0 overruns=0 ring_overflows=0 ring_high_water=6 tx_bytes=10918 tx_frames=110 tx_busy_cycles=22927057 rej=0 rej_err=0 ring=0 ring_size=1024 tails=[4 1 1 1 1 1 0 0 0 1 1]
+--
+11:23:14.672 RESET issued wall=1790652194.230 done=1790652194.673 rc=0
+11:23:14.761 wall=1790652194.753 tick=100 rx_bytes=1076 rx_frames=0 rx_bad_frames=1 rx_partial=0 overruns=0 ring_overflows=0 ring_high_water=824 tx_bytes=9 tx_frames=1 tx_busy_cycles=13659 rej=0 rej_err=0 ring=824 ring_size=1024 tails=[-1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1]
+--
+11:24:46.007 RESET issued wall=1790652284.231 done=1790652286.007 rc=0
+11:24:46.103 wall=1790652286.088 tick=100 rx_bytes=353 rx_frames=0 rx_bad_frames=1 rx_partial=0 overruns=0 ring_overflows=0 ring_high_water=9 tx_bytes=9 tx_frames=1 tx_busy_cycles=12765 rej=0 rej_err=0 ring=9 ring_size=1024 tails=[-1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1]
+11:26:18.177 wall=1790652378.157 tick=92230 rx_bytes=2553449 rx_frames=5862 rx_bad_frames=1 rx_partial=0 overruns=0 ring_overflows=0 ring_high_water=12 tx_bytes=757379 tx_frames=1632 tx_busy_cycles=1997158432 rej=0 rej_err=0 ring=0 ring_size=1024 tails=[2740 2740 2740 2739 913 913 913 913 2764 912 912]
+    kus=4801580495 <zephyr_thread_wrapper>:5:885263455 zpico_lease:4:187814 zpico_read:4:3252969997 shell_uart:14:284623 sysworkq:-1:1946 idle:15:4825103509 main:5:662934827

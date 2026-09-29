@@ -56,6 +56,8 @@ l3-peer tty=L3_PEER_TTY baud="921600" stock="tcp/127.0.0.1:7447" port="7449" log
     cfg="$PWD/demo/l3/router/island-gateway.json5"
     rust_log="${L3_PEER_RUST_LOG:-zenoh=info,zenoh_transport=debug}"
     bin="$PWD/build/trace/l3-peer-zenohd"
+    # (the log may live elsewhere; the binary's own name needs this directory)
+    mkdir -p "$(dirname "$bin")"
     ln -sfn /opt/ros/humble/lib/rmw_zenoh_cpp/rmw_zenohd "$bin"
     echo "l3-peer: rmw_zenohd on serial/{{tty}}#baudrate={{baud}} + tcp/[::]:{{port}}, connecting {{stock}}; log {{log}}"
     echo "l3-peer: now reset the board (pyocd reset -t s32k344); Ctrl-C stops the router"

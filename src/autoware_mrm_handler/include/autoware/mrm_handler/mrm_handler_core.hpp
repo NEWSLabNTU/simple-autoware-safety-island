@@ -110,6 +110,8 @@ private:
 
   tier4_system_msgs::msg::OperationModeAvailability operation_mode_availability_{};
   bool has_operation_mode_availability_{false};
+  // phase8-W10: when the first availability sample arrived (the join grace below)
+  double stamp_first_operation_mode_availability_{0.0};
   nav_msgs::msg::Odometry odom_{};
   bool has_odom_{false};
   autoware_vehicle_msgs::msg::ControlModeReport control_mode_{};

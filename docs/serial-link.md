@@ -57,11 +57,22 @@ scripts that produced it and the flashed image are under
   then 17.0 ms to the brake; the `call_mrm` tick is 14.6 ms, was 28-38 ms at
   115200). Seen from the host: 644.4 ms to `MRM_OPERATING`, 697.9 ms to the
   first braking command.
-- **Not solved: joining under load.** When the host is already publishing the
-  inputs as the island joins, the registration burst starves the read task
-  again: the board published `mrm_state` 46 times and the host received none.
-  Until issue 1534 is fixed, the island must join before the inputs flow
-  (the soak and the reaction above did).
+- **Joining under load: solved (phase8-W10, section 11).** The cause was not
+  the busy-wait alone: main registers the image's entities at Zephyr's default
+  `CONFIG_MAIN_THREAD_PRIORITY` 0, above the read task (k_thread 4), and the
+  tx-flush thread inherits that 0, so nothing drained the RX ring while the
+  island registered; with the inputs already flowing it overflowed within
+  180 ms of boot and the lost frames carried the router's answers to the
+  publishers' write-filter interests (four of five outputs never sent; #1389
+  keeps the reader alive, it does not bring those frames back). Fix: main
+  registers at priority 5 (the flush thread follows, and nano-ros PR #1443
+  pins it to the read band), the RX ring is 4 KiB, TX is interrupt-driven
+  (zenoh-pico `e28ff603`). Gate on island main `3fb4cfb` (section 11.5): 5 cold
+  joins and 3 mid-run resets with every input already flowing, 10 min soak
+  after each: all eight joined 0.12-2.0 s after the reset, every output at
+  rate, no false emergency, no RX ring overflow; two frames were lost in the
+  80 min of soak (bad frames with no UART error, cause open).
+  The island no longer has to join before the inputs flow.
 
 ## 1. The stall at 115200: what happens, with evidence
 
@@ -364,7 +375,7 @@ and `uart_err_check`, plus decoding).
 time and the depth-1 host subscriber keeps one. vehicle_cmd_gate reads it with
 depth 1 too.
 
-## 7. Joining under load (react2, soak1): not solved
+## 7. Joining under load (react2, soak1): not solved here; see section 11
 
 react2: the inputs running first, then the board reset into them. The trace
 (the one-shot 24 KiB RAM buffer, 5.6 s from boot):
@@ -439,17 +450,14 @@ traffic at a 1 ms latency timer; the scripts wait for it.
 
 ## 10. Open items
 
-- nano-ros issue 1533: push fork branch `fix/serial-reader-survives-declare-errors`
-  (`52f60b79`; it sits in the zenoh-pico submodule of the nano-ros worktree
-  `.claude/worktrees/phase8-w2-serial`), move the zenoh-pico pin, rebuild the
-  island. It adds
-  `_z_zephyr_serial_stats` (overruns, ring overflows and high water, bad
-  frames, TX busy cycles) and `_z_rx_rejections`, which would have made
-  sections 1 and 6 two SWD reads.
-- nano-ros issue 1534: the tx-flush task outranks the read task; section 7.
-  Interrupt-driven TX would also return the 9.5 % busy-wait.
-- `CONFIG_NROS_ZENOH_SERIAL_RX_RING_BYTES` (nano-ros PR #1386): the board has 2,016 B
-  of SRAM free with the 24 KiB trace buffer, so a larger ring costs trace.
+- nano-ros issue 1533: done (nano-ros PR #1389, zenoh-pico `52f60b79`, in
+  the island pin bec9aecb8).
+- nano-ros issue 1534: the flush-task default and interrupt-driven TX are
+  nano-ros PR #1443 (zenoh-pico `e28ff603`); the island needs the pin bump
+  after it merges. The main thread's registration priority is an image
+  setting nano-ros does not state yet (section 11).
+- `CONFIG_NROS_ZENOH_SERIAL_RX_RING_BYTES` is 4096 on the board now
+  (section 11).
 - zenoh 1.8's congestion flag (section 5): worth an upstream report with
   run p1 as the reproducer.
 - W4 (D9, discovery off) makes the ACL unnecessary; keep the ACL until then.
@@ -461,5 +469,246 @@ traffic at a 1 ms latency timer; the scripts wait for it.
   re-measured without the ACL on the board. That run (a tap on the serial
   link, `ros2 node list`, an Autoware restart) decides whether the ACL is
   retired; W10 owns the board.
+- In-run bad frames with no UART error and no ring overflow, about one per
+  80 min of soak at contract rates (3 in 250 min over 11.4, 11.5 and the
+  capture soaks): cause open.
 - The contract's `min_rate_hz: 30` on `emergency_control_cmd` is met on the
   board (29.3/s on the wire); the host's depth-1 view is 17.9/s.
+
+## 11. Joining under load, solved (phase8-W10)
+
+phase8-W10, 2026-09-29. Same board, cable and gateway as above; the stand-in
+stock router on 7471 and `just l3-peer` on 7479. Every run below starts the
+inputs of section 6 FIRST and resets the board 20 s later (a cold join: the
+board was halted, so the gateway had never seen it), and the runs with a
+mid-run reset reset it again 600 s later while the gateway still holds the old
+session. Tools and run summaries: `experiments/serial-interop/w10/`
+(`tools/gate.sh`, `tools/poll.py`, `tools/analyze.py`; `poll.py` reads
+`_z_zephyr_serial_stats` and the subscription rings by symbol and gdb-derived
+offsets, `analyze.py` prints one verdict per join).
+
+### 11.1 The image the current pin builds does not reach the network
+
+`55a65a4` on the pin bec9aecb8, as `just board-build` makes it, stops in
+registration on the board (the boot report: stage 4, `RegisteringEntities`).
+Three things, each found with a breakpoint, not by reading the conf:
+
+1. `mrm_comfortable_stop_operator` `create_publisher_in` returns -3: its two
+   TRANSIENT_LOCAL publishers each declare a cache queryable, and the derived
+   `ZPICO_MAX_QUERYABLES` (2) counts only the two service servers.
+2. `stop_mode_operator` `create_publisher_in` returns -100: the retention pool
+   `ZPICO_MAX_TL_PUBLISHERS` is its builtin 2 for five TRANSIENT_LOCAL
+   publishers, because the entity inventory refuses to count them
+   ("publisher /system/operation_mode/availability states no `durability`").
+   nano-ros main has since merged a fix for that refusal (#1567, not in the pin).
+3. Under traffic, `nros_platform_panic("platform heap exhausted")` from the
+   serial send path's per-frame `z_malloc` at a 122,880 heap.
+
+For these runs: `CONFIG_NROS_MAX_QUERYABLES=7`, `ZPICO_MAX_TL_PUBLISHERS=5` in
+the build environment (no Kconfig row), `CONFIG_NROS_ZEPHYR_HEAP_SIZE=134144`
+(phase8-W1 asked for >= 133,952), `CONFIG_RAM_TRACING_BUFFER_SIZE` 2048 to pay
+for it (RAM 99.42 %). These are W8's to size properly; they are not the fix.
+phase8-W8a's `3fb4cfb`, which landed while this ran, sizes its own image
+(stop_mode_operator out, heap 102,400, `CONFIG_NROS_MAX_QUERYABLES=4`);
+section 11.5 runs that image with only the W10 settings added.
+
+### 11.2 On the pin (the 1533 fix in), a late join still fails
+
+    {"seg": 0, "kind": "cold", ... "join_s": null, "out_rates": {"mrm_state": 0.0, "emergency_control_cmd": 18.37, "emergency_gear_cmd": 0.0, "emergency_hazard": 0.0, "emergency_turn": 0.0}, ... "rx_ring_high_water": 1024 ...}
+
+3 of 3 joins (1 cold, 2 mid-run): four publishers never sent, the island took
+every input. The board's counters 180 ms after boot:
+
+    tick=180 rx_bytes=1733 rx_frames=3 rx_bad_frames=0 rx_partial=0 overruns=0 ring_overflows=602 ring_high_water=1024
+
+`_z_rx_rejections` stayed 0: the reader did not die (1533 holds). It was not
+running. An instrument in the RX ISR (`tools/ovf.py`) recorded the running
+thread and the `zpico_read` thread's state at each overflow:
+
+    139 ms running=main                         reader=zpico_read   state=0x80 pended_on=0 held=1024
+    159 ms running=main                         reader=zpico_read   state=0x80 pended_on=0 held=1024
+    188 ms running=<zephyr_thread_wrapper+0x0>  reader=zpico_read   state=0x80 pended_on=0 held=1024
+    270 ms running=zpico_read                   reader=zpico_read   state=0x80 pended_on=0 held=1024
+
+READY (0x80) and preempted: by main, which registers every entity at Zephyr's
+default `CONFIG_MAIN_THREAD_PRIORITY` 0, and by the tx-flush thread
+(`<zephyr_thread_wrapper>`), which has no stated priority and inherits
+main's. The frames lost carry the router's answers to the publishers'
+write-filter interests; a multi-threaded zenoh-pico write filter starts closed
+(`src/net/filtering.c`, `WRITE_FILTER_ACTIVE`) and opens only on such an
+answer, so those publishers stay silent for the life of the session.
+
+Ablation, 3 joins each:
+
+| image | result |
+| --- | --- |
+| pin | 3 of 3 fail (four outputs silent) |
+| pin + interrupt-driven TX (zenoh-pico) | 3 of 3 fail; 1115 overflows by 152 ms |
+| pin + `CONFIG_MAIN_THREAD_PRIORITY=5`, polled TX | 3 of 3 pass, 0 overflows, ring high water 12-824 |
+
+So the busy-wait of section 1.3 was one way to hold the CPU, not the only one:
+registration is CPU work too, and it ran above the reader.
+
+### 11.3 The fix
+
+- Island, `boards/mr_canhubk3_s32k344.conf`: `CONFIG_MAIN_THREAD_PRIORITY=5`,
+  below the read task's 4. The tx-flush thread inherits it.
+- Island: `CONFIG_NROS_ZENOH_SERIAL_RX_RING_BYTES`, 2048 in the gate of 11.4
+  and 4096 on `3fb4cfb` (11.5), which has the RAM. With the priorities right
+  the 1 KiB ring still reached 793-1024 at joins in the first gate round, one
+  cold join in five overflowed it (46 drains) without losing an output, and a
+  60 min soak later peaked at 1,226.
+- nano-ros PR #1443: the flush task defaults to the read band on Zephyr
+  (whatever main's priority), interrupt-driven TX (zenoh-pico `e28ff603`: the
+  sender sleeps on a 256-byte ring the TX ISR drains; 9.5 % of the CPU was the
+  busy-wait), UART framing / noise / parity counters.
+- Island, `autoware_mrm_handler`: in the first gate round one cold join in five
+  published `MRM_OPERATING / EMERGENCY_STOP` once, then NORMAL 40 ms later:
+
+      [INFO] [1790656578.427406085] [w10_island_inputs]: mrm_state -> state=2 behavior=3 at t=20.593s wall=1790656578.427295
+      [INFO] [1790656578.467710251] [w10_island_inputs]: mrm_state -> state=1 behavior=1 at t=20.633s wall=1790656578.467501
+
+  The first tick had the availability and both operator statuses but not yet
+  `/api/operation_mode/state`; UNKNOWN is "not available", so it called an
+  emergency. `isDataReady()` now waits for the operation mode, for at most
+  `timeout_operation_mode_availability` after the first availability sample;
+  after that UNKNOWN is a fault again (a mode that never arrives is G4, W4's).
+
+### 11.4 The gate on 55a65a4 (with the triage of 11.1)
+
+Everything in 11.2 to 11.4, cap-1, cap-2 and the reaction ran BEFORE the
+host's ROS upgrade (rmw_zenoh_cpp 0.1.9, rclcpp 16.0.19); 11.5 ran after it.
+
+Image `img-final2` (sha256 `6fa23365...`, the fixes above, RX ring 2 KiB),
+5 cold joins, the
+first three followed by a mid-run reset, 10 min soak after every join. Per join
+(`analyze.py`; `join` is from the end of `pyocd reset` to the host's first
+`mrm_state`; the soak window starts 10 s after the join):
+
+| run | join | join (s) | outputs at the host (/s) | false emergency | mrm_state gap > 0.3 s | RX ring overflows (boot to end) | in-run bad frames |
+| --- | --- | ---: | --- | ---: | ---: | ---: | ---: |
+| g2-1 | cold | 0.141 | 10.0 / 18.0 / 10.0 / 10.0 / 10.0 | 0 | 0 | 0 | 0 |
+| g2-1 | mid-run | 0.518 | 10.0 / 18.03 / 10.0 / 10.0 / 10.0 | 0 | 0 | 0 | 0 |
+| g2-2 | cold | 0.235 | 10.0 / 18.0 / 10.0 / 10.0 / 10.0 | 0 | 0 | 0 | 0 |
+| g2-2 | mid-run | 1.071 | 10.0 / 17.94 / 10.0 / 10.0 / 10.0 | 0 | 0 | 0 | 0 |
+| g2-3 | cold | 0.247 | 10.0 / 18.08 / 10.0 / 10.0 / 10.0 | 0 | 0 | 0 | 1 |
+| g2-3 | mid-run | 2.125 | 10.0 / 18.08 / 10.0 / 10.0 / 10.0 | 0 | 0 | 0 | 0 |
+| g2-4 | cold | 0.263 | 10.0 / 18.13 / 10.0 / 10.0 / 10.0 | 0 | 0 | 0 | 0 |
+| g2-5 | cold | 0.202 | 10.0 / 18.07 / 10.0 / 10.0 / 10.0 | 0 | 0 | 0 | 0 |
+
+Outputs in the order mrm_state, emergency control_cmd, gear, hazard lights,
+turn indicators (control_cmd at 18/s is the host's depth-1 view, section 6).
+Every `mrm_states` list in the five SUMMARY lines is a single NORMAL entry.
+Samples: over each ~585 s window the four 30 Hz inputs, availability and the
+operation mode reached the island within one sample of what the host sent
+(the host count is interpolated from its 1 s reports); the three downsampled
+inputs lost 0-3 each to the gateway's 12 Hz limit, as in section 6.
+
+The mid-run joins also count 1-3 bad frames and at most one framing error at
+boot: the gateway was mid-frame toward the old instance when the board reset.
+
+The one in-run bad frame (g2-3, cold, 422 s after boot) came with no overrun,
+no RX ring overflow and no framing, noise or parity error, and no input count
+fell short of what the host sent; its cause is not established. Two more soaks
+of the same image with a capture of the last bad frame (`img-cap`, the gate
+image plus a 1,520-byte RAM copy of any frame that fails to decode) ran 30 and
+60 min after a late join and saw none:
+
+    cap-1 "len_s": 1804.0, "join_s": 5.124, "join_after_reset_done_s": 4.677, "segment_totals_from_boot": {"ring_overflows": 0, "rx_bad_frames": 0, "overruns": 0, "rej": 0, "ring_high_water": 1014, "framing_errors": 0, "noise_errors": 0}
+    cap-2 "len_s": 3603.7, "join_s": 0.705, "join_after_reset_done_s": 0.283, "segment_totals_from_boot": {"ring_overflows": 0, "rx_bad_frames": 0, "overruns": 0, "rej": 0, "ring_high_water": 1226, "framing_errors": 0, "noise_errors": 0}
+
+(cap-1's inputs came up 4.9 s AFTER the reset -- rclpy on the loaded host --
+so cap-1 is an island-first join and its 4.7 s is the publisher starting;
+cap-2's came up 19.5 s before it.)
+
+cap-2's ring high water, 1,226 bytes, is past the old 1 KiB ring. cap-2 also
+logged two host-side `mrm_state` gaps of 0.300 and 0.333 s at 694-695 s
+(NORMAL throughout; the host ran at load 40-47 during these runs, so which
+side paused is not established).
+
+Reaction after a late join (`tools/react.sh`, inputs first, availability
+stopped 5 s after the new instance's first `mrm_state`), seen from the host:
+
+    [INFO] [1790670141.603326068] [w10_island_inputs]: availability publisher STOPPED at t=24.403s mono=4657148.588206 wall=1790670141.603114
+    [INFO] [1790670142.118648883] [w10_island_inputs]: mrm_state -> state=2 behavior=2 at t=24.918s wall=1790670142.118448
+    "host_last_avail_to_operating_ms": 615.2
+
+(section 1's figure at 921,600 with the island joining first: 644.4 ms). The
+behavior is COMFORTABLE_STOP since W7's parameters, so no braking
+`emergency/control_cmd` follows; the board-side trace was not captured (2 KiB).
+
+### 11.5 The gate on 3fb4cfb (phase8-W8a's demo image), the one that counts
+
+`3fb4cfb` plus only the W10 changes (main at priority 5, RX ring 4 KiB, the
+handler's join grace), on the pin bec9aecb8 with zenoh-pico `e28ff603` and the
+flush-task default of nano-ros PR #1443 (image `img-main`, sha256
+`061b9261...`, RAM 85.64 %). The image publishes three outputs (mrm_state,
+emergency control_cmd, hazard lights; W8a dropped gear and turn indicators).
+`tools/gate_all.sh` with `gate_v2.sh`, which counts the 20 s of inputs from
+the publisher's first report (every join below had them flowing 21.9-24.3 s
+before the reset). All eight runs are AFTER the host's ROS upgrade of
+2026-09-29 18:30-18:37 (rmw_zenoh_cpp 0.1.10, rclcpp 16.0.21), every router and
+publisher started fresh:
+
+| run | join | join (s) | outputs (/s) | false emergency | mrm_state gaps > 0.3 s | RX ring overflows, boot to end | in-run bad frames | ring high water | verdict |
+| --- | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| g4-1 | cold | 0.158 | 10.0 / 18.78 / 10.0 | 0 | 0 | 0 | 0 | 827 | ok |
+| g4-1 | mid-run | 0.4 | 10.0 / 18.81 / 10.0 | 0 | 0 | 0 | 0 | 679 | ok |
+| g4-2 | cold | 0.168 | 9.97 / 18.69 / 9.96 | 0 | 4 | 0 | 1 | 764 | ok |
+| g4-2 | mid-run | 2.006 | 10.0 / 18.78 / 10.0 | 0 | 0 | 0 | 0 | 816 | ok |
+| g4-3 | cold | 0.122 | 9.99 / 18.76 / 9.99 | 0 | 0 | 0 | 0 | 694 | ok |
+| g4-3 | mid-run | 0.982 | 10.0 / 18.77 / 10.0 | 0 | 0 | 0 | 1 | 696 | ok |
+| g4-4 | cold | 0.142 | 10.0 / 18.77 / 10.0 | 0 | 0 | 0 | 0 | 715 | ok |
+| g4-5 | cold | 0.172 | 10.0 / 18.78 / 10.0 | 0 | 0 | 0 | 0 | 809 | ok |
+
+Every SUMMARY's `mrm_states` is a single NORMAL entry. The four gaps in g4-2's
+cold soak (0.412, 0.395, 0.366, 0.567 s) fall in seconds where the host's own
+30 Hz publisher managed 5-12 samples (`gaps_with_host_publisher_stalled`): the
+harness stalled on a host at load 30-47, not the island. No run shows a lease
+expiry: the gateway opened exactly one board session per reset in every run.
+
+Not zero: in-run bad frames, 1 in g4-2 (cold) and 1 in g4-3 (mid-run) here,
+1 in g2-3 in 11.4, none in 90 min of cap-1/cap-2. Each came with no overrun, no
+ring overflow and no framing, noise or parity error, and each 30 Hz count fell
+1-2 short of the host's interpolated count in that window, so a frame of
+samples was lost. The cause is not established (the capture image caught
+none); the next step is the capture image on a longer soak with a socat tap
+on the host side, to tell a frame the router sent damaged from one the wire
+damaged. Before this unit's runs, g3-1 (cold and mid-run, both ok) ran on the
+same image before the ROS upgrade; g3-2 was voided (the publisher came up 83 s
+late, and at 18:17:08 the gateway closed its own session on a signal no W10
+script sent) and g3-3 (the upgrade ran during its start).
+
+### 11.6 Current main (c2e77dd: pin da272e419, discovery off, 60 s lease)
+
+The same late-join test (inputs first, 1 cold join and 2 mid-run resets, 120 s
+each, `gate_v2.sh`), on c2e77dd as it is and with this change:
+
+| image | joins | outputs (mrm_state / control_cmd / hazard, /s) | RX ring, boot to end |
+| --- | --- | --- | --- |
+| c2e77dd (`img-stock-main`, main at 0, 1 KiB ring) | 3 of 3 fail | 0.0 / 18.37 / 0.0 in every join | 4,033 overflows 423 ms after the cold boot; 5,254-5,526 per join; high water 1024 |
+| c2e77dd + this change (`img-main2`) | 3 of 3 pass, 0.45-1.23 s | 10.0 / 17.5-17.7 / 10.0 | 0 overflows; high water 120-179 |
+
+So W4's discovery-off does not remove the failure: with the liveliness
+subscriber gone the router still answers the write-filter interests while
+main registers above the reader, and those answers are lost. It does shrink
+what arrives at a join: with this change the ring peaks at 120-179 bytes
+instead of 679-1226.
+
+### 11.7 What changes with W4, W15 and the pin bump
+
+nano-ros PR #1435 (W4, merged after this pin) compiles graph discovery out on
+a serial link: no liveliness subscriber and no `@ros2_lv/**` interest from the
+island, so the router's answers at a join shrink by that interest's share.
+That lowers the ring's peak at a join; it does not change which thread runs
+while the island registers, which was the fault. phase8-W14 has since moved the
+island's pin to nano-ros da272e419, which has #1435 and #1567 but not #1443:
+on that pin the tx-flush thread still has no stated priority (it inherits
+main's 5 from this change) and TX is still the busy-wait, which the ablation
+in 11.2 shows is not needed for the join; #1443 comes with the next pin bump.
+
+phase8-W15 found that the island's lease (`CONFIG_NROS_ZENOH_LEASE_MS`, 10 s)
+equals the gateway's keepalive period (keep_alive 6), so one late or lost
+keepalive expires the session; its fix (60 s, in the serial snippet, and
+nano-ros PR #1461) postdates these images. None of the runs here expired: the
+gateway opened exactly one board session per reset in every run.

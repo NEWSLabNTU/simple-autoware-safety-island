@@ -1,0 +1,3 @@
+image=/tmp/claude-1000005/-home-aeon-repos-simple-autoware-safety-island/a1e1ba09-8a5a-4066-b2cc-45a0e74fd7b9/scratchpad/w10/img-stock-main.elf sha256=491324d99ac46abc3a943f05b525562b6f119a7256ef2945ec1a654c722b447d
+halted rc=0
+inputs flowing for 20s; cold join now; resets at +[0,120,240] s

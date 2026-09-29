@@ -1,0 +1,10 @@
+11:52:32.704 RESET issued wall=1790653952.281 done=1790653952.704 rc=0
+11:52:32.808 wall=1790653952.787 tick=123 rx_bytes=1713 rx_frames=14 rx_bad_frames=0 rx_partial=0 overruns=0 ring_overflows=0 ring_high_water=309 tx_bytes=11927 tx_frames=119 tx_busy_cycles=1655415 tx_irq_bytes=11927 tx_waits=558 tx_timeouts=0 tx_ring_high_water=256 rej=0 rej_err=0 ring=0 ring_size=1024 tails=[4 2 2 2 1 0 0 1 1 0 0]
+11:52:34.810 wall=1790653954.788 tick=2152 rx_bytes=62097 rx_frames=153 rx_bad_frames=0 rx_partial=0 overruns=0 ring_overflows=0 ring_high_water=772 tx_bytes=28592 tx_frames=162 tx_busy_cycles=17498433 tx_irq_bytes=28592 tx_waits=5360 tx_timeouts=0 tx_ring_high_water=256 rej=0 rej_err=0 ring=0 ring_size=1024 tails=[64 62 62 62 21 20 20 21 61 20 20]
+11:52:32.704 RESET issued wall=1790653952.281 done=1790653952.704 rc=0
+11:52:32.808 wall=1790653952.787 tick=123 rx_bytes=1713 rx_frames=14 rx_bad_frames=0 rx_partial=0 overruns=0 ring_overflows=0 ring_high_water=309 tx_bytes=11927 tx_frames=119 tx_busy_cycles=1655415 tx_irq_bytes=11927 tx_waits=558 tx_timeouts=0 tx_ring_high_water=256 rej=0 rej_err=0 ring=0 ring_size=1024 tails=[4 2 2 2 1 0 0 1 1 0 0]
+--
+12:02:32.753 RESET issued wall=1790654552.296 done=1790654552.754 rc=0
+12:02:32.861 wall=1790654552.852 tick=100 rx_bytes=532 rx_frames=1 rx_bad_frames=0 rx_partial=0 overruns=0 ring_overflows=0 ring_high_water=523 tx_bytes=9 tx_frames=1 tx_busy_cycles=4510 tx_irq_bytes=9 tx_waits=0 tx_timeouts=0 tx_ring_high_water=9 rej=0 rej_err=0 ring=523 ring_size=1024 tails=[-1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1]
+12:12:35.353 wall=1790655155.333 tick=602624 rx_bytes=16796381 rx_frames=40429 rx_bad_frames=4 rx_partial=0 overruns=0 ring_overflows=0 ring_high_water=926 tx_bytes=4931609 tx_frames=11008 tx_busy_cycles=576334476 tx_irq_bytes=4931609 tx_waits=1539071 tx_timeouts=0 tx_ring_high_water=256 rej=0 rej_err=0 ring=0 ring_size=1024 tails=[18023 18020 18020 18020 6007 6007 6007 6008 18201 6007 6007]
+    kus=48759340675 zpico_flush:4:4994896022 zpico_lease:4:2552282 zpico_read:4:35915501658 shell_uart:14:282306 sysworkq:-1:1946 idle:15:46957408329 main:5:7847176025

@@ -1,0 +1,13 @@
+10:41:19.491 RESET issued wall=1790649679.052 done=1790649679.492 rc=0
+10:41:19.599 wall=1790649679.579 tick=152 rx_bytes=2863 rx_frames=13 rx_bad_frames=0 rx_partial=0 overruns=0 ring_overflows=1115 ring_high_water=1024 tx_bytes=12728 tx_frames=127 tx_busy_cycles=2313308 tx_irq_bytes=12728 tx_waits=666 tx_timeouts=0 tx_ring_high_water=256 rej=0 rej_err=0 ring=686 ring_size=1024 tails=[3 1 1 1 0 0 0 1 2 0 0]
+10:41:21.600 wall=1790649681.580 tick=2178 rx_bytes=62303 rx_frames=147 rx_bad_frames=3 rx_partial=0 overruns=0 ring_overflows=1492 ring_high_water=1024 tx_bytes=24867 tx_frames=165 tx_busy_cycles=11280707 tx_irq_bytes=24867 tx_waits=2338 tx_timeouts=0 tx_ring_high_water=256 rej=0 rej_err=0 ring=162 ring_size=1024 tails=[63 61 61 61 20 20 20 21 62 20 20]
+10:41:19.491 RESET issued wall=1790649679.052 done=1790649679.492 rc=0
+10:41:19.599 wall=1790649679.579 tick=152 rx_bytes=2863 rx_frames=13 rx_bad_frames=0 rx_partial=0 overruns=0 ring_overflows=1115 ring_high_water=1024 tx_bytes=12728 tx_frames=127 tx_busy_cycles=2313308 tx_irq_bytes=12728 tx_waits=666 tx_timeouts=0 tx_ring_high_water=256 rej=0 rej_err=0 ring=686 ring_size=1024 tails=[3 1 1 1 0 0 0 1 2 0 0]
+--
+10:43:19.563 RESET issued wall=1790649799.056 done=1790649799.563 rc=0
+10:43:19.655 wall=1790649799.646 tick=100 rx_bytes=9 rx_frames=1 rx_bad_frames=0 rx_partial=0 overruns=0 ring_overflows=0 ring_high_water=7 tx_bytes=9 tx_frames=1 tx_busy_cycles=4624 tx_irq_bytes=9 tx_waits=0 tx_timeouts=0 tx_ring_high_water=9 rej=0 rej_err=0 ring=0 ring_size=1024 tails=[-1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1]
+--
+10:45:33.035 RESET issued wall=1790649919.057 done=1790649933.035 rc=0
+10:45:33.132 wall=1790649933.121 tick=200 rx_bytes=9 rx_frames=1 rx_bad_frames=0 rx_partial=0 overruns=0 ring_overflows=0 ring_high_water=7 tx_bytes=9 tx_frames=1 tx_busy_cycles=4427 tx_irq_bytes=9 tx_waits=0 tx_timeouts=0 tx_ring_high_water=9 rej=0 rej_err=0 ring=0 ring_size=1024 tails=[-1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1]
+10:47:23.234 wall=1790650043.213 tick=110300 rx_bytes=2966156 rx_frames=6753 rx_bad_frames=16 rx_partial=0 overruns=0 ring_overflows=3283 ring_high_water=1024 tx_bytes=659773 tx_frames=2228 tx_busy_cycles=445807974 tx_irq_bytes=659773 tx_waits=85380 tx_timeouts=0 tx_ring_high_water=256 rej=4 rej_err=141 ring=0 ring_size=1024 tails=[3171 3170 3172 3171 1060 1055 1051 1100 3331 1051 1051]
+    kus=4852200513 <zephyr_thread_wrapper>:0:302178580 zpico_lease:4:185921 zpico_read:4:3316975949 shell_uart:14:284140 sysworkq:-1:1902 idle:15:4745899854 main:0:1233048124

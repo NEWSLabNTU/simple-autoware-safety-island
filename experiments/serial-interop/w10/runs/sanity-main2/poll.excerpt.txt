@@ -1,0 +1,13 @@
+20:23:10.020 RESET issued wall=1790684589.569 done=1790684590.020 rc=0
+20:23:10.145 wall=1790684590.129 tick=200 rx_bytes=1104 rx_frames=13 rx_bad_frames=0 rx_partial=0 overruns=0 ring_overflows=0 ring_high_water=10 tx_bytes=5367 tx_frames=57 tx_busy_cycles=10265587 rej=0 rej_err=0 ring=0 ring_size=4096 tails=[4 0 0 0 0 0 0]
+20:23:12.145 wall=1790684592.131 tick=2200 rx_bytes=34785 rx_frames=115 rx_bad_frames=0 rx_partial=0 overruns=0 ring_overflows=0 ring_high_water=24 tx_bytes=20625 tx_frames=112 tx_busy_cycles=42020147 rej=0 rej_err=0 ring=0 ring_size=4096 tails=[57 20 20 20 19 54 20]
+20:23:10.020 RESET issued wall=1790684589.569 done=1790684590.020 rc=0
+20:23:10.145 wall=1790684590.129 tick=200 rx_bytes=1104 rx_frames=13 rx_bad_frames=0 rx_partial=0 overruns=0 ring_overflows=0 ring_high_water=10 tx_bytes=5367 tx_frames=57 tx_busy_cycles=10265587 rej=0 rej_err=0 ring=0 ring_size=4096 tails=[4 0 0 0 0 0 0]
+--
+20:25:10.097 RESET issued wall=1790684709.573 done=1790684710.098 rc=0
+20:25:10.181 wall=1790684710.175 tick=100 rx_bytes=188 rx_frames=1 rx_bad_frames=0 rx_partial=0 overruns=0 ring_overflows=0 ring_high_water=179 tx_bytes=9 tx_frames=1 tx_busy_cycles=12885 rej=0 rej_err=0 ring=179 ring_size=4096 tails=[-1 -1 -1 -1 -1 -1 -1]
+--
+20:27:10.672 RESET issued wall=1790684829.573 done=1790684830.673 rc=0
+20:27:10.778 wall=1790684830.769 tick=344 rx_bytes=698 rx_frames=9 rx_bad_frames=0 rx_partial=0 overruns=0 ring_overflows=0 ring_high_water=9 tx_bytes=2295 tx_frames=30 tx_busy_cycles=4077635 rej=0 rej_err=0 ring=0 ring_size=4096 tails=[3 -1 -1 -1 -1 -1 -1]
+20:29:12.941 wall=1790684952.913 tick=122519 rx_bytes=2048600 rx_frames=6086 rx_bad_frames=0 rx_partial=0 overruns=0 ring_overflows=0 ring_high_water=137 tx_bytes=872573 tx_frames=2220 tx_busy_cycles=1774221385 rej=0 rej_err=0 ring=0 ring_size=4096 tails=[3660 1221 1216 1217 1220 3687 1221]
+    kus=6398939306 <zephyr_thread_wrapper>:5:1559558405 zpico_lease:4:214002 zpico_read:4:3858500751 shell_uart:14:285665 sysworkq:-1:1855 idle:15:12866282603 main:5:980724558

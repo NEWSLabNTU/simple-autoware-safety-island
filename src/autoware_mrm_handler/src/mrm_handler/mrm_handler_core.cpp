@@ -148,6 +148,9 @@ void MrmHandler::onOperationModeAvailability(
   ISLAND_TRACE(ISLAND_MK_TAKE_MRM_HANDLER_OPERATION_MODE_AVAILABILITY, msg.autonomous);
   stamp_operation_mode_availability_ = now_sec();
   operation_mode_availability_ = msg;
+  if (!has_operation_mode_availability_) {
+    stamp_first_operation_mode_availability_ = stamp_operation_mode_availability_;
+  }
   has_operation_mode_availability_ = true;
 
   const bool skip_emergency_holding_check = !param_.use_emergency_holding || is_emergency_holding_;
@@ -366,6 +369,21 @@ void MrmHandler::drainMrmClientReplies()
 bool MrmHandler::isDataReady()
 {
   if (!has_operation_mode_availability_) {
+    return false;
+  }
+  // phase8-W10: an island that joins while Autoware is already publishing
+  // hears the inputs in whatever order the link delivers them. With the
+  // availability and both operator statuses in but the operation mode not
+  // yet, getCurrentOperationMode() is UNKNOWN, UNKNOWN is "not available",
+  // and the first tick published MRM_OPERATING / EMERGENCY_STOP for one
+  // cycle (measured on the board: 1 of 5 cold joins, NORMAL 40 ms later).
+  // Do not judge the mode before it is known -- for at most the availability
+  // timeout after the first availability sample; after that UNKNOWN is a
+  // fault again, as upstream treats it (a mode that never arrives, G4).
+  if (
+    !has_operation_mode_state_ &&
+    now_sec() - stamp_first_operation_mode_availability_ <
+      param_.timeout_operation_mode_availability) {
     return false;
   }
   if (param_.use_comfortable_stop && !isComfortableStopStatusAvailable()) {

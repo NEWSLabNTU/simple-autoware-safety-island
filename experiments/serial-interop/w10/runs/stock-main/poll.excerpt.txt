@@ -1,0 +1,13 @@
+20:43:50.512 RESET issued wall=1790685829.188 done=1790685830.513 rc=0
+20:43:50.652 wall=1790685830.635 tick=423 rx_bytes=5345 rx_frames=4 rx_bad_frames=0 rx_partial=0 overruns=0 ring_overflows=4033 ring_high_water=1024 tx_bytes=8210 tx_frames=82 tx_busy_cycles=14215181 rej=0 rej_err=0 ring=1024 ring_size=1024 tails=[1 0 0 0 1 2 0]
+20:43:52.655 wall=1790685832.637 tick=2434 rx_bytes=38951 rx_frames=110 rx_bad_frames=2 rx_partial=0 overruns=0 ring_overflows=4418 ring_high_water=1024 tx_bytes=20185 tx_frames=119 tx_busy_cycles=35200679 rej=0 rej_err=0 ring=0 ring_size=1024 tails=[64 19 20 20 22 64 20]
+20:43:50.512 RESET issued wall=1790685829.188 done=1790685830.513 rc=0
+20:43:50.652 wall=1790685830.635 tick=423 rx_bytes=5345 rx_frames=4 rx_bad_frames=0 rx_partial=0 overruns=0 ring_overflows=4033 ring_high_water=1024 tx_bytes=8210 tx_frames=82 tx_busy_cycles=14215181 rej=0 rej_err=0 ring=1024 ring_size=1024 tails=[1 0 0 0 1 2 0]
+--
+20:45:49.666 RESET issued wall=1790685949.192 done=1790685949.667 rc=0
+20:45:49.755 wall=1790685949.747 tick=100 rx_bytes=129 rx_frames=1 rx_bad_frames=0 rx_partial=0 overruns=0 ring_overflows=0 ring_high_water=120 tx_bytes=9 tx_frames=1 tx_busy_cycles=12872 rej=0 rej_err=0 ring=120 ring_size=1024 tails=[-1 -1 -1 -1 -1 -1 -1]
+--
+20:47:49.671 RESET issued wall=1790686069.193 done=1790686069.671 rc=0
+20:47:49.763 wall=1790686069.756 tick=100 rx_bytes=188 rx_frames=0 rx_bad_frames=1 rx_partial=0 overruns=0 ring_overflows=0 ring_high_water=16 tx_bytes=9 tx_frames=1 tx_busy_cycles=12872 rej=0 rej_err=0 ring=9 ring_size=1024 tails=[-1 -1 -1 -1 -1 -1 -1]
+20:49:53.883 wall=1790686193.864 tick=124277 rx_bytes=2074273 rx_frames=6162 rx_bad_frames=5 rx_partial=0 overruns=0 ring_overflows=5461 ring_high_water=1024 tx_bytes=745990 tx_frames=2345 tx_busy_cycles=1307136225 rej=0 rej_err=0 ring=7 ring_size=1024 tails=[3688 1229 1229 1228 1232 3727 1228]
+    kus=6090591860 <zephyr_thread_wrapper>:0:1331537200 zpico_lease:4:204559 zpico_read:4:3587175103 shell_uart:14:264821 sysworkq:-1:1816 idle:15:13122068083 main:0:1171664944

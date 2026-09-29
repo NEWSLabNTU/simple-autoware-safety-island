@@ -1,0 +1,6 @@
+$ tools/ovf.py img-fixdbg2.elf     # interrupt-driven TX, main at k_thread 0; one snapshot per >= 20 ms of overflow
+snapshots 4 overflows 2451
+     139 ms running=main                         reader=zpico_read   state=0x80 pended_on=0 held=1024
+     159 ms running=main                         reader=zpico_read   state=0x80 pended_on=0 held=1024
+     188 ms running=<zephyr_thread_wrapper+0x0>  reader=zpico_read   state=0x80 pended_on=0 held=1024
+     270 ms running=zpico_read                   reader=zpico_read   state=0x80 pended_on=0 held=1024
