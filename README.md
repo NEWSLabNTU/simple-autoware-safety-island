@@ -103,7 +103,10 @@ Zephyr variant: `just zephyr-build && just zephyr-run` (host tooling needs
 [phase-3](docs/roadmap/phase-3-canhubk344-real-silicon.md) (NXP MR-CANHUBK344 —
 S32K344 under Zephyr; the image builds and links, no hardware run yet),
 [phase-4](docs/roadmap/phase-4-link-security.md) (what protects the island's
-link — open question, gates any non-bench deployment).
+link — open question, gates any non-bench deployment),
+[phase-8](docs/roadmap/phase-8-rtss-work-demo.md) (the RTSS@Work 2026
+takeover demo, on silicon), [phase-9](docs/roadmap/phase-9-rtss-demo-open-items.md)
+(what the RTSS demo left open).
 
 ## The demo (validated: PASS, 3.90 → 0.00 m/s)
 
