@@ -604,8 +604,19 @@ against W1's):
 | queryables | 7 derived | 2 derived, 4 stated (below) |
 | `NROS_EXECUTOR_MAX_CBS` | 19 | 14 |
 | executor arena | 50,640 | 35,920 |
-| `NROS_MAX_LIVELINESS` | - | 25 |
+| `NROS_MAX_LIVELINESS` | - | 25 (composition below) |
 | POSIX mutex / cond pools | 70 / 48 | 39 / 17 |
+
+The 25 liveliness tokens (the same 25 in phase8-W31's board build):
+1 session + 3 node names + 8 publishers + 7 subscribers + 4 queryables
+(2 service servers + 2 transient-local caches) + 2 service clients = 25,
+no parameter services (`param_services` off on the board). The per-class
+values are the session pools in `build-board/nros/entity_inventory.cmake`
+(`NROS_DERIVED_MAX_PUBLISHERS 8`, `_MAX_SUBSCRIBERS 7`, `_MAX_QUERYABLES 4`,
+`NROS_ENTITY_COUNT_SERVICE_CLIENT 2`, `_EXECUTOR_MAX_NODES 3`); the sum is
+reconstructed here from that file's rule ("one for the session's own node,
+one per node name ... the session pools above"). nano-ros prints only
+`NROS_MAX_LIVELINESS=25 DERIVED`, not its terms (phase 478 D3).
 
 **A defect this surfaced: the external availability publisher.** W7 named
 the demo's gate as the external publisher of
