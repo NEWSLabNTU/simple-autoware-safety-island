@@ -272,7 +272,8 @@ once.
 ## Start flake and silent planner (W11, 2026-09-29)
 
 Method: a private `rmw_zenohd` on 7461 and domain 61 (other units share
-the host), every start under `flock /tmp/claude-1000005/sai-demo.lock`,
+the host), every start under the demo lock (`flock` on one host-wide file, now
+`${XDG_RUNTIME_DIR:-/tmp}/sai-demo.lock`),
 begun when the 1-min load was below 35 (or after 10 min of waiting). A start
 counts when play_launch prints `Startup complete` with n/n containers and
 composables within the timeout (300 s for the first three, then 120 s; a
@@ -326,7 +327,8 @@ re-routes in one run and 3 of 3 here kept it at 10 Hz.
 W21's digest `sha256:1813d3c8...`, so every Autoware layer came from cache and
 the rclcpp 16.0.19 check passed). Same method as W11: a private
 `rmw_zenohd` (keep_alive 6, `experiments/serial-interop/router-serial.json5`)
-on 7484, every Autoware start under `flock /tmp/claude-1000005/sai-demo.lock`,
+on 7484, every Autoware start under the demo lock (now
+`${XDG_RUNTIME_DIR:-/tmp}/sai-demo.lock`),
 a start counted when play_launch prints `Startup complete` with n/n
 containers and composables.
 

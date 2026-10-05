@@ -35,8 +35,10 @@
 #
 # The host side runs on rmw_zenoh_cpp, domain 10, under `env -i` with the
 # L3 environment (demo/l3/container/bin/l3-env): this machine's login shell
-# carries the Cyclone demo environment. Run under the demo lock:
-#   flock /tmp/claude-1000005/sai-demo.lock tools/timeline/run-board.sh ...
+# carries the Cyclone demo environment. The script takes the demo lock itself,
+# ${XDG_RUNTIME_DIR:-/tmp}/sai-demo.lock (flock, non-blocking; SAI_DEMO_LOCK
+# overrides the path), and refuses to start while another run holds it. Do not
+# wrap it in `flock` on the same file: that holder would refuse this one.
 #
 # Env: RB_GATE (the gate command; default `scenario.py gate`, which execs the
 # C++ availability_gate through gate-rt and writes build/timeline/gate.pid as
@@ -50,7 +52,7 @@
 # gate image: on this host the bare tag sai-l3-autoware:1.5.0 is still W3's
 # build without W11's rmw_zenoh 0.1.10 and rclcpp patch, and sat at 63-64/68
 # composables in 3 of 5 starts; `just l3-container` rebuilds the tag),
-# DRIVE_SECS / OBSERVE_SECS / RESPOND_AFTER (scenario.py's).
+# DRIVE_SECS / OBSERVE_SECS / RESPOND_AFTER (scenario.py's), SAI_DEMO_LOCK.
 #
 # The board steps (1, 3 and 8) ran on the S32K344 in phase8-W8
 # (docs/takeover-trace.md, section 9); W17 wrote them against the QEMU island.
@@ -98,7 +100,9 @@ bg() {  # bg <log> <cmd...>: a background job in its own process group
     if [ "$dry" = 1 ]; then echo "   [dry-run] (background, log $log) $*"; return 0; fi
     # its own session and process group, so teardown stops the whole tree
     # (just -> bash -> docker / qemu / rmw_zenohd); `l3` is exported below
-    setsid bash -c '"$@"' bg "$@" > "$log" 2>&1 < /dev/null &
+    # fd 9 (the demo lock) closed: a helper that outlives teardown must not
+    # keep the next run out
+    setsid bash -c '"$@"' bg "$@" > "$log" 2>&1 < /dev/null 9>&- &
     pids+=($!)
     echo "   started pid $! -> $log"
 }
@@ -140,6 +144,20 @@ teardown() {
     rm -f "$mon" "$gws"
 }
 
+# The demo lock (phase9-W22, DX 6.7): one act at a time on this host. Held on
+# fd 9 until the script exits; the holder's pid and run id are in the file.
+lock="${SAI_DEMO_LOCK:-${XDG_RUNTIME_DIR:-/tmp}/sai-demo.lock}"
+if [ "$dry" = 1 ]; then
+    echo "   [dry-run] take the demo lock $lock (flock -n)"
+else
+    exec 9<>"$lock" || { echo "run-board: cannot open the demo lock $lock" >&2; exit 1; }
+    if ! flock -n 9; then
+        echo "run-board: the demo lock $lock is held (by: $(cat "$lock" 2>/dev/null || echo unknown));" \
+             "another act is running on this host -- wait for it, or stop it" >&2
+        exit 1
+    fi
+    echo "pid $$ run $id act $act" > "$lock"
+fi
 [ "$dry" = 1 ] || { mkdir -p "$dir"; rm -f "$dir"/*.jsonl; }
 [ -f "$elf" ] || { echo "run-board: no $elf"; [ "$dry" = 1 ] || exit 1; }
 echo "run-board: act $act, run $id, target $target, image $elf"

@@ -292,13 +292,16 @@ phases, this repository by fast-forward push.
     Done: each EXPECT row is `1:<rule>`; 0.13.0 passes 14/14, the PATH
     0.12.0 now FAILs the two variants on `error[manifest-parse]` (the old
     script called them "ok").
-  - [ ] DX 6.7, the demo lock. tools/timeline/run-board.sh never takes the
+  - [x] DX 6.7, the demo lock. tools/timeline/run-board.sh never takes the
     lock; its comment tells the operator to run under "flock
     /tmp/claude-1000005/sai-demo.lock" (run-board.sh:38-39), a path that
     exists only in this machine's agent sandbox (also
     docs/takeover-trace.md:432, 565, 958). Take the lock in the script at
     `${XDG_RUNTIME_DIR:-/tmp}/sai-demo.lock` (or a repo-relative path) and
     drop the sandbox path from the comment and the trace doc.
+    Done: run-board.sh takes it (`flock -n` on fd 9, refuses with the
+    holder's pid and run id); the sandbox path is gone from the trace doc
+    and demo/l3/README.md (:275, :329) too.
   - [ ] DX 4.6, four stale documents:
     - docs/board-bringup-triage.md:339-341 "Nothing in this image has
       executed on silicon"; :183 heap `94208` (the board runs at 102,400

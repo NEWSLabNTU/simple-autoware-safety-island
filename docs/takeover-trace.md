@@ -429,7 +429,8 @@ load 100+; SCHED_FIFO takes its own timer to +4.5 ms, and what is left in
 the external column is the subscriber's own scheduling.
 
 **Branch B with the C++ gate** (`tools/timeline/run-native.sh b w16-b<n>`,
-each under `flock /tmp/claude-1000005/sai-demo.lock`; image
+each under the demo lock (`flock` on one host-wide file, now
+`${XDG_RUNTIME_DIR:-/tmp}/sai-demo.lock`); image
 `c28dba8f...bcc8e`, native_sim, origin/main 3fb4cfb). w16-b1 ran before the
 ROS upgrade, w16-b2..b5 after it with the gate rebuilt. w16-b2 was held
 until the 1-min load was at least 40 (no added load). Verdicts verbatim,
@@ -562,7 +563,8 @@ and merges it.
 - Gate: `scenario.py gate` on the host, the C++ `availability_gate` from
   `just demo-host-ws`.
 - Every run was flashed and reset. Each started under
-  `flock /tmp/claude-1000005/sai-demo.lock` at a 1-min load below 35.
+  the demo lock at a 1-min load below 35 (run-board.sh takes
+  `${XDG_RUNTIME_DIR:-/tmp}/sai-demo.lock` itself since phase9-W22).
 
 **The heap on the board.** The boot record was read over SWD (attach mode,
 no halt) with the island joined to the running container Autoware
@@ -955,7 +957,8 @@ again on the S32K344 with an image built from that contract, so the
 budgets are tested on runs they were not sized from. The rig and method
 are section 9's: `tools/timeline/run-board.sh`, `sai-l3-autoware:1.5.0-w24`,
 the C++ gate from `just demo-host-ws`, and every run flashed and reset
-under `flock /tmp/claude-1000005/sai-demo.lock` at a 1-min load below 35.
+under the demo lock at a 1-min load below 35 (run-board.sh takes
+`${XDG_RUNTIME_DIR:-/tmp}/sai-demo.lock` itself since phase9-W22).
 
 **The image.** Main `71743c3` (W30), nano-ros `f03d9d190`, `just board-build`
 in a fresh worktree. `just trace-gen-check`: "header and table current (31
