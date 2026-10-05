@@ -18,7 +18,7 @@
 #   * ROS 2 Humble          /opt/ros/humble
 #   * Autoware 1.5.0        /opt/autoware/1.5.0        (planning_simulator)
 #   * nano-ros checkout     $NANO_ROS_ROOT             (nros CLI + cmake pkg)
-#   * play_launch on PATH   installed by `just setup`  (>= 0.8.2)
+#   * play_launch on PATH   installed by `just setup`  (>= 0.13.0, the CI pin)
 # Anything missing is reported; `just doctor` gives the same verdict on demand.
 
 _island_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

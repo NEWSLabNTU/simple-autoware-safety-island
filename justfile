@@ -67,10 +67,13 @@ BOARD_BUILD_DIR := "build-board"
 # here, which is how this repo came to build against a sibling clone's SDK.
 # NROS_ZEPHYR_WORKSPACE still overrides the workspace.
 # play_launch comes from PATH (installed by `just setup`); override with
-# PLAY_LAUNCH=<path> to point at a specific binary. The demo needs >= 0.8.2 —
-# 0.5.x stalls on Autoware's busy composable containers and has no `resolve`.
+# PLAY_LAUNCH=<path> to point at a specific binary. The minimum is the version
+# CI pins (PLAY_LAUNCH_VERSION, .github/workflows/check.yml): older binaries
+# reject the island contract's grammar (0.12.0: "unknown key in
+# `hazards.<name>`") without naming a version. Kept in step by hand with
+# .envrc and scripts/env.sh until phase9-W19 reads the pin.
 PLAY_LAUNCH := env("PLAY_LAUNCH", "play_launch")
-PLAY_LAUNCH_MIN := "0.8.2"
+PLAY_LAUNCH_MIN := "0.13.0"
 
 default:
     @just --list
@@ -97,9 +100,9 @@ doctor:
     else
         ver="$({{PLAY_LAUNCH}} --version 2>/dev/null | awk '{print $2}')"
         echo "play_launch: $(command -v {{PLAY_LAUNCH}}) ($ver)"
-        case "$ver" in 0.[0-7].*|"")
-            echo "  WARNING: need >= {{PLAY_LAUNCH_MIN}} (older stalls on Autoware's composable containers, no 'resolve' verb) — run: just setup-play-launch force"; ok=0;;
-        esac
+        if [ -z "$ver" ] || [ "$(printf '%s\n%s\n' "{{PLAY_LAUNCH_MIN}}" "$ver" | sort -V | head -n1)" != "{{PLAY_LAUNCH_MIN}}" ]; then
+            echo "  WARNING: play_launch ${ver:-(no version)} is older than the required {{PLAY_LAUNCH_MIN}} (the CI pin; older ones reject the island contract) -- run: just setup-play-launch force"; ok=0
+        fi
     fi
     [ "$ok" = 1 ] && echo "doctor: OK (NANO_ROS_ROOT={{NANO_ROS_ROOT}}, DISPLAY={{VNC_DISPLAY}})"
     [ "$ok" = 1 ]
@@ -155,7 +158,9 @@ setup-play-launch force="":
     set -e
     if [ -z "{{force}}" ] && command -v {{PLAY_LAUNCH}} >/dev/null; then
         ver="$({{PLAY_LAUNCH}} --version 2>/dev/null | awk '{print $2}')"
-        case "$ver" in 0.[0-7].*|"") ;; *) echo "play_launch $ver already on PATH ($(command -v {{PLAY_LAUNCH}}))"; exit 0;; esac
+        if [ -n "$ver" ] && [ "$(printf '%s\n%s\n' "{{PLAY_LAUNCH_MIN}}" "$ver" | sort -V | head -n1)" = "{{PLAY_LAUNCH_MIN}}" ]; then
+            echo "play_launch $ver already on PATH ($(command -v {{PLAY_LAUNCH}}))"; exit 0
+        fi
     fi
     if [ -n "{{PLAY_LAUNCH_REPO}}" ]; then
         [ -d "{{PLAY_LAUNCH_REPO}}" ] || { echo "PLAY_LAUNCH_REPO={{PLAY_LAUNCH_REPO}} does not exist"; exit 1; }
@@ -737,7 +742,7 @@ board-clean:
 TERMSEQ := "TERM,5000,KILL,1000"
 
 # ── 1. Autoware (no MRM) ────────────────────────────────────────────────────
-# planning_simulator via play_launch >= {{PLAY_LAUNCH_MIN}} (40s bring-up,
+# planning_simulator via play_launch >= {{PLAY_LAUNCH_MIN}} (40s bring-up;
 # 0.5.x stalls on the busy composable containers). RViz renders on the VNC
 # display ({{VNC_DISPLAY}}). Blocks; prints readiness; Ctrl-C stops the
 # whole sim tree.

@@ -21,11 +21,15 @@ are what remains.
 
 ## Remaining steps
 
-### 1. play_launch >= 0.8.2 on PATH — THE BLOCKER
+### 1. play_launch >= 0.13.0 on PATH -- THE BLOCKER
 
 The demo launches Autoware with play_launch. The 0.5.x line stalls on
-Autoware's busy composable containers and has no `resolve` verb, so >= 0.8.2
-is required and both `just doctor` and `.envrc` reject anything older.
+Autoware's busy composable containers and has no `resolve` verb, and 0.12.0
+rejects the island contract's grammar ("unknown key in `hazards.<name>`")
+without naming a version. The minimum is the version CI pins
+(`PLAY_LAUNCH_VERSION`, .github/workflows/check.yml), 0.13.0 as of
+2026-10-05, and `just doctor` and `.envrc` both warn on anything older,
+naming the required version.
 
 ```sh
 just setup-play-launch            # from the package index
@@ -48,7 +52,7 @@ Two failures hit while doing this, both worth expecting again:
   checkout, then rebuild.
 * The rebuild takes a long time (colcon + a full release cargo build).
 
-Verify with `play_launch --version` → `play_launch 0.8.2` (or newer).
+Verify with `play_launch --version` -> `play_launch 0.13.0` (or newer).
 
 ### 2. Island images
 
@@ -142,8 +146,8 @@ not in the build.
   dependency of `just build` / `just zephyr-build` / `just board-build`)
   resolves it into `build/nros/models/safety_island_bringup/system_model.yaml`
   and costs 0.08 s when nothing changed. It needs play_launch's `resolve`
-  verb, which only the >= 0.8.x line has, so `just doctor` still checks the
-  version.
+  verb (0.8.x and later), and the island contract needs 0.13.0, so
+  `just doctor` checks the version.
 * Clock domains: the ported operators integrate `dt` from message stamps;
   host Autoware stamps are wall-clock while the island clock boots at ~0.
   The emergency stop operator carries a clamp (its unguarded first MRM tick

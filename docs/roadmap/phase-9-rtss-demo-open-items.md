@@ -270,7 +270,7 @@ phases, this repository by fast-forward push.
   the validation date in its header.
 - **W22 - the cheap fixes.** Each under a day and one change in this
   repository (DX section 9, the SAI rows); one sitting, one commit each.
-  - [ ] DX 2.1, the doctor's play_launch minimum. `PLAY_LAUNCH_MIN :=
+  - [x] DX 2.1, the doctor's play_launch minimum. `PLAY_LAUNCH_MIN :=
     "0.8.2"` (justfile:73), .envrc:14 (warns only for `0.[0-7].*`) and
     scripts/env.sh:21 (">= 0.8.2") accept the 0.12.0 on PATH, while CI pins
     0.13.0 (.github/workflows/check.yml:21). On the island contract that
@@ -278,6 +278,9 @@ phases, this repository by fast-forward push.
     `hazards.<name>` ... Every contract in this file is now UNCHECKED" and
     exits 1, never naming a version. Raise all three to 0.13.0, and make the
     warning name the required version (W19 then reads it from the pin).
+    Done: 0.13.0 in justfile, .envrc, scripts/env.sh and the runbook,
+    compared with `sort -V`; with the PATH 0.12.0 the doctor prints
+    "play_launch 0.12.0 is older than the required 0.13.0" and fails.
   - [ ] DX 2.4, CI negative tests by exit code only.
     .github/check-contracts.sh expects exit 1 for six contracts that must
     each fail one rule ("each must fail its comfortable-stop rung and
