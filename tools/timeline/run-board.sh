@@ -222,12 +222,19 @@ wait_for "${RB_JOIN_TIMEOUT:-120}" "the island's first /system/mrm/emergency_sto
 step "5. Autoware (container)"
 # demo/l3/README.md's trap: play_launch can sit at "N composable(s) still
 # constructing"; the cure is to stop it, wait out the zenoh lease, start again.
-# One retry (run w17-qb2 sat at 64/68 composables for 300 s).
+# One retry (run w17-qb2 sat at 64/68 composables for 300 s). A start that
+# completes short is refused the same way (phase9-W8): w31-r07-aw6668 printed
+# "Startup complete with failures ... composable 66/68 loaded" and a
+# STARTUP_SUMMARY with "ok":false, and its act never engaged.
 aw_ok=0
 for attempt in 1 2; do
     bg "$dir/autoware.log" just l3-autoware
     if wait_for "${RB_AW_TIMEOUT:-300}" "Autoware (Startup complete), attempt $attempt" \
-            grep -qa "Startup complete" "$dir/autoware.log"; then aw_ok=1; break; fi
+            grep -qa "Startup complete" "$dir/autoware.log"; then
+        if ! grep -qsaE 'Startup complete with failures|"ok":false' "$dir/autoware.log"; then aw_ok=1; break; fi
+        echo "   REFUSED: a short start, $(grep -aoE 'composable [0-9]+/[0-9]+ loaded' "$dir/autoware.log" | head -n1)" \
+             "(\"ok\":false); stopping it"
+    fi
     [ "$dry" = 1 ] && { aw_ok=1; break; }
     kill -TERM -- "-${pids[-1]}" 2>/dev/null; docker stop -t 10 "${L3_NAME:-sai-l3}" > /dev/null 2>&1
     mv "$dir/autoware.log" "$dir/autoware.attempt$attempt.log"; sleep 10

@@ -199,6 +199,12 @@ phases, this repository by fast-forward push.
   when the start record says `"ok":false`. Gate: a forced bad start is
   refused before the act.
   DX: see DX-UX-GAPS 6.4; cheap, fits W22's sitting.
+  Status (2026-10-05): implemented in W22's sitting. Step 5 refuses a start
+  whose log says "Startup complete with failures" or `"ok":false` and takes
+  the existing retry (stop, wait, start again; a second short start ends
+  the run before the act). Replayed on the two real logs: w31-r07-aw6668
+  "REFUSED: a short start, composable 66/68 loaded", w31-r07 accepted. Gate
+  still open: no forced bad start has been run live.
 - **W9 - hazard lights reach the simulator from the board.** After W3:
   the board's hazard command carries a stamp the host accepts. Gate: on
   the board, the simulator's hazard-lights status shows ENABLE in act B and
