@@ -281,7 +281,7 @@ phases, this repository by fast-forward push.
     Done: 0.13.0 in justfile, .envrc, scripts/env.sh and the runbook,
     compared with `sort -V`; with the PATH 0.12.0 the doctor prints
     "play_launch 0.12.0 is older than the required 0.13.0" and fails.
-  - [ ] DX 2.4, CI negative tests by exit code only.
+  - [x] DX 2.4, CI negative tests by exit code only.
     .github/check-contracts.sh expects exit 1 for six contracts that must
     each fail one rule ("each must fail its comfortable-stop rung and
     nothing else", :28-29) but compares only `$got = $want` (:49); a
@@ -289,6 +289,9 @@ phases, this repository by fast-forward push.
     the variants reports them "ok". Put the rule id in each EXPECT row (the
     comments at :24-34 already name it) and require `error[<rule>]` in the
     output, or read `--format json`; a parse failure is a FAIL.
+    Done: each EXPECT row is `1:<rule>`; 0.13.0 passes 14/14, the PATH
+    0.12.0 now FAILs the two variants on `error[manifest-parse]` (the old
+    script called them "ok").
   - [ ] DX 6.7, the demo lock. tools/timeline/run-board.sh never takes the
     lock; its comment tells the operator to run under "flock
     /tmp/claude-1000005/sai-demo.lock" (run-board.sh:38-39), a path that
