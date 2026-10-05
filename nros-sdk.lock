@@ -1,0 +1,9 @@
+[tool.zephyr-sdk]
+version = "0.16.8"
+provenance = "prebuilt"
+sha256 = "cb4e4012751e4526aaf1ec1e8ab9b4ded5681e2e01711b64f7a1b519ff7dbc6a"
+
+[tool.zephyr-sdk-1-0-1]
+version = "1.0.1"
+provenance = "prebuilt"
+sha256 = "ca9bc0ff66fafca1dac9d592a36d953cf16d096a9d09b1c0357f021cf9f6a7eb"

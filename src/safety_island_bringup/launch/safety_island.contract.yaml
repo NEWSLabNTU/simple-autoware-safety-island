@@ -452,8 +452,14 @@ nodes:
       # here because the image's retention pool derives from this fact; left
       # unstated (until phase7-W2) it fell to a default of 2 for five such
       # publishers and the third one failed to construct at boot (code -100).
-      max_velocity_candidates: { min_rate_hz: 10, qos: { depth: 1, durability: transient_local } }
-      clear_velocity_limit: { min_rate_hz: 10, qos: { depth: 1, durability: transient_local } }
+      # Both are published ON DEMAND (once when the comfortable stop starts,
+      # once when it ends), so they promise no rate: a `min_rate_hz` here
+      # became a `rate-hierarchy-runtime` monitor in the image that fired
+      # at start-up on every boot (2 of the 8 ring entries read in phase8-W31)
+      # before any stop was asked for. The topics below carry no `rate_hz`
+      # for the same reason (phase9-W7).
+      max_velocity_candidates: { qos: { depth: 1, durability: transient_local } }
+      clear_velocity_limit: { qos: { depth: 1, durability: transient_local } }
       status: { min_rate_hz: 10, qos: { durability: volatile } }
 
   mrm_emergency_stop_operator:
@@ -761,12 +767,10 @@ topics:
     type: autoware_internal_planning_msgs/msg/VelocityLimit
     external: sub
     pub: [mrm_comfortable_stop_operator/max_velocity_candidates]
-    rate_hz: 10
   /planning/scenario_planning/clear_velocity_limit:
     type: autoware_internal_planning_msgs/msg/VelocityLimitClearCommand
     external: sub
     pub: [mrm_comfortable_stop_operator/clear_velocity_limit]
-    rate_hz: 10
   /system/emergency/control_cmd:
     type: autoware_control_msgs/msg/Control
     external: sub
