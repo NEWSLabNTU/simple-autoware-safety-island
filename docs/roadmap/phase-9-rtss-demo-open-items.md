@@ -371,9 +371,12 @@ phases, this repository by fast-forward push.
     + 2 TL caches) + 2 clients = 25, from the W31 build's
     entity_inventory.cmake pools (the sum reconstructed; nano-ros prints
     only the 25, phase 478 D3), in boot-through.md and the board conf.
-  - [ ] DX 7.3, a regression check for `just demo-down`: it must spare a
+  - [x] DX 7.3, a regression check for `just demo-down`: it must spare a
     process that carries `CYCLONEDDS_URI` but not this checkout's
     `SAI_DEMO_RUN` (the fix of eb82dcf, justfile:918-942, has no test).
+    Done: scripts/test-demo-down-spares-bystanders.sh over a new
+    `just _sweep-orphans dry`; PASS in 2.7 s, and FAIL when the sweep is
+    put back on the CYCLONEDDS_URI key.
   - [ ] DX 6.10, `just doctor` checks that an X server listens on the
     display it prints (docs/demo-runbook.md:153-155).
   - Same sitting, their own units: W7 (drop the two `min_rate_hz` claims)

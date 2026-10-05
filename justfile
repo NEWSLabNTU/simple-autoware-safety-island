@@ -957,8 +957,12 @@ _kill-group file:
 # Claude Code) never carry it. The key used to be CYCLONEDDS_URI, which direnv
 # does export: a detached script running demo-down TERMed, then KILLed, the
 # Claude Code session started in this checkout (twice, 2026-09-28).
+#
+# `just _sweep-orphans dry` prints the pids the sweep would select
+# ("select <pid> <comm>") and kills nothing; scripts/test-demo-down-spares-
+# bystanders.sh holds the selection to the rule above (phase9-W22).
 [private]
-_sweep-orphans:
+_sweep-orphans dry="":
     #!/usr/bin/env bash
     mark="SAI_DEMO_RUN={{justfile_directory()}}"
 
@@ -981,6 +985,12 @@ _sweep-orphans:
         # -z: NUL-separated records; -x: match a whole record, not a prefix
         grep -qxzF "$mark" "$d/environ" 2>/dev/null && victims+=("$pid")
     done
+
+    if [ -n "{{dry}}" ]; then
+        for pid in ${victims[@]+"${victims[@]}"}; do echo "select $pid $(cat /proc/$pid/comm 2>/dev/null)"; done
+        echo "orphan sweep (dry): ${#victims[@]} selected, nothing killed"
+        exit 0
+    fi
 
     if [ ${#victims[@]} -eq 0 ]; then
         echo "orphan sweep: nothing left over"
