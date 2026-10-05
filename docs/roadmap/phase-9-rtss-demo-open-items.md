@@ -377,8 +377,10 @@ phases, this repository by fast-forward push.
     Done: scripts/test-demo-down-spares-bystanders.sh over a new
     `just _sweep-orphans dry`; PASS in 2.7 s, and FAIL when the sweep is
     put back on the CYCLONEDDS_URI key.
-  - [ ] DX 6.10, `just doctor` checks that an X server listens on the
+  - [x] DX 6.10, `just doctor` checks that an X server listens on the
     display it prints (docs/demo-runbook.md:153-155).
+    Done: `xset q`, else the socket; on `:1` "X server: :1 answers", on
+    `:57` a WARNING naming the display, doctor still OK.
   - Same sitting, their own units: W7 (drop the two `min_rate_hz` claims)
     and W8 (refuse `"ok":false`).
   Gate: every box ticked with its commit, or moved to a unit with the

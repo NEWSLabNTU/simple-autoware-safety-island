@@ -104,6 +104,17 @@ doctor:
             echo "  WARNING: play_launch ${ver:-(no version)} is older than the required {{PLAY_LAUNCH_MIN}} (the CI pin; older ones reject the island contract) -- run: just setup-play-launch force"; ok=0
         fi
     fi
+    # The display RViz and the demo UI use: a warning, not a failure (the
+    # board and CI paths need no display). A headless shell made the demo UI
+    # fail with nothing said (phase9-W22, DX 6.10).
+    disp="{{VNC_DISPLAY}}"; dn="${disp#*:}"; dn="${dn%%.*}"
+    if command -v xset >/dev/null && DISPLAY="$disp" timeout 3 xset q >/dev/null 2>&1; then
+        echo "X server: $disp answers (xset q)"
+    elif [ -S "/tmp/.X11-unix/X$dn" ]; then
+        echo "X server: $disp has a socket (/tmp/.X11-unix/X$dn)$(command -v xset >/dev/null && echo ', but xset q got no answer (auth?)')"
+    else
+        echo "  WARNING: no X server on DISPLAY=$disp (no /tmp/.X11-unix/X$dn) -- RViz and the demo UI will not open; start one (vncserver $disp) or set VNC_DISPLAY"
+    fi
     [ "$ok" = 1 ] && echo "doctor: OK (NANO_ROS_ROOT={{NANO_ROS_ROOT}}, DISPLAY={{VNC_DISPLAY}})"
     [ "$ok" = 1 ]
 

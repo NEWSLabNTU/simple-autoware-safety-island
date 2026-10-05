@@ -160,8 +160,9 @@ not in the build.
   the deeper fix (epoch-synced island clock on native_sim) is a nano-ros
   question.
 * The VNC session on `:1` had died and was restarted by hand; nothing
-  automates that. `just doctor` prints the display it will use but does not
-  check that an X server is actually listening on it.
+  automates that. `just doctor` now checks that an X server answers on the
+  display it prints (`xset q`, else the /tmp/.X11-unix socket) and warns,
+  without failing, when none does (phase9-W22).
 * **This build host is shared, and a DDS domain is a shared namespace.** The
   demo runs on domain **10** (`ROS_DOMAIN_ID` in `.envrc` +
   `CONFIG_NROS_CYCLONE_DOMAIN_ID` in the island's Kconfig fragment, which must
