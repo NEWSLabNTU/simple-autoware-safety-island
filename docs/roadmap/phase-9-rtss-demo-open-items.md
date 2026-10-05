@@ -385,6 +385,15 @@ phases, this repository by fast-forward push.
     and W8 (refuse `"ok":false`).
   Gate: every box ticked with its commit, or moved to a unit with the
   reason.
+  Status (2026-10-05): 7 of 8 ticked, one commit each: a239c23 (doctor
+  minimum 0.13.0), 78ac685 (CI rule ids, parse failure fails), dc7adf8
+  (run-board.sh demo lock), 60dc775 (four stale docs, gap 3.3 fixed at
+  nano-ros 3d52070ec), 0bfde92 (liveliness 25 by term), 28b9cb6
+  (demo-down bystander test), c07d196 (doctor X server check). Open: DX
+  3.12, `nros-sdk.lock` stays untracked because it pins zephyr-sdk 0.16.8
+  while the board images were built with the store's 1.0.1 (c45ebf9 has
+  the finding and the re-bind command). W8 implemented in the same sitting
+  (14146a0), its live gate open; W7 not taken.
 
 ### Test / check
 
