@@ -1244,14 +1244,15 @@ Two things this did NOT do, which is the honest half:
   8,268 -> 572). The two overflow figures this line carried are withdrawn with
   the hand-summed table they came from; see section 6. The link test it doubles
   as came back negative -- `k_malloc` still has three callers, see section 6.
-- `CONFIG_NROS_ZEPHYR_HEAP_SIZE=94208` was chosen without a measurement.
-  `nros_zephyr_heap_peak()` exists to replace it with a number, and the board
-  conf now carries the procedure for reading it; it is blocked on a run, not
-  on tooling.
+- ~~`CONFIG_NROS_ZEPHYR_HEAP_SIZE=94208` was chosen without a measurement.~~
+  Measured since: the board runs at 102,400 configured, and the boot record
+  read over SWD gives a FirstSpin peak of 77,160 of 102,912 B, 25,752 spare
+  (docs/takeover-trace.md sections 9 and 11). The value is still hand-set
+  (DX 3.4, nano-ros issue 1424).
 
-**Never executed on silicon.** The board is blocked on the MCU-Link probe.
-Everything here is from the linker and the map. The boot-time copy that
-populates ITCM is exactly what a linker cannot check.
+**Executed on silicon since phase8-W8.** This section was written while the
+board was blocked on the MCU-Link probe; 13 + 9 board acts have run since
+(phase8-W8 to W31, docs/takeover-trace.md sections 9 and 11).
 
 **Scheduling is available and unused.** The tier derivation is complete and
 gated only on components declaring callback groups. Declaring them would put the

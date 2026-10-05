@@ -4,8 +4,9 @@ For the serial console at 2am. Symptom on the left, the knob and its file on the
 right.
 
 **Read this first:** the image fits 320 KiB because a dozen pools were cut to
-measured need. Every one of those cuts is a hypothesis that has never executed on
-silicon. When the board misbehaves, the cause is far more likely to be one of
+measured need. The image has run on silicon since phase8-W8 (13 + 9 board acts
+through phase8-W31, docs/takeover-trace.md sections 9 and 11), but every cut is
+still sized to the acts that ran, not to a worst case. When the board misbehaves, the cause is far more likely to be one of
 these values than a logic bug in a node that already ran green on native and
 native_sim.
 
@@ -180,7 +181,7 @@ One knob, not three:
 
 | suspect | current | crate default | where |
 | --- | ---: | ---: | --- |
-| `CONFIG_NROS_ZEPHYR_HEAP_SIZE` | 94208 | 65536 | board conf |
+| `CONFIG_NROS_ZEPHYR_HEAP_SIZE` | 102400 | 65536 | board conf |
 
 The other two are decoys since phase-391 W3. `CONFIG_HEAP_MEM_POOL_SIZE` (0,
 floored to 512) feeds `k_malloc`, which the application no longer uses, and
@@ -232,8 +233,8 @@ shell — see §4), then the media converter, then:
 | --- | ---: | ---: | --- |
 | `CONFIG_NET_MAX_CONN` | 4 | 8 | board conf |
 | `CONFIG_NET_MAX_CONTEXTS` | 8 | 32 | board conf |
-| `CONFIG_NET_PKT_{RX,TX}_COUNT` | 16 / 16 | 32 / 32 | `justfile` — snippet-contested |
-| `CONFIG_NET_BUF_{RX,TX}_COUNT` | 32 / 32 | 64 / 64 | `justfile` — snippet-contested |
+| `CONFIG_NET_PKT_{RX,TX}_COUNT` | not set | 32 / 32 | the zenoh snippet's `configdefault`; a board-conf line wins (section 5) |
+| `CONFIG_NET_BUF_{RX,TX}_COUNT` | not set | 64 / 64 | the zenoh snippet's `configdefault`; a board-conf line wins (section 5) |
 
 The split is not arbitrary; see §5.
 
@@ -242,8 +243,12 @@ The split is not arbitrary; see §5.
 ## 3. Failures that do not announce themselves
 
 **1. Entities missing from `ros2 node list`. STILL SILENT.**
-`CONFIG_NROS_MAX_LIVELINESS=32` against 29 tokens — one per node, per publisher
-*and* per subscriber (4 + 14 + 11). On exhaustion `zpico_declare_liveliness`
+`CONFIG_NROS_MAX_LIVELINESS` is no longer stated: it derives from the contract
+(mr_canhubk3_s32k344.conf:169-171; the current image's value is 25,
+docs/boot-through.md). A stated value beats the derivation, so a line put back
+in the board conf can again sit short of the tokens -- one per session, node
+name, publisher, subscriber, service server, service client and parameter
+service -- as the old 32 did once `params:` was declared. On exhaustion `zpico_declare_liveliness`
 returns `ZPICO_ERR_FULL` and the shim discards it with `.ok()`. The entity
 publishes and subscribes perfectly and is invisible to every ROS 2 tool.
 
@@ -296,25 +301,28 @@ stack by guessing when the board will tell you its high-water mark.
 
 ## 5. Where a value actually lives
 
-Three files, and the distinction matters — writing a value in the wrong one is
-silently ignored.
+Fixed upstream: a value in the board conf is no longer overwritten by the RMW
+snippet. nano-ros `3d52070ec` ("RMW snippet sizing becomes overridable, not
+absolute", 2026-08-24, included in this repo's pin `f03d9d190`) moved the
+snippet's sizes into `configdefault` entries in the module Kconfig, so they
+only fill a symbol nobody else set. Precedence: `-DCONFIG_*` > board conf >
+snippet default.
 
 | file | holds |
 | --- | --- |
-| `justfile`, `board-build` | **only** what the nros-zenoh snippet also sets: `MAIN_STACK_SIZE`, `HEAP_MEM_POOL_SIZE`, `SYSTEM_WORKQUEUE_STACK_SIZE`, and the four `NET_PKT`/`NET_BUF` counts |
-| `src/zephyr_entry/boards/mr_canhubk3_s32k344.conf` | everything else — entity limits, executor and zenoh pools, net conn/context caps, the subscription buffer |
+| `src/zephyr_entry/boards/mr_canhubk3_s32k344.conf` | the board's sizing, all of it: `MAIN_STACK_SIZE`, `HEAP_MEM_POOL_SIZE`, `SYSTEM_WORKQUEUE_STACK_SIZE`, entity limits, executor and zenoh pools, net caps, the subscription buffer |
+| `justfile`, `board-build` | no sizing; `CONFIG_MAIN_STACK_SIZE` and the other snippet-sized symbols set in the environment are passed as `-D` for one triage build (`board-build: env overrides -> ...`) |
 | `src/zephyr_entry/CMakeLists.txt` | compile definitions (`NROS_COMPONENT_*`, `NROS_ZEPHYR_*`) and the DTCM relocation |
 
-**Why:** Zephyr merges `CONF_FILE` (prj.conf, board conf) *before*
-`EXTRA_CONF_FILE`, and the nros-zenoh snippet rides in the latter. So
+**Before `3d52070ec`:** Zephyr merges `CONF_FILE` (prj.conf, board conf)
+*before* `EXTRA_CONF_FILE`, and the nros-zenoh snippet rides in the latter, so
 `MAIN_STACK_SIZE`, `HEAP_MEM_POOL_SIZE` and the four `NET_PKT`/`NET_BUF` counts
-written into the board conf are **overwritten without warning**. They are passed
-as `-DCONFIG_*` from the recipe, which lands in
-`misc/generated/extra_kconfig_options.conf` — the one hook that merges last.
+written into the board conf were **overwritten without warning**, and the
+recipe carried them as a column of `-DCONFIG_*`. A checkout pinned before that
+commit still behaves this way.
 
-Everything the snippet does *not* set belongs in the board conf, which is where
-board sizing belongs. That became possible for the whole sizing class only with
-nano-ros #0749 and #0752.
+What still overrides a board-conf value silently is a `-D` (the env lever
+above) and a stated knob beating a derived one (section 3).
 
 If a Kconfig change appears to do nothing, check the resolved value first:
 
@@ -325,6 +333,10 @@ grep '^CONFIG_<NAME>' build-board/zephyr/.config
 ---
 
 ## 6. Current footprint
+
+The phase8-W31 image (main `71743c3`) uses RAM 290,728 of 327,680 B
+(88.72 %; docs/takeover-trace.md section 11). The breakdown below is an
+earlier image's.
 
 ```
 FLASH:  603,388 / 4,144,896   14.56%
@@ -338,7 +350,9 @@ tune back down afterwards with a measurement, not before.
 
 ## 7. What is known-unvalidated
 
-- **Nothing in this image has executed on silicon.** It builds, links and fits.
+- Executed on silicon since phase8-W8 (13 + 9 board acts through phase8-W31,
+  docs/takeover-trace.md sections 9 and 11); validated only as far as those
+  acts reach.
 - The RNG is `TEST_RANDOM_GENERATOR` — timer-seeded, not cryptographic. Bench
   networks only; see [phase-4](roadmap/phase-4-link-security.md).
 - `SUBSCRIBER_RING_DEPTH=4` is the nano-ros default, but the receive queue has

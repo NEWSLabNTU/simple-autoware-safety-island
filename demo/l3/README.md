@@ -59,9 +59,15 @@ l3-autoware` (`run.sh` passes both through), with another `ROS_DOMAIN_ID`.
   `libnvonnxparsers10` (no CUDA, no TensorRT);
 - `ros-humble-rmw-zenoh-cpp=0.1.10-1jammy.20260915.210859` and
   `ros-humble-zenoh-cpp-vendor=0.1.10-1jammy.20260915.201617` from ROS apt
-  **testing**, held (W11, trap 2a: 0.1.9 loses wakeups; main still serves
-  0.1.9 on 2026-09-29; the host runs rmw_zenoh_cpp
-  `0.1.9-1jammy.20260723.022609` and its router is unaffected);
+  **testing**, held (W11, trap 2a: 0.1.9 loses wakeups; main still served
+  0.1.9 on 2026-09-29). The host carries the same build since 2026-09-29:
+  `dpkg-query -W` on 2026-10-05 gives `ros-humble-rmw-zenoh-cpp
+  0.1.10-1jammy.20260915.210859` and `ros-humble-zenoh-cpp-vendor
+  0.1.10-1jammy.20260915.201617`, both held. Which side runs what: the
+  image runs Autoware (`just l3-autoware`); the host runs the stock router
+  (`just l3-router`, `rmw_zenohd`), the island gateway (`just l3-peer`) and
+  run-board.sh's gate, probe and scenario, on the host's stock rclcpp
+  (16.0.21), not the image's patched 16.0.19;
 - `librclcpp.so` rebuilt from rclcpp 16.0.19 (the packaged version) with
   `container/patches/rclcpp-16.0.19-executor-keep-group-guard-conditions.patch`,
   diverted over the packaged one (W11, trap 2b);
@@ -528,11 +534,14 @@ external. The host path (`where=host`) builds the same gate in
     each: `logging_diag_graph` (observable and once stock, "Exited without
     code") and `shape_estimation` (trap 7).
 
+## Closed
+
+- G5 (W5): the island's `operate` call must reach its own operator, or the
+  HPC-loss act announces but does not brake. Closed by W24: on the QEMU
+  island at f7c9369 it brakes (standstill 3.31 s after the SIGSTOP).
+
 ## Open
 
-- G5 (W5): the island's `operate` call must reach its own operator; until
-  then the HPC-loss act announces but does not brake. W24, QEMU island at
-  f7c9369: it brakes (standstill 3.31 s after the SIGSTOP).
 - G3 (W4): discovery off on the island; until then only the gateway ACL keeps
   the island alive, and not through an Autoware restart. phase8-W14: the
   nano-ros pin carries the knob; serial images derive it off and both TCP
@@ -542,8 +551,9 @@ external. The host path (`where=host`) builds the same gate in
 - G4 (W4): a late-joining island must read the current operation mode.
   phase8-W14: `mrm_handler` subscribes TRANSIENT_LOCAL again on the pin that
   serves it (phase-473 W2); the late-join run itself is not measured here.
-- Trap 2's fixes live in the image only. The host path (`where=host`)
-  still runs rmw_zenoh_cpp 0.1.9, stock rclcpp and peer sessions: 7 of 8
+- Trap 2's fixes live in the image only, except 2a: the host has had
+  rmw_zenoh_cpp 0.1.10 since 2026-09-29 (above). The host path
+  (`where=host`) runs stock rclcpp and peer sessions; on 0.1.9, 7 of 8
   host starts completed (W11). Drop the testing source and the rclcpp patch
   once ROS apt ships rmw_zenoh_cpp 0.1.10 and rclcpp#2445 is fixed on
   Humble; client mode can go once rmw_zenoh vendors a zenoh with #2779.

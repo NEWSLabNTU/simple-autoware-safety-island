@@ -6,13 +6,18 @@ end-to-end run has NOT been re-validated since, because the machine it was
 being rebuilt on was too slow to finish the toolchain builds. The steps below
 are what remains.
 
+**Status (2026-10-05): still not re-validated** since 2026-07-31; phase9-W21
+re-validates it for the zenoh path. The path that ran the phase-8 acts on
+the board is demo/l3/README.md ("Run it") and tools/timeline/run-board.sh;
+use that until W21 lands.
+
 ## Prerequisites (machine level)
 
 | Thing | Where | Notes |
 | --- | --- | --- |
 | ROS 2 Humble | `/opt/ros/humble` | sourced by `.envrc` |
 | Autoware 1.5.0 | `/opt/autoware/1.5.0` | host install, provides planning_simulator |
-| nano-ros checkout | `$NANO_ROS_ROOT` (default `../nano-ros`) | `nros` CLI + cmake package |
+| nano-ros checkout | `$NANO_ROS_ROOT` (default: the `third-party/nano-ros` submodule, which wins; a sibling `../nano-ros` only if the submodule is not initialised; scripts/env.sh) | `nros` CLI + cmake package |
 | nano-ros SDK CycloneDDS | `~/.nros/sdk/cyclonedds/0.10.5-nros1` | `nros setup` provisions it; `$NROS_CYCLONEDDS_HOME` overrides |
 | TurboVNC on `:1` | `vncserver :1` | RViz needs a display; `$VNC_DISPLAY` overrides |
 | `just`, `direnv` | — | `direnv allow` once, then the env is checked on every cd |
@@ -229,12 +234,14 @@ What to expect, and what not to believe:
   clears it.
 * The island needs the gateway's liveliness ACL on ANY link, not only
   serial: unfiltered, Autoware's graph exhausts its heap in seconds (G3).
-* Today's island announces the HPC-loss MRM in about 0.6 s but does not
-  brake: its `operate` request does not reach its own operator (G5, W5).
+* The island brakes on HPC loss: G5 (its `operate` request not reaching
+  its own operator) is closed by W24, standstill 3.31 s after the SIGSTOP
+  on the QEMU island at f7c9369 (demo/l3/README.md, "Closed").
 * Use `ros2 ... --no-daemon` (or the `l3-nodes` recipe) on this machine; a
   daemon started under Cyclone answers for the wrong RMW.
 * `just l3-check` runs `play_launch check` on every contract with the
   pinned, published play_launch (the CI job, `.github/workflows/check.yml`).
   The `play_launch` on PATH here is a newer source build that calls itself
   0.12.0; it passed the island contract where the published 0.12.0 did not,
-  so do not read a verdict from it as the CI's.
+  so do not read a verdict from it as the CI's. `just doctor` now flags any
+  0.12.0 (the minimum is the CI pin, 0.13.0).

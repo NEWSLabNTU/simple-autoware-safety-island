@@ -308,7 +308,7 @@ phases, this repository by fast-forward push.
     Done: run-board.sh takes it (`flock -n` on fd 9, refuses with the
     holder's pid and run id); the sandbox path is gone from the trace doc
     and demo/l3/README.md (:275, :329) too.
-  - [ ] DX 4.6, four stale documents:
+  - [x] DX 4.6, four stale documents:
     - docs/board-bringup-triage.md:339-341 "Nothing in this image has
       executed on silicon"; :183 heap `94208` (the board runs at 102,400
       configured); :245 `CONFIG_NROS_MAX_LIVELINESS=32` against 29 tokens
@@ -324,6 +324,10 @@ phases, this repository by fast-forward push.
       say so with a pointer to demo/l3/README.md), :15 names `../nano-ros`
       as the default checkout (scripts/env.sh: the submodule wins), and
       :228-229 repeats G5 as open.
+    Done: all four, plus the triage doc's section 5 and the board-build
+    comment: gap 3.3 is fixed at nano-ros 3d52070ec (`configdefault`),
+    inside the pin f03d9d190. rmw_zenoh_cpp: host and image both run
+    0.1.10-1jammy.20260915.210859 (host held since 2026-09-29).
   - [ ] DX 3.12, `nros-sdk.lock`. Decision: commit it. nano-ros design 0014
     says the lock is "committed per workspace" and records the resolved
     tool, version, sha256 and provenance

@@ -522,28 +522,24 @@ board-build: sync
     # (never ~/.nros/bin -- see the note in board-env.sh).
     source scripts/board-env.sh "{{NANO_ROS_ROOT}}"
     export NROS_INTERFACE_SEARCH_PATH=$PWD/src
-    # ── Post-snippet Kconfig overrides ──────────────────────────────────────
-    # ONLY the settings the nros-zenoh snippet also sets belong here. It rides
-    # in EXTRA_CONF_FILE, which Zephyr merges AFTER CONF_FILE, so a value for
-    # any of these written into boards/mr_canhubk3_s32k344.conf is silently
-    # overwritten. A `-DCONFIG_*` on the CMake command line lands in
-    # misc/generated/extra_kconfig_options.conf, the one hook that merges last.
+    # -- Kconfig sizing: the board conf, not -D -----------------------------
+    # Until nano-ros 3d52070ec (2026-08-24; in the pin f03d9d190) the
+    # nros-zenoh snippet, merged after the board conf as EXTRA_CONF_FILE, set
+    # MAIN_STACK_SIZE, HEAP_MEM_POOL_SIZE, SYSTEM_WORKQUEUE_STACK_SIZE and the
+    # NET_PKT/NET_BUF counts outright, so this recipe carried them as a column
+    # of -DCONFIG_* (the one hook that merges last). That column is gone; the
+    # precedence is now  -D > board conf > snippet configdefault.
     #
-    # Everything else -- the entity limits, the executor and zenoh pools, the
-    # net connection/context caps -- lives in the board conf, which is where
-    # board sizing belongs. It reaches cargo because nano-ros #0749 and #0752
-    # gave the whole class Kconfig rows; before those, five of them reached
-    # build.rs only from this shell's environment and a bare `ninja` rebuilt the
-    # image at crate defaults.
+    # The entity limits, the executor and zenoh pools and the net caps reach
+    # cargo through Kconfig rows (nano-ros #0749, #0752); before those, five
+    # of them reached build.rs only from this shell's environment and a bare
+    # `ninja` rebuilt the image at crate defaults.
     #
     # MAIN_STACK_SIZE is charged twice on this platform: once for the main
     # thread, and again as NROS_ZEPHYR_STACK_SIZE x NROS_ZEPHYR_MAX_THREADS for
     # the pthread stack pool (nros_platform_zephyr_shims.c:293-301). The entry
     # CMakeLists pins MAX_THREADS to 4, so the pool costs 4 x 8192 there.
     #
-    # UNVALIDATED AT RUNTIME: the snippet chose 16384/65536 deliberately. A
-    # stack overflow or k_malloc failure under zenoh is the expected symptom if
-    # these are too small. Re-raise them here first when triaging one.
     # Sizing moved to boards/mr_canhubk3_s32k344.conf. It could not live there
     # while an RMW snippet -- EXTRA_CONF_FILE, merged after the board file --
     # set the same symbols outright; nano-ros now supplies snippet sizing as
