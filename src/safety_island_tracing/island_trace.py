@@ -17,12 +17,22 @@ the heartbeat counter it read beside the buffer).
 
   island_trace.py decode <file> [--timeline N] [--perfetto out.json]
   island_trace.py check  <file>
+  island_trace.py violations <file>
   island_trace.py wrap   <raw> --zephyr 4.4 --hb-emitted N [--hb-last-uptime MS] -o <out>
 
 A trace recorded with the trace window (phase8-W17, CONFIG_ISLAND_TRACE_WINDOW;
 the provenance says `window=trigger`) starts at its pre-trigger history and
 carries one TRIGGER record; `check` then asks for the trigger instead of every
 marker, and for heartbeats contiguous from the first one kept instead of 0.
+
+phase9-W4: nano-ros's contract-violation markers are forwarded into the stream
+at island id NROS_BASE + nano-ros id (markers.json `nros`; 277-280 for
+nano-ros 21-24). load() joins each run of four (rule|seq, endpoint hash,
+measured, declared) into one violation, naming the rule from the pinned
+RULE_IDS and the endpoint from the FNV-1a hashes of the contract's endpoint
+refs (both in markers.json); `violations` lists them, `check` reports them
+(a violation is a finding, not a decode failure), and `decode --timeline`
+prints each beside its markers.
 
 `check` exits 0 only if: the decode is clean; the provenance names the marker
 table in markers.json; every marker is present at least once, except those
@@ -126,6 +136,7 @@ def load(path, zephyr=None, tsdl=None):
     buf = buf + b"\0" * 64  # the dump trims trailing zeros; a record may end in them
     table = json.load(open(TABLE))
     names = {m["id"]: m["name"] for m in table["markers"]}
+    names.update({m["id"]: m["name"] for m in table.get("nros", {}).get("markers", [])})
     recs, sizes = [], Counter()
     pos, prev_ts, ext = 0, None, 0
     seg_start = None
@@ -195,7 +206,59 @@ def load(path, zephyr=None, tsdl=None):
                 r["t_ns"] += k * 2**32
     tr.records, tr.bytes_by_kind, tr.used = recs, sizes, pos
     tr.table = table
+    tr.violations = join_violations(recs, table)
     return tr
+
+
+def nros_names(table):
+    """{island id: name} of the forwarded nano-ros markers (phase9-W4)."""
+    return {m["id"]: m["name"] for m in table.get("nros", {}).get("markers", [])}
+
+
+def rule_name(table, code):
+    rules = table.get("nros", {}).get("rule_ids", [])
+    return rules[code - 1] if 1 <= code <= len(rules) else f"rule#{code}"
+
+
+def endpoint_name(table, h):
+    return table.get("nros", {}).get("endpoint_hashes", {}).get(f"{h:08x}", f"fqn#{h:08x}")
+
+
+def join_violations(recs, table):
+    """phase9-W4: each stored violation is four markers in a row on one thread
+    (nano-ros callback_trace: 21 seq|rule, 22 fqn hash, 23 measured, 24
+    declared). Join them; a 22-24 without its 21 is dropped, as nano-ros's own
+    decoder does, and a 21 whose followers are missing is kept with what it
+    has."""
+    order = [m["name"] for m in table.get("nros", {}).get("markers", [])]
+    if len(order) != 4:
+        return []
+    head, f_fqn, f_meas, f_decl = order
+    out, cur = [], None
+    for r in recs:
+        if r.get("kind") != "marker":
+            continue
+        n = r["name"]
+        if n == head:
+            cur = dict(t_ns=r["t_ns"], seq=r["arg"] >> 8, rule_code=r["arg"] & 0xFF,
+                       rule=rule_name(table, r["arg"] & 0xFF))
+            out.append(cur)
+        elif cur is not None and n == f_fqn and "fqn_hash" not in cur:
+            cur["fqn_hash"] = r["arg"]
+            cur["endpoint"] = endpoint_name(table, r["arg"])
+        elif cur is not None and n == f_meas and "measured" not in cur:
+            cur["measured"] = r["arg"]
+        elif cur is not None and n == f_decl and "declared" not in cur:
+            cur["declared"] = r["arg"]
+            cur = None
+        elif n in (f_fqn, f_meas, f_decl):
+            continue
+    return out
+
+
+def fmt_violation(v):
+    return (f"#{v['seq']}: {v['rule']} {v.get('endpoint', '?')} "
+            f"measured={v.get('measured', '?')} declared={v.get('declared', '?')}")
 
 
 def fmt_ms(ns):
@@ -224,6 +287,8 @@ def summarize(tr, out=sys.stdout):
     for r in recs:
         if r["kind"] == "provenance":
             print(f"provenance: {r['text']}", file=out)
+    for v in getattr(tr, "violations", []):
+        print(f"violation: {fmt_violation(v)}", file=out)
     if tr.error:
         print(f"DECODE ERROR: {tr.error}", file=out)
 
@@ -373,7 +438,7 @@ def check(tr, model_path):
                 missing.append(m["name"])
                 note = "  MISSING" + (f" (exemption lapsed: {ex[1]['param']} is {ex[2]!r})" if ex else "")
         say(f"{m['id']:>3}  {m['name']:<56}{n:>8}{note}")
-    unknown = sorted(set(seen) - {m["id"] for m in tr.table["markers"]})
+    unknown = sorted(set(seen) - {m["id"] for m in tr.table["markers"]} - set(nros_names(tr.table)))
     say("")
     if unknown:
         ok = False
@@ -400,6 +465,16 @@ def check(tr, model_path):
         say(f"ok   heartbeat: seq {hbs[0]}..{hbs[-1]} contiguous ({len(hbs)} records)")
     if windowed:
         ok = window_report(tr, kv, say) and ok
+    vs = getattr(tr, "violations", [])
+    if vs:
+        # a finding of the run, not a fault of the trace: reported, never FAIL
+        say(f"info violations: {len(vs)} stored contract violation(s) in the trace (nano-ros markers "
+            f"{min(nros_names(tr.table))}-{max(nros_names(tr.table))})")
+        t0 = tr.records[0]["t_ns"] if tr.records else 0
+        for v in vs:
+            say(f"info   at {(v['t_ns'] - t0) / 1e6:.3f} ms: {fmt_violation(v)}")
+    else:
+        say("ok   violations: none in the trace")
     if tr.header and hbs:
         emitted = tr.header["heartbeats_emitted"]
         if hbs[-1] + 1 != emitted:
@@ -434,7 +509,7 @@ def wrap(raw_path, out, zephyr, hb_emitted, hb_last_uptime_ms, hb_ms=100):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cmd", choices=["decode", "check", "wrap"])
+    ap.add_argument("cmd", choices=["decode", "check", "wrap", "violations"])
     ap.add_argument("file")
     ap.add_argument("--zephyr", help="major.minor of the tree (needed for a raw board buffer)")
     ap.add_argument("--tsdl", help="explicit path to the CTF TSDL metadata")
@@ -452,6 +527,14 @@ def main():
         wrap(a.file, a.out, a.zephyr, a.hb_emitted, a.hb_last_uptime, a.hb_ms)
         return 0
     tr = load(a.file, a.zephyr, a.tsdl)
+    if a.cmd == "violations":
+        t0 = tr.records[0]["t_ns"] if tr.records else 0
+        trig = next((r for r in tr.records if r["kind"] == "trigger"), None)
+        print(f"trace violations: {len(tr.violations)}" +
+              (f" (trace window opened by {trig['name']})" if trig else ""))
+        for v in tr.violations:
+            print(f"  {(v['t_ns'] - t0) / 1e6:12.3f} ms  {fmt_violation(v)}")
+        return 1 if tr.error else 0
     if a.cmd == "decode":
         summarize(tr)
         if a.timeline:
@@ -459,7 +542,12 @@ def main():
             n = 0
             for r in tr.records:
                 if r["kind"] == "marker":
-                    print(f"{fmt_ms(r['t_ns'] - t0)} ms  {r['name']:<56} arg={r['arg']}")
+                    extra = ""
+                    if r["name"] == "NROS_VIOLATION":
+                        v = next((v for v in tr.violations if v["t_ns"] == r["t_ns"]
+                                  and v["seq"] == r["arg"] >> 8), None)
+                        extra = f"  {fmt_violation(v)}" if v else ""
+                    print(f"{fmt_ms(r['t_ns'] - t0)} ms  {r['name']:<56} arg={r['arg']}{extra}")
                 elif r["kind"] == "heartbeat":
                     print(f"{fmt_ms(r['t_ns'] - t0)} ms  heartbeat seq={r['seq']} uptime={r['uptime_ms']} ms")
                 else:

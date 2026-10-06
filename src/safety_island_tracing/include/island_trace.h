@@ -60,6 +60,11 @@
  *     TRIGGER     u32 ts | id+3 | u16 marker | u16 pre_ms | u16 pre_kept |
  *                 u16 spin_keep | u32 pre_lost | u32 filtered    once
  *
+ * phase9-W4: a stored nano-ros contract violation (ISLAND_MK_NROS_VIOLATION,
+ * forwarded from the executor by the sink in the runtime below) is a second
+ * trigger: whichever comes first opens the window, and the TRIGGER record
+ * names it.
+ *
  * With the window off (native_sim's default) the stream is phase 7's: every
  * marker from boot.
  *
@@ -243,6 +248,9 @@ static const char island_trace_provenance[] =
 	";table_sha256=" ISLAND_TRACE_TABLE_SHA256
 	";entities=" ISLAND_TRACE_ENTITIES
 	";heartbeat_ms=" ISLAND_TRACE_STR(ISLAND_TRACE_HEARTBEAT_MS)
+#if defined(CONFIG_NROS_TRACE_CALLBACKS)
+	";nros_base=" ISLAND_TRACE_STR(ISLAND_TRACE_NROS_BASE)
+#endif
 #if ISLAND_TRACE_WINDOW
 	";window=trigger"
 	";trigger_marker=" ISLAND_TRACE_STR(ISLAND_TRACE_TRIGGER_MARKER)
@@ -256,6 +264,31 @@ static const char island_trace_provenance[] =
 	ISLAND_TRACE_KNOBS;
 
 static struct k_timer island_trace_hb_timer;
+
+/* phase9-W4: nano-ros's contract-violation markers into this stream. With
+ * CONFIG_NROS_TRACE_CALLBACKS the executor calls the installed sink as
+ * sink(id, arg) for its dispatch events (16-20) and, per stored violation,
+ * four events 21-24 (rule|seq, endpoint hash, measured, declared; phase-474
+ * I1). Those ids overlap the island's own 1..N, so the four are written at
+ * ISLAND_TRACE_NROS_BASE + id (generated, island_trace_markers.h) and the
+ * dispatch events are dropped: a record per callback would fill the buffer,
+ * and the paths the island measures carry their own ENTRY/EXIT. The sink is
+ * called on the spin thread, the same as any ISLAND_TRACE call site. */
+#if defined(CONFIG_NROS_TRACE_CALLBACKS)
+#ifdef __cplusplus
+extern "C" {
+#endif
+void nros_set_trace_sink(void (*sink)(uint32_t, uint32_t));
+#ifdef __cplusplus
+}
+#endif
+static void island_trace_nros_sink(uint32_t id, uint32_t arg)
+{
+	if (id >= ISLAND_TRACE_NROS_FIRST && id <= ISLAND_TRACE_NROS_LAST) {
+		ISLAND_TRACE(ISLAND_TRACE_NROS_BASE + id, arg);
+	}
+}
+#endif
 
 /* One HEARTBEAT record into the stream. The caller holds irq_lock. */
 static void island_trace_put_heartbeat(uint32_t ts, uint32_t seq, uint32_t up)
@@ -470,7 +503,11 @@ void island_trace_marker_windowed(uint16_t marker, uint32_t arg)
 		if (marker == ISLAND_TRACE_ARM_MARKER && arg != 0u) {
 			island_trace_armed = true;
 		}
-		if (island_trace_armed && marker == ISLAND_TRACE_TRIGGER_MARKER) {
+		/* phase9-W4: a stored contract violation opens the window too, so
+		 * its four records, and the callbacks it judged (the pre-trigger
+		 * history), are in the buffer whenever it happens. */
+		if ((island_trace_armed && marker == ISLAND_TRACE_TRIGGER_MARKER) ||
+		    marker == ISLAND_MK_NROS_VIOLATION) {
 			island_trace_fire(ts, marker);
 		}
 	}
@@ -552,6 +589,9 @@ static int island_trace_start(void)
 		island_trace_cost_empty = ISLAND_TRACE_DWT_CYCCNT - e0;
 		irq_unlock(k2);
 	}
+#endif
+#if defined(CONFIG_NROS_TRACE_CALLBACKS)
+	nros_set_trace_sink(island_trace_nros_sink);
 #endif
 	k_timer_init(&island_trace_hb_timer, island_trace_heartbeat, NULL);
 	k_timer_start(&island_trace_hb_timer, K_MSEC(ISLAND_TRACE_HEARTBEAT_MS),

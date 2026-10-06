@@ -90,6 +90,62 @@ LIFECYCLE = [
     ("/mrm_handler/init", "MRM_HANDLER_INIT_TIMEOUT", "lifecycle_timeout"),
 ]
 
+# phase9-W4: nano-ros's own trace markers, forwarded into the island's stream
+# by the sink in include/island_trace.h. nano-ros numbers them in ITS block
+# (callback_trace 16-20, the contract-violation markers 21-24, phase-474 I1),
+# which overlaps the island's contract-generated ids 1..N. The island ids do
+# not move (every recorded trace and every tool keyed on them stays valid);
+# the forwarded ids are shifted into a reserved block instead:
+#     island id = NROS_BASE + nano-ros id
+# Only the violation markers are forwarded: the dispatch events 16-20 would
+# cost a record per callback and the island already brackets the paths it
+# measures. The four ids and the rule table are READ from the pinned
+# nano-ros (monitor.rs), so a pin that moves them regenerates this table.
+NROS_BASE = 256
+NROS_MONITOR_RS = os.path.join(ROOT, "third-party/nano-ros/packages/core/nros-node/src/executor/monitor.rs")
+NROS_VIOLATION_MARKERS = [
+    # (monitor.rs constant, island marker name, what the arg carries)
+    ("MARKER_VIOLATION", "NROS_VIOLATION", "seq << 8 | rule code (RULE_IDS index + 1)"),
+    ("MARKER_VIOLATION_FQN", "NROS_VIOLATION_FQN", "FNV-1a 32 of the endpoint ref"),
+    ("MARKER_VIOLATION_MEASURED", "NROS_VIOLATION_MEASURED", "measured"),
+    ("MARKER_VIOLATION_DECLARED", "NROS_VIOLATION_DECLARED", "declared"),
+]
+# Stand-in endpoint refs the runtime uses for rules with no endpoint
+# (monitor.rs: timer-overrun, deadline-miss -> "timer"; release-jitter -> "spin").
+NROS_STAND_INS = ["timer", "spin"]
+
+
+def fnv1a32(text):
+    h = 0x811C9DC5
+    for b in text.encode():
+        h = ((h ^ b) * 0x01000193) & 0xFFFFFFFF
+    return h
+
+
+def nros_violation_table(model):
+    """The forwarded nano-ros markers, the rule table and the endpoint hashes,
+    read from the pinned monitor.rs and the resolved model."""
+    if not os.path.exists(NROS_MONITOR_RS):
+        sys.exit(f"gen_markers: no {os.path.relpath(NROS_MONITOR_RS, ROOT)} -- is the nano-ros submodule checked out?")
+    src = open(NROS_MONITOR_RS).read()
+    markers = []
+    for const, name, arg in NROS_VIOLATION_MARKERS:
+        m = re.search(rf"pub const {const}: u32 = (\d+);", src)
+        if not m:
+            sys.exit(f"gen_markers: {const} not found in the pinned monitor.rs (the pin predates phase-474 I1?)")
+        nid = int(m.group(1))
+        markers.append(dict(id=NROS_BASE + nid, nros_id=nid, name=name, kind="nros_violation", arg=arg))
+    m = re.search(r"pub const RULE_IDS: \[&str; \d+\] = \[(.*?)\];", src, re.S)
+    if not m:
+        sys.exit("gen_markers: RULE_IDS not found in the pinned monitor.rs")
+    rules = re.findall(r'"([a-z-]+)"', m.group(1))
+    c = model["contracts"]
+    refs = sorted(set(c.get("pub_endpoints", {})) | set(c.get("sub_endpoints", {}))) + NROS_STAND_INS
+    hashes = {f"{fnv1a32(r):08x}": r for r in refs}
+    if len(hashes) != len(refs):
+        sys.exit("gen_markers: two endpoint refs share an FNV-1a hash; the decoder could not tell them apart")
+    return markers, rules, hashes
+
 
 def c_ident(s):
     return re.sub(r"[^A-Za-z0-9]", "_", s).strip("_").upper()
@@ -251,13 +307,18 @@ def entity_counts(model):
 
 
 def render(model, markers):
+    if len(markers) >= NROS_BASE:
+        sys.exit(f"gen_markers: {len(markers)} island markers reach the nano-ros block at {NROS_BASE}")
+    nros_markers, rules, hashes = nros_violation_table(model)
     policy, trigger_id, arm_id = window_policy(model, markers)
     for m in markers:
         m["record"] = REC_NAME[policy[m["id"]]]
     inputs = {i["path"]: i["sha256"] for i in model["meta"]["inputs"]}
     contract_sha = inputs.get("launch/safety_island.contract.yaml", "unknown")
+    # the forwarded nano-ros ids are part of what the image emits, so of the digest
     table_sha = hashlib.sha256(
-        json.dumps([[m["id"], m["name"], m["element"]] for m in markers]).encode()).hexdigest()
+        json.dumps([[m["id"], m["name"], m["element"]] for m in markers] +
+                   [[m["id"], m["name"], "nano-ros"] for m in nros_markers] + [rules]).encode()).hexdigest()
     counts = entity_counts(model)
     knobs = knob_names()
     out = []
@@ -292,6 +353,18 @@ def render(model, markers):
     w(f"#define ISLAND_TRACE_TRIGGER_MARKER {trigger_id} /* {markers[trigger_id - 1]['name']} */")
     w(f"#define ISLAND_TRACE_ARM_MARKER {arm_id} /* {markers[arm_id - 1]['name']} */")
     w("")
+    w("/* phase9-W4: nano-ros's contract-violation markers, forwarded by the sink in")
+    w(" * include/island_trace.h at island id = ISLAND_TRACE_NROS_BASE + nano-ros id")
+    w(" * (nano-ros numbers them in a block that overlaps the ids above). A stored")
+    w(" * violation is four records in a row; the first one also opens the trace")
+    w(" * window. Ids read from the pinned monitor.rs. */")
+    w(f"#define ISLAND_TRACE_NROS_BASE {NROS_BASE}")
+    w(f"#define ISLAND_TRACE_NROS_FIRST {nros_markers[0]['nros_id']}")
+    w(f"#define ISLAND_TRACE_NROS_LAST {nros_markers[-1]['nros_id']}")
+    nw = max(len(m["name"]) for m in nros_markers) + len("ISLAND_MK_")
+    for m in nros_markers:
+        w(f"#define {('ISLAND_MK_' + m['name']).ljust(nw)} {m['id']:3d} /* nano-ros {m['nros_id']}: {m['arg']} */")
+    w("")
     w("/* Knobs that size the image, as the build delivered them (autoconf.h). */")
     for k in knobs:
         short = k[len("CONFIG_"):]
@@ -315,6 +388,7 @@ def render(model, markers):
         knobs=knobs,
         window=dict(trigger=trigger_id, arm=arm_id),
         markers=markers,
+        nros=dict(base=NROS_BASE, markers=nros_markers, rule_ids=rules, endpoint_hashes=hashes),
     ), indent=1) + "\n"
     return header, table
 

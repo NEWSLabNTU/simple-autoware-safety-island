@@ -8,8 +8,8 @@
 #ifndef ISLAND_TRACE_MARKERS_H
 #define ISLAND_TRACE_MARKERS_H
 
-#define ISLAND_TRACE_CONTRACT_SHA256 "e88319a3be0566f4d93da57a6a727a9af77875311e45624c0e21d7cb4cb4c9cb"
-#define ISLAND_TRACE_TABLE_SHA256 "0935f5b7449bb462bf030efefab5094968040c44ebf3493da532c432019944cf"
+#define ISLAND_TRACE_CONTRACT_SHA256 "ab5beb68e9d07ce0d0ad5377b7372f2bccc0d59f30d4b7c9ad9ce77dcc1aa6d4"
+#define ISLAND_TRACE_TABLE_SHA256 "f61b522a90da3b5337376cf021d3312102b85cac68b27663f18f3e1cdb23ab70"
 #define ISLAND_TRACE_MARKER_COUNT 31
 #define ISLAND_TRACE_ENTITIES "pub=8,sub=7,srv=2,cli=2,timer=3"
 
@@ -55,6 +55,19 @@
 #define ISLAND_TRACE_POLICY_TABLE { 0, 2, 3, 0, 0, 2, 3, 0, 0, 0, 0, 2, 3, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0 }
 #define ISLAND_TRACE_TRIGGER_MARKER 7 /* PATH_MRM_HANDLER_CALL_MRM_ENTRY */
 #define ISLAND_TRACE_ARM_MARKER 15 /* TAKE_MRM_HANDLER_OPERATION_MODE_AVAILABILITY */
+
+/* phase9-W4: nano-ros's contract-violation markers, forwarded by the sink in
+ * include/island_trace.h at island id = ISLAND_TRACE_NROS_BASE + nano-ros id
+ * (nano-ros numbers them in a block that overlaps the ids above). A stored
+ * violation is four records in a row; the first one also opens the trace
+ * window. Ids read from the pinned monitor.rs. */
+#define ISLAND_TRACE_NROS_BASE 256
+#define ISLAND_TRACE_NROS_FIRST 21
+#define ISLAND_TRACE_NROS_LAST 24
+#define ISLAND_MK_NROS_VIOLATION          277 /* nano-ros 21: seq << 8 | rule code (RULE_IDS index + 1) */
+#define ISLAND_MK_NROS_VIOLATION_FQN      278 /* nano-ros 22: FNV-1a 32 of the endpoint ref */
+#define ISLAND_MK_NROS_VIOLATION_MEASURED 279 /* nano-ros 23: measured */
+#define ISLAND_MK_NROS_VIOLATION_DECLARED 280 /* nano-ros 24: declared */
 
 /* Knobs that size the image, as the build delivered them (autoconf.h). */
 #ifdef CONFIG_COMMON_LIBC_MALLOC_ARENA_SIZE
@@ -152,6 +165,11 @@
 #else
 #define ISLAND_TRACE_KNOB_NROS_DOMAIN_ID ""
 #endif
+#ifdef CONFIG_NROS_EXECUTOR_MAX_VIOLATIONS
+#define ISLAND_TRACE_KNOB_NROS_EXECUTOR_MAX_VIOLATIONS ";NROS_EXECUTOR_MAX_VIOLATIONS=" ISLAND_TRACE_STR(CONFIG_NROS_EXECUTOR_MAX_VIOLATIONS)
+#else
+#define ISLAND_TRACE_KNOB_NROS_EXECUTOR_MAX_VIOLATIONS ""
+#endif
 #ifdef CONFIG_NROS_GRAPH_CACHE_SIZE
 #define ISLAND_TRACE_KNOB_NROS_GRAPH_CACHE_SIZE ";NROS_GRAPH_CACHE_SIZE=" ISLAND_TRACE_STR(CONFIG_NROS_GRAPH_CACHE_SIZE)
 #else
@@ -242,6 +260,7 @@
   ISLAND_TRACE_KNOB_NET_SOCKETS_POLL_MAX \
   ISLAND_TRACE_KNOB_NROS_CYCLONE_DOMAIN_ID \
   ISLAND_TRACE_KNOB_NROS_DOMAIN_ID \
+  ISLAND_TRACE_KNOB_NROS_EXECUTOR_MAX_VIOLATIONS \
   ISLAND_TRACE_KNOB_NROS_GRAPH_CACHE_SIZE \
   ISLAND_TRACE_KNOB_NROS_SNTP_TIMEOUT_MS \
   ISLAND_TRACE_KNOB_NROS_ZENOH_SERIAL_RX_RING_BYTES \

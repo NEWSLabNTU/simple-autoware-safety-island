@@ -244,6 +244,17 @@ def render(run_dir, out, explain_path=None, title=None):
         axe.axvline(s(t), color=col, lw=1)
         axe.text(s(t), 0.95 - 0.19 * (lvl % 5), f" {name} {t / 1000:.3f}", fontsize=7, color=col, va="top")
         lvl += 1
+    # phase9-W4: runtime contract violations the island stored (merge.py joins
+    # nano-ros's four markers into one `violation` event)
+    for e in ev:
+        if e["source"] == "island" and e["kind"] == "violation":
+            x = (e["t_mono_ns"] - t0) / 1e9
+            if x_lo <= x <= x_hi:
+                v = e["value"]
+                for ax in (axv, axm, axb, axe):
+                    ax.axvline(x, color=CRIT, lw=1, ls=(0, (2, 2)))
+                axe.text(x, 0.05, f" VIOLATION {v['rule']} {v.get('endpoint')} "
+                         f"{v.get('measured')}/{v.get('declared')}", fontsize=7, color=CRIT, va="bottom")
     axe.set_yticks([])
     axe.set_ylim(0, 1)
     axe.set_xlabel("s since the button (host CLOCK_MONOTONIC; island markers aligned)")

@@ -217,9 +217,16 @@ def main():
             continue
         w.write("island", "marker", t_mono_ns=t, marker=r["name"], value=r["arg"], island_ns=r["t_ns"])
         n += 1
+    # phase9-W4: each stored contract violation, its four markers joined and
+    # named (island_trace.join_violations), as one event the plot can draw
+    for v in tr.violations:
+        w.write("island", "violation", t_mono_ns=v["t_ns"] + off, marker=v["rule"],
+                value=dict(seq=v["seq"], rule=v["rule"], endpoint=v.get("endpoint"),
+                           measured=v.get("measured"), declared=v.get("declared")),
+                island_ns=v["t_ns"])
     w.close()
     print(f"merge: offset from {res.get('used')}, pair spread {res.get('pairs_spread_ms')} ms; "
-          f"{n} markers -> {out}; anchor 1 {res['anchor1'] and res['anchor1']['what']}, "
+          f"{n} markers, {len(tr.violations)} violation(s) -> {out}; anchor 1 {res['anchor1'] and res['anchor1']['what']}, "
           f"anchor 2 {res['anchor2'] and res['anchor2']['what']}, "
           f"disagreement {res['disagreement_ms'] if res['disagreement_ms'] is None else round(res['disagreement_ms'], 3)} ms")
 

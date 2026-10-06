@@ -1,7 +1,7 @@
 {
  "generator": "src/safety_island_tracing/gen_markers.py",
- "contract_sha256": "e88319a3be0566f4d93da57a6a727a9af77875311e45624c0e21d7cb4cb4c9cb",
- "table_sha256": "0935f5b7449bb462bf030efefab5094968040c44ebf3493da532c432019944cf",
+ "contract_sha256": "ab5beb68e9d07ce0d0ad5377b7372f2bccc0d59f30d4b7c9ad9ce77dcc1aa6d4",
+ "table_sha256": "f61b522a90da3b5337376cf021d3312102b85cac68b27663f18f3e1cdb23ab70",
  "entities": {
   "pub": 8,
   "sub": 7,
@@ -29,6 +29,7 @@
   "CONFIG_NET_SOCKETS_POLL_MAX",
   "CONFIG_NROS_CYCLONE_DOMAIN_ID",
   "CONFIG_NROS_DOMAIN_ID",
+  "CONFIG_NROS_EXECUTOR_MAX_VIOLATIONS",
   "CONFIG_NROS_GRAPH_CACHE_SIZE",
   "CONFIG_NROS_SNTP_TIMEOUT_MS",
   "CONFIG_NROS_ZENOH_SERIAL_RX_RING_BYTES",
@@ -338,5 +339,68 @@
    "node": "mrm_handler",
    "record": "every"
   }
- ]
+ ],
+ "nros": {
+  "base": 256,
+  "markers": [
+   {
+    "id": 277,
+    "nros_id": 21,
+    "name": "NROS_VIOLATION",
+    "kind": "nros_violation",
+    "arg": "seq << 8 | rule code (RULE_IDS index + 1)"
+   },
+   {
+    "id": 278,
+    "nros_id": 22,
+    "name": "NROS_VIOLATION_FQN",
+    "kind": "nros_violation",
+    "arg": "FNV-1a 32 of the endpoint ref"
+   },
+   {
+    "id": 279,
+    "nros_id": 23,
+    "name": "NROS_VIOLATION_MEASURED",
+    "kind": "nros_violation",
+    "arg": "measured"
+   },
+   {
+    "id": 280,
+    "nros_id": 24,
+    "name": "NROS_VIOLATION_DECLARED",
+    "kind": "nros_violation",
+    "arg": "declared"
+   }
+  ],
+  "rule_ids": [
+   "rate-hierarchy-runtime",
+   "max-age-runtime",
+   "max-latency-runtime",
+   "deadline-miss-runtime",
+   "stack-headroom-runtime",
+   "alive-supervision-runtime",
+   "silence-runtime",
+   "timer-overrun-runtime",
+   "release-jitter-runtime"
+  ],
+  "endpoint_hashes": {
+   "8a287f9b": "/mrm_comfortable_stop_operator/clear_velocity_limit",
+   "212bf8cd": "/mrm_comfortable_stop_operator/max_velocity_candidates",
+   "b7e9823c": "/mrm_comfortable_stop_operator/status",
+   "7f398e7d": "/mrm_emergency_stop_operator/control_cmd",
+   "c1b41a37": "/mrm_emergency_stop_operator/emergency_control_cmd",
+   "73ddeba3": "/mrm_emergency_stop_operator/status",
+   "4cad7c94": "/mrm_handler/comfortable_stop_status",
+   "7b69a67d": "/mrm_handler/control_mode",
+   "ffd4deed": "/mrm_handler/emergency_stop_status",
+   "86ea44e7": "/mrm_handler/hazard_lights_cmd",
+   "2736bac3": "/mrm_handler/kinematic_state",
+   "a95479e4": "/mrm_handler/mrm_state",
+   "78a5618d": "/mrm_handler/operation_mode_availability",
+   "4af1b28f": "/mrm_handler/operation_mode_state",
+   "13b679c5": "/mrm_handler/takeover_request_state",
+   "5c68ed22": "timer",
+   "0914d819": "spin"
+  }
+ }
 }
