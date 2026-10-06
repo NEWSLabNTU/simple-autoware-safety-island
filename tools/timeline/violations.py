@@ -33,6 +33,7 @@ import json
 import os
 import struct
 import sys
+from pathlib import Path
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
@@ -107,7 +108,7 @@ def report(elf, blob, words=None):
             continue
         fqn = None
         if helpers is not None and s["fqn_len"]:
-            raw = helpers.elf_bytes(elf, s["fqn_addr"], s["fqn_len"])
+            raw = helpers.elf_bytes(Path(elf), s["fqn_addr"], s["fqn_len"])
             fqn = raw.decode("utf-8", "replace") if raw is not None else None
         if fqn is None:
             fqn = hashes.get(f"{s['fqn_hash']:08x}", f"fqn#{s['fqn_hash']:08x}")
@@ -132,7 +133,7 @@ def main():
     ap.add_argument("--out", help="read: output prefix (<out>.bin, <out>.txt)")
     ap.add_argument("--words", help="decode: a JSON file of the arming words read beside the dump")
     ap.add_argument("--dry-run", action="store_true")
-    a = ap.parse_args()
+    a = ap.parse_intermixed_args()
     syms = symbols(a.elf, {RECORD, OVERRUN, *ARM_WORDS})
     if a.cmd == "decode":
         words = json.load(open(a.words)) if a.words else {}

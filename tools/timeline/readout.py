@@ -212,8 +212,8 @@ def main():
     else:
         try:
             text = violations.report(a.elf, vrec, {n: vals[n] for n in violations.ARM_WORDS if n in vals})
-        except SystemExit as e:  # a bad magic or version: say so, keep the trace
-            text = f"violation record unreadable: {e}\n"
+        except (SystemExit, Exception) as e:  # noqa: BLE001 -- say so, and keep the trace
+            text = f"violation record unreadable: {e!r} (raw bytes in violations.bin)\n"
         open(vtxt, "w").write(text)
         print("readout: " + text.rstrip().replace("\n", "\nreadout: "))
     island_trace.wrap(raw, a.out, a.zephyr, vals.get("island_trace_hb_seq", 0),
