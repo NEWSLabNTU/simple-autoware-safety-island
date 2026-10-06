@@ -126,9 +126,11 @@ phases, this repository by fast-forward push.
   DX: see DX-UX-GAPS 5.1, 5.2 (top-10 row 1).
   Status (2026-10-06): implemented; the board gate is NOT passed as
   written, for reasons that are nano-ros's (below). Branch `phase9-w4`,
-  not merged to main. nano-ros pinned at `5b3ac4567`, the head of PR #1729
-  (`feat/violation-ring-and-arming`, phase-474 I1/I2), which was still in
-  the merge queue: the pin moves to the merge commit when it lands.
+  not merged to main. The runs were built at nano-ros `5b3ac4567`, the head
+  of PR #1729 (`feat/violation-ring-and-arming`, phase-474 I1/I2); the PR was
+  then rebased and the pin moved to its new head `810c73341` (two non-code
+  files differ). The PR is in the merge queue, reading DIRTY: the pin moves
+  to the merge commit when it lands.
   - [x] Pin, `just setup-cli`, `just doctor` OK (play_launch 0.13.1, the SDK
     lock's two zephyr-sdk tables). The pin's issue-1498 floor asked for 19
     pthread conds (board and QEMU confs, 17 -> 19).
