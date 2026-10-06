@@ -73,7 +73,7 @@ BOARD_BUILD_DIR := "build-board"
 # `hazards.<name>`") without naming a version. Kept in step by hand with
 # .envrc and scripts/env.sh until phase9-W19 reads the pin.
 PLAY_LAUNCH := env("PLAY_LAUNCH", "play_launch")
-PLAY_LAUNCH_MIN := "0.13.0"
+PLAY_LAUNCH_MIN := "0.13.1"
 
 default:
     @just --list

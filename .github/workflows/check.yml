@@ -18,7 +18,7 @@ jobs:
     # friends through it, and the wheel is built for jammy (manylinux_2_35).
     container: ros:humble-ros-base-jammy
     env:
-      PLAY_LAUNCH_VERSION: "0.13.0"
+      PLAY_LAUNCH_VERSION: "0.13.1"
     steps:
       - uses: actions/checkout@v4
         with:
