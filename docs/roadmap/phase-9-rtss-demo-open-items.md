@@ -124,6 +124,113 @@ phases, this repository by fast-forward push.
   and how the timeline draws it against the act. Gate: the design names
   the channel it consumes and the row or marker each violation becomes.
   DX: see DX-UX-GAPS 5.1, 5.2 (top-10 row 1).
+  Status (2026-10-06): implemented; the board gate is NOT passed as
+  written, for reasons that are nano-ros's (below). Branch `phase9-w4`,
+  not merged to main. nano-ros pinned at `5b3ac4567`, the head of PR #1729
+  (`feat/violation-ring-and-arming`, phase-474 I1/I2), which was still in
+  the merge queue: the pin moves to the merge commit when it lands.
+  - [x] Pin, `just setup-cli`, `just doctor` OK (play_launch 0.13.1, the SDK
+    lock's two zephyr-sdk tables). The pin's issue-1498 floor asked for 19
+    pthread conds (board and QEMU confs, 17 -> 19).
+  - [x] Island config (board, native_sim, QEMU):
+    `CONFIG_NROS_MONITOR_ARM_ON_CALL=y`, no grace;
+    `CONFIG_NROS_EXECUTOR_MAX_VIOLATIONS=8` (the default; with arming the
+    ring takes no start-up entries, and the trace keeps every verdict);
+    `CONFIG_NROS_VIOLATION_DRAIN_REPORT` off on the board (its log goes to
+    the unwired lpuart0), on in native_sim; `CONFIG_NROS_TRACE_CALLBACKS=y`.
+    The handler arms on the first tick with every input established
+    (INIT_DONE, or an init failure clearing), NOT at INIT_TIMEOUT: on the
+    board INIT always times out before Autoware starts, and arming there
+    would store the availability's silence for the whole wait.
+  - [x] Trace markers: the island ids stay 1-31; nano-ros's violation
+    events 21-24 are forwarded by an island sink at 256 + id = 277-280, and
+    a stored violation also opens the trace window. gen_markers.py reads
+    the ids and RULE_IDS from the pinned monitor.rs and hashes the
+    contract's endpoint refs; island_trace.py, merge.py and render.py name
+    and draw each verdict (docs/tracing.md section 9). native_sim, QEMU and
+    board images build; `.github/check-contracts.sh` 14/14 as expected (the
+    contract is untouched).
+  - [x] SWD readout: tools/timeline/violations.py reads
+    `NROS_VIOLATION_RECORD` by symbol through the pinned
+    read-violation-record.py; readout.py reads it in its halt, so every
+    run directory gets `violations.txt` (vscan.py retired).
+  - [x] Found on the way, fixed here: the first stored violation halted the
+    board (K_ERR_ARM_USAGE_ILLEGAL_EPSR) because the pin's `/diagnostics`
+    reporter (issue 1635) overflowed the 16 KiB main stack into the idle
+    thread's; bisected on the bench, main stack 24576 (high-water 18,780 B).
+  - [ ] Gate (a), bring-up (`w4-bringup2`). Before Autoware:
+
+      violation record (NROS_VIOLATION_RECORD, layout v1, capacity 8):
+        total=0 dropped=0 suppressed_before_arm=5 armed=0
+        handler armed the monitors: not armed
+        read at uptime ~3500 ms (last trace heartbeat)
+        EMPTY: no violation stored since boot
+
+    After RUN, nothing commanded (45 s):
+
+      violation record (NROS_VIOLATION_RECORD, layout v1, capacity 8):
+        total=10 dropped=2 suppressed_before_arm=8 armed=1
+        handler armed the monitors: init failure cleared at uptime 6974 ms
+        read at uptime ~52000 ms (last trace heartbeat)
+        #10: rate-hierarchy-runtime /mrm_emergency_stop_operator/status measured=29990 declared=30000
+        #9: rate-hierarchy-runtime /mrm_emergency_stop_operator/emergency_control_cmd measured=29990 declared=30000
+        #8: release-jitter-runtime spin measured=88585 declared=10000
+        #7: timer-overrun-runtime timer measured=1 declared=0
+        #6: rate-hierarchy-runtime /mrm_handler/takeover_request_state measured=9984 declared=10000
+        #5: rate-hierarchy-runtime /mrm_handler/mrm_state measured=9984 declared=10000
+        #4: rate-hierarchy-runtime /mrm_handler/hazard_lights_cmd measured=9984 declared=10000
+        #3: rate-hierarchy-runtime /mrm_comfortable_stop_operator/status measured=9984 declared=10000
+
+    `armed` 0 -> 1 (via the init-failure recovery, 6,974 ms), start-up in
+    `suppressed_before_arm` (8), no rate verdict on the two on-demand
+    topics (W7). NOT empty: the availability's silence at arming (the board
+    has no epoch, so nano-ros never counts its takes; W3), the rate rule's
+    first window after arming at 9984/10000 and 29990/30000 mHz, and the
+    `/diagnostics` reporter's own cost (15-20 ms of spin per verdict over
+    serial: release jitter 88.6 ms, one timer overrun).
+  - [ ] Gate (b), a 250 ms commanded overrun of the handler's tick (same
+    boot; `violations.py overrun 250`):
+
+      violation record (NROS_VIOLATION_RECORD, layout v1, capacity 8):
+        total=17 dropped=9 suppressed_before_arm=8 armed=1
+        handler armed the monitors: init failure cleared at uptime 6974 ms
+        read at uptime ~57900 ms (last trace heartbeat)
+        #17: rate-hierarchy-runtime /mrm_emergency_stop_operator/status measured=28788 declared=30000
+        #16: rate-hierarchy-runtime /mrm_emergency_stop_operator/emergency_control_cmd measured=28788 declared=30000
+        #15: timer-overrun-runtime timer measured=1 declared=0
+        #14: release-jitter-runtime spin measured=246918 declared=10000
+        #13: timer-overrun-runtime timer measured=1 declared=0
+        #12: timer-overrun-runtime timer measured=1 declared=0
+        #11: timer-overrun-runtime timer measured=7 declared=0
+        #10: rate-hierarchy-runtime /mrm_emergency_stop_operator/status measured=29990 declared=30000
+
+    In the trace the tick runs 250.65 ms and the verdicts follow it as
+    VIOLATION markers; but no `max-latency-runtime`: the rule did not see
+    the timer's dispatch (likely the unmeasured timer sweep in nano-ros
+    spin.rs), so the contract's 206 ms rows are not judged on this image.
+  - [x] Gate (c), encore (`w4-encore`): VERDICT PASS, every table row PASS;
+    no verdict stored during the act (all 8 are 27-32 s before it, the set
+    of (a)):
+
+      violation record (NROS_VIOLATION_RECORD, layout v1, capacity 8):
+        total=8 dropped=0 suppressed_before_arm=8 armed=1
+        handler armed the monitors: init failure cleared at uptime 6274 ms
+        read at uptime ~43500 ms (last trace heartbeat)
+        #8: release-jitter-runtime spin measured=86278 declared=10000
+        #7: timer-overrun-runtime timer measured=1 declared=0
+        #6: rate-hierarchy-runtime /mrm_handler/takeover_request_state measured=9990 declared=10000
+        #5: rate-hierarchy-runtime /mrm_handler/mrm_state measured=9990 declared=10000
+        #4: rate-hierarchy-runtime /mrm_handler/hazard_lights_cmd measured=9990 declared=10000
+        #3: rate-hierarchy-runtime /mrm_comfortable_stop_operator/status measured=9990 declared=10000
+        #2: release-jitter-runtime spin measured=15428 declared=10000
+        #1: silence-runtime /mrm_handler/operation_mode_availability measured=0 declared=500
+
+  The three readouts in full, with the trace, are docs/takeover-trace.md
+  section 12. Handed to nano-ros (phase 474): max-latency blind to
+  sweep-fired timers; the reporter on the spin thread (cost, stack); the
+  rate rule's first window after arming; and (with W3) silence without an
+  epoch. Open here: the boot record's heap headroom reads REFUSED on this
+  pin (peak 79,712 of 102,912 B), not resized.
 - **W18 - the contract's head comment, sorted by where each explanation
   belongs.** The island contract opens with a 102-line comment before
   `version: 1` (src/safety_island_bringup/launch/safety_island.contract.yaml,

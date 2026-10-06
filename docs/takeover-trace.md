@@ -1170,3 +1170,258 @@ in the W31 worktree (`timeline.png`, `table.md`, `explain.txt`,
 `island.trace*`, the JSONL files). The per-run logs, `terms.txt`, and the
 tools (`vscan.py` for the ring, `mon.py` for the callback times, `agg.py`
 for the tables above) are in `/mnt/mx500/aeon/worktrees/w31-logs/`.
+
+## 12. Runtime violations, seen (phase9-W4)
+
+phase9-W4, 2026-10-06. Section 11 ended with "nothing the board can show
+says one fired". This section is the board showing it. The image: branch
+`phase9-w4` at `abb83d6` (code as of `928898c`), nano-ros pinned at
+`5b3ac4567`, the head of PR #1729 (phase-474 I1/I2; in the merge queue,
+not merged at the time of these runs), `just board-build`, ELF sha256
+`9491f076755518ec1d9e00f82ee6034c1b03ec3a79fb18d699b438c32ff4c7bb`, RAM
+299,200 of 327,680 B (91.31 %). The rig is section 9's: run-board.sh,
+`sai-l3-autoware:1.5.0-w24`, the C++ gate from `just demo-host-ws`, the
+demo lock, 1-min load 3-9.
+
+### The channel
+
+- **Arming.** `CONFIG_NROS_MONITOR_ARM_ON_CALL=y`; the handler calls
+  `nros::arm_monitors()` on the first tick that finds every required input
+  established: INIT_DONE, or the clearing of an init failure. Not at
+  INIT_TIMEOUT: in run-board.sh the island is reset at step 3 and Autoware
+  starts at step 5, so `init_timeout` (3.0 s) always passes first, and in
+  all three runs below the arming came through the recovery ("init failure
+  cleared"), 6.3-7.0 s after boot. Two words record it over SWD
+  (`island_monitors_armed_uptime_ms`, `island_monitors_armed_via`). No
+  grace deadline. Before the call a verdict is counted in
+  `suppressed_before_arm` and not stored.
+- **The SWD record.** `NROS_VIOLATION_RECORD`, read by symbol by
+  `tools/timeline/violations.py` and inside readout.py's halted read; every
+  run directory has `violations.txt`. 8 slots
+  (`CONFIG_NROS_EXECUTOR_MAX_VIOLATIONS`, the latest kept).
+- **The trace.** nano-ros's violation events 21-24, forwarded by the
+  island's sink at ids 277-280 (docs/tracing.md section 9); a stored
+  violation opens the trace window.
+- **The log.** `CONFIG_NROS_VIOLATION_DRAIN_REPORT` is off on the board:
+  the log goes to lpuart0, which is not wired (on in native_sim).
+
+### First, a halt: the reporter overflowed the main stack
+
+The first bring-up (`w4-bringup`, image `a014674d...`, main stack 16 KiB)
+stopped 60 ms after its first stored violation: the heartbeat froze at
+uptime 8,700 ms, the core sat in `arch_system_halt` with reason 35
+(`K_ERR_ARM_USAGE_ILLEGAL_EPSR`), PSP inside `z_idle_stacks`, and that
+stack and the bottom 128 B of `z_main_stack` above it were all zeros.
+From this pin a stored violation runs nano-ros's `/diagnostics` reporter
+(issue 1635) on the spin thread, which is main: one `DiagnosticArray`
+serialised into a zeroed 512 B stack buffer and published, per violation.
+That ran main below its 16 KiB into the idle thread's stack (no MPU guard on
+this image), and the idle thread resumed at PC 0. Bisected on the bench
+(the island alone, the monitors armed by a 6 s grace so that the
+availability's silence fires without Autoware): the halt stays with
+`CONFIG_NROS_TRACE_CALLBACKS=n`, with `CONFIG_NROS_BOOT_REPORT=n` and with
+`CONFIG_NROS_LOG_MAX_LEVEL=4` (the violation log compiled out), and goes
+with `CONFIG_MAIN_STACK_SIZE=24576`, where 7 violations were stored and the
+stack paint read over SWD put main's high-water at 18,780 B. The board conf
+now states 24576 (commit `928898c`). The bring-up's trace had already
+shown the channel: the window opened at the violation and decoded as
+`#1: silence-runtime /mrm_handler/operation_mode_availability measured=0
+declared=500`.
+
+### (a) Bring-up: before and after arming
+
+Run `w4-bringup2` (encore, with the act replaced by readouts). Readout 1,
+taken right after the island joined (step 4), before Autoware:
+
+```
+violation record (NROS_VIOLATION_RECORD, layout v1, capacity 8):
+  total=0 dropped=0 suppressed_before_arm=5 armed=0
+  handler armed the monitors: not armed
+  read at uptime ~3500 ms (last trace heartbeat)
+  EMPTY: no violation stored since boot
+```
+
+Readout 2, 45 s after Autoware's start and the gate, nothing commanded:
+
+```
+violation record (NROS_VIOLATION_RECORD, layout v1, capacity 8):
+  total=10 dropped=2 suppressed_before_arm=8 armed=1
+  handler armed the monitors: init failure cleared at uptime 6974 ms
+  read at uptime ~52000 ms (last trace heartbeat)
+  #10: rate-hierarchy-runtime /mrm_emergency_stop_operator/status measured=29990 declared=30000
+  #9: rate-hierarchy-runtime /mrm_emergency_stop_operator/emergency_control_cmd measured=29990 declared=30000
+  #8: release-jitter-runtime spin measured=88585 declared=10000
+  #7: timer-overrun-runtime timer measured=1 declared=0
+  #6: rate-hierarchy-runtime /mrm_handler/takeover_request_state measured=9984 declared=10000
+  #5: rate-hierarchy-runtime /mrm_handler/mrm_state measured=9984 declared=10000
+  #4: rate-hierarchy-runtime /mrm_handler/hazard_lights_cmd measured=9984 declared=10000
+  #3: rate-hierarchy-runtime /mrm_comfortable_stop_operator/status measured=9984 declared=10000
+```
+
+The ring is not empty after RUN. The trace holds all ten, with their island
+times (`island_trace.py violations`; the window opened at #1):
+
+```
+trace violations: 17 (trace window opened by NROS_VIOLATION)
+      7540.518 ms  #1: silence-runtime /mrm_handler/operation_mode_availability measured=0 declared=500
+      7560.090 ms  #2: release-jitter-runtime spin measured=11575 declared=10000
+     12039.635 ms  #3: rate-hierarchy-runtime /mrm_comfortable_stop_operator/status measured=9984 declared=10000
+     12059.845 ms  #4: rate-hierarchy-runtime /mrm_handler/hazard_lights_cmd measured=9984 declared=10000
+     12076.084 ms  #5: rate-hierarchy-runtime /mrm_handler/mrm_state measured=9984 declared=10000
+     12093.460 ms  #6: rate-hierarchy-runtime /mrm_handler/takeover_request_state measured=9984 declared=10000
+     12120.619 ms  #7: timer-overrun-runtime timer measured=1 declared=0
+     12136.056 ms  #8: release-jitter-runtime spin measured=88585 declared=10000
+     17044.172 ms  #9: rate-hierarchy-runtime /mrm_emergency_stop_operator/emergency_control_cmd measured=29990 declared=30000
+     17063.548 ms  #10: rate-hierarchy-runtime /mrm_emergency_stop_operator/status measured=29990 declared=30000
+```
+
+What each one is:
+
+- `armed` 0 -> 1, and the 8 pre-arm verdicts (5 by 3.5 s after boot) are
+  counted, not stored: the start-up noise of W31's ring is gone from it.
+  The two `rate-hierarchy-runtime` verdicts of W31 on the comfortable-stop
+  operator's `clear_velocity_limit` and `max_velocity_candidates` are gone
+  too (W7 dropped their rate claims).
+- **#1, silence on the availability, is structural.** nano-ros counts a take
+  for the age and silence rules only when it can read the message stamp
+  against an epoch clock (nros-node `arena.rs` `observe_age`: "None =
+  uncontracted (or no epoch source / no stamp in the type)"). The board has
+  no epoch (no SNTP over serial, phase9-W3), so the takes never count: the
+  trace shows `TAKE_MRM_HANDLER_OPERATION_MODE_AVAILABILITY` every 100 ms
+  in the 566 ms between arming and the verdict. It is reported once and
+  never recovers. It is W31's start-up `silence-runtime` entry too.
+- **#3-#6 and #9-#10, `rate-hierarchy-runtime` at 9984 of 10000 mHz and 29990
+  of 30000 mHz**, are the first rate window after arming (5.0 s and 10.1 s
+  after it) reading the 10 Hz and 30 Hz publishers 0.03-0.16 % short. The
+  rule has no tolerance. They do not recur in the 35 s after.
+- **#2, #7 and #8, release jitter and a timer overrun, are the reporter's
+  own cost.** The verdicts are 15-20 ms apart in the trace: each one's
+  `/diagnostics` publish holds the spin that long over the 921,600-baud
+  link. #3-#7 took 81 ms, and #8 is the spin's jitter of 88.6 ms measured
+  right after them; #2 (11.6 ms) follows #1 the same way.
+
+### (b) A commanded overrun
+
+Then, same boot: `violations.py overrun 250` wrote 250 into
+`island_debug_overrun_ms` (CONFIG_ISLAND_DEBUG_OVERRUN; inert while 0), and
+the handler's next RUN tick busy-waited 250 ms after its publishes. Readout
+3, 5 s later:
+
+```
+violation record (NROS_VIOLATION_RECORD, layout v1, capacity 8):
+  total=17 dropped=9 suppressed_before_arm=8 armed=1
+  handler armed the monitors: init failure cleared at uptime 6974 ms
+  read at uptime ~57900 ms (last trace heartbeat)
+  #17: rate-hierarchy-runtime /mrm_emergency_stop_operator/status measured=28788 declared=30000
+  #16: rate-hierarchy-runtime /mrm_emergency_stop_operator/emergency_control_cmd measured=28788 declared=30000
+  #15: timer-overrun-runtime timer measured=1 declared=0
+  #14: release-jitter-runtime spin measured=246918 declared=10000
+  #13: timer-overrun-runtime timer measured=1 declared=0
+  #12: timer-overrun-runtime timer measured=1 declared=0
+  #11: timer-overrun-runtime timer measured=7 declared=0
+  #10: rate-hierarchy-runtime /mrm_emergency_stop_operator/status measured=29990 declared=30000
+```
+
+and in the trace, the tick and the verdicts on one clock:
+
+```
+   52574.604 ms  PATH_MRM_COMFORTABLE_STOP_OPERATOR_ON_TIMER_ENTRY        arg=1
+   52574.860 ms  PATH_MRM_COMFORTABLE_STOP_OPERATOR_ON_TIMER_EXIT         arg=1
+   52574.870 ms  PATH_MRM_HANDLER_ON_TIMER_ENTRY                          arg=1
+   52599.569 ms  heartbeat seq=525 uptime=52600 ms
+   52699.569 ms  heartbeat seq=526 uptime=52700 ms
+   52799.569 ms  heartbeat seq=527 uptime=52800 ms
+   52825.518 ms  PATH_MRM_HANDLER_ON_TIMER_EXIT                           arg=1
+   52826.376 ms  TAKE_MRM_HANDLER_OPERATION_MODE_AVAILABILITY             arg=0
+   52826.396 ms  TAKE_MRM_HANDLER_OPERATION_MODE_AVAILABILITY             arg=0
+   52826.414 ms  TAKE_MRM_HANDLER_OPERATION_MODE_AVAILABILITY             arg=0
+   52841.227 ms  NROS_VIOLATION                                           arg=2824  #11: timer-overrun-runtime timer measured=7 declared=0
+   52855.290 ms  NROS_VIOLATION                                           arg=3080  #12: timer-overrun-runtime timer measured=1 declared=0
+   52876.017 ms  NROS_VIOLATION                                           arg=3336  #13: timer-overrun-runtime timer measured=1 declared=0
+   52891.053 ms  NROS_VIOLATION                                           arg=3593  #14: release-jitter-runtime spin measured=246918 declared=10000
+   52899.571 ms  heartbeat seq=528 uptime=52900 ms
+   52906.689 ms  NROS_VIOLATION                                           arg=3848  #15: timer-overrun-runtime timer measured=1 declared=0
+```
+
+The handler's tick ran 250.65 ms (ENTRY 52574.870 -> EXIT 52825.518), and
+the channel carried what the monitors said about it: the spin's release
+jitter 246,918 us against 10,000, the timers' overruns (7 activations
+dropped, then 1, 1, 1), and 5 s later the emergency operator's rate at
+28,788 of 30,000 mHz. It did NOT carry `max-latency-runtime`: the tick
+published `mrm_state`, `takeover_request_state` and `hazard_lights_cmd`,
+all three monitored at 206, 206 and 100 ms, and no latency verdict was
+stored. The rule did not see the timer's dispatch. The likely cause, read
+in the pin and not yet confirmed by a test: nano-ros attributes a
+dispatch's elapsed time to the publishers it advanced only in the measured
+EDF and FIFO drains (`spin.rs` `attribute_latency`, two call sites), while
+a spin whose trigger does not pass, as when only timers are due, fires the
+timers in a sweep that measures nothing (`spin.rs`, "Timers still need
+delta accumulation even when trigger doesn't pass"). Whatever the cause,
+the latency rows the contract bakes (206 ms on the TOR and MRM state, 100
+on the hazard lights) are not judged on this image, and section 11's "none
+came within 181 ms" was never a monitor's verdict either.
+
+### (c) A real act: the encore
+
+Run `w4-encore`, a normal `run-board.sh encore`: VERDICT PASS, every row
+of the table PASS (detect 575.10 of 618 ms, route 10.26 of 239.33, total
+3469.15 of 4904.67, EMERGENCY_STOP reached). The readout at its end:
+
+```
+violation record (NROS_VIOLATION_RECORD, layout v1, capacity 8):
+  total=8 dropped=0 suppressed_before_arm=8 armed=1
+  handler armed the monitors: init failure cleared at uptime 6274 ms
+  read at uptime ~43500 ms (last trace heartbeat)
+  #8: release-jitter-runtime spin measured=86278 declared=10000
+  #7: timer-overrun-runtime timer measured=1 declared=0
+  #6: rate-hierarchy-runtime /mrm_handler/takeover_request_state measured=9990 declared=10000
+  #5: rate-hierarchy-runtime /mrm_handler/mrm_state measured=9990 declared=10000
+  #4: rate-hierarchy-runtime /mrm_handler/hazard_lights_cmd measured=9990 declared=10000
+  #3: rate-hierarchy-runtime /mrm_comfortable_stop_operator/status measured=9990 declared=10000
+  #2: release-jitter-runtime spin measured=15428 declared=10000
+  #1: silence-runtime /mrm_handler/operation_mode_availability measured=0 declared=500
+```
+
+```
+trace violations: 8 (trace window opened by NROS_VIOLATION)
+      6834.570 ms  #1: silence-runtime /mrm_handler/operation_mode_availability measured=0 declared=500
+      6857.941 ms  #2: release-jitter-runtime spin measured=15428 declared=10000
+     11333.170 ms  #3: rate-hierarchy-runtime /mrm_comfortable_stop_operator/status measured=9990 declared=10000
+     11353.536 ms  #4: rate-hierarchy-runtime /mrm_handler/hazard_lights_cmd measured=9990 declared=10000
+     11369.775 ms  #5: rate-hierarchy-runtime /mrm_handler/mrm_state measured=9990 declared=10000
+     11387.151 ms  #6: rate-hierarchy-runtime /mrm_handler/takeover_request_state measured=9990 declared=10000
+     11411.849 ms  #7: timer-overrun-runtime timer measured=1 declared=0
+     11427.324 ms  #8: release-jitter-runtime spin measured=86278 declared=10000
+```
+
+The HPC loss was at island uptime ~38.3 s and the restore at ~42.9 s (the
+merge's offset): all 8 verdicts are 27-32 s before the act, the same
+post-arming set as in (a), and none was stored during it (the
+availability's silence had been reported at arming, so the real silence
+of the HPC loss added nothing). The trace window opened at #1, 6.8 s after
+boot, and still held the whole act (17,062 of 32,768 B); `trace-check`
+PASS, merge and table as before.
+
+### What is open, and whose
+
+- **max-latency-runtime is blind to timer callbacks fired in the trigger
+  sweep** (nano-ros; phase-474 D3 is the route-level question, this is the
+  callback-level rule not running at all). Until then (b) cannot show the
+  rule the contract's 206 ms rows name.
+- **The /diagnostics reporter runs on the spin thread**: 15-20 ms per
+  verdict over serial, its own release-jitter and timer-overrun verdicts,
+  and a 512 B stack buffer that overflowed a 16 KiB main stack (nano-ros,
+  issue 1635's reporter; the island states 24 KiB).
+- **The rate rule's first window after arming** reads a 10 Hz timer at
+  9984-9990 mHz (nano-ros: a tolerance, or no verdict on a window the
+  arming cut).
+- **Silence and age on the board need an epoch** (phase9-W3): until then
+  the availability's silence verdict at arming is certain on every board
+  run, and its age is never judged.
+- **The boot record's heap headroom** reads REFUSED on this pin (peak
+  79,712 of 102,912 B, 23,200 spare against a 24,576 floor; W31 had 77,160):
+  the `/diagnostics` publisher is new; not resized here.
+
+Runs: `build/timeline/w4-{bringup,bringup2,encore}/` in the W4 worktree
+(`/mnt/mx500/aeon/worktrees/w4-island`), their text outputs and the bench
+variants under `/mnt/mx500/aeon/worktrees/w4-logs/runs/`.

@@ -104,6 +104,7 @@ marker per executing contract element:
 | service callback | `SERVE_<node>_<endpoint>_ENTRY` / `_EXIT` | every `srv:` |
 | publish | `PUB_<node>_<endpoint>` | every contracted `pub:` |
 | lifecycle | `MRM_HANDLER_INIT_DONE` / `_INIT_TIMEOUT` | not the contract: `LIFECYCLE` in gen_markers.py (phase8-W27) |
+| nano-ros violation | `NROS_VIOLATION`, `_FQN`, `_MEASURED`, `_DECLARED` (ids 277-280) | not the contract: the executor's contract monitors, forwarded (phase9-W4, section 9) |
 
 Ids run from 1, in that group order and sorted inside each group. The
 lifecycle group comes last so no contract id moves; rlm has no element for a
@@ -136,46 +137,59 @@ contract states. Its ENTRY and EXIT markers fire on a tick where
 `updateMrmState()`, EXIT after `publishMrmState()`, matching the path's
 `output: [mrm_state, emergency_stop_operate]`.
 
-### The marker table (31 markers, table sha256 `bd6e59bbd17e...`)
+### The marker table (31 markers + 4 forwarded from nano-ros, table sha256 `f61b522a90da...`)
 
 Paths are relative to `src/autoware_mrm_*/src/mrm_*/` (comfortable,
 emergency, handler) and `src/autoware_stop_mode_operator/src/` (stop_mode).
-Line numbers are from `just trace-gen` at this revision; `python3
+Line numbers are from `just trace-gen` at this revision (phase9-W4; the
+table above this revision was older than the contract: W7's contract
+change had not been regenerated); `python3
 src/safety_island_tracing/gen_markers.py sites` prints the current ones.
 
 | id | marker | contract element | source site |
 | ---: | --- | --- | --- |
-| 1 | `PATH_MRM_COMFORTABLE_STOP_OPERATOR_ON_TIMER_ENTRY` | `/mrm_comfortable_stop_operator/on_timer` (path_entry) | comfortable/mrm_comfortable_stop_operator_core.cpp:134 (onTimer) |
-| 2 | `PATH_MRM_COMFORTABLE_STOP_OPERATOR_ON_TIMER_EXIT` | `/mrm_comfortable_stop_operator/on_timer` (path_exit) | comfortable/mrm_comfortable_stop_operator_core.cpp:136 (onTimer) |
-| 3 | `PATH_MRM_EMERGENCY_STOP_OPERATOR_ON_TIMER_ENTRY` | `/mrm_emergency_stop_operator/on_timer` (path_entry) | emergency/mrm_emergency_stop_operator_core.cpp:134 (onTimer) |
-| 4 | `PATH_MRM_EMERGENCY_STOP_OPERATOR_ON_TIMER_EXIT` | `/mrm_emergency_stop_operator/on_timer` (path_exit) | emergency/mrm_emergency_stop_operator_core.cpp:143 (onTimer) |
-| 5 | `PATH_MRM_HANDLER_CALL_MRM_ENTRY` | `/mrm_handler/call_mrm` (path_entry) | handler/mrm_handler_core.cpp:438 (onTimer) |
-| 6 | `PATH_MRM_HANDLER_CALL_MRM_EXIT` | `/mrm_handler/call_mrm` (path_exit) | handler/mrm_handler_core.cpp:445 (onTimer) |
-| 7 | `PATH_MRM_HANDLER_ON_TIMER_ENTRY` | `/mrm_handler/on_timer` (path_entry) | handler/mrm_handler_core.cpp:426 (onTimer) |
-| 8 | `PATH_MRM_HANDLER_ON_TIMER_EXIT` | `/mrm_handler/on_timer` (path_exit) | handler/mrm_handler_core.cpp:430 (onTimer)<br>src/autoware_mrm_handler/src/mrm_handler/mrm_handler_core.cpp:451 (onTimer) |
-| 9 | `PATH_STOP_MODE_OPERATOR_ON_TIMER_ENTRY` | `/stop_mode_operator/on_timer` (path_entry) | stop_mode/stop_mode_operator.cpp:95 (on_timer) |
-| 10 | `PATH_STOP_MODE_OPERATOR_ON_TIMER_EXIT` | `/stop_mode_operator/on_timer` (path_exit) | stop_mode/stop_mode_operator.cpp:102 (on_timer) |
-| 11 | `TAKE_MRM_HANDLER_OPERATION_MODE_AVAILABILITY` | `/mrm_handler/operation_mode_availability` (take) | handler/mrm_handler_core.cpp:148 (onOperationModeAvailability) |
-| 12 | `CALL_MRM_HANDLER_COMFORTABLE_STOP_OPERATE` | `/mrm_handler/comfortable_stop_operate` (service_call) | handler/mrm_handler_core.cpp:356 (requestMrmBehavior) |
-| 13 | `CALL_MRM_HANDLER_EMERGENCY_STOP_OPERATE` | `/mrm_handler/emergency_stop_operate` (service_call) | handler/mrm_handler_core.cpp:360 (requestMrmBehavior) |
-| 14 | `SERVE_MRM_COMFORTABLE_STOP_OPERATOR_OPERATE_ENTRY` | `/mrm_comfortable_stop_operator/operate` (service_serve_entry) | comfortable/mrm_comfortable_stop_operator_core.cpp:81 (operateComfortableStop) |
-| 15 | `SERVE_MRM_COMFORTABLE_STOP_OPERATOR_OPERATE_EXIT` | `/mrm_comfortable_stop_operator/operate` (service_serve_exit) | comfortable/mrm_comfortable_stop_operator_core.cpp:91 (operateComfortableStop) |
-| 16 | `SERVE_MRM_EMERGENCY_STOP_OPERATOR_OPERATE_ENTRY` | `/mrm_emergency_stop_operator/operate` (service_serve_entry) | emergency/mrm_emergency_stop_operator_core.cpp:106 (operateEmergencyStop) |
-| 17 | `SERVE_MRM_EMERGENCY_STOP_OPERATOR_OPERATE_EXIT` | `/mrm_emergency_stop_operator/operate` (service_serve_exit) | emergency/mrm_emergency_stop_operator_core.cpp:114 (operateEmergencyStop) |
-| 18 | `PUB_MRM_COMFORTABLE_STOP_OPERATOR_CLEAR_VELOCITY_LIMIT` | `/mrm_comfortable_stop_operator/clear_velocity_limit` (publish) | comfortable/mrm_comfortable_stop_operator_core.cpp:128 (publishVelocityLimitClearCommand) |
-| 19 | `PUB_MRM_COMFORTABLE_STOP_OPERATOR_MAX_VELOCITY_CANDIDATES` | `/mrm_comfortable_stop_operator/max_velocity_candidates` (publish) | comfortable/mrm_comfortable_stop_operator_core.cpp:116 (publishVelocityLimit) |
-| 20 | `PUB_MRM_COMFORTABLE_STOP_OPERATOR_STATUS` | `/mrm_comfortable_stop_operator/status` (publish) | comfortable/mrm_comfortable_stop_operator_core.cpp:99 (publishStatus) |
-| 21 | `PUB_MRM_EMERGENCY_STOP_OPERATOR_EMERGENCY_CONTROL_CMD` | `/mrm_emergency_stop_operator/emergency_control_cmd` (publish) | emergency/mrm_emergency_stop_operator_core.cpp:128 (publishControlCommand) |
-| 22 | `PUB_MRM_EMERGENCY_STOP_OPERATOR_STATUS` | `/mrm_emergency_stop_operator/status` (publish) | emergency/mrm_emergency_stop_operator_core.cpp:122 (publishStatus) |
-| 23 | `PUB_MRM_HANDLER_EMERGENCY_HOLDING` | `/mrm_handler/emergency_holding` (publish) | handler/mrm_handler_core.cpp:270 (publishEmergencyHolding) |
-| 24 | `PUB_MRM_HANDLER_GEAR_CMD_OUT` | `/mrm_handler/gear_cmd_out` (publish) | handler/mrm_handler_core.cpp:254 (publishGearCmd) |
-| 25 | `PUB_MRM_HANDLER_HAZARD_LIGHTS_CMD` | `/mrm_handler/hazard_lights_cmd` (publish) | handler/mrm_handler_core.cpp:236 (publishHazardCmd) |
-| 26 | `PUB_MRM_HANDLER_MRM_STATE` | `/mrm_handler/mrm_state` (publish) | handler/mrm_handler_core.cpp:261 (publishMrmState) |
-| 27 | `PUB_MRM_HANDLER_TURN_INDICATORS_CMD` | `/mrm_handler/turn_indicators_cmd` (publish) | handler/mrm_handler_core.cpp:220 (publishTurnIndicatorCmd) |
-| 28 | `PUB_STOP_MODE_OPERATOR_CONTROL` | `/stop_mode_operator/control` (publish) | stop_mode/stop_mode_operator.cpp:114 (publish_control_command) |
-| 29 | `PUB_STOP_MODE_OPERATOR_GEAR` | `/stop_mode_operator/gear` (publish) | stop_mode/stop_mode_operator.cpp:132 (publish_gear_command) |
-| 30 | `PUB_STOP_MODE_OPERATOR_HAZARD_LIGHTS` | `/stop_mode_operator/hazard_lights` (publish) | stop_mode/stop_mode_operator.cpp:150 (publish_hazard_lights_command) |
-| 31 | `PUB_STOP_MODE_OPERATOR_TURN_INDICATORS` | `/stop_mode_operator/turn_indicators` (publish) | stop_mode/stop_mode_operator.cpp:141 (publish_turn_indicators_command) |
+| 1 | `PATH_MRM_COMFORTABLE_STOP_OPERATOR_ON_TIMER_ENTRY` | `/mrm_comfortable_stop_operator/on_timer` (path_entry) | comfortable/mrm_comfortable_stop_operator_core.cpp:149 (onTimer) |
+| 2 | `PATH_MRM_COMFORTABLE_STOP_OPERATOR_ON_TIMER_EXIT` | `/mrm_comfortable_stop_operator/on_timer` (path_exit) | comfortable/mrm_comfortable_stop_operator_core.cpp:151 (onTimer) |
+| 3 | `PATH_MRM_COMFORTABLE_STOP_OPERATOR_OPERATE_ENTRY` | `/mrm_comfortable_stop_operator/operate` (path_entry) | comfortable/mrm_comfortable_stop_operator_core.cpp:96 (operateComfortableStop) |
+| 4 | `PATH_MRM_COMFORTABLE_STOP_OPERATOR_OPERATE_EXIT` | `/mrm_comfortable_stop_operator/operate` (path_exit) | comfortable/mrm_comfortable_stop_operator_core.cpp:100 (operateComfortableStop) |
+| 5 | `PATH_MRM_EMERGENCY_STOP_OPERATOR_ON_TIMER_ENTRY` | `/mrm_emergency_stop_operator/on_timer` (path_entry) | emergency/mrm_emergency_stop_operator_core.cpp:143 (onTimer) |
+| 6 | `PATH_MRM_EMERGENCY_STOP_OPERATOR_ON_TIMER_EXIT` | `/mrm_emergency_stop_operator/on_timer` (path_exit) | emergency/mrm_emergency_stop_operator_core.cpp:152 (onTimer) |
+| 7 | `PATH_MRM_HANDLER_CALL_MRM_ENTRY` | `/mrm_handler/call_mrm` (path_entry) | handler/mrm_handler_core.cpp:634 (onTimer) |
+| 8 | `PATH_MRM_HANDLER_CALL_MRM_EXIT` | `/mrm_handler/call_mrm` (path_exit) | handler/mrm_handler_core.cpp:653 (onTimer) |
+| 9 | `PATH_MRM_HANDLER_DRIVER_EXIT_ENTRY` | `/mrm_handler/driver_exit` (path_entry) | handler/mrm_handler_core.cpp:644 (onTimer) |
+| 10 | `PATH_MRM_HANDLER_DRIVER_EXIT_EXIT` | `/mrm_handler/driver_exit` (path_exit) | handler/mrm_handler_core.cpp:650 (onTimer) |
+| 11 | `PATH_MRM_HANDLER_ON_TIMER_ENTRY` | `/mrm_handler/on_timer` (path_entry) | handler/mrm_handler_core.cpp:620 (onTimer) |
+| 12 | `PATH_MRM_HANDLER_ON_TIMER_EXIT` | `/mrm_handler/on_timer` (path_exit) | handler/mrm_handler_core.cpp:624 (onTimer)<br>handler/mrm_handler_core.cpp:666 (onTimer) |
+| 13 | `TAKE_MRM_COMFORTABLE_STOP_OPERATOR_OPERATE` | `/mrm_comfortable_stop_operator/operate` (take) | comfortable/mrm_comfortable_stop_operator_core.cpp:94 (operateComfortableStop) |
+| 14 | `TAKE_MRM_HANDLER_CONTROL_MODE` | `/mrm_handler/control_mode` (take) | handler/mrm_handler_core.cpp:267 (onControlMode) |
+| 15 | `TAKE_MRM_HANDLER_OPERATION_MODE_AVAILABILITY` | `/mrm_handler/operation_mode_availability` (take) | handler/mrm_handler_core.cpp:233 (onOperationModeAvailability) |
+| 16 | `CALL_MRM_HANDLER_COMFORTABLE_STOP_OPERATE` | `/mrm_handler/comfortable_stop_operate` (service_call) | handler/mrm_handler_core.cpp:421 (requestMrmBehavior) |
+| 17 | `CALL_MRM_HANDLER_EMERGENCY_STOP_OPERATE` | `/mrm_handler/emergency_stop_operate` (service_call) | handler/mrm_handler_core.cpp:425 (requestMrmBehavior) |
+| 18 | `SERVE_MRM_COMFORTABLE_STOP_OPERATOR_OPERATE_ENTRY` | `/mrm_comfortable_stop_operator/operate` (service_serve_entry) | comfortable/mrm_comfortable_stop_operator_core.cpp:90 (operateComfortableStop) |
+| 19 | `SERVE_MRM_COMFORTABLE_STOP_OPERATOR_OPERATE_EXIT` | `/mrm_comfortable_stop_operator/operate` (service_serve_exit) | comfortable/mrm_comfortable_stop_operator_core.cpp:106 (operateComfortableStop) |
+| 20 | `SERVE_MRM_EMERGENCY_STOP_OPERATOR_OPERATE_ENTRY` | `/mrm_emergency_stop_operator/operate` (service_serve_entry) | emergency/mrm_emergency_stop_operator_core.cpp:115 (operateEmergencyStop) |
+| 21 | `SERVE_MRM_EMERGENCY_STOP_OPERATOR_OPERATE_EXIT` | `/mrm_emergency_stop_operator/operate` (service_serve_exit) | emergency/mrm_emergency_stop_operator_core.cpp:123 (operateEmergencyStop) |
+| 22 | `PUB_MRM_COMFORTABLE_STOP_OPERATOR_CLEAR_VELOCITY_LIMIT` | `/mrm_comfortable_stop_operator/clear_velocity_limit` (publish) | comfortable/mrm_comfortable_stop_operator_core.cpp:143 (publishVelocityLimitClearCommand) |
+| 23 | `PUB_MRM_COMFORTABLE_STOP_OPERATOR_MAX_VELOCITY_CANDIDATES` | `/mrm_comfortable_stop_operator/max_velocity_candidates` (publish) | comfortable/mrm_comfortable_stop_operator_core.cpp:131 (publishVelocityLimit) |
+| 24 | `PUB_MRM_COMFORTABLE_STOP_OPERATOR_STATUS` | `/mrm_comfortable_stop_operator/status` (publish) | comfortable/mrm_comfortable_stop_operator_core.cpp:114 (publishStatus) |
+| 25 | `PUB_MRM_EMERGENCY_STOP_OPERATOR_EMERGENCY_CONTROL_CMD` | `/mrm_emergency_stop_operator/emergency_control_cmd` (publish) | emergency/mrm_emergency_stop_operator_core.cpp:137 (publishControlCommand) |
+| 26 | `PUB_MRM_EMERGENCY_STOP_OPERATOR_STATUS` | `/mrm_emergency_stop_operator/status` (publish) | emergency/mrm_emergency_stop_operator_core.cpp:131 (publishStatus) |
+| 27 | `PUB_MRM_HANDLER_HAZARD_LIGHTS_CMD` | `/mrm_handler/hazard_lights_cmd` (publish) | handler/mrm_handler_core.cpp:314 (publishHazardCmd) |
+| 28 | `PUB_MRM_HANDLER_MRM_STATE` | `/mrm_handler/mrm_state` (publish) | handler/mrm_handler_core.cpp:321 (publishMrmState) |
+| 29 | `PUB_MRM_HANDLER_TAKEOVER_REQUEST_STATE` | `/mrm_handler/takeover_request_state` (publish) | handler/mrm_handler_core.cpp:335 (publishTakeoverRequestState) |
+| 30 | `MRM_HANDLER_INIT_DONE` | `/mrm_handler/init` (lifecycle_done) | handler/mrm_handler_core.cpp:563 (updatePhase) |
+| 31 | `MRM_HANDLER_INIT_TIMEOUT` | `/mrm_handler/init` (lifecycle_timeout) | handler/mrm_handler_core.cpp:575 (updatePhase) |
+
+**Forwarded from nano-ros (phase9-W4, section 9).** Not contract elements
+and not call sites in the island: the executor emits them, and the sink in
+`include/island_trace.h` writes them at island id = 256 + nano-ros id.
+
+| id | marker | nano-ros id | arg |
+| ---: | --- | ---: | --- |
+| 277 | `NROS_VIOLATION` | 21 | seq << 8 | rule code (RULE_IDS index + 1) |
+| 278 | `NROS_VIOLATION_FQN` | 22 | FNV-1a 32 of the endpoint ref |
+| 279 | `NROS_VIOLATION_MEASURED` | 23 | measured |
+| 280 | `NROS_VIOLATION_DECLARED` | 24 | declared |
 
 ### Unreachable by configuration
 
@@ -629,3 +643,66 @@ component, which includes `<zephyr/kernel.h>` once tracing is on, before
 signals the island that writes this run's trace instead of the first
 `build-zephyr/zephyr/zephyr.exe` on the host (run w17-nb3 signalled another
 process and lost its dump).
+
+## 9. Contract violations in the trace (phase9-W4)
+
+nano-ros's executor judges the contract's runtime rules (rate, age,
+silence, latency, timer overrun, release jitter) every spin, and from
+phase-474 I1 (pin `5b3ac4567`, PR #1729) it emits every STORED violation, at
+detection, as four trace events through the callback trace sink
+(`nros_set_trace_sink`, `CONFIG_NROS_TRACE_CALLBACKS`):
+
+| nano-ros id | arg |
+| ---: | --- |
+| 21 | `seq << 8 \| rule code` (rule code = `monitor::RULE_IDS` index + 1) |
+| 22 | FNV-1a 32 of the endpoint ref (`/mrm_handler/mrm_state`; `timer`, `spin` for the rules with no endpoint) |
+| 23 | measured (per rule: mHz, ms, dropped activations, us) |
+| 24 | declared, same unit |
+
+**The id collision, and how it is resolved.** nano-ros numbers its events
+16-24 (16-20 are the per-dispatch register/start/end/name events); the
+island's markers are generated from the contract as 1..N (N = 31 today).
+Both cannot share one id space. The island ids do not move: every recorded
+trace, `markers.json`, `merge.py`, `analysis.py` and the experiments key on
+them. Instead the island installs its own sink (`island_trace_nros_sink`,
+`include/island_trace.h`, at `SYS_INIT` before any entity registers) that
+keeps only 21-24 and writes each at island id `ISLAND_TRACE_NROS_BASE` (256)
++ nano-ros id, so 277-280, through the same `ISLAND_TRACE` path as every
+marker (the trace window, the record policy, the self-cost bracket). The
+dispatch events 16-20 are dropped at the id test: a record per callback
+would fill the board's buffer, and the paths the island measures carry
+their own ENTRY/EXIT. `gen_markers.py` reads the four ids and `RULE_IDS`
+from the pinned `monitor.rs` and hashes the contract's endpoint refs into
+`markers.json` (`nros`: `base`, `markers`, `rule_ids`, `endpoint_hashes`), all
+inside the table digest; it refuses a contract that reaches id 256. The
+policy table gives every id above the island's count the `every` policy.
+
+**A violation opens the trace window.** A stored violation is a second
+trigger beside the detector path's ENTRY: whichever comes first flushes the
+pre-trigger history (the callbacks before the verdict) and starts the
+stream, and the TRIGGER record names `NROS_VIOLATION` (id 277). An act that
+follows is still recorded whole: in run `w4-encore` the window opened at the
+first post-arming verdict (6.8 s after boot), the act came 31 s later, and
+the 32 KiB buffer held 17,062 B of it with every row of the analysis
+present (docs/takeover-trace.md section 12).
+
+**Decoding.** `island_trace.py` joins each run of 277-280 into one
+violation and names it: the rule from `rule_ids`, the endpoint from
+`endpoint_hashes` (a hash not in the table prints as `fqn#xxxxxxxx`).
+`island_trace.py violations <trace>` lists them with the island time;
+`check` reports them (`info violations: N ...`) without failing, since a
+violation is a finding of the run, not a fault of the trace; `decode
+--timeline` prints the decoded verdict beside its marker. `merge.py` writes
+each as an `island` `violation` event on the host clock, and `render.py`
+draws it as a dashed vertical line labelled with rule, endpoint and
+measured/declared.
+
+**The SWD record beside it.** The same verdicts go, at detection, into
+nano-ros's `NROS_VIOLATION_RECORD` (`CONFIG_NROS_BOOT_REPORT`), read by
+symbol by `tools/timeline/violations.py` and, inside its halted read, by
+`readout.py`, which writes `violations.txt` into every run directory. The
+record keeps the latest `CONFIG_NROS_EXECUTOR_MAX_VIOLATIONS` (8) and the
+counts (total, dropped, suppressed_before_arm, armed); the trace keeps
+every verdict after the window opened, which is how runs with more than 8
+can be read whole (`w4-bringup2`: 17 in the trace, 8 in the record).
+
