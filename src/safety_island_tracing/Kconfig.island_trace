@@ -43,3 +43,19 @@ config ISLAND_TRACE_SPIN_KEEP
 	  1 keeps every tick (execution-time samples of every spin).
 
 endif
+
+config ISLAND_DEBUG_OVERRUN
+	bool "Debug hook: one commanded busy-wait in the handler's tick"
+	help
+	  phase9-W4. Compiles in `island_debug_overrun_ms`, a volatile u32 the
+	  handler reads on every tick in RUN. It is 0 from boot and the hook
+	  does nothing while it is 0; a debugger writing N > 0 into it (over
+	  SWD: tools/timeline/violations.py overrun N) makes the NEXT RUN tick
+	  busy-wait N ms after its publishes, once, and clears it. A tick that
+	  long trips the contract's max-latency-runtime monitors on the
+	  handler's publishers (hazard_lights_cmd 100 ms, mrm_state and
+	  takeover_request_state 206 ms) and, because the one executor is
+	  blocked, the spin's release-jitter and the timers' overrun rules.
+	  It is the board's end-to-end test of the violation channel
+	  (docs/takeover-trace.md section 12). No link entity, no parameter
+	  service, no contract change: only a debugger can command it.

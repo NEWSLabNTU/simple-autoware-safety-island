@@ -13,6 +13,7 @@
 
 #include "autoware/mrm_handler/mrm_handler_core.hpp"
 #include <nros/clock.hpp>
+#include <nros/nros.hpp>
 
 #include <cstdio>
 
@@ -24,9 +25,56 @@
 // nano-ros port: platform monotonic stamps (porting-notes 05); RCLCPP_* logs →
 // printf (porting-notes 01). <cmath> avoided — Zephyr minimal libcpp
 // (porting-notes 18).
+#if defined(__ZEPHYR__)
+#include <zephyr/kernel.h>
+// phase9-W4: when and why the handler armed nano-ros's contract monitors,
+// readable by name over SWD (tools/timeline/violations.py): the uptime of the
+// call (0 = not yet) and the transition that made it (ARM_VIA_*).
+extern "C" {
+volatile uint32_t island_monitors_armed_uptime_ms;
+volatile uint32_t island_monitors_armed_via;
+#if defined(CONFIG_ISLAND_DEBUG_OVERRUN)
+// phase9-W4 debug hook (CONFIG_ISLAND_DEBUG_OVERRUN, Kconfig.island_trace):
+// 0 from boot; a debugger writes N > 0 and the next RUN tick busy-waits N ms,
+// once. Read and cleared only by onTimer(). By name over SWD:
+// tools/timeline/violations.py overrun N.
+volatile uint32_t island_debug_overrun_ms;
+#endif
+}
+#endif
+
 namespace
 {
 double abs_d(double v) { return v < 0 ? -v : v; }
+
+// phase9-W4: the island's start-up is over -- arm nano-ros's contract
+// monitors (CONFIG_NROS_MONITOR_ARM_ON_CALL, nano-ros phase-474 I2). Armed at
+// the FIRST tick that finds every required input established, which is one of
+// two transitions:
+//   ARM_VIA_INIT_DONE      INIT -> RUN (marker INIT_DONE);
+//   ARM_VIA_INIT_RECOVERY  RUN + init failure -> RUN, the failure cleared.
+// NOT at INIT_TIMEOUT. On the board the island boots minutes before Autoware
+// (tools/timeline/run-board.sh: reset at step 3, Autoware at step 5), so
+// init_timeout (3.0 s) always passes first; arming there would store the
+// availability's silence-runtime for the minutes Autoware takes to start,
+// a start-up wait the handler already reports as its own fault (init
+// failure, isInputLost(): emergency stop, INIT_TIMEOUT marker). The monitors
+// judge the running system from the tick it is whole, and a handler whose
+// inputs never establish stays in that fault, unmonitored by nano-ros but
+// never silent. Before the call every verdict is counted in
+// suppressed_before_arm and not stored. On an image without ARM_ON_CALL the
+// monitors armed at the first spin and the call does nothing.
+enum : uint32_t { ARM_VIA_INIT_DONE = 1u, ARM_VIA_INIT_RECOVERY = 2u };
+void arm_contract_monitors(uint32_t via)
+{
+  nros::arm_monitors();
+#if defined(__ZEPHYR__)
+  island_monitors_armed_uptime_ms = k_uptime_get_32();
+  island_monitors_armed_via = via;
+#else
+  (void)via;
+#endif
+}
 
 double now_sec()
 {
@@ -502,6 +550,7 @@ bool MrmHandler::updatePhase()
       // The recovery is the state machine's, as from any fault: with the
       // init failure gone, isEmergency() is judged on the inputs alone.
       is_init_failed_ = false;
+      arm_contract_monitors(ARM_VIA_INIT_RECOVERY);
       std::printf(
         "[mrm_handler] init failure cleared: every input established %d ms after boot\n",
         to_ms(since_boot));
@@ -512,6 +561,7 @@ bool MrmHandler::updatePhase()
   if (pending == 0) {
     phase_ = Phase::Run;
     ISLAND_TRACE(ISLAND_MK_MRM_HANDLER_INIT_DONE, static_cast<uint32_t>(to_ms(since_boot)));
+    arm_contract_monitors(ARM_VIA_INIT_DONE);
     std::printf(
       "[mrm_handler] INIT -> RUN: every input established %d ms after boot\n", to_ms(since_boot));
     return true;
@@ -603,6 +653,16 @@ void MrmHandler::onTimer()
     ISLAND_TRACE(ISLAND_MK_PATH_MRM_HANDLER_CALL_MRM_EXIT, mrm_state_.state);
   }
   publishHazardCmd();
+#if defined(__ZEPHYR__) && defined(CONFIG_ISLAND_DEBUG_OVERRUN)
+  // phase9-W4: the commanded overrun, after this tick's publishes so the
+  // monitors charge it to them (one dispatch, every monitored publisher whose
+  // count advanced in it).
+  if (island_debug_overrun_ms != 0u) {
+    const uint32_t ms = island_debug_overrun_ms;
+    island_debug_overrun_ms = 0u;
+    k_busy_wait(ms * 1000u);
+  }
+#endif
   ISLAND_TRACE(ISLAND_MK_PATH_MRM_HANDLER_ON_TIMER_EXIT, 1);
 }
 
