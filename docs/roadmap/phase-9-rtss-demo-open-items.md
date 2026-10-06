@@ -129,8 +129,10 @@ phases, this repository by fast-forward push.
   not merged to main. The runs were built at nano-ros `5b3ac4567`, the head
   of PR #1729 (`feat/violation-ring-and-arming`, phase-474 I1/I2); the PR was
   then rebased and the pin moved to its new head `810c73341` (two non-code
-  files differ). The PR is in the merge queue, reading DIRTY: the pin moves
-  to the merge commit when it lands.
+  files differ). PR #1729 merged on 2026-10-06 as nano-ros main
+  `99f03da7f`, and the pin now points there (the same tree as `810c73341`
+  rebased onto main; not rebuilt, the three readouts above are from
+  `5b3ac4567`).
   - [x] Pin, `just setup-cli`, `just doctor` OK (play_launch 0.13.1, the SDK
     lock's two zephyr-sdk tables). The pin's issue-1498 floor asked for 19
     pthread conds (board and QEMU confs, 17 -> 19).
