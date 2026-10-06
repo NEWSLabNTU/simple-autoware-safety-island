@@ -29,7 +29,8 @@
 #   6. the availability gate ($RB_GATE), the probe ($RB_PROBE)
 #   7. the act ($RB_ACT, after RB_SETTLE s): tools/timeline/scenario.py run
 #   8. the readout: tools/timeline/readout.py (board: pyocd over SWD;
-#      qemu: the QEMU monitor) -> island.trace, wrapped
+#      qemu: the QEMU monitor) -> island.trace, wrapped; in the same halt the
+#      nano-ros violation record -> violations.txt (phase9-W4)
 #   9. teardown: act helpers, Autoware, the link, the router if this started it
 #  10. island_trace.py check, merge.py, render.py --table, the VERDICT
 #
@@ -272,7 +273,9 @@ trap - INT TERM
 step "10. check, merge, analysis"
 echo "== run $id ($act, $target): act exit $rc; readout exit $trc_read; trace $(stat -c %s "$out" 2>/dev/null || echo 0) B"
 python3 src/safety_island_tracing/island_trace.py check "$out" > "$out.check.txt" 2>&1
-grep -E "^(ok|FAIL|info) +window|trace-check" "$out.check.txt"
+grep -E "^(ok|FAIL|info) +(window|violations)|trace-check" "$out.check.txt"
+# phase9-W4: the board's own record of runtime contract violations (SWD)
+[ -f "$dir/violations.txt" ] && sed 's/^/   /' "$dir/violations.txt"
 python3 -c 'import sys; sys.path.insert(0,"tools/timeline"); import tlcommon as tl; open(sys.argv[1],"w").write(tl.explain_text())' "$dir/explain.txt"
 python3 tools/timeline/merge.py "$out" "$dir" || echo "merge failed: the plot has host events only"
 python3 tools/timeline/render.py "$dir" --table | tee "$dir/table.md"

@@ -27,6 +27,12 @@ The raw buffer is written beside the output as <out>.raw, and <out> is that
 buffer wrapped in the native_sim dump's header (island_trace.py wrap), with
 the heartbeat counter as the "emitted" count, so `island_trace.py check` can
 tell a full buffer from a short act. <out>.readout.json has every value read.
+
+phase9-W4: in the same halt, the nano-ros violation record
+(`NROS_VIOLATION_RECORD`) and the handler's arming words, when the image has
+them; decoded by tools/timeline/violations.py into violations.txt (and the
+raw record violations.bin) in the output's directory, so every act's run
+directory carries the board's own violation readout beside its trace.
 """
 import argparse
 import json
@@ -40,6 +46,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, os.path.join(ROOT, "src/safety_island_tracing"))
 import island_trace  # noqa: E402
+import violations  # noqa: E402
 
 BUFFER = "ram_tracing"
 WORDS = [
@@ -150,12 +157,15 @@ def main():
     ap.add_argument("--no-resume", action="store_true", help="leave the core halted after the read")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
-    syms = symbols(a.elf, set(WORDS) | {BUFFER})
+    syms = symbols(a.elf, set(WORDS) | {BUFFER, violations.RECORD} | set(violations.ARM_WORDS))
     if BUFFER not in syms:
         sys.exit(f"readout: {a.elf} has no {BUFFER} (tracing is not in this image)")
     addr, size = syms[BUFFER]
     plan = [f"read {BUFFER} @ {addr:#010x}, {size} B"] + \
         [f"read32 {n} @ {syms[n][0]:#010x}" for n in WORDS if n in syms]
+    if violations.RECORD in syms:
+        plan += [f"read {violations.RECORD} @ {syms[violations.RECORD][0]:#010x}, {syms[violations.RECORD][1]} B"] + \
+            [f"read32 {n} @ {syms[n][0]:#010x}" for n in violations.ARM_WORDS if n in syms and n not in WORDS]
     print(f"readout: {a.target}, {a.elf}")
     for p in plan:
         print(f"readout:   {p}")
@@ -172,9 +182,17 @@ def main():
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
     t0 = time.monotonic()
     dev.halt()
+    vdir = os.path.dirname(os.path.abspath(a.out))
+    vrec = None
     try:
         vals = {n: dev.read32(syms[n][0]) for n in WORDS if n in syms}
         data = dev.read_block(addr, size, raw)
+        if violations.RECORD in syms:
+            vaddr, vsize = syms[violations.RECORD]
+            vrec = dev.read_block(vaddr, vsize, os.path.join(vdir, "violations.bin"))
+            for n in violations.ARM_WORDS:
+                if n in syms and n not in vals:
+                    vals[n] = dev.read32(syms[n][0])
     finally:
         if not a.no_resume:
             dev.resume()
@@ -187,6 +205,17 @@ def main():
                    symbols={n: syms[n][0] for n in syms}, values=vals),
               open(a.out + ".readout.json", "w"), indent=1)
     print("readout: " + ", ".join(f"{k.replace('island_trace_', '')}={v}" for k, v in vals.items()))
+    vtxt = os.path.join(vdir, "violations.txt")
+    if vrec is None:
+        open(vtxt, "w").write(f"no {violations.RECORD} in {a.elf} (no CONFIG_NROS_BOOT_REPORT on this "
+                              f"target): the board's record was not read\n")
+    else:
+        try:
+            text = violations.report(a.elf, vrec, {n: vals[n] for n in violations.ARM_WORDS if n in vals})
+        except SystemExit as e:  # a bad magic or version: say so, keep the trace
+            text = f"violation record unreadable: {e}\n"
+        open(vtxt, "w").write(text)
+        print("readout: " + text.rstrip().replace("\n", "\nreadout: "))
     island_trace.wrap(raw, a.out, a.zephyr, vals.get("island_trace_hb_seq", 0),
                       vals.get("island_trace_hb_last_uptime_ms", 0))
     if "island_trace_triggered" in vals and not vals["island_trace_triggered"]:
