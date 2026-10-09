@@ -322,6 +322,33 @@ phases, this repository by fast-forward push.
 
     (trace, `island_trace.py violations`; the record keeps #12-#19). #15
     and #16 come 15 ms apart after #14, the reporter's spacing.
+    Gate (b) wording: one `max-latency-runtime` verdict PER MONITORED
+    PUBLISHER of the overrunning tick (three on the handler: each
+    publisher's own budget was broken), not one for the tick.
+  - [x] Found from the pin's monitor.rs (2026-10-09), two causes, neither
+    the reporter:
+    - The 15-17 ms spacing, and the timer-overrun and release-jitter
+      verdicts after each stored one, are the LOG FLOOR: `record()` logs
+      every verdict at detection (`log_violation`) unless the drain hook
+      reports, and this board has `CONFIG_LOG_MODE_IMMEDIATE=y` with the
+      console on the unwired lpuart0 at 115200 baud, so each ~170-character
+      warn line is shifted out on the spin thread, ~15 ms. The I7 reporter
+      was already off the judged tick. Fix here: `CONFIG_LOG_DEFAULT_LEVEL=1`
+      on the board (errors only; nothing reads lpuart0). Expect: the three
+      max-latency verdicts of (b) within one tick, no overrun or jitter
+      verdict after them, and after RUN no timer-overrun or jitter verdict.
+    - The 9999/10000 mHz rate verdicts are the rule's arithmetic, not the
+      window's phase: `check_rate` floors `published * 1e9 / window_us`, and
+      the window closes at the first tick after the interval, so a stream
+      at exactly its declared rate reads one mHz short in EVERY window
+      (reported once, `violated_last_window`). nano-ros branch
+      `fix/474-rate-floor` (phase-474 I9) judges the count against
+      floor(min_rate * window) instead. The 29773/30000 on the emergency
+      operator's two topics is a real 0.76 % shortfall (149 samples in
+      5.004 s, a 33.59 ms mean period on a 30 Hz timer): open, needs the
+      operator's tick spacing from the trace (the island sink drops 18/19).
+      Also a contract question: `min_rate_hz` equal to the producer's own
+      timer rate leaves no margin at all.
   - [ ] Gate (c), rehearsal `w4r-pre-encore2` (final image): VERDICT PASS,
     every table row PASS; 11 verdicts stored, all 6.1-16.2 s after boot,
     the act at ~38 s: none during it. HEAP HEADROOM ok (above). Takes in
