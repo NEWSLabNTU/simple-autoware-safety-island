@@ -125,9 +125,17 @@ NROS_TAKE_MARKERS = [
     ("MARKER_TAKE_STAMP_SEC", "NROS_TAKE_STAMP_SEC", "source stamp sec (only when it changed for this input)"),
     ("MARKER_TAKE_STAMP_NSEC", "NROS_TAKE_STAMP_NSEC", "source stamp nanosec"),
 ]
-# The dispatch events the sink reads but never forwards: a timer's slot is
-# learnt from the START that precedes its callback.
+# The dispatch events the sink reads: a timer's slot is learnt from the START
+# that precedes its callback. They are forwarded for the ONE bound timer slot
+# only (ISLAND_TRACE_TIMER_BIND, the emergency operator's 30 Hz timer), at
+# NROS_BASE + id (274-275), so its tick-to-tick spacing is in the trace
+# (phase9-W4 rerun, the 29773/30000 mHz readout). Every other slot's START/END
+# is dropped: a record per callback would fill the buffer.
 NROS_DISPATCH = [("MARKER_START", "START"), ("MARKER_END", "END")]
+NROS_TIMER_MARKERS = {
+    "START": ("NROS_TIMER_START", "timer slot (the bound timer only)"),
+    "END": ("NROS_TIMER_END", "timer slot (the bound timer only)"),
+}
 # (subscriber endpoint ref, forward one take in N): the three inputs whose link
 # hop F4 measures. control_cmd arrives at 30 Hz and is thinned to 10 Hz to fit
 # the RAM trace window (docs/tracing.md section 9).
@@ -181,6 +189,9 @@ def nros_violation_table(model):
         if not m:
             sys.exit(f"gen_markers: {const} not found in the pinned callback_trace.rs")
         dispatch[name] = int(m.group(1))
+        tname, targ = NROS_TIMER_MARKERS[name]
+        markers.append(dict(id=NROS_BASE + dispatch[name], nros_id=dispatch[name], name=tname,
+                            kind="nros_timer", arg=targ))
     c = model["contracts"]
     subs = set(c.get("sub_endpoints", {}))
     for ref, _keep in NROS_TAKE_INPUTS:
@@ -192,7 +203,7 @@ def nros_violation_table(model):
         sys.exit("gen_markers: two endpoint refs share an FNV-1a hash; the decoder could not tell them apart")
     takes = [dict(index=i, endpoint=ref, keep=keep, stamp_offset=NROS_TAKE_STAMP_OFFSET)
              for i, (ref, keep) in enumerate(NROS_TAKE_INPUTS)]
-    return markers, rules, hashes, dispatch, takes
+    return sorted(markers, key=lambda m: m["id"]), rules, hashes, dispatch, takes
 
 
 def c_ident(s):

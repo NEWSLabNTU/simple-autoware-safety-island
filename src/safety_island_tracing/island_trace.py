@@ -19,6 +19,7 @@ the heartbeat counter it read beside the buffer).
   island_trace.py check  <file>
   island_trace.py violations <file>
   island_trace.py takes <file>
+  island_trace.py ticks <file>
   island_trace.py wrap   <raw> --zephyr 4.4 --hb-emitted N [--hb-last-uptime MS] -o <out>
 
 A trace recorded with the trace window (phase8-W17, CONFIG_ISLAND_TRACE_WINDOW;
@@ -41,6 +42,12 @@ sink puts the input's index where nano-ros had the slot handle, sends the
 stamp's sec only when it changed for that input, and one take in `keep`.
 load() joins each take (input, seq, source stamp) into `tr.takes`; `takes`
 lists them with the count per input, `check` counts them.
+
+phase9-W4 rerun: the bound timer's dispatch events (nano-ros 18/19, the
+emergency operator's 30 Hz timer, every tick) are forwarded at 274/275
+(NROS_BASE + id; every other slot's are dropped). `ticks` prints the
+start-to-start spacing: count, mean, min, max and a histogram at 1 ms bins,
+and the callback duration (start to end); `check` reports the count and mean.
 
 `check` exits 0 only if: the decode is clean; the provenance names the marker
 table in markers.json; every marker is present at least once, except those
@@ -295,6 +302,32 @@ def join_takes(recs, table):
     return out
 
 
+def timer_ticks(tr):
+    """phase9-W4 rerun: the bound timer's starts and ends (274/275), as
+    (start_ns, end_ns or None) pairs in order."""
+    out = []
+    for r in tr.records:
+        if r.get("kind") != "marker":
+            continue
+        if r["name"] == "NROS_TIMER_START":
+            out.append([r["t_ns"], None])
+        elif r["name"] == "NROS_TIMER_END" and out and out[-1][1] is None:
+            out[-1][1] = r["t_ns"]
+    return out
+
+
+def tick_stats(ticks):
+    st = [t for t, _ in ticks]
+    d = [(b - a) / 1e6 for a, b in zip(st, st[1:])]
+    if not d:
+        return None
+    hist = Counter(int(x) for x in d)
+    dur = [(e - s_) / 1e6 for s_, e in ticks if e is not None]
+    return dict(n=len(st), gaps=len(d), mean=sum(d) / len(d), min=min(d), max=max(d), hist=hist,
+                span_ms=(st[-1] - st[0]) / 1e6, dur_max=max(dur) if dur else None,
+                dur_mean=sum(dur) / len(dur) if dur else None)
+
+
 def take_counts(tr):
     c = Counter(t["endpoint"] for t in getattr(tr, "takes", []))
     stamped = Counter(t["endpoint"] for t in getattr(tr, "takes", []) if "stamp_ns" in t)
@@ -528,6 +561,10 @@ def check(tr, model_path):
         tc = take_counts(tr)
         say(f"info takes: {sum(n for n, _ in tc.values())} forwarded take(s) (nano-ros 25-27): " +
             ", ".join(f"{ep} {n} ({st} stamped)" for ep, (n, st) in tc.items()))
+    ts_ = tick_stats(timer_ticks(tr))
+    if ts_:
+        say(f"info timer ticks: {ts_['n']} of the bound timer (274/275), spacing mean {ts_['mean']:.3f} ms, "
+            f"min {ts_['min']:.3f}, max {ts_['max']:.3f} (island_trace.py ticks)")
     if tr.header and hbs:
         emitted = tr.header["heartbeats_emitted"]
         if hbs[-1] + 1 != emitted:
@@ -562,7 +599,7 @@ def wrap(raw_path, out, zephyr, hb_emitted, hb_last_uptime_ms, hb_ms=100):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cmd", choices=["decode", "check", "wrap", "violations", "takes"])
+    ap.add_argument("cmd", choices=["decode", "check", "wrap", "violations", "takes", "ticks"])
     ap.add_argument("file")
     ap.add_argument("--zephyr", help="major.minor of the tree (needed for a raw board buffer)")
     ap.add_argument("--tsdl", help="explicit path to the CTF TSDL metadata")
@@ -597,6 +634,27 @@ def main():
             st = (f"stamp {t['stamp_ns'] // 1_000_000_000}.{t['stamp_ns'] % 1_000_000_000:09d}"
                   if "stamp_ns" in t else "no stamp")
             print(f"  {(t['t_ns'] - t0) / 1e6:12.3f} ms  {t['endpoint']} seq={t['seq']} {st}")
+        return 1 if tr.error else 0
+    if a.cmd == "ticks":
+        ticks = timer_ticks(tr)
+        ts_ = tick_stats(ticks)
+        if not ts_:
+            print(f"trace ticks: {len(ticks)} of the bound timer (274/275): no spacing to report")
+            return 1 if tr.error else 0
+        t0 = tr.records[0]["t_ns"] if tr.records else 0
+        print(f"trace ticks: {ts_['n']} of the bound timer (274/275) over {ts_['span_ms']:.3f} ms, "
+              f"from {(ticks[0][0] - t0) / 1e6:.3f} ms")
+        print(f"  start-to-start: {ts_['gaps']} gaps, mean {ts_['mean']:.3f} ms, min {ts_['min']:.3f}, "
+              f"max {ts_['max']:.3f}; {1e6 / ts_['mean']:.0f} mHz")
+        if ts_["dur_max"] is not None:
+            print(f"  callback (start to end): mean {ts_['dur_mean']:.3f} ms, max {ts_['dur_max']:.3f}")
+        print("  histogram (1 ms bins, [k, k+1) ms):")
+        for k in sorted(ts_["hist"]):
+            print(f"    {k:5d}  {ts_['hist'][k]}")
+        st = [t for t, _ in ticks]
+        for a_, b_ in zip(st, st[1:]):
+            if (b_ - a_) / 1e6 >= 1.5 * ts_["mean"]:
+                print(f"  long gap at {(a_ - t0) / 1e6:.3f} ms: {(b_ - a_) / 1e6:.3f} ms")
         return 1 if tr.error else 0
     if a.cmd == "decode":
         summarize(tr)

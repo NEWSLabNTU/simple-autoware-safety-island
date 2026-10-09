@@ -344,11 +344,48 @@ phases, this repository by fast-forward push.
       (reported once, `violated_last_window`). nano-ros branch
       `fix/474-rate-floor` (phase-474 I9) judges the count against
       floor(min_rate * window) instead. The 29773/30000 on the emergency
-      operator's two topics is a real 0.76 % shortfall (149 samples in
-      5.004 s, a 33.59 ms mean period on a 30 Hz timer): open, needs the
-      operator's tick spacing from the trace (the island sink drops 18/19).
-      Also a contract question: `min_rate_hz` equal to the producer's own
-      timer rate leaves no margin at all.
+      operator's two topics was a real shortfall (149 samples in 5.004 s),
+      but not a timer cadence or clock defect: see the next item.
+    - The emergency operator's 29773/30000 mHz (found 2026-10-09, run
+      `w4r-ticks`): the operator's timer runs at 33.000 ms (`1000 /
+      update_rate` = 33 ms, mrm_emergency_stop_operator_core.cpp:90, so
+      30.30 Hz, 1 % over the declared 30 Hz), and the executor carries
+      every remainder (spin.rs:9614-9623 accumulates `now - last_spin_end`;
+      arena.rs:2836-2875). It lost two ACTIVATIONS in that window: the log
+      floor above stalled the spin for ~100 ms (verdicts #3-#8 at
+      16383-16481 ms, ~16 ms each), and the timer's default overrun policy
+      `Skip` (arena.rs:2866-2873, rclcpp's behaviour) fires once after a
+      stall and drops the missed periods, counted: that is verdict #7,
+      `timer-overrun-runtime timer measured=2`. 151.6 - 2 = 149.6 ticks in
+      the 5.004 s window that opened at 16332 ms -> 149. The handler's
+      100 ms timer loses nothing to a 100 ms stall (it would need >= 200
+      ms), hence 9999 there, the floor defect only. Evidence:
+      - Old traces (the operator's own ON_TIMER_ENTRY, one tick in ten,
+        `spin_keep` 10): 10-tick spans of 329-331 ms throughout (33.0 ms a
+        tick); `w4r-pre-ab` has ONE span of 396 ms (= 12 periods) starting
+        at 16115 ms, across the stall, and one of 627 ms (19 periods) across
+        the commanded 250 ms overrun of gate (b) (28583 mHz, 9 dropped).
+        `w4r-pre-encore2`: one 361 ms span at 11098 ms (1 dropped,
+        `timer measured=1`, 29972 mHz).
+      - `w4r-ticks` (image of cbf2ad5 plus the bound timer's nano-ros
+        18/19 forwarded at 274/275, `CONFIG_ISLAND_TRACE_TIMER_TICKS`; the
+        act replaced by `sleep 45`): 1073 ticks over 35.375 s,
+        start-to-start mean 32.999 ms (30304 mHz), min 28.856, max 37.336;
+        histogram at 1 ms bins: 28: 1, 29: 2, 30: 16, 31: 60, 32: 463,
+        33: 456, 34: 50, 35: 21, 36: 2, 37: 1; no gap of 1.5 periods or
+        more. Callback 0.552 ms mean, 3.196 ms max. The four 9998 verdicts
+        were stored 90 us apart (13270.363-13270.637 ms), not 16 ms: no
+        timer-overrun, no release-jitter and no operator rate verdict in
+        the record (total=5). The buffer filled 25 s before the readout
+        with the forwarding on, so it is off by default
+        (src/safety_island_tracing/Kconfig.island_trace).
+      Fix: `CONFIG_LOG_DEFAULT_LEVEL=1` (cbf2ad5), already on this branch;
+      no nano-ros change. Still open: (1) any spin stall of two periods
+      (66 ms) drops an operator activation by design and reads as a rate
+      verdict in the next window, so `min_rate_hz` equal to the producer's
+      own rate leaves no margin (contract question, as above); (2) the
+      period is 33 ms by integer division, not 33.333 ms: 30.30 Hz on the
+      wire, which is the only margin the rule had.
   - [ ] Gate (c), rehearsal `w4r-pre-encore2` (final image): VERDICT PASS,
     every table row PASS; 11 verdicts stored, all 6.1-16.2 s after boot,
     the act at ~38 s: none during it. HEAP HEADROOM ok (above). Takes in

@@ -1,7 +1,7 @@
 {
  "generator": "src/safety_island_tracing/gen_markers.py",
  "contract_sha256": "ab5beb68e9d07ce0d0ad5377b7372f2bccc0d59f30d4b7c9ad9ce77dcc1aa6d4",
- "table_sha256": "f796abf8dd6beca550656a8212a40d1107a91d4c60cd70357211275aa8f1bb20",
+ "table_sha256": "6025ced37ad77b75a27584928b1918b6d1982d49b3bf090f5f02a683ac106665",
  "entities": {
   "pub": 8,
   "sub": 7,
@@ -344,6 +344,20 @@
  "nros": {
   "base": 256,
   "markers": [
+   {
+    "id": 274,
+    "nros_id": 18,
+    "name": "NROS_TIMER_START",
+    "kind": "nros_timer",
+    "arg": "timer slot (the bound timer only)"
+   },
+   {
+    "id": 275,
+    "nros_id": 19,
+    "name": "NROS_TIMER_END",
+    "kind": "nros_timer",
+    "arg": "timer slot (the bound timer only)"
+   },
    {
     "id": 277,
     "nros_id": 21,

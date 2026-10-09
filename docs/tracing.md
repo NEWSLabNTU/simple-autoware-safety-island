@@ -186,6 +186,8 @@ and not call sites in the island: the executor emits them, and the sink in
 
 | id | marker | nano-ros id | arg |
 | ---: | --- | ---: | --- |
+| 274 | `NROS_TIMER_START` | 18 | timer slot; the bound timer only (phase9-W4 rerun) |
+| 275 | `NROS_TIMER_END` | 19 | timer slot; the bound timer only |
 | 277 | `NROS_VIOLATION` | 21 | seq << 8 | rule code (RULE_IDS index + 1) |
 | 278 | `NROS_VIOLATION_FQN` | 22 | FNV-1a 32 of the endpoint ref |
 | 279 | `NROS_VIOLATION_MEASURED` | 23 | measured |
@@ -203,6 +205,20 @@ each input's slot from the take it saw just before the input's callback
 registers as `sub#N`), turns on the stamp at offset 4
 (`nros_trace_set_take`), and puts the input's index where nano-ros had the
 slot. `island_trace.py takes` lists them; `merge.py` writes `take` events.
+
+The dispatch events 18/19 (callback start, end) are dropped for every slot
+but one: the timer bound by `ISLAND_TRACE_TIMER_BIND` (the emergency
+operator's 30 Hz timer, sampled every tick by
+`nros_trace_set_timer_every(slot, 1)`) is forwarded at 274/275, so the trace
+holds that timer's tick-to-tick spacing, with
+`CONFIG_ISLAND_TRACE_TIMER_TICKS=y` (off in the board and QEMU confs) (phase9-W4 rerun: the 29773/30000
+mHz rate readout on its two topics). `island_trace.py ticks` prints the
+start-to-start spacing (count, mean, min, max, histogram at 1 ms bins, every
+gap of 1.5 means or more) and the callback duration; `check` reports the
+count and mean. Cost: two 12-byte records per tick, 720 B/s at 30 Hz, about
+as much again as the rest of the window (section 8): in run `w4r-ticks`
+the 40 KiB buffer filled ~34 s after the trigger and `check` failed
+`complete`, hence off by default. merge.py and render.py do not read them.
 
 ### Unreachable by configuration
 

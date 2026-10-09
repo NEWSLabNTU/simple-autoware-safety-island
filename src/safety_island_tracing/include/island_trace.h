@@ -304,7 +304,10 @@ static struct k_timer island_trace_hb_timer;
  * I1). Those ids overlap the island's own 1..N, so the four are written at
  * ISLAND_TRACE_NROS_BASE + id (generated, island_trace_markers.h) and the
  * dispatch events are dropped: a record per callback would fill the buffer,
- * and the paths the island measures carry their own ENTRY/EXIT. The sink is
+ * and the paths the island measures carry their own ENTRY/EXIT -- except the
+ * bound timer (ISLAND_TRACE_TIMER_BIND): with CONFIG_ISLAND_TRACE_TIMER_TICKS
+ * its 18/19 are forwarded at 274/275, every tick, for its tick-to-tick
+ * spacing (phase9-W4 rerun). The sink is
  * called on the spin thread, the same as any ISLAND_TRACE call site. */
 #if defined(CONFIG_NROS_TRACE_CALLBACKS)
 #ifdef __cplusplus
@@ -338,9 +341,19 @@ static void island_trace_nros_sink(uint32_t id, uint32_t arg)
 	switch (id) {
 	case ISLAND_TRACE_NROS_START:
 		island_trace_last_start = (uint8_t)arg;
+#if defined(CONFIG_ISLAND_TRACE_TIMER_TICKS)
+		if (island_trace_timer_slot == (uint8_t)(arg + 1u)) {
+			ISLAND_TRACE(ISLAND_MK_NROS_TIMER_START, arg);
+		}
+#endif
 		return;
 	case ISLAND_TRACE_NROS_END:
 		island_trace_last_start = 0xFFu;
+#if defined(CONFIG_ISLAND_TRACE_TIMER_TICKS)
+		if (island_trace_timer_slot == (uint8_t)(arg + 1u)) {
+			ISLAND_TRACE(ISLAND_MK_NROS_TIMER_END, arg);
+		}
+#endif
 		return;
 	case ISLAND_TRACE_NROS_TAKE: {
 		const uint8_t slot = (uint8_t)(arg >> 24);

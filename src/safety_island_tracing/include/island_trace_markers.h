@@ -9,7 +9,7 @@
 #define ISLAND_TRACE_MARKERS_H
 
 #define ISLAND_TRACE_CONTRACT_SHA256 "ab5beb68e9d07ce0d0ad5377b7372f2bccc0d59f30d4b7c9ad9ce77dcc1aa6d4"
-#define ISLAND_TRACE_TABLE_SHA256 "f796abf8dd6beca550656a8212a40d1107a91d4c60cd70357211275aa8f1bb20"
+#define ISLAND_TRACE_TABLE_SHA256 "6025ced37ad77b75a27584928b1918b6d1982d49b3bf090f5f02a683ac106665"
 #define ISLAND_TRACE_MARKER_COUNT 31
 #define ISLAND_TRACE_ENTITIES "pub=8,sub=7,srv=2,cli=2,timer=3"
 
@@ -64,6 +64,8 @@
 #define ISLAND_TRACE_NROS_BASE 256
 #define ISLAND_TRACE_NROS_FIRST 21
 #define ISLAND_TRACE_NROS_LAST 24
+#define ISLAND_MK_NROS_TIMER_START        274 /* nano-ros 18: timer slot (the bound timer only) */
+#define ISLAND_MK_NROS_TIMER_END          275 /* nano-ros 19: timer slot (the bound timer only) */
 #define ISLAND_MK_NROS_VIOLATION          277 /* nano-ros 21: seq << 8 | rule code (RULE_IDS index + 1) */
 #define ISLAND_MK_NROS_VIOLATION_FQN      278 /* nano-ros 22: FNV-1a 32 of the endpoint ref */
 #define ISLAND_MK_NROS_VIOLATION_MEASURED 279 /* nano-ros 23: measured */

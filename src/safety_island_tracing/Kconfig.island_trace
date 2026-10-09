@@ -44,6 +44,18 @@ config ISLAND_TRACE_SPIN_KEEP
 
 endif
 
+config ISLAND_TRACE_TIMER_TICKS
+	bool "Forward the bound timer's every start/end (ids 274/275)"
+	depends on NROS_TRACE_CALLBACKS
+	help
+	  phase9-W4 rerun. The sink forwards nano-ros's dispatch start/end
+	  (18/19) of the one timer bound by ISLAND_TRACE_TIMER_BIND (the
+	  emergency operator's 30 Hz timer) at island ids 274/275, so the
+	  trace holds its tick-to-tick spacing (island_trace.py ticks). A
+	  diagnostic: two records per tick, 720 B/s, which fills the board's
+	  40 KiB buffer about 34 s after the trigger (run w4r-ticks), so the
+	  gate image leaves it off.
+
 config ISLAND_DEBUG_OVERRUN
 	bool "Debug hook: one commanded busy-wait in the handler's tick"
 	help
