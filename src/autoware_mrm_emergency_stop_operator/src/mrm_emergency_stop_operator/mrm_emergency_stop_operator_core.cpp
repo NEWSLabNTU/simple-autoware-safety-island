@@ -99,6 +99,7 @@ MrmEmergencyStopOperator::MrmEmergencyStopOperator(::nros::NodeHandle handle)
 
 void MrmEmergencyStopOperator::onControlCommand(const Control & msg)
 {
+  ISLAND_TRACE_TAKE_BIND(MRM_EMERGENCY_STOP_OPERATOR_CONTROL_CMD);  // phase9-W4 rerun (F4)
   if (status_.state != MrmBehaviorStatus::OPERATING) {
     prev_control_cmd_ = msg;
     is_prev_control_cmd_subscribed_ = true;
@@ -140,6 +141,10 @@ void MrmEmergencyStopOperator::publishControlCommand(const Control & command)
 
 void MrmEmergencyStopOperator::onTimer()
 {
+  // phase9-W4 rerun (phase-474 I3): this 30 Hz tick keeps every start/end pair
+  // in nano-ros's callback trace while CONFIG_NROS_TRACE_TIMER_EVERY thins the
+  // rest to one in ten (the island's own sink does not forward 18/19).
+  ISLAND_TRACE_TIMER_BIND(1);
   ISLAND_TRACE(ISLAND_MK_PATH_MRM_EMERGENCY_STOP_OPERATOR_ON_TIMER_ENTRY, status_.state);
   if (status_.state == MrmBehaviorStatus::OPERATING) {
     auto control_cmd = calcTargetAcceleration(prev_control_cmd_);

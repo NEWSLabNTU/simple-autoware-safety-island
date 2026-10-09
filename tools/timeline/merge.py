@@ -39,6 +39,7 @@ written; heartbeats and thread switches are not.
 import argparse
 import os
 import sys
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import tlcommon as tl  # noqa: E402
@@ -224,9 +225,27 @@ def main():
                 value=dict(seq=v["seq"], rule=v["rule"], endpoint=v.get("endpoint"),
                            measured=v.get("measured"), declared=v.get("declared")),
                 island_ns=v["t_ns"])
+    # phase9-W4 rerun (phase-474 I3, phase 9 W13's F4): each forwarded take,
+    # joined (island_trace.join_takes), with the sample's source stamp. The
+    # stamp is the publisher's clock (CLOCK_REALTIME on this host, unless the
+    # stack runs on sim time); hop_ms puts it on t_mono_ns through the host's
+    # REALTIME - MONOTONIC offset read now, valid while the run's boot and
+    # clock have not stepped since. A first estimate of the link hop, not F4.
+    rt_off = time.time_ns() - time.monotonic_ns()
+    nt = 0
+    for t in getattr(tr, "takes", []):
+        tm = t["t_ns"] + off
+        if tm < lo:
+            continue
+        v = dict(input=t["input"], endpoint=t["endpoint"], seq=t["seq"])
+        if "stamp_ns" in t:
+            v.update(stamp_ns=t["stamp_ns"], hop_ms=round((tm + rt_off - t["stamp_ns"]) / 1e6, 3),
+                     realtime_minus_mono_ns=rt_off)
+        w.write("island", "take", t_mono_ns=tm, marker=t["endpoint"], value=v, island_ns=t["t_ns"])
+        nt += 1
     w.close()
     print(f"merge: offset from {res.get('used')}, pair spread {res.get('pairs_spread_ms')} ms; "
-          f"{n} markers, {len(tr.violations)} violation(s) -> {out}; anchor 1 {res['anchor1'] and res['anchor1']['what']}, "
+          f"{n} markers, {len(tr.violations)} violation(s), {nt} take(s) -> {out}; anchor 1 {res['anchor1'] and res['anchor1']['what']}, "
           f"anchor 2 {res['anchor2'] and res['anchor2']['what']}, "
           f"disagreement {res['disagreement_ms'] if res['disagreement_ms'] is None else round(res['disagreement_ms'], 3)} ms")
 

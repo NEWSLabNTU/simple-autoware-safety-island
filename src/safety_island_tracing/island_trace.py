@@ -18,6 +18,7 @@ the heartbeat counter it read beside the buffer).
   island_trace.py decode <file> [--timeline N] [--perfetto out.json]
   island_trace.py check  <file>
   island_trace.py violations <file>
+  island_trace.py takes <file>
   island_trace.py wrap   <raw> --zephyr 4.4 --hb-emitted N [--hb-last-uptime MS] -o <out>
 
 A trace recorded with the trace window (phase8-W17, CONFIG_ISLAND_TRACE_WINDOW;
@@ -33,6 +34,13 @@ RULE_IDS and the endpoint from the FNV-1a hashes of the contract's endpoint
 refs (both in markers.json); `violations` lists them, `check` reports them
 (a violation is a finding, not a decode failure), and `decode --timeline`
 prints each beside its markers.
+
+phase9-W4 rerun (nano-ros phase-474 I3, F4): the takes of three inputs are
+forwarded at 281-283 (nano-ros 25-27; markers.json `nros.take_inputs`). The
+sink puts the input's index where nano-ros had the slot handle, sends the
+stamp's sec only when it changed for that input, and one take in `keep`.
+load() joins each take (input, seq, source stamp) into `tr.takes`; `takes`
+lists them with the count per input, `check` counts them.
 
 `check` exits 0 only if: the decode is clean; the provenance names the marker
 table in markers.json; every marker is present at least once, except those
@@ -207,6 +215,7 @@ def load(path, zephyr=None, tsdl=None):
     tr.records, tr.bytes_by_kind, tr.used = recs, sizes, pos
     tr.table = table
     tr.violations = join_violations(recs, table)
+    tr.takes = join_takes(recs, table)
     return tr
 
 
@@ -230,7 +239,8 @@ def join_violations(recs, table):
     declared). Join them; a 22-24 without its 21 is dropped, as nano-ros's own
     decoder does, and a 21 whose followers are missing is kept with what it
     has."""
-    order = [m["name"] for m in table.get("nros", {}).get("markers", [])]
+    order = [m["name"] for m in table.get("nros", {}).get("markers", [])
+             if m.get("kind", "nros_violation") == "nros_violation"]
     if len(order) != 4:
         return []
     head, f_fqn, f_meas, f_decl = order
@@ -254,6 +264,42 @@ def join_violations(recs, table):
         elif n in (f_fqn, f_meas, f_decl):
             continue
     return out
+
+
+def join_takes(recs, table):
+    """phase9-W4 rerun: each forwarded take is NROS_TAKE (input << 24 | seq),
+    then NROS_TAKE_STAMP_SEC when the stamp's second changed for that input,
+    then NROS_TAKE_STAMP_NSEC. The sec of a take without one is the input's
+    last one; a take before any sec (the first after a window opened) has no
+    stamp. `stamp_ns` is the sample's source stamp (the publisher's clock)."""
+    inputs = {t["index"]: t["endpoint"] for t in table.get("nros", {}).get("take_inputs", [])}
+    if not inputs:
+        return []
+    out, cur, sec = [], None, {}
+    for r in recs:
+        if r.get("kind") != "marker":
+            continue
+        n = r["name"]
+        if n == "NROS_TAKE":
+            i = r["arg"] >> 24
+            cur = dict(t_ns=r["t_ns"], input=i, endpoint=inputs.get(i, f"input#{i}"),
+                       seq=r["arg"] & 0xFFFFFF)
+            out.append(cur)
+        elif n == "NROS_TAKE_STAMP_SEC" and cur is not None:
+            sec[cur["input"]] = r["arg"]
+        elif n == "NROS_TAKE_STAMP_NSEC" and cur is not None:
+            s_ = sec.get(cur["input"])
+            if s_ is not None:
+                cur["stamp_ns"] = s_ * 1_000_000_000 + r["arg"]
+            cur = None
+    return out
+
+
+def take_counts(tr):
+    c = Counter(t["endpoint"] for t in getattr(tr, "takes", []))
+    stamped = Counter(t["endpoint"] for t in getattr(tr, "takes", []) if "stamp_ns" in t)
+    return {t["endpoint"]: (c.get(t["endpoint"], 0), stamped.get(t["endpoint"], 0))
+            for t in tr.table.get("nros", {}).get("take_inputs", [])}
 
 
 def fmt_violation(v):
@@ -466,15 +512,22 @@ def check(tr, model_path):
     if windowed:
         ok = window_report(tr, kv, say) and ok
     vs = getattr(tr, "violations", [])
+    viol_ids = [m["id"] for m in tr.table.get("nros", {}).get("markers", [])
+                if m.get("kind", "nros_violation") == "nros_violation"] or [0]
     if vs:
         # a finding of the run, not a fault of the trace: reported, never FAIL
         say(f"info violations: {len(vs)} stored contract violation(s) in the trace (nano-ros markers "
-            f"{min(nros_names(tr.table))}-{max(nros_names(tr.table))})")
+            f"{min(viol_ids)}-{max(viol_ids)})")
         t0 = tr.records[0]["t_ns"] if tr.records else 0
         for v in vs:
             say(f"info   at {(v['t_ns'] - t0) / 1e6:.3f} ms: {fmt_violation(v)}")
     else:
         say("ok   violations: none in the trace")
+    if tr.table.get("nros", {}).get("take_inputs"):
+        # F4's input (phase 9 W13): reported, never FAIL (an act may end before one arrives)
+        tc = take_counts(tr)
+        say(f"info takes: {sum(n for n, _ in tc.values())} forwarded take(s) (nano-ros 25-27): " +
+            ", ".join(f"{ep} {n} ({st} stamped)" for ep, (n, st) in tc.items()))
     if tr.header and hbs:
         emitted = tr.header["heartbeats_emitted"]
         if hbs[-1] + 1 != emitted:
@@ -509,7 +562,7 @@ def wrap(raw_path, out, zephyr, hb_emitted, hb_last_uptime_ms, hb_ms=100):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cmd", choices=["decode", "check", "wrap", "violations"])
+    ap.add_argument("cmd", choices=["decode", "check", "wrap", "violations", "takes"])
     ap.add_argument("file")
     ap.add_argument("--zephyr", help="major.minor of the tree (needed for a raw board buffer)")
     ap.add_argument("--tsdl", help="explicit path to the CTF TSDL metadata")
@@ -534,6 +587,16 @@ def main():
               (f" (trace window opened by {trig['name']})" if trig else ""))
         for v in tr.violations:
             print(f"  {(v['t_ns'] - t0) / 1e6:12.3f} ms  {fmt_violation(v)}")
+        return 1 if tr.error else 0
+    if a.cmd == "takes":
+        t0 = tr.records[0]["t_ns"] if tr.records else 0
+        tc = take_counts(tr)
+        print(f"trace takes: {len(tr.takes)}; " +
+              ", ".join(f"{ep} {n} ({st} stamped)" for ep, (n, st) in tc.items()))
+        for t in tr.takes:
+            st = (f"stamp {t['stamp_ns'] // 1_000_000_000}.{t['stamp_ns'] % 1_000_000_000:09d}"
+                  if "stamp_ns" in t else "no stamp")
+            print(f"  {(t['t_ns'] - t0) / 1e6:12.3f} ms  {t['endpoint']} seq={t['seq']} {st}")
         return 1 if tr.error else 0
     if a.cmd == "decode":
         summarize(tr)

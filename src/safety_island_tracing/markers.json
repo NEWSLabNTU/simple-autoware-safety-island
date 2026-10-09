@@ -1,7 +1,7 @@
 {
  "generator": "src/safety_island_tracing/gen_markers.py",
  "contract_sha256": "ab5beb68e9d07ce0d0ad5377b7372f2bccc0d59f30d4b7c9ad9ce77dcc1aa6d4",
- "table_sha256": "f61b522a90da3b5337376cf021d3312102b85cac68b27663f18f3e1cdb23ab70",
+ "table_sha256": "f796abf8dd6beca550656a8212a40d1107a91d4c60cd70357211275aa8f1bb20",
  "entities": {
   "pub": 8,
   "sub": 7,
@@ -32,6 +32,7 @@
   "CONFIG_NROS_EXECUTOR_MAX_VIOLATIONS",
   "CONFIG_NROS_GRAPH_CACHE_SIZE",
   "CONFIG_NROS_SNTP_TIMEOUT_MS",
+  "CONFIG_NROS_TRACE_TIMER_EVERY",
   "CONFIG_NROS_ZENOH_SERIAL_RX_RING_BYTES",
   "CONFIG_NROS_ZEPHYR_HEAP_SIZE",
   "CONFIG_NROS_ZEPHYR_TASK_SLOTS",
@@ -370,6 +371,27 @@
     "name": "NROS_VIOLATION_DECLARED",
     "kind": "nros_violation",
     "arg": "declared"
+   },
+   {
+    "id": 281,
+    "nros_id": 25,
+    "name": "NROS_TAKE",
+    "kind": "nros_take",
+    "arg": "input index << 24 | take seq (nano-ros: slot handle << 24 | seq)"
+   },
+   {
+    "id": 282,
+    "nros_id": 26,
+    "name": "NROS_TAKE_STAMP_SEC",
+    "kind": "nros_take",
+    "arg": "source stamp sec (only when it changed for this input)"
+   },
+   {
+    "id": 283,
+    "nros_id": 27,
+    "name": "NROS_TAKE_STAMP_NSEC",
+    "kind": "nros_take",
+    "arg": "source stamp nanosec"
    }
   ],
   "rule_ids": [
@@ -401,6 +423,26 @@
    "13b679c5": "/mrm_handler/takeover_request_state",
    "5c68ed22": "timer",
    "0914d819": "spin"
-  }
+  },
+  "take_inputs": [
+   {
+    "index": 0,
+    "endpoint": "/mrm_handler/kinematic_state",
+    "keep": 1,
+    "stamp_offset": 4
+   },
+   {
+    "index": 1,
+    "endpoint": "/mrm_handler/operation_mode_state",
+    "keep": 1,
+    "stamp_offset": 4
+   },
+   {
+    "index": 2,
+    "endpoint": "/mrm_emergency_stop_operator/control_cmd",
+    "keep": 3,
+    "stamp_offset": 4
+   }
+  ]
  }
 }

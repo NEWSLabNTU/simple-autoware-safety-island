@@ -257,6 +257,8 @@ void MrmHandler::onOperationModeAvailability(
 
 void MrmHandler::onOdometry(const nav_msgs::msg::Odometry & msg)
 {
+  // phase9-W4 rerun (F4): this sample's take and source stamp into the trace
+  ISLAND_TRACE_TAKE_BIND(MRM_HANDLER_KINEMATIC_STATE);
   odom_ = msg;
   has_odom_ = true;
 }
@@ -295,6 +297,7 @@ void MrmHandler::onEmergencyStopStatus(const tier4_system_msgs::msg::MrmBehavior
 
 void MrmHandler::onOperationModeState(const autoware_adapi_v1_msgs::msg::OperationModeState & msg)
 {
+  ISLAND_TRACE_TAKE_BIND(MRM_HANDLER_OPERATION_MODE_STATE);  // phase9-W4 rerun (F4)
   operation_mode_state_ = msg;
   has_operation_mode_state_ = true;
 }

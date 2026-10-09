@@ -97,7 +97,8 @@ LIFECYCLE = [
 # not move (every recorded trace and every tool keyed on them stays valid);
 # the forwarded ids are shifted into a reserved block instead:
 #     island id = NROS_BASE + nano-ros id
-# Only the violation markers are forwarded: the dispatch events 16-20 would
+# Only the violation markers (and, below, the takes of three inputs) are
+# forwarded: the dispatch events 16-20 would
 # cost a record per callback and the island already brackets the paths it
 # measures. The four ids and the rule table are READ from the pinned
 # nano-ros (monitor.rs), so a pin that moves them regenerates this table.
@@ -110,6 +111,32 @@ NROS_VIOLATION_MARKERS = [
     ("MARKER_VIOLATION_MEASURED", "NROS_VIOLATION_MEASURED", "measured"),
     ("MARKER_VIOLATION_DECLARED", "NROS_VIOLATION_DECLARED", "declared"),
 ]
+# phase9-W4 rerun (nano-ros phase-474 I3, phase 9 W13's F4): the take events
+# 25-27 (a sample taken, its source stamp sec, nsec), read from the pinned
+# callback_trace.rs and forwarded at NROS_BASE + id (281-283) for the inputs
+# below only. The sink replaces the slot handle in the take's arg with the
+# input's index in this list (the island cannot name a C/C++ slot: nano-ros
+# registers them as `sub#N`), drops the stamp's sec when it did not change
+# since that input's last forwarded take, and forwards one take in `keep`.
+# The stamp sits at byte 4 of each sample (a Header or a Time stamp first).
+NROS_CALLBACK_TRACE_RS = os.path.join(ROOT, "third-party/nano-ros/packages/core/nros-node/src/executor/callback_trace.rs")
+NROS_TAKE_MARKERS = [
+    ("MARKER_TAKE", "NROS_TAKE", "input index << 24 | take seq (nano-ros: slot handle << 24 | seq)"),
+    ("MARKER_TAKE_STAMP_SEC", "NROS_TAKE_STAMP_SEC", "source stamp sec (only when it changed for this input)"),
+    ("MARKER_TAKE_STAMP_NSEC", "NROS_TAKE_STAMP_NSEC", "source stamp nanosec"),
+]
+# The dispatch events the sink reads but never forwards: a timer's slot is
+# learnt from the START that precedes its callback.
+NROS_DISPATCH = [("MARKER_START", "START"), ("MARKER_END", "END")]
+# (subscriber endpoint ref, forward one take in N): the three inputs whose link
+# hop F4 measures. control_cmd arrives at 30 Hz and is thinned to 10 Hz to fit
+# the RAM trace window (docs/tracing.md section 9).
+NROS_TAKE_INPUTS = [
+    ("/mrm_handler/kinematic_state", 1),
+    ("/mrm_handler/operation_mode_state", 1),
+    ("/mrm_emergency_stop_operator/control_cmd", 3),
+]
+NROS_TAKE_STAMP_OFFSET = 4
 # Stand-in endpoint refs the runtime uses for rules with no endpoint
 # (monitor.rs: timer-overrun, deadline-miss -> "timer"; release-jitter -> "spin").
 NROS_STAND_INS = ["timer", "spin"]
@@ -139,12 +166,33 @@ def nros_violation_table(model):
     if not m:
         sys.exit("gen_markers: RULE_IDS not found in the pinned monitor.rs")
     rules = re.findall(r'"([a-z-]+)"', m.group(1))
+    if not os.path.exists(NROS_CALLBACK_TRACE_RS):
+        sys.exit(f"gen_markers: no {os.path.relpath(NROS_CALLBACK_TRACE_RS, ROOT)}")
+    cbt = open(NROS_CALLBACK_TRACE_RS).read()
+    for const, name, arg in NROS_TAKE_MARKERS:
+        m = re.search(rf"pub const {const}: u32 = (\d+);", cbt)
+        if not m:
+            sys.exit(f"gen_markers: {const} not found in the pinned callback_trace.rs (the pin predates phase-474 I3?)")
+        nid = int(m.group(1))
+        markers.append(dict(id=NROS_BASE + nid, nros_id=nid, name=name, kind="nros_take", arg=arg))
+    dispatch = {}
+    for const, name in NROS_DISPATCH:
+        m = re.search(rf"pub const {const}: u32 = (\d+);", cbt)
+        if not m:
+            sys.exit(f"gen_markers: {const} not found in the pinned callback_trace.rs")
+        dispatch[name] = int(m.group(1))
     c = model["contracts"]
+    subs = set(c.get("sub_endpoints", {}))
+    for ref, _keep in NROS_TAKE_INPUTS:
+        if ref not in subs:
+            sys.exit(f"gen_markers: take input {ref} is not a subscriber endpoint of the contract")
     refs = sorted(set(c.get("pub_endpoints", {})) | set(c.get("sub_endpoints", {}))) + NROS_STAND_INS
     hashes = {f"{fnv1a32(r):08x}": r for r in refs}
     if len(hashes) != len(refs):
         sys.exit("gen_markers: two endpoint refs share an FNV-1a hash; the decoder could not tell them apart")
-    return markers, rules, hashes
+    takes = [dict(index=i, endpoint=ref, keep=keep, stamp_offset=NROS_TAKE_STAMP_OFFSET)
+             for i, (ref, keep) in enumerate(NROS_TAKE_INPUTS)]
+    return markers, rules, hashes, dispatch, takes
 
 
 def c_ident(s):
@@ -309,7 +357,9 @@ def entity_counts(model):
 def render(model, markers):
     if len(markers) >= NROS_BASE:
         sys.exit(f"gen_markers: {len(markers)} island markers reach the nano-ros block at {NROS_BASE}")
-    nros_markers, rules, hashes = nros_violation_table(model)
+    nros_markers, rules, hashes, dispatch, takes = nros_violation_table(model)
+    viol = [m for m in nros_markers if m["kind"] == "nros_violation"]
+    take_mk = {m["name"]: m for m in nros_markers if m["kind"] == "nros_take"}
     policy, trigger_id, arm_id = window_policy(model, markers)
     for m in markers:
         m["record"] = REC_NAME[policy[m["id"]]]
@@ -359,11 +409,25 @@ def render(model, markers):
     w(" * violation is four records in a row; the first one also opens the trace")
     w(" * window. Ids read from the pinned monitor.rs. */")
     w(f"#define ISLAND_TRACE_NROS_BASE {NROS_BASE}")
-    w(f"#define ISLAND_TRACE_NROS_FIRST {nros_markers[0]['nros_id']}")
-    w(f"#define ISLAND_TRACE_NROS_LAST {nros_markers[-1]['nros_id']}")
+    w(f"#define ISLAND_TRACE_NROS_FIRST {viol[0]['nros_id']}")
+    w(f"#define ISLAND_TRACE_NROS_LAST {viol[-1]['nros_id']}")
     nw = max(len(m["name"]) for m in nros_markers) + len("ISLAND_MK_")
     for m in nros_markers:
         w(f"#define {('ISLAND_MK_' + m['name']).ljust(nw)} {m['id']:3d} /* nano-ros {m['nros_id']}: {m['arg']} */")
+    w("")
+    w("/* phase9-W4 rerun (phase-474 I3, F4): the nano-ros ids the sink reads, and")
+    w(" * the inputs whose takes it forwards (index, one in KEEP, stamp offset). */")
+    w(f"#define ISLAND_TRACE_NROS_START {dispatch['START']}")
+    w(f"#define ISLAND_TRACE_NROS_END {dispatch['END']}")
+    w(f"#define ISLAND_TRACE_NROS_TAKE {take_mk['NROS_TAKE']['nros_id']}")
+    w(f"#define ISLAND_TRACE_NROS_TAKE_STAMP_SEC {take_mk['NROS_TAKE_STAMP_SEC']['nros_id']}")
+    w(f"#define ISLAND_TRACE_NROS_TAKE_STAMP_NSEC {take_mk['NROS_TAKE_STAMP_NSEC']['nros_id']}")
+    w(f"#define ISLAND_TRACE_TAKE_INPUTS {len(takes)}")
+    w(f"#define ISLAND_TRACE_TAKE_STAMP_OFFSET {NROS_TAKE_STAMP_OFFSET}")
+    tw = max(len(c_ident(t["endpoint"])) for t in takes) + len("ISLAND_TRACE_TAKE_KEEP_")
+    for t in takes:
+        w(f"#define {('ISLAND_TRACE_TAKE_' + c_ident(t['endpoint'])).ljust(tw)} {t['index']} /* {t['endpoint']} */")
+        w(f"#define {('ISLAND_TRACE_TAKE_KEEP_' + c_ident(t['endpoint'])).ljust(tw)} {t['keep']}")
     w("")
     w("/* Knobs that size the image, as the build delivered them (autoconf.h). */")
     for k in knobs:
@@ -388,7 +452,8 @@ def render(model, markers):
         knobs=knobs,
         window=dict(trigger=trigger_id, arm=arm_id),
         markers=markers,
-        nros=dict(base=NROS_BASE, markers=nros_markers, rule_ids=rules, endpoint_hashes=hashes),
+        nros=dict(base=NROS_BASE, markers=nros_markers, rule_ids=rules, endpoint_hashes=hashes,
+                  take_inputs=takes),
     ), indent=1) + "\n"
     return header, table
 

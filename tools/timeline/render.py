@@ -255,6 +255,12 @@ def render(run_dir, out, explain_path=None, title=None):
                     ax.axvline(x, color=CRIT, lw=1, ls=(0, (2, 2)))
                 axe.text(x, 0.05, f" VIOLATION {v['rule']} {v.get('endpoint')} "
                          f"{v.get('measured')}/{v.get('declared')}", fontsize=7, color=CRIT, va="bottom")
+    # phase9-W4 rerun: the island's forwarded takes, one short tick each at the
+    # bottom of the event axis (F4's input; the counts are in --table)
+    tk = [(e["t_mono_ns"] - t0) / 1e9 for e in ev if e["source"] == "island" and e["kind"] == "take"]
+    tk = [x for x in tk if x_lo <= x <= x_hi]
+    if tk:
+        axe.vlines(tk, 0.0, 0.03, color=INK2, lw=0.4)
     axe.set_yticks([])
     axe.set_ylim(0, 1)
     axe.set_xlabel("s since the button (host CLOCK_MONOTONIC; island markers aligned)")
@@ -331,6 +337,30 @@ def main():
         print(f"entry speed: observed {an.fmt(r['entry_speed_observed'], 3)} m/s, declared "
               f"{r['entry_speed_declared']}; settle derived at the observed speed "
               f"{an.fmt(r['settle_at_observed_speed_ms'])} ms")
+        for line in take_lines(tl.read_events(tl.run_files(a.run_dir))):
+            print(line)
+
+
+def take_lines(ev):
+    """phase9-W4 rerun: the island's forwarded takes (merge.py `take` events),
+    per input: the count, how many carry a source stamp, and the take - stamp
+    difference (hop_ms; merge.py says what it is and is not)."""
+    by = {}
+    for e in ev:
+        if e["source"] == "island" and e["kind"] == "take":
+            by.setdefault(e["marker"], []).append(e["value"])
+    out = []
+    for ep in sorted(by):
+        all_ = [v["hop_ms"] for v in by[ep] if "hop_ms" in v]
+        # a stamp more than 10 s off the host clock is not on it (a publisher
+        # stamping from its own start, not CLOCK_REALTIME): counted, not judged
+        hops = sorted(x for x in all_ if abs(x) <= 10_000)
+        off = len(all_) - len(hops)
+        h = (f"take - stamp min {hops[0]:.2f} / median {hops[len(hops) // 2]:.2f} / max {hops[-1]:.2f} ms"
+             if hops else "no stamp on the host clock")
+        out.append(f"island takes: {ep} {len(by[ep])} ({len(all_)} stamped"
+                   + (f", {off} not on the host clock" if off else "") + f"); {h}")
+    return out
 
 
 if __name__ == "__main__":

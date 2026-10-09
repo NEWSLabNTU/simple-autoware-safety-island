@@ -212,9 +212,41 @@ void island_trace_marker_windowed(uint16_t marker, uint32_t arg);
 #define ISLAND_TRACE(marker, arg) island_trace_marker((uint16_t)(marker), (uint32_t)(arg))
 #endif
 
+/* phase9-W4 rerun (nano-ros phase-474 I3; phase 9 W13's F4). nano-ros names a
+ * subscription or timer in its trace events only by its executor slot, and
+ * registers a C/C++ subscription as `sub#N`: the island cannot ask which slot
+ * is which. It learns it instead, in the callback: nano-ros emits a take (25)
+ * right before a subscription's callback and a start (18) right before a
+ * timer's, on the spin thread, and the sink below remembers the last slot of
+ * each. ISLAND_TRACE_TAKE_BIND(input), called first thing in an input's
+ * callback, binds that slot to the input (an index of markers.json
+ * `nros.take_inputs`), turns on its stamp (nros_trace_set_take(slot, true, 4))
+ * and from then on the sink forwards its takes at 281-283.
+ * ISLAND_TRACE_TIMER_BIND(every), in a timer's callback, sets that timer's
+ * sampling (nros_trace_set_timer_every(slot, every)). Each binds once; after
+ * that the call is one compare. */
+#if defined(CONFIG_NROS_TRACE_CALLBACKS)
+#ifdef __cplusplus
+extern "C" {
+#endif
+void island_trace_take_bind(uint8_t input, uint8_t keep);
+void island_trace_timer_bind(uint16_t every);
+#ifdef __cplusplus
+}
+#endif
+#define ISLAND_TRACE_TAKE_BIND(input) \
+	island_trace_take_bind((uint8_t)ISLAND_TRACE_TAKE_##input, (uint8_t)ISLAND_TRACE_TAKE_KEEP_##input)
+#define ISLAND_TRACE_TIMER_BIND(every) island_trace_timer_bind((uint16_t)(every))
+#else
+#define ISLAND_TRACE_TAKE_BIND(input) ((void)0)
+#define ISLAND_TRACE_TIMER_BIND(every) ((void)0)
+#endif
+
 #else /* tracing off: nothing is compiled, `arg` is not evaluated */
 #define ISLAND_TRACE_ENABLED 0
 #define ISLAND_TRACE(marker, arg) ((void)0)
+#define ISLAND_TRACE_TAKE_BIND(input) ((void)0)
+#define ISLAND_TRACE_TIMER_BIND(every) ((void)0)
 #endif
 
 /* ------------------------------------------------------------------------ */
@@ -279,14 +311,94 @@ static struct k_timer island_trace_hb_timer;
 extern "C" {
 #endif
 void nros_set_trace_sink(void (*sink)(uint32_t, uint32_t));
+void nros_trace_set_take(uint8_t handle, bool on, int32_t stamp_offset);
+void nros_trace_set_timer_every(uint8_t handle, uint16_t every);
+
+/* phase9-W4 rerun: the take forwarding (see ISLAND_TRACE_TAKE_BIND above).
+ * Readable by name over SWD: island_trace_take_slot[i] is input i's slot + 1
+ * (0 = not bound yet), island_trace_timer_slot the bound timer's slot + 1. */
+volatile uint8_t island_trace_take_slot[ISLAND_TRACE_TAKE_INPUTS];
+volatile uint8_t island_trace_timer_slot;
 #ifdef __cplusplus
 }
 #endif
+static uint8_t island_trace_take_keep[ISLAND_TRACE_TAKE_INPUTS];
+static uint8_t island_trace_take_n[ISLAND_TRACE_TAKE_INPUTS];
+static uint32_t island_trace_take_sec[ISLAND_TRACE_TAKE_INPUTS];
+static uint8_t island_trace_last_take = 0xFFu;  /* slot of the last take (25) */
+static uint8_t island_trace_last_start = 0xFFu; /* slot of an open start (18) */
+static uint8_t island_trace_take_cur = 0xFFu;   /* input whose stamp follows */
+
 static void island_trace_nros_sink(uint32_t id, uint32_t arg)
 {
 	if (id >= ISLAND_TRACE_NROS_FIRST && id <= ISLAND_TRACE_NROS_LAST) {
 		ISLAND_TRACE(ISLAND_TRACE_NROS_BASE + id, arg);
+		return;
 	}
+	switch (id) {
+	case ISLAND_TRACE_NROS_START:
+		island_trace_last_start = (uint8_t)arg;
+		return;
+	case ISLAND_TRACE_NROS_END:
+		island_trace_last_start = 0xFFu;
+		return;
+	case ISLAND_TRACE_NROS_TAKE: {
+		const uint8_t slot = (uint8_t)(arg >> 24);
+
+		island_trace_last_take = slot;
+		island_trace_take_cur = 0xFFu;
+		for (uint8_t i = 0; i < ISLAND_TRACE_TAKE_INPUTS; i++) {
+			if (island_trace_take_slot[i] != (uint8_t)(slot + 1u)) {
+				continue;
+			}
+			island_trace_take_n[i] = (uint8_t)(island_trace_take_n[i] + 1u);
+			if (island_trace_take_n[i] >= island_trace_take_keep[i]) {
+				island_trace_take_n[i] = 0u;
+				island_trace_take_cur = i;
+				ISLAND_TRACE(ISLAND_MK_NROS_TAKE, ((uint32_t)i << 24) | (arg & 0x00FFFFFFu));
+			}
+			break;
+		}
+		return;
+	}
+	case ISLAND_TRACE_NROS_TAKE_STAMP_SEC:
+		if (island_trace_take_cur < ISLAND_TRACE_TAKE_INPUTS &&
+		    island_trace_take_sec[island_trace_take_cur] != arg) {
+			island_trace_take_sec[island_trace_take_cur] = arg;
+			ISLAND_TRACE(ISLAND_MK_NROS_TAKE_STAMP_SEC, arg);
+		}
+		return;
+	case ISLAND_TRACE_NROS_TAKE_STAMP_NSEC:
+		if (island_trace_take_cur < ISLAND_TRACE_TAKE_INPUTS) {
+			ISLAND_TRACE(ISLAND_MK_NROS_TAKE_STAMP_NSEC, arg);
+		}
+		island_trace_take_cur = 0xFFu;
+		return;
+	default:
+		return;
+	}
+}
+
+void island_trace_take_bind(uint8_t input, uint8_t keep)
+{
+	if (input >= ISLAND_TRACE_TAKE_INPUTS || island_trace_take_slot[input] != 0u ||
+	    island_trace_last_take == 0xFFu) {
+		return;
+	}
+	island_trace_take_keep[input] = keep ? keep : 1u;
+	island_trace_take_n[input] = (uint8_t)(island_trace_take_keep[input] - 1u); /* the next one */
+	island_trace_take_sec[input] = 0xFFFFFFFFu;
+	nros_trace_set_take(island_trace_last_take, true, ISLAND_TRACE_TAKE_STAMP_OFFSET);
+	island_trace_take_slot[input] = (uint8_t)(island_trace_last_take + 1u);
+}
+
+void island_trace_timer_bind(uint16_t every)
+{
+	if (island_trace_timer_slot != 0u || island_trace_last_start == 0xFFu) {
+		return;
+	}
+	nros_trace_set_timer_every(island_trace_last_start, every);
+	island_trace_timer_slot = (uint8_t)(island_trace_last_start + 1u);
 }
 #endif
 
