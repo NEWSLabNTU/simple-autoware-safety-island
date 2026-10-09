@@ -1,3 +1,13 @@
+# The island's codegen caps, at the WORKSPACE ROOT (phase9-W4 rerun, nano-ros
+# phase-474 I4). nano-ros discovers nros-codegen.toml from the source tree,
+# ancestor to descendant (issue 1470), so a file here reaches every package the
+# host metadata probe compiles -- the four components included. In
+# src/island_interfaces/ it was a PACKAGE scope, not an ancestor of the
+# component packages: their probes never read it, failed to build on the
+# unbounded `frame_id` of Odometry and VelocityReport, and `nros sync` printed
+# "no producer" for their source metadata. island_interfaces names this file
+# explicitly as well (its CMakeLists.txt).
+#
 # Bound the stock ROS strings this island receives.
 #
 # nano-ros requires every message type to carry a derived upper bound, and a

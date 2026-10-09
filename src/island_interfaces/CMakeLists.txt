@@ -6,5 +6,7 @@ project(island_interfaces LANGUAGES C CXX)
 
 find_package(nano_ros REQUIRED)
 
+# The caps live at the workspace root (phase9-W4 rerun, nano-ros phase-474
+# I4), where the host metadata probe of every component reads them too.
 nros_find_interfaces(LANGUAGE cpp SKIP_INSTALL
-    CODEGEN_CONFIG "${CMAKE_CURRENT_SOURCE_DIR}/nros-codegen.toml")
+    CODEGEN_CONFIG "${CMAKE_CURRENT_SOURCE_DIR}/../../nros-codegen.toml")
