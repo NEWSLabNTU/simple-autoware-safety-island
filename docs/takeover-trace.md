@@ -1425,3 +1425,164 @@ PASS, merge and table as before.
 Runs: `build/timeline/w4-{bringup,bringup2,encore}/` in the W4 worktree
 (`/mnt/mx500/aeon/worktrees/w4-island`), their text outputs and the bench
 variants under `/mnt/mx500/aeon/worktrees/w4-logs/runs/`.
+
+### The gate, at the merged nano-ros (2026-10-10)
+
+The readouts above are the first W4 runs (nano-ros `5b3ac4567`). The
+rerun (branch `phase9-w4-rerun`) pins nano-ros `319715968`, nano-ros main
+with PR #1764 (phase-474 I7 reporter off the judged tick, I5 heap record,
+I3 take/timer trace hooks, I4 workspace-root caps; merge `2b8153621`) and
+PR #1825 (I9: the rate rule judges the window's count against
+floor(min_rate * window) instead of flooring the quotient). On the island
+side it carries `CONFIG_LOG_DEFAULT_LEVEL=1` on the board (`cbf2ad5`): the
+15-20 ms per verdict was the detection log shifted out on the unwired
+lpuart0 at 115200 baud on the spin thread, not the reporter. Main stack
+16384 (the reporter no longer runs on it), heap 106496, trace buffer
+40960, takes forwarded at 281-283 (docs/tracing.md section 9). Image
+`39dd6433...` (sha256 of build-board/zephyr/zephyr.elf), RAM 305,056 of
+327,680 B, built pristine under `env -i` with scripts/env.sh. Same rig.
+
+**(a) and (b), run `w4-gate-ab`** (encore with the act replaced by
+readouts). Before Autoware:
+
+```
+violation record (NROS_VIOLATION_RECORD, layout v1, capacity 8):
+  total=0 dropped=0 suppressed_before_arm=3 armed=0
+  handler armed the monitors: not armed
+  read at uptime ~1900 ms (last trace heartbeat)
+  EMPTY: no violation stored since boot
+```
+
+40 s after the gate, nothing commanded:
+
+```
+violation record (NROS_VIOLATION_RECORD, layout v1, capacity 8):
+  total=1 dropped=0 suppressed_before_arm=4 armed=1
+  handler armed the monitors: init failure cleared at uptime 6074 ms
+  read at uptime ~61100 ms (last trace heartbeat)
+  #1: silence-runtime /mrm_handler/operation_mode_availability measured=0 declared=500
+```
+
+Then `violations.py overrun 250`, and 5 s later:
+
+```
+violation record (NROS_VIOLATION_RECORD, layout v1, capacity 8):
+  total=14 dropped=6 suppressed_before_arm=4 armed=1
+  handler armed the monitors: init failure cleared at uptime 6074 ms
+  read at uptime ~66900 ms (last trace heartbeat)
+  #14: rate-hierarchy-runtime /mrm_handler/takeover_request_state measured=9787 declared=10000
+  #13: rate-hierarchy-runtime /mrm_handler/mrm_state measured=9787 declared=10000
+  #12: rate-hierarchy-runtime /mrm_handler/hazard_lights_cmd measured=9787 declared=10000
+  #11: rate-hierarchy-runtime /mrm_comfortable_stop_operator/status measured=9787 declared=10000
+  #10: rate-hierarchy-runtime /mrm_emergency_stop_operator/status measured=28921 declared=30000
+  #9: rate-hierarchy-runtime /mrm_emergency_stop_operator/emergency_control_cmd measured=28921 declared=30000
+  #8: release-jitter-runtime spin measured=242922 declared=10000
+  #7: timer-overrun-runtime timer measured=1 declared=0
+```
+
+```
+trace violations: 14 (trace window opened by NROS_VIOLATION)
+      6599.790 ms  #1: silence-runtime /mrm_handler/operation_mode_availability measured=0 declared=500
+     61825.694 ms  #2: max-latency-runtime /mrm_handler/hazard_lights_cmd measured=250 declared=100
+     61825.782 ms  #3: max-latency-runtime /mrm_handler/mrm_state measured=250 declared=206
+     61825.871 ms  #4: max-latency-runtime /mrm_handler/takeover_request_state measured=250 declared=206
+     61827.614 ms  #5: timer-overrun-runtime timer measured=7 declared=0
+     61827.700 ms  #6: timer-overrun-runtime timer measured=1 declared=0
+     61827.785 ms  #7: timer-overrun-runtime timer measured=1 declared=0
+     61827.872 ms  #8: release-jitter-runtime spin measured=242922 declared=10000
+     66163.167 ms  #9: rate-hierarchy-runtime /mrm_emergency_stop_operator/emergency_control_cmd measured=28921 declared=30000
+     66163.475 ms  #10: rate-hierarchy-runtime /mrm_emergency_stop_operator/status measured=28921 declared=30000
+     66232.772 ms  #11: rate-hierarchy-runtime /mrm_comfortable_stop_operator/status measured=9787 declared=10000
+     66232.868 ms  #12: rate-hierarchy-runtime /mrm_handler/hazard_lights_cmd measured=9787 declared=10000
+     66232.958 ms  #13: rate-hierarchy-runtime /mrm_handler/mrm_state measured=9787 declared=10000
+     66233.052 ms  #14: rate-hierarchy-runtime /mrm_handler/takeover_request_state measured=9787 declared=10000
+```
+
+The tick and the verdicts on one clock (the trace keeps 1 timer tick in 10,
+spin_keep 10, and did not keep the overrunning tick; the spin's last event
+before the stall is a take at 61548.834 ms):
+
+```
+   61548.834 ms  TAKE_MRM_HANDLER_OPERATION_MODE_AVAILABILITY             arg=0
+   61825.694 ms  NROS_VIOLATION                                           arg=515  #2: max-latency-runtime /mrm_handler/hazard_lights_cmd measured=250 declared=100
+   61825.782 ms  NROS_VIOLATION                                           arg=771  #3: max-latency-runtime /mrm_handler/mrm_state measured=250 declared=206
+   61825.871 ms  NROS_VIOLATION                                           arg=1027  #4: max-latency-runtime /mrm_handler/takeover_request_state measured=250 declared=206
+   61826.447 ms  PATH_MRM_COMFORTABLE_STOP_OPERATOR_ON_TIMER_ENTRY        arg=1
+   61826.695 ms  PATH_MRM_COMFORTABLE_STOP_OPERATOR_ON_TIMER_EXIT         arg=1
+   61826.729 ms  TAKE_MRM_HANDLER_OPERATION_MODE_AVAILABILITY             arg=0
+   61826.751 ms  TAKE_MRM_HANDLER_OPERATION_MODE_AVAILABILITY             arg=0
+   61826.869 ms  PATH_MRM_HANDLER_ON_TIMER_ENTRY                          arg=1
+   61827.525 ms  PATH_MRM_HANDLER_ON_TIMER_EXIT                           arg=1
+   61827.614 ms  NROS_VIOLATION                                           arg=1288  #5: timer-overrun-runtime timer measured=7 declared=0
+   61827.700 ms  NROS_VIOLATION                                           arg=1544  #6: timer-overrun-runtime timer measured=1 declared=0
+   61827.785 ms  NROS_VIOLATION                                           arg=1800  #7: timer-overrun-runtime timer measured=1 declared=0
+   61827.872 ms  NROS_VIOLATION                                           arg=2057  #8: release-jitter-runtime spin measured=242922 declared=10000
+```
+
+- After arming, nothing but the availability's silence (W3: no epoch on
+  the board, so its takes never count). No 9999/10000 rate verdict (I9),
+  no 29773/30000 on the emergency operator (no log stall to drop its
+  ticks), no timer overrun and no release jitter: (a) PASS.
+- The overrun: three `max-latency-runtime` verdicts, one per monitored
+  publisher of the tick (hazard lights 100, MRM state 206, TOR state 206),
+  measured 250, stored 0.18 ms apart (I6 judges the sweep-fired timer).
+  Everything after is the overrun's own: 0.26 ms of the three timers' Skip
+  counts (the 30 Hz emergency operator 7 periods, the two 10 Hz timers 1
+  each) and the spin's 242.9 ms release jitter, then 5 s later the rate
+  windows that held the stall, short by exactly those activations (30 Hz
+  at 28,921 mHz, 10 Hz at 9,787). Nothing is 15 ms apart and no verdict
+  breeds another: (b) PASS.
+
+**(c), run `w4-gate-encore`**, a normal `run-board.sh encore`: VERDICT
+PASS.
+
+| term | declared ms | observed ms | verdict | note |
+|---|---|---|---|---|
+| detect (last sample -> reaction tick) | 618.00 | 602.00 | PASS | 500 + the tick the route's call_mrm already holds |
+| route (reaction tick -> braking command) | 239.33 | 8.41 | PASS |  |
+| detect + route (last sample -> braking command) | 739.33 | 610.41 | PASS |  |
+| settle (braking command -> standstill) | 4165.33 | 2865.15 | PASS |  |
+| total (last sample -> standstill) | 4904.67 | 3475.57 | PASS |  |
+| within the FTTI | 10000.00 | 3475.57 | PASS |  |
+| rung reached | EMERGENCY_STOP | EMERGENCY_STOP | PASS |  |
+| entry speed (m/s) | 8.33 | 4.25 | PASS |  |
+
+```
+violation record (NROS_VIOLATION_RECORD, layout v1, capacity 8):
+  total=5 dropped=0 suppressed_before_arm=4 armed=1
+  handler armed the monitors: init failure cleared at uptime 5965 ms
+  read at uptime ~43500 ms (last trace heartbeat)
+  #5: release-jitter-runtime spin measured=17888 declared=10000
+  #4: release-jitter-runtime spin measured=14905 declared=10000
+  #3: release-jitter-runtime spin measured=13794 declared=10000
+  #2: release-jitter-runtime spin measured=13625 declared=10000
+  #1: silence-runtime /mrm_handler/operation_mode_availability measured=0 declared=500
+
+trace violations: 5 (trace window opened by NROS_VIOLATION)
+      6494.773 ms  #1: silence-runtime /mrm_handler/operation_mode_availability measured=0 declared=500
+     21121.524 ms  #2: release-jitter-runtime spin measured=13625 declared=10000
+     22121.692 ms  #3: release-jitter-runtime spin measured=13794 declared=10000
+     32318.925 ms  #4: release-jitter-runtime spin measured=14905 declared=10000
+     33230.385 ms  #5: release-jitter-runtime spin measured=17888 declared=10000
+```
+
+The HPC loss is at island ~38.5 s (the merge's anchors: the last
+availability sample before the gate stopped at 38,470 ms, MRM_OPERATING
+at 39,079 ms): no verdict was stored during the act, the last 5.2 s
+before it. The boot record, read over SWD after the run:
+`HEAP HEADROOM: ok -- 35088 bytes spare (peak 71920 of 107008, floor
+24576).` The main stack's paint: high-water 11,640 B of 16,384 (4,744 B
+spare), the same after (b). Takes in the trace: 431 (kinematic_state 224,
+control_cmd 196, operation_mode_state 11, all stamped). Trace buffer:
+28,135 of 40,960 B, the window 26,038 B over 37.07 s after the trigger.
+
+One thing (a) did not show: #2-#5, four single `release-jitter-runtime`
+verdicts of 13.6-17.9 ms against the contract's 10 ms, 0.9-10 s apart,
+while the scenario set the pose and goal and engaged (21-33 s). Each sits
+on a `kinematic_state` take or an emergency-operator tick and none is
+followed by another verdict, so neither the log floor nor the reporter.
+In (a) nothing published `kinematic_state` (no pose was set). The cause is
+not established here; like the rate rule's margin, the 10 ms bound is a
+contract question. The gate as written (none during the act) passes.
+
+Runs: `build/timeline/w4-gate-{ab,encore}/` in the W4 worktree.

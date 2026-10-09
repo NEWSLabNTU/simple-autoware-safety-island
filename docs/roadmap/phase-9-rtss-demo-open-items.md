@@ -124,8 +124,11 @@ phases, this repository by fast-forward push.
   and how the timeline draws it against the act. Gate: the design names
   the channel it consumes and the row or marker each violation becomes.
   DX: see DX-UX-GAPS 5.1, 5.2 (top-10 row 1).
-  Status (2026-10-06): implemented; the board gate is NOT passed as
-  written, for reasons that are nano-ros's (below). Branch `phase9-w4`,
+  Status (2026-10-10): the board gate PASSES at nano-ros `319715968`
+  (PR #1825's merge commit, with PR #1764's merge `2b8153621`): runs
+  `w4-gate-ab` and `w4-gate-encore`, branch `phase9-w4-rerun`, below the
+  rehearsal. History: status (2026-10-06): implemented; the board gate
+  is NOT passed as written, for reasons that are nano-ros's (below). Branch `phase9-w4`,
   not merged to main. The runs were built at nano-ros `5b3ac4567`, the head
   of PR #1729 (`feat/violation-ring-and-arming`, phase-474 I1/I2); the PR was
   then rebased and the pin moved to its new head `810c73341` (two non-code
@@ -276,8 +279,8 @@ phases, this repository by fast-forward push.
   - [x] native_sim, QEMU (trace) and board images build;
     `.github/check-contracts.sh` 14/14 (its play_launch check of the
     island contract: clean, 2 warnings, as before).
-  - [ ] Gate (a), rehearsal `w4r-pre-ab` (encore with the act replaced by
-    readouts). Before Autoware:
+  - Rehearsal (a), `w4r-pre-ab` (encore with the act replaced by
+    readouts; superseded by the gate below). Before Autoware:
 
       violation record (NROS_VIOLATION_RECORD, layout v1, capacity 8):
         total=0 dropped=0 suppressed_before_arm=5 armed=0
@@ -300,13 +303,13 @@ phases, this repository by fast-forward push.
         #4: rate-hierarchy-runtime /mrm_handler/hazard_lights_cmd measured=9999 declared=10000
         #3: rate-hierarchy-runtime /mrm_comfortable_stop_operator/status measured=9999 declared=10000
 
-    Would FAIL as written: the first rate window after arming still reads
+    Rehearsal result, FAIL as written: the first rate window after arming read
     9999/10000 and 29773/30000 mHz (I8 re-anchors the window but the rule
     has no tolerance), and the verdicts are still 15-17 ms apart in the
     trace with a timer overrun and 68 ms of release jitter right after
     them (I7's scheduling half does not show on the board at this head).
     #1 (silence on the availability, W3) is in the trace at 11,820 ms.
-  - [ ] Gate (b), same boot, `violations.py overrun 250`: I6 works, three
+  - Rehearsal (b), same boot, `violations.py overrun 250`: I6 works, three
     `max-latency-runtime` verdicts (one per monitored publisher of the
     tick, not one), then the overrun's own timer-overrun and jitter:
 
@@ -386,7 +389,7 @@ phases, this repository by fast-forward push.
       own rate leaves no margin (contract question, as above); (2) the
       period is 33 ms by integer division, not 33.333 ms: 30.30 Hz on the
       wire, which is the only margin the rule had.
-  - [ ] Gate (c), rehearsal `w4r-pre-encore2` (final image): VERDICT PASS,
+  - Rehearsal (c), `w4r-pre-encore2` (final image): VERDICT PASS,
     every table row PASS; 11 verdicts stored, all 6.1-16.2 s after boot,
     the act at ~38 s: none during it. HEAP HEADROOM ok (above). Takes in
     the trace: 437 (kinematic_state 225, control_cmd 201, of them 199
@@ -399,6 +402,128 @@ phases, this repository by fast-forward push.
   still costs 15-17 ms per verdict on the spin and breeds timer-overrun and
   release-jitter verdicts; the rate rule's first window after arming still
   judges 9999/10000; I6 stores one verdict per monitored publisher.
+  Gate (2026-10-10, branch `phase9-w4-rerun`): nano-ros pinned at
+  `319715968` (nano-ros main: PR #1764 merged as `2b8153621`, PR #1825,
+  phase-474 I9, merged as `319715968`). PASSED, all three readouts.
+  - [x] Re-pin `319715968`, `just setup-cli`, `just doctor` OK (under
+    `env -i` with scripts/env.sh, as every build and run below).
+  - [x] native_sim (build-zephyr), QEMU trace (build-qemu-trace) and board
+    (build-board) built pristine (trees removed first);
+    `.github/check-contracts.sh` 14/14. No "stated below its derivation"
+    warning: the configure derives no heap at this pin either, so
+    `CONFIG_NROS_ZEPHYR_HEAP_SIZE` stays 106496. Board ELF sha256
+    `39dd64334ce8ca7108a8c58418315f8c24ece519c17005fa5bd800da5703bd25`,
+    RAM 305,056 of 327,680 B; `LOG_DEFAULT_LEVEL=1`, main stack 16384,
+    trace buffer 40960 (the trace provenance names them).
+  - [x] Gate (a), bring-up (`w4-gate-ab`, encore with the act replaced by
+    readouts). Before Autoware:
+
+      violation record (NROS_VIOLATION_RECORD, layout v1, capacity 8):
+        total=0 dropped=0 suppressed_before_arm=3 armed=0
+        handler armed the monitors: not armed
+        read at uptime ~1900 ms (last trace heartbeat)
+        EMPTY: no violation stored since boot
+
+    After RUN, nothing commanded (40 s):
+
+      violation record (NROS_VIOLATION_RECORD, layout v1, capacity 8):
+        total=1 dropped=0 suppressed_before_arm=4 armed=1
+        handler armed the monitors: init failure cleared at uptime 6074 ms
+        read at uptime ~61100 ms (last trace heartbeat)
+        #1: silence-runtime /mrm_handler/operation_mode_availability measured=0 declared=500
+
+    PASS: no rate-hierarchy, timer-overrun or release-jitter verdict after
+    arming; the one stored is the availability's silence (W3, no epoch), in
+    the trace at 6599.790 ms. The 9999/10000 and 29773/30000 mHz verdicts of
+    the rehearsal are gone (I9 and the log floor, cbf2ad5).
+  - [x] Gate (b), same boot, `violations.py overrun 250`. The record 5 s
+    later (it keeps the latest 8):
+
+      violation record (NROS_VIOLATION_RECORD, layout v1, capacity 8):
+        total=14 dropped=6 suppressed_before_arm=4 armed=1
+        handler armed the monitors: init failure cleared at uptime 6074 ms
+        read at uptime ~66900 ms (last trace heartbeat)
+        #14: rate-hierarchy-runtime /mrm_handler/takeover_request_state measured=9787 declared=10000
+        #13: rate-hierarchy-runtime /mrm_handler/mrm_state measured=9787 declared=10000
+        #12: rate-hierarchy-runtime /mrm_handler/hazard_lights_cmd measured=9787 declared=10000
+        #11: rate-hierarchy-runtime /mrm_comfortable_stop_operator/status measured=9787 declared=10000
+        #10: rate-hierarchy-runtime /mrm_emergency_stop_operator/status measured=28921 declared=30000
+        #9: rate-hierarchy-runtime /mrm_emergency_stop_operator/emergency_control_cmd measured=28921 declared=30000
+        #8: release-jitter-runtime spin measured=242922 declared=10000
+        #7: timer-overrun-runtime timer measured=1 declared=0
+
+    and the trace (`island_trace.py violations`):
+
+      trace violations: 14 (trace window opened by NROS_VIOLATION)
+            6599.790 ms  #1: silence-runtime /mrm_handler/operation_mode_availability measured=0 declared=500
+           61825.694 ms  #2: max-latency-runtime /mrm_handler/hazard_lights_cmd measured=250 declared=100
+           61825.782 ms  #3: max-latency-runtime /mrm_handler/mrm_state measured=250 declared=206
+           61825.871 ms  #4: max-latency-runtime /mrm_handler/takeover_request_state measured=250 declared=206
+           61827.614 ms  #5: timer-overrun-runtime timer measured=7 declared=0
+           61827.700 ms  #6: timer-overrun-runtime timer measured=1 declared=0
+           61827.785 ms  #7: timer-overrun-runtime timer measured=1 declared=0
+           61827.872 ms  #8: release-jitter-runtime spin measured=242922 declared=10000
+           66163.167 ms  #9: rate-hierarchy-runtime /mrm_emergency_stop_operator/emergency_control_cmd measured=28921 declared=30000
+           66163.475 ms  #10: rate-hierarchy-runtime /mrm_emergency_stop_operator/status measured=28921 declared=30000
+           66232.772 ms  #11: rate-hierarchy-runtime /mrm_comfortable_stop_operator/status measured=9787 declared=10000
+           66232.868 ms  #12: rate-hierarchy-runtime /mrm_handler/hazard_lights_cmd measured=9787 declared=10000
+           66232.958 ms  #13: rate-hierarchy-runtime /mrm_handler/mrm_state measured=9787 declared=10000
+           66233.052 ms  #14: rate-hierarchy-runtime /mrm_handler/takeover_request_state measured=9787 declared=10000
+
+    PASS: the three `max-latency-runtime` verdicts (100, 206, 206) stored
+    within 0.18 ms of each other (61825.694-61825.871), one tick. What
+    follows is the overrun's own: the spin was held from the last take at
+    61548.834 ms to 61825.694 ms; the next handler tick ran
+    61826.869-61827.525, and then, within 0.26 ms, the three timers' Skip
+    counts (the 30 Hz operator 7 periods, the two 10 Hz timers 1 each) and
+    the spin's release jitter of 242.9 ms. 5 s later the rate windows that
+    held the stall close short by exactly those activations: 30 Hz at
+    28921 mHz, 10 Hz at 9787 mHz (49 in the window). No verdict is spaced
+    15 ms apart and no overrun or jitter verdict follows a stored verdict.
+  - [x] Gate (c), encore (`w4-gate-encore`, a normal `run-board.sh
+    encore`): VERDICT PASS, every table row PASS (detect 602.00 of 618,
+    route 8.41 of 239.33, detect + route 610.41 of 739.33, settle 2865.15
+    of 4165.33, total 3475.57 of 4904.67, EMERGENCY_STOP reached, entry
+    speed 4.25 of 8.33 m/s). The readout at its end:
+
+      violation record (NROS_VIOLATION_RECORD, layout v1, capacity 8):
+        total=5 dropped=0 suppressed_before_arm=4 armed=1
+        handler armed the monitors: init failure cleared at uptime 5965 ms
+        read at uptime ~43500 ms (last trace heartbeat)
+        #5: release-jitter-runtime spin measured=17888 declared=10000
+        #4: release-jitter-runtime spin measured=14905 declared=10000
+        #3: release-jitter-runtime spin measured=13794 declared=10000
+        #2: release-jitter-runtime spin measured=13625 declared=10000
+        #1: silence-runtime /mrm_handler/operation_mode_availability measured=0 declared=500
+
+      trace violations: 5 (trace window opened by NROS_VIOLATION)
+            6494.773 ms  #1: silence-runtime /mrm_handler/operation_mode_availability measured=0 declared=500
+           21121.524 ms  #2: release-jitter-runtime spin measured=13625 declared=10000
+           22121.692 ms  #3: release-jitter-runtime spin measured=13794 declared=10000
+           32318.925 ms  #4: release-jitter-runtime spin measured=14905 declared=10000
+           33230.385 ms  #5: release-jitter-runtime spin measured=17888 declared=10000
+
+    No verdict stored during the act: the last availability sample before
+    the HPC loss is at island 38,470 ms and MRM_OPERATING at 39,079 ms (the
+    merge's anchors); the last verdict is 5.2 s before. Boot record (SWD,
+    after the run): `HEAP HEADROOM: ok -- 35088 bytes spare (peak 71920 of
+    107008, floor 24576).` Main stack paint over SWD: high-water 11,640 B
+    of 16,384 (4,744 B spare; the same after (b)). Takes in the trace
+    (281-283): 431, kinematic_state 224, control_cmd 196, operation_mode_state
+    11, all stamped. Trace buffer: 28,135 of 40,960 B (26,038 B after the
+    trigger, 37.07 s); `w4-gate-ab` used 25,959 B. Not in (a)'s shape and
+    new against the rehearsal: #2-#5, four single release-jitter verdicts
+    of 13.6-17.9 ms against 10 ms, 0.9-10 s apart, while the scenario set
+    the pose, the goal and engaged (21-33 s); each sits on a
+    `kinematic_state` take or an operator tick and none is followed by
+    another verdict, so they are not the log floor or the reporter. Not
+    explained here; they did not occur in (a), where nothing published
+    `kinematic_state`. The spin's 10 ms jitter bound is the contract's; a
+    question for the contract (as the rate rule's margin above), not a gate
+    failure (c) as written.
+  Closed at this pin: the reporter's per-verdict cost (with the log floor),
+  the rate rule's floored quotient (I9), max-latency on sweep-fired
+  timers (I6). Still open: silence without an epoch (W3).
 - **W18 - the contract's head comment, sorted by where each explanation
   belongs.** The island contract opens with a 102-line comment before
   `version: 1` (src/safety_island_bringup/launch/safety_island.contract.yaml,
