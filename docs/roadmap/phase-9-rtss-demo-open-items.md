@@ -524,6 +524,24 @@ phases, this repository by fast-forward push.
   Closed at this pin: the reporter's per-verdict cost (with the log floor),
   the rate rule's floored quotient (I9), max-latency on sweep-fired
   timers (I6). Still open: silence without an epoch (W3).
+  - [x] Margin on the island's own rate floors (2026-10-10, decided: option
+    "lower the floor"). Gate (b) showed what a `min_rate_hz` equal to the
+    producer's own timer rate buys: the overrun's two dropped ticks came
+    back a window later as rate verdicts (9787/10000, 28921/30000) beside
+    the overrun's own verdict. The island's streams now promise 9 and 27
+    (one period of slack per 5 s window), the handler requires 9 of the
+    operators' status, and the host's floors (kinematic_state,
+    control_mode, control_cmd, the detector) stay. rlm reads a topic's
+    `rate_hz` as the floor its publisher must sustain (`rate-hierarchy`:
+    "rate_hz (10) > publisher min_rate_hz (9)"), so the island topics'
+    `rate_hz` rows went too: play_launch 0.14.0 derives them from the
+    timers (`derivable-rate` said so), and the budget table is unchanged
+    (hpc_loss 4961.67, odd_exit 20565.67 under 0.14.0, which charges the
+    link; W5). The three L3 compositions carry the same floors. Takes
+    effect in the image at the next build (the gate above ran at 10/30);
+    expected: no rate verdict after a commanded overrun. Open in rlm: a
+    nominal rate and a floor are one key (DX gap 1.4; play_launch phase
+    85).
 - **W18 - the contract's head comment, sorted by where each explanation
   belongs.** The island contract opens with a 102-line comment before
   `version: 1` (src/safety_island_bringup/launch/safety_island.contract.yaml,

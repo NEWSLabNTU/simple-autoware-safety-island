@@ -243,14 +243,14 @@ nodes:
       # Behind the link and the gateway's 40 -> 10 Hz downsampler: 63.65-118.78
       # ms from the host's receipt to the island's take (+20 %, phase8-W30).
       control_mode: { min_rate_hz: 10, max_transport: 143ms, qos: { depth: 1 } }
-      comfortable_stop_status: { min_rate_hz: 10, qos: { depth: 1 } }
-      emergency_stop_status: { min_rate_hz: 10, qos: { depth: 1 } }
+      comfortable_stop_status: { min_rate_hz: 9, qos: { depth: 1 } }
+      emergency_stop_status: { min_rate_hz: 9, qos: { depth: 1 } }
       operation_mode_state: { min_rate_hz: 10, qos: { depth: 1 } }
     pub:
-      mrm_state: { min_rate_hz: 10, qos: { durability: volatile } }
+      mrm_state: { min_rate_hz: 9, qos: { durability: volatile } }
       # MrmBehaviorStatus reused: AVAILABLE = idle, OPERATING = request on.
-      takeover_request_state: { min_rate_hz: 10, qos: { durability: volatile } }
-      hazard_lights_cmd: { min_rate_hz: 10, qos: { durability: volatile } }
+      takeover_request_state: { min_rate_hz: 9, qos: { durability: volatile } }
+      hazard_lights_cmd: { min_rate_hz: 9, qos: { durability: volatile } }
 
   mrm_comfortable_stop_operator:
     params:
@@ -277,7 +277,7 @@ nodes:
     pub:
       max_velocity_candidates: { qos: { depth: 1, durability: transient_local } }
       clear_velocity_limit: { qos: { depth: 1, durability: transient_local } }
-      status: { min_rate_hz: 10, qos: { durability: volatile } }
+      status: { min_rate_hz: 9, qos: { durability: volatile } }
 
   mrm_emergency_stop_operator:
     params:
@@ -299,8 +299,8 @@ nodes:
     sub:
       control_cmd: { min_rate_hz: 30, qos: { depth: 1 }, state: true }
     pub:
-      emergency_control_cmd: { min_rate_hz: 30, qos: { durability: volatile } }
-      status: { min_rate_hz: 30, qos: { durability: volatile } }
+      emergency_control_cmd: { min_rate_hz: 27, qos: { durability: volatile } }
+      status: { min_rate_hz: 27, qos: { durability: volatile } }
 
   # ---- the HPC side (takeover_demo stand-ins) --------------------------------
   availability_gate:

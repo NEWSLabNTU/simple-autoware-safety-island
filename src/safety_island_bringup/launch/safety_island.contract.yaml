@@ -460,7 +460,7 @@ nodes:
       # for the same reason (phase9-W7).
       max_velocity_candidates: { qos: { depth: 1, durability: transient_local } }
       clear_velocity_limit: { qos: { depth: 1, durability: transient_local } }
-      status: { min_rate_hz: 10, qos: { durability: volatile } }
+      status: { min_rate_hz: 9, qos: { durability: volatile } }
 
   mrm_emergency_stop_operator:
     params:
@@ -498,8 +498,8 @@ nodes:
       # VOLATILE, stated: the source uses the default profile. See the note
       # on mrm_handler's pub block for why an unstated durability is not read
       # as volatile.
-      emergency_control_cmd: { min_rate_hz: 30, qos: { durability: volatile } }
-      status: { min_rate_hz: 30, qos: { durability: volatile } }
+      emergency_control_cmd: { min_rate_hz: 27, qos: { durability: volatile } }
+      status: { min_rate_hz: 27, qos: { durability: volatile } }
 
   # The arbiter. Six subscriptions since phase8-W8a dropped the gear
   # pass-through (seven before; `operation_mode_state` is the one the old
@@ -659,8 +659,8 @@ nodes:
       # Nothing in the fault arithmetic reads it: the driver's answer is
       # bounded by the window, on the host (phase8-W30).
       control_mode: { min_rate_hz: 10, max_transport: 143ms, qos: { depth: 1 } }
-      comfortable_stop_status: { min_rate_hz: 10, qos: { depth: 1 } }
-      emergency_stop_status: { min_rate_hz: 10, qos: { depth: 1 } }
+      comfortable_stop_status: { min_rate_hz: 9, qos: { depth: 1 } }
+      emergency_stop_status: { min_rate_hz: 9, qos: { depth: 1 } }
       # Latched, published on CHANGE by default_adapi: no rate is claimed.
       # TRANSIENT_LOCAL as upstream since phase8-W14 (nano-ros phase-473 W2
       # serves a transient-local subscription from the publisher's cache), so
@@ -675,11 +675,24 @@ nodes:
       # the rows that answered is not a bound on the row that did not" -- and
       # otherwise contributes zero. With 5 of 14 stated the queryable table
       # stayed at 26 and the pool at 2 (docs/boot-through.md, iteration 1).
-      mrm_state: { min_rate_hz: 10, qos: { durability: volatile } }
+      # Rate floors with margin (phase9, 2026-10-10): a `min_rate_hz` equal
+      # to the producer's own timer rate (10 on a 10 Hz tick, 30 on 30) is a
+      # promise no stream keeps under any stall: the runtime rule counts
+      # samples in a 5 s window, the timer's Skip policy drops a tick for
+      # every two periods the spin stalls, and the window then closes one
+      # short (W4 gate (b): 9787/10000 and 28921/30000 after the commanded
+      # overrun, beside the overrun's own verdict). One dropped tick in a
+      # window is the overrun's business, not a rate fault, so the island's
+      # own streams promise 9 and 27 (one period of slack per window) and
+      # the handler requires the same of the operators' status. The host's
+      # streams (kinematic_state, control_mode, control_cmd, the detector)
+      # keep their floors: they are requirements on Autoware. Budgets are
+      # unchanged: they derive from `update_rate`, not from the floor.
+      mrm_state: { min_rate_hz: 9, qos: { durability: volatile } }
       # phase8-W7: MrmBehaviorStatus reused. AVAILABLE = idle, OPERATING =
       # the request is on, NOT_AVAILABLE = use_takeover_request is false.
-      takeover_request_state: { min_rate_hz: 10, qos: { durability: volatile } }
-      hazard_lights_cmd: { min_rate_hz: 10, qos: { durability: volatile } }
+      takeover_request_state: { min_rate_hz: 9, qos: { durability: volatile } }
+      hazard_lights_cmd: { min_rate_hz: 9, qos: { durability: volatile } }
 
 # The reactions, as scope paths from the guarded input to the topic that
 # commits each rung. What each rung COSTS is the reaction walk the hazards
@@ -717,12 +730,10 @@ topics:
     type: tier4_system_msgs/msg/MrmBehaviorStatus
     pub: [mrm_comfortable_stop_operator/status]
     sub: [mrm_handler/comfortable_stop_status]
-    rate_hz: 10
   /system/mrm/emergency_stop/status:
     type: tier4_system_msgs/msg/MrmBehaviorStatus
     pub: [mrm_emergency_stop_operator/status]
     sub: [mrm_handler/emergency_stop_status]
-    rate_hz: 30
 
   # --- consumed by the island, produced by the vehicle or Autoware ----------
   /control/command/control_cmd:
@@ -775,24 +786,20 @@ topics:
     type: autoware_control_msgs/msg/Control
     external: sub
     pub: [mrm_emergency_stop_operator/emergency_control_cmd]
-    rate_hz: 30
   /system/fail_safe/mrm_state:
     type: autoware_adapi_v1_msgs/msg/MrmState
     external: sub
     pub: [mrm_handler/mrm_state]
-    rate_hz: 10
   # phase8-W7: the takeover request, the takeover_request rung's reaction
   # output. Read on the host by the HMI and the timeline probe.
   /system/takeover_request/state:
     type: tier4_system_msgs/msg/MrmBehaviorStatus
     external: sub
     pub: [mrm_handler/takeover_request_state]
-    rate_hz: 10
   /system/emergency/hazard_lights_cmd:
     type: autoware_vehicle_msgs/msg/HazardLightsCommand
     external: sub
     pub: [mrm_handler/hazard_lights_cmd]
-    rate_hz: 10
 
 # The two MRM operate services. `mrm_handler` is the arbiter: it decides which
 # behaviour to run and calls the operator that runs it. Both sides are on this
