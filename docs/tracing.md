@@ -137,7 +137,7 @@ contract states. Its ENTRY and EXIT markers fire on a tick where
 `updateMrmState()`, EXIT after `publishMrmState()`, matching the path's
 `output: [mrm_state, emergency_stop_operate]`.
 
-### The marker table (31 markers + 4 forwarded from nano-ros, table sha256 `f61b522a90da...`)
+### The marker table (31 markers + 7 forwarded from nano-ros, table sha256 `f796abf8dd6b...`)
 
 Paths are relative to `src/autoware_mrm_*/src/mrm_*/` (comfortable,
 emergency, handler) and `src/autoware_stop_mode_operator/src/` (stop_mode).
@@ -190,6 +190,19 @@ and not call sites in the island: the executor emits them, and the sink in
 | 278 | `NROS_VIOLATION_FQN` | 22 | FNV-1a 32 of the endpoint ref |
 | 279 | `NROS_VIOLATION_MEASURED` | 23 | measured |
 | 280 | `NROS_VIOLATION_DECLARED` | 24 | declared |
+| 281 | `NROS_TAKE` | 25 | input index << 24 \| take seq (phase9-W4 rerun; nano-ros: slot << 24 \| seq) |
+| 282 | `NROS_TAKE_STAMP_SEC` | 26 | the sample's source stamp sec, only when it changed for that input |
+| 283 | `NROS_TAKE_STAMP_NSEC` | 27 | the sample's source stamp nanosec |
+
+The takes (nano-ros phase-474 I3) are forwarded only for the inputs in
+`markers.json` `nros.take_inputs`: 0 `/mrm_handler/kinematic_state`, 1
+`/mrm_handler/operation_mode_state`, 2
+`/mrm_emergency_stop_operator/control_cmd` (one in three). The sink learns
+each input's slot from the take it saw just before the input's callback
+(`ISLAND_TRACE_TAKE_BIND`, `include/island_trace.h`; a C/C++ subscription
+registers as `sub#N`), turns on the stamp at offset 4
+(`nros_trace_set_take`), and puts the input's index where nano-ros had the
+slot. `island_trace.py takes` lists them; `merge.py` writes `take` events.
 
 ### Unreachable by configuration
 

@@ -235,6 +235,106 @@ phases, this repository by fast-forward push.
   rate rule's first window after arming; and (with W3) silence without an
   epoch. Open here: the boot record's heap headroom reads REFUSED on this
   pin (peak 79,712 of 102,912 B), not resized.
+  Rerun (2026-10-09, branch `phase9-w4-rerun`): NOT run as the gate. The
+  gate waits for nano-ros PR #1764 (feat/474-rest: I7 scheduling half, I5,
+  I3, I4, T4) to merge; it was still OPEN after the 60 min poll (head
+  `6cc3790a0`). #1750 (I6, I8, I7 stack half) and #1749 are on nano-ros
+  main. The branch pins #1764's head and carries the island-side changes;
+  the three readouts below are a REHEARSAL at that head, not the gate.
+  Re-pin to the merge commit, `just setup-cli`, rebuild, and run the gate.
+  - [x] Pin `6cc3790a0` (PR head), `just setup-cli`, `just doctor` OK. In a
+    shell carrying the main checkout's .envrc, configure picked up the main
+    checkout's nros (ABI 9 vs runtime 2..=8): builds here ran under `env -i`
+    with scripts/env.sh. Old build trees (W4 pin) failed on a removed
+    `_NrosFindRosMsgPackage.cmake` stub: native_sim, QEMU and board were
+    built pristine.
+  - [x] Sizing (board; QEMU board conf alike): `CONFIG_MAIN_STACK_SIZE`
+    16384 (paint over SWD: high-water 12,136 B after bring-up + overrun,
+    12,200 B after an encore; 4,184 B spare, so 16384 stays);
+    `CONFIG_NROS_ZEPHYR_HEAP_SIZE` 106496, not #1764's 104448: at 104448 the
+    boot record after an encore read `HEAP HEADROOM: REFUSED -- 24056 bytes,
+    floor is 24576.` (peak 80,904 of 104,960); at 106496 `HEAP HEADROOM: ok
+    -- 26104 bytes spare (peak 80904 of 107008, floor 24576).` No "stated
+    below its derivation" warning: this pin derives no heap, so the
+    configure compares nothing. `CONFIG_RAM_TRACING_BUFFER_SIZE` 40960. RAM
+    305,056 of 327,680 B.
+  - [x] T3: `CONFIG_MAIN_THREAD_PRIORITY=5`, RX ring 4096 kept; the
+    configure's priority warning (nros_rmw_zenoh.cmake, issue 1534) did not
+    fire.
+  - [x] I3 (F4 enabler): `CONFIG_NROS_TRACE_TAKES=y`,
+    `CONFIG_NROS_TRACE_TIMER_EVERY=10`; the island binds each input's slot
+    from the take seen just before its callback (C/C++ subscriptions
+    register as `sub#N`), sets its stamp offset 4 and forwards takes at
+    281-283 (docs/tracing.md section 9); the emergency operator's 30 Hz
+    timer keeps every tick (`nros_trace_set_timer_every(slot, 1)`; the
+    island sink does not forward 18/19). Bound slots: control_cmd 0,
+    kinematic_state 6, operation_mode_state 10, operator timer 2.
+  - [x] I4: caps at `<repo>/nros-codegen.toml`. Package scope: mrm_handler
+    and stop_mode_operator probes fail to build (frame_id). Root: all four
+    build and run, then stop at `declare_parameter (code=-16)`; "no
+    producer" is NOT gone (the parameter-store gap phase-474 I4 names).
+  - [x] native_sim, QEMU (trace) and board images build;
+    `.github/check-contracts.sh` 14/14 (its play_launch check of the
+    island contract: clean, 2 warnings, as before).
+  - [ ] Gate (a), rehearsal `w4r-pre-ab` (encore with the act replaced by
+    readouts). Before Autoware:
+
+      violation record (NROS_VIOLATION_RECORD, layout v1, capacity 8):
+        total=0 dropped=0 suppressed_before_arm=5 armed=0
+        handler armed the monitors: not armed
+        read at uptime ~4900 ms (last trace heartbeat)
+        EMPTY: no violation stored since boot
+
+    After RUN, nothing commanded (40 s):
+
+      violation record (NROS_VIOLATION_RECORD, layout v1, capacity 8):
+        total=10 dropped=2 suppressed_before_arm=9 armed=1
+        handler armed the monitors: init failure cleared at uptime 11265 ms
+        read at uptime ~66300 ms (last trace heartbeat)
+        #10: rate-hierarchy-runtime /mrm_emergency_stop_operator/status measured=29773 declared=30000
+        #9: rate-hierarchy-runtime /mrm_emergency_stop_operator/emergency_control_cmd measured=29773 declared=30000
+        #8: release-jitter-runtime spin measured=68369 declared=10000
+        #7: timer-overrun-runtime timer measured=2 declared=0
+        #6: rate-hierarchy-runtime /mrm_handler/takeover_request_state measured=9999 declared=10000
+        #5: rate-hierarchy-runtime /mrm_handler/mrm_state measured=9999 declared=10000
+        #4: rate-hierarchy-runtime /mrm_handler/hazard_lights_cmd measured=9999 declared=10000
+        #3: rate-hierarchy-runtime /mrm_comfortable_stop_operator/status measured=9999 declared=10000
+
+    Would FAIL as written: the first rate window after arming still reads
+    9999/10000 and 29773/30000 mHz (I8 re-anchors the window but the rule
+    has no tolerance), and the verdicts are still 15-17 ms apart in the
+    trace with a timer overrun and 68 ms of release jitter right after
+    them (I7's scheduling half does not show on the board at this head).
+    #1 (silence on the availability, W3) is in the trace at 11,820 ms.
+  - [ ] Gate (b), same boot, `violations.py overrun 250`: I6 works, three
+    `max-latency-runtime` verdicts (one per monitored publisher of the
+    tick, not one), then the overrun's own timer-overrun and jitter:
+
+      #11: max-latency-runtime /mrm_handler/hazard_lights_cmd measured=250 declared=100
+      #12: max-latency-runtime /mrm_handler/mrm_state measured=250 declared=206
+      #13: max-latency-runtime /mrm_handler/takeover_request_state measured=250 declared=206
+      #14: timer-overrun-runtime timer measured=9 declared=0
+      #15: timer-overrun-runtime timer measured=2 declared=0
+      #16: timer-overrun-runtime timer measured=2 declared=0
+      #17: release-jitter-runtime spin measured=242934 declared=10000
+      #18: rate-hierarchy-runtime /mrm_emergency_stop_operator/emergency_control_cmd measured=28583 declared=30000
+      #19: rate-hierarchy-runtime /mrm_emergency_stop_operator/status measured=28583 declared=30000
+
+    (trace, `island_trace.py violations`; the record keeps #12-#19). #15
+    and #16 come 15 ms apart after #14, the reporter's spacing.
+  - [ ] Gate (c), rehearsal `w4r-pre-encore2` (final image): VERDICT PASS,
+    every table row PASS; 11 verdicts stored, all 6.1-16.2 s after boot,
+    the act at ~38 s: none during it. HEAP HEADROOM ok (above). Takes in
+    the trace: 437 (kinematic_state 225, control_cmd 201, of them 199
+    stamped, operation_mode_state 11); render's take - stamp estimate
+    36.8 ms median for control_cmd, 44.8 ms for kinematic_state (on the
+    host REALTIME - MONOTONIC offset read at merge; a first estimate, not
+    F4). Some early control_cmd samples carry a stamp ~island uptime, not
+    host time (counted apart by render.py).
+  Handed back to nano-ros (#1764 / phase 474): on the board the reporter
+  still costs 15-17 ms per verdict on the spin and breeds timer-overrun and
+  release-jitter verdicts; the rate rule's first window after arming still
+  judges 9999/10000; I6 stores one verdict per monitored publisher.
 - **W18 - the contract's head comment, sorted by where each explanation
   belongs.** The island contract opens with a 102-line comment before
   `version: 1` (src/safety_island_bringup/launch/safety_island.contract.yaml,
