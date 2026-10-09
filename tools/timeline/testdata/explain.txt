@@ -1,19 +1,36 @@
-  info[settle-derived]: safety_island.contract.yaml:448: hazard 'odd_exit', rung 'comfortable_stop': settle from /mrm_comfortable_stop_operator's braking profile, a = |min_acceleration| = 1 m/s^2, j = |min_jerk| = 0.3 m/s^3, v0 = entry_speed 8.33 m/s: v_r = a^2/(2j) = 1^2/(2*0.3) = 1.6667 m/s; v0 = 8.33 > v_r, so t = a/j + (v0 - v_r)/a = 1/0.3 + (8.33 - 1.6667)/1 = 3333.33 + 6663.33 = 9996.67ms
-  info[settle-derived]: safety_island.contract.yaml:484: hazard 'hpc_loss', rung 'emergency_stop': settle from /mrm_emergency_stop_operator's braking profile, a = |target_acceleration| = 2.5 m/s^2, j = |target_jerk| = 1.5 m/s^3, v0 = entry_speed 8.33 m/s: v_r = a^2/(2j) = 2.5^2/(2*1.5) = 2.0833 m/s; v0 = 8.33 > v_r, so t = a/j + (v0 - v_r)/a = 2.5/1.5 + (8.33 - 2.0833)/2.5 = 1666.67 + 2498.67 = 4165.33ms
-  info[settle-derived]: safety_island.contract.yaml:484: hazard 'odd_exit', rung 'emergency_stop': settle from /mrm_emergency_stop_operator's braking profile, a = |target_acceleration| = 2.5 m/s^2, j = |target_jerk| = 1.5 m/s^3, v0 = entry_speed 8.33 m/s: v_r = a^2/(2j) = 2.5^2/(2*1.5) = 2.0833 m/s; v0 = 8.33 > v_r, so t = a/j + (v0 - v_r)/a = 2.5/1.5 + (8.33 - 2.0833)/2.5 = 1666.67 + 2498.67 = 4165.33ms
+Parsing launch file: safety_island.launch.xml
+Parsed: 1 scopes, 3 nodes, 0 containers, 0 composable nodes
+2026-10-09T20:14:29.673530Z  INFO Loaded 1 manifest(s) [0 overlay, 1 provider] (0 scopes without manifests, 0 errors, 2 warnings)
+
+-- Cross-scope diagnostics --
+  info[path-exclusion]: scope path 'island.tor' (scope 0): the critical path assumes each node runs on arrival, but these traversals serialise with a sibling callback and may be delayed by it -- /mrm_handler/on_timer may wait for [call_mrm, driver_exit] (up to 149.00ms). Declare `concurrency.exclusive` on the node if they can in fact run concurrently; absent that declaration every path of a node is assumed to serialise, matching rclcpp's default callback group
+  info[fault-reaction-budget]: safety_island.contract.yaml:380: hazard 'hpc_loss': detection 500.00ms (/mrm_handler/operation_mode_availability detects within 500.00ms) + reaction 4434.67ms (reaction route link 81.00ms into /mrm_handler/operation_mode_availability + /mrm_handler/call_mrm -> /mrm_emergency_stop_operator/on_timer (+33.33ms sampling + 6.00ms jitter) = 269.33ms + settle 4165.33ms) = 4934.67ms fits the fault-tolerant time interval 10000.00ms with 5065.33ms of slack
+  warning[reaction-unguarded]: hazard 'hpc_loss' reaction 'l3_engaged' ends at /system/emergency/control_cmd and no subscriber there declares an `on_violation` -- a stalled reaction would go unnoticed. Guard it with a second hazard whose guard is this output
+  info[fault-reaction-budget]: safety_island.contract.yaml:382: hazard 'odd_exit': detection 100.00ms (/availability_gate/availability reports every 100.00ms + 0.00ms) + 'takeover_request' reaction 230.00ms + window 10000.00ms + reaction 4353.67ms (reaction route /mrm_handler/call_mrm -> /mrm_emergency_stop_operator/on_timer (+33.33ms sampling + 6.00ms jitter) = 188.33ms + settle 4165.33ms) = 14683.67ms fits the fault-tolerant time interval 30000.00ms with 15316.33ms of slack
+  warning[reaction-unguarded]: hazard 'odd_exit' reaction 'l3_engaged' ends at /system/emergency/control_cmd and no subscriber there declares an `on_violation` -- a stalled reaction would go unnoticed. Guard it with a second hazard whose guard is this output
+  info[settle-derived]: safety_island.contract.yaml:454: hazard 'odd_exit', rung 'comfortable_stop': settle from /mrm_comfortable_stop_operator's braking profile, a = |min_acceleration| = 1 m/s^2, j = |min_jerk| = 0.3 m/s^3, v0 = entry_speed 8.33 m/s: v_r = a^2/(2j) = 1^2/(2*0.3) = 1.6667 m/s; v0 = 8.33 > v_r, so t = a/j + (v0 - v_r)/a = 1/0.3 + (8.33 - 1.6667)/1 = 3333.33 + 6663.33 = 9996.67ms
+  info[settle-derived]: safety_island.contract.yaml:496: hazard 'hpc_loss', rung 'emergency_stop': settle from /mrm_emergency_stop_operator's braking profile, a = |target_acceleration| = 2.5 m/s^2, j = |target_jerk| = 1.5 m/s^3, v0 = entry_speed 8.33 m/s: v_r = a^2/(2j) = 2.5^2/(2*1.5) = 2.0833 m/s; v0 = 8.33 > v_r, so t = a/j + (v0 - v_r)/a = 2.5/1.5 + (8.33 - 2.0833)/2.5 = 1666.67 + 2498.67 = 4165.33ms
+  info[settle-derived]: safety_island.contract.yaml:496: hazard 'odd_exit', rung 'emergency_stop': settle from /mrm_emergency_stop_operator's braking profile, a = |target_acceleration| = 2.5 m/s^2, j = |target_jerk| = 1.5 m/s^3, v0 = entry_speed 8.33 m/s: v_r = a^2/(2j) = 2.5^2/(2*1.5) = 2.0833 m/s; v0 = 8.33 > v_r, so t = a/j + (v0 - v_r)/a = 2.5/1.5 + (8.33 - 2.0833)/2.5 = 1666.67 + 2498.67 = 4165.33ms
+  info[declared-not-charged]: safety_island.contract.yaml:667: `nodes.mrm_handler.sub.control_mode.max_transport: 143ms` on '/mrm_handler/control_mode' is not charged by the fault-reaction arithmetic: no hazard's reaction route enters through it (a route is charged `max_transport` on its guard edge only, the hop into the subscriber that detects the fault), so hazard detection and reaction routes (the `--explain` budgets) do not include it; path and chain latencies do
+
 -- Fault-reaction budgets (--explain, ms) --
 HAZARD    RUNG              ROLE     DETECT   WINDOWS   ROUTE             SETTLE     TOTAL      FTTI     SLACK
 hpc_loss  takeover_request  skipped       -         -       -                  -         -  10000.00         -
 hpc_loss  comfortable_stop  skipped       -         -       -                  -         -  10000.00         -
-hpc_loss  emergency_stop    floor    500.00      0.00  239.33    4165.33 derived   4904.67  10000.00   5095.33
-odd_exit  takeover_request  window   100.00      0.00  206.00  window >=10000.00         -  30000.00         -
-odd_exit  comfortable_stop  rung     100.00  10206.00  206.00    9996.67 derived  20508.67  30000.00   9491.33
-odd_exit  emergency_stop    floor    100.00  10206.00  239.33    4165.33 derived  14710.67  30000.00  15289.33
+hpc_loss  emergency_stop    floor    500.00      0.00  269.33    4165.33 derived   4934.67  10000.00   5065.33
+odd_exit  takeover_request  window   100.00      0.00  230.00  window >=10000.00         -  30000.00         -
+odd_exit  comfortable_stop  rung     100.00  10230.00  149.00    9996.67 derived  20475.67  30000.00   9524.33
+odd_exit  emergency_stop    floor    100.00  10230.00  188.33    4165.33 derived  14683.67  30000.00  15316.33
   TOTAL = DETECT + WINDOWS + ROUTE + SETTLE; WINDOWS is the route and window of every windowed rung passed on the way, up to its deadline.
   A window is a least time (`window >=`); noticing its deadline is the first hop of the ROUTE below it (`window-expiry`), never a second charge.
+  ROUTE includes the guard edge's link (`max_transport` into the detecting subscriber), except after a window's deadline.
   hpc_loss/takeover_request: requires hpc_alive, which this fault removes
   hpc_loss/comfortable_stop: requires hpc_alive, which this fault removes
-  odd_exit/takeover_request: lasts at least 10000.00ms once on, and ends within 10206.00ms: /mrm_handler reads the deadline on its 100.00ms timer ('on_timer'), charged inside /mrm_handler/call_mrm 206.00ms, the first hop of the route below
+  hpc_loss/emergency_stop: route = link 81.00ms (max_transport into '/mrm_handler/operation_mode_availability', sub-level) + path 188.33ms
+  odd_exit/takeover_request: lasts at least 10000.00ms once on, and ends within 10149.00ms: /mrm_handler reads the deadline on its 100.00ms timer ('on_timer') released up to 18.00ms late, charged inside /mrm_handler/call_mrm 149.00ms, the first hop of the route below
+  odd_exit/takeover_request: route = link 81.00ms (max_transport into '/mrm_handler/operation_mode_availability', sub-level) + path 149.00ms
+  odd_exit/comfortable_stop: route = path 149.00ms; the guard edge's link (81.00ms into '/mrm_handler/operation_mode_availability') is not charged after a window's deadline, which its owner reads on its own clock
+  odd_exit/emergency_stop: route = path 188.33ms; the guard edge's link (81.00ms into '/mrm_handler/operation_mode_availability') is not charged after a window's deadline, which its owner reads on its own clock
 
 1 manifest(s) checked: 1 clean, 0 with errors (0 errors, 2 warnings)
 1 contract(s): 0 overlay, 1 provider

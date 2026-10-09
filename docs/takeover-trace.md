@@ -1586,3 +1586,30 @@ not established here; like the rate rule's margin, the 10 ms bound is a
 contract question. The gate as written (none during the act) passes.
 
 Runs: `build/timeline/w4-gate-{ab,encore}/` in the W4 worktree.
+
+## 13. The budgets after F1 (phase9-W5, play_launch 0.14.0, 2026-10-10)
+
+play_launch 0.14.0 charges a guard subscriber's `max_transport` once on
+the reaction route (phase 85 I1) and a timer's `jitter:` where a tick is
+waited for (D1), so the island contract no longer carries the link inside
+`call_mrm`: `call_mrm` 149 ms = tick 118 + work 31, `max_transport` 81 ms
+on `/mrm_handler/operation_mode_availability` (section 11's 67.02 x 1.2),
+`jitter: 18ms` on the handler's `on_timer`, `jitter: 6ms` on the emergency
+operator's 30 Hz timer (island run w4r-ticks: 1073 ticks, 28.86-37.34 ms
+apart around 33.00). `--explain` on the island contract:
+
+```
+hpc_loss  emergency_stop    floor    500.00      0.00  269.33    4165.33 derived   4934.67  10000.00   5065.33
+odd_exit  takeover_request  window   100.00      0.00  230.00  window >=10000.00         -  30000.00         -
+odd_exit  comfortable_stop  rung     100.00  10230.00  149.00    9996.67 derived  20475.67  30000.00   9524.33
+odd_exit  emergency_stop    floor    100.00  10230.00  188.33    4165.33 derived  14683.67  30000.00  15316.33
+  hpc_loss/emergency_stop: route = link 81.00ms (max_transport into '/mrm_handler/operation_mode_availability', sub-level) + path 188.33ms
+  odd_exit/takeover_request: lasts at least 10000.00ms once on, and ends within 10149.00ms
+  odd_exit/comfortable_stop: route = path 149.00ms; the guard edge's link (81.00ms) is not charged after a window's deadline
+```
+
+Against section 12's gate encore (detect 602.00, route 8.41, settle
+2865.15, total 3475.57) every row still passes; the declared columns the
+timeline draws move to 618 / 269.33 / 4934.67. The fresh board round
+against these numbers is W14's, still open.
+

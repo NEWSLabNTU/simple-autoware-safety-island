@@ -271,8 +271,10 @@ def get_field(msg, dotted):
 # ---------------------------------------------- the checker's arithmetic ----
 def explain_text(launch=LAUNCH, play_launch=None):
     """`play_launch check <launch> --explain`, colour codes stripped."""
-    pl = play_launch or os.environ.get("PLAY_LAUNCH_CHECK") or (
-        PLAY_LAUNCH_W6 if os.path.exists(PLAY_LAUNCH_W6) else "play_launch")
+    # The play_launch on PATH (the doctor holds it at the CI minimum);
+    # PLAY_LAUNCH_CHECK overrides. The W6 source build is 0.12.0 and refuses
+    # the contract (phase9-W5; DX gap 2.2).
+    pl = play_launch or os.environ.get("PLAY_LAUNCH_CHECK") or "play_launch"
     r = subprocess.run([pl, "check", os.path.basename(launch), "--explain"], cwd=os.path.dirname(launch),
                        capture_output=True, text=True)
     return re.sub(r"\x1b\[[0-9;]*m", "", r.stdout + r.stderr)

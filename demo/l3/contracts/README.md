@@ -51,23 +51,30 @@ board budget).
 
 | contract | odd_exit, comfortable stop | odd_exit, floor | hpc_loss, floor | exit |
 |---|---|---|---|---|
-| `l3_takeover` | 20828.67 / 30000 ms, fits | 14730.67 ms, fits | 4904.67 / 10000 ms, fits | 0 |
-| `l3_takeover_window20` | 30828.67 ms, **ladder-rung-budget** | 24730.67 ms, fits | 4904.67 ms, fits | 1 |
-| `l3_takeover_65kmh` | 30558.67 ms, **ladder-rung-budget** | 18622.67 ms, fits | 8796.67 ms, fits | 1 |
+| `l3_takeover` | 20795.67 / 30000 ms, fits | 14703.67 ms, fits | 4934.67 / 10000 ms, fits | 0 |
+| `l3_takeover_window20` | 30795.67 ms, **ladder-rung-budget** | 24703.67 ms, fits | 4934.67 ms, fits | 1 |
+| `l3_takeover_65kmh` | 30525.67 ms, **ladder-rung-budget** | 18595.67 ms, fits | 8826.67 ms, fits | 1 |
 
 Each variant fails the comfortable-stop rung and nothing else. phase8-W30's
 board budget (the handler's hop 110 -> 206 ms) moved every total by 96 or
 192 ms and changed no verdict; before it the three rows read 20636.67,
-30636.67 and 30366.67 for the comfortable stop.
+30636.67 and 30366.67 for the comfortable stop. phase9-W5 (play_launch
+0.14.0) split the hop: `call_mrm` 149 (tick + work), the serial link 81 as
+the guard subscriber's `max_transport`, charged once on the reaction route
+and not after the window's deadline, and the timers' release jitter (18 and
+6 ms) charged where a tick is waited for. The comfortable-stop rows moved
+by -33 (20828.67, 30828.67, 30558.67 before), the floors by -27, and
+hpc_loss by +30 (4904.67 before); no verdict changed.
 
 **The window is a least time (phase8-W12, play_launch phase 84, rlm
 v0.1.47).** The request lasts at least 10 s; WINDOWS charges it up to its
 deadline, and the handler's late notice of the deadline (its 100 ms tick) is
 the first hop of the route below, `/mrm_handler/call_mrm` (110 ms then, 206
-ms on the board since phase8-W30). The new rule `window-expiry` checks that
-hop holds the tick; it passes on all three files, `--explain` prints
-`window >=10000.00` and "ends within 10206.00ms" (10110.00 at W12), and W12
-moved no number in the table above.
+ms on the board from phase8-W30, 149 since phase9-W5). The new rule
+`window-expiry` checks that hop holds the tick; it passes on all three
+files, `--explain` prints `window >=10000.00` and "ends within 10149.00ms"
+(10206.00 at W30, 10110.00 at W12), and W12 moved no number in the table
+above.
 
 **Why the variants are 20 s and 65 km/h, not brief D's 12 s and +10 km/h.**
 Brief D computed its variants at 16.7 m/s (60 km/h), where the comfortable

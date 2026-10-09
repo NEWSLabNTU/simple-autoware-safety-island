@@ -192,7 +192,7 @@ nodes:
       emergency_stop_operate: {}
     paths:
       on_timer:
-        trigger: { timer: { rate_hz: 10 } }
+        trigger: { timer: { rate_hz: 10, jitter: 18ms } }
         output:
           - mrm_state
           - takeover_request_state
@@ -201,11 +201,11 @@ nodes:
       # The reaction: the value fault and the silence fault both start it.
       # It enters the takeover request, calls an operator, or both, and the
       # outputs name all three so the walk can follow each rung.
-      # 206 ms on the board (phase8-W30; 110 until then) = link 57 + tick
-      # 118 + work 31: the island contract's derivation (at its `call_mrm`),
-      # from the 13 W8 board runs. The link is in here as well as in the
-      # subscriber's `max_transport` because play_launch 0.13.0's reaction
-      # walk charges no transport (follow-up F1).
+      # 149 ms on the board (phase9-W5; 206 from phase8-W30, 110 until then)
+      # = tick 118 + work 31: the island contract's derivation (at its
+      # `call_mrm`), from the 13 W8 board runs. The serial link is the
+      # subscriber's `max_transport` below, charged once on the reaction
+      # route by play_launch 0.14.0 (F1).
       call_mrm:
         trigger: { input: [operation_mode_availability] }
         output:
@@ -213,7 +213,7 @@ nodes:
           - takeover_request_state
           - comfortable_stop_operate
           - emergency_stop_operate
-        max_latency: 206ms
+        max_latency: 149ms
       # The exit: the driver's MANUAL, taken on the handler's own input and
       # answered on the takeover-request state. Declaring it is what makes
       # the image trace the take (TAKE_MRM_HANDLER_CONTROL_MODE).
@@ -226,19 +226,18 @@ nodes:
       operation_mode_availability:
         min_rate_hz: 10
         max_age: 500ms
-        # The serial hop in (gateway + UART, 57 ms on the board, phase8-W30)
-        # is NOT declared here as `max_transport`, although the island
-        # contract declares it. In this composition the gate is in the tree,
-        # so the nominal walk weighs the gate -> handler edge and would
-        # charge the 57 ms a second time on top of `call_mrm`, which holds it
-        # for the reaction walk (play_launch 0.13.0 charges no transport
-        # there; follow-up F1).
+        # The serial hop in (gateway + UART): 81 ms on the board (phase9-W5;
+        # phase8-W31's 12 edges reached 67.02 ms, x 1.2), the island
+        # contract's figure. play_launch 0.14.0 charges it once on the
+        # reaction route (F1) and not after the window's deadline, so it is
+        # declared here and no longer inside `call_mrm`.
+        max_transport: 81ms
         qos: { depth: 1, liveliness: manual_by_topic, lease_duration: 500ms }
         on_violation:
           on: [omission, reported]
           mechanism: application
           reaction: call_mrm
-          within: 206ms
+          within: 149ms
       kinematic_state: { min_rate_hz: 10, qos: { depth: 1 } }
       # Behind the link and the gateway's 40 -> 10 Hz downsampler: 63.65-118.78
       # ms from the host's receipt to the island's take (+20 %, phase8-W30).
@@ -288,7 +287,7 @@ nodes:
       operate: {}
     paths:
       on_timer:
-        trigger: { timer: { rate_hz: 30 } }
+        trigger: { timer: { rate_hz: 30, jitter: 6ms } }
         output: [emergency_control_cmd, status]
         # The settle is derived from this node's parameter file and the
         # hazard's entry speed; the island contract's literal 2034ms assumed

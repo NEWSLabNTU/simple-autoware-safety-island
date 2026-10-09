@@ -590,6 +590,26 @@ phases, this repository by fast-forward push.
   timeline's testdata/explain.txt regenerated, and the fresh board runs of
   W14 pass against the new numbers.
   DX: see DX-UX-GAPS 1.2.
+  Status (2026-10-10): done on play_launch 0.14.0 (released the same day),
+  but for the board round. Island contract and the three L3 compositions:
+  `call_mrm` 206 -> 149 (tick 118 + work 31), `within` 149, the link
+  `max_transport` 57 -> 81 on the guard subscriber (67.02 x 1.2, phase8-W31
+  r01; W14 re-sizes it), `jitter: 18ms` on the handler's `on_timer` (W30's
+  ticks up to 14.84 ms late x 1.2) and `jitter: 6ms` on the emergency
+  operator's 30 Hz timer (w4r-ticks: 37.34 - 33.00 = 4.34 x 1.2). The
+  checker charges the link once on the reaction route and the jitter at
+  the sampling hop and the window's notice, so the island topics' totals
+  are now: hpc_loss 4934.67 (was 4904.67: 81 + 149 + 33.33 + 6 = 269.33
+  on the route), odd_exit comfortable_stop 20475.67 (was 20508.67; WINDOWS
+  10230, route 149), odd_exit floor 14683.67; the request ends within
+  10,149 ms. The variants still fail only their comfortable-stop rung
+  (30795.67 and 30525.67; demo/l3/contracts/README.md). 14/14 CI checks
+  as expected; tools/timeline/testdata/explain.txt regenerated and the
+  selftest passes (tlcommon now runs the play_launch on PATH; the W6
+  source build is 0.12.0, DX gap 2.2). Open: the fresh board round of
+  W14 against the new numbers (the board is on the spin-latency
+  investigation, W4's open finding), and the paper's camera-ready
+  figures (4,904.67 and 20,508.67 in v3) follow this change.
 - **W6 - the demo compositions model the gate as it runs.** The three
   `demo/l3/contracts/l3_takeover*.contract.yaml` still state the
   availability gate as input-triggered (`trigger: { input:
