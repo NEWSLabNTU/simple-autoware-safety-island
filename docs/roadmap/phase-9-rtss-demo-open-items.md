@@ -922,3 +922,59 @@ Violation visibility (W4) and F1 (W5) first; the booth UI (W1, W2, W11)
 next; the late-join re-check (W12); hygiene (W17) in the background. The
 cheap fixes (W22) any time, in one sitting, the doctor's minimum first: it
 fails every fresh shell today. The runbook (W21) before the Orin (W10).
+
+## 5. nano-ros main and the rclcpp:: API (2026-10-11)
+
+Branch `phase9-rclcpp-api` pins nano-ros main `23f8336d9` (was
+`319715968`). It carries #1857 (the serial reader, `4332d00275`). #1896
+(the spin release grid) was still in the merge queue, so it is NOT in
+this pin; re-pin at or after its merge commit.
+
+- **The API (nano-ros phase-483 W1, #1835).** The C++ API left `nros::`
+  for `rclcpp::` with no alias. The island's port is a namespace rename
+  only: `::nros::X` -> `::rclcpp::X` for `NodeWithTimers`, `NodeHandle`,
+  `Publisher`, `QoS`, `Result`, `ErrorCode`, `detail::node_param_*`,
+  `bind_service`, `create_service_client_raw`, `ServiceClientStorage`,
+  `Clock`, `arm_monitors` and `board::NativeBoard`. The macros
+  (`NROS_COMPONENT`, `NROS_SUBSCRIBE`, `NROS_CREATE_WALL_TIMER`,
+  `NROS_MAIN`) and the `<nros/...>` header paths are unchanged. `QoS(1)`
+  now goes through upstream's implicit `QoS(size_t)`; same profile. W2-W4
+  are Rust only. No Kconfig symbol changed between the two pins.
+- **The root variable (nano-ros phase-484 W1, RFC-0103 D6).** nano-ros's
+  cmake package now refuses to configure while `NANO_ROS_ROOT` is set in
+  the ENVIRONMENT; `NROS_REPO_DIR` is the one name. The justfile's
+  variable is now `NROS_ROOT`, recipes unexport `NANO_ROS_ROOT` and export
+  `NROS_REPO_DIR`, and `scripts/env.sh` stops exporting the old name. A
+  direnv shell from before this change still exports it: re-enter the
+  directory (direnv reloads on env.sh) before a build.
+- **Measured, on `0f59543` + the branch diff.** The branch head's
+  contract (`c5d49aa`, `jitter:` on two timers) cannot be resolved by
+  `nros sync` at EITHER pin: nano-ros vendors play_launch `bbf9c04`
+  (pre-0.13), whose resolver refuses `jitter` ("unknown key in
+  `trigger.timer`"). So the images were built from `0f59543` (the commit
+  before) with the branch's code, against a baseline of `0f59543` at the
+  old pin. Same Kconfig on both board images.
+
+  | image | old pin (`319715968`) | main (`23f8336d9`) |
+  | --- | --- | --- |
+  | S32K344 FLASH | 649,324 B | 572,016 B |
+  | S32K344 RAM | 305,056 B (93.10%) | 305,056 B (93.10%) |
+  | S32K344 DTCM / ITCM | 62,496 / 13,136 B | 62,504 / 13,204 B |
+  | QEMU trace FLASH / RAM | 627,264 / 2,361,780 B | 549,700 / 2,361,780 B |
+
+  The 77 KB of flash is rodata: the `__NROS_SIZE_*` size-probe arrays
+  nano-ros #1765 (`488bfc3b9`) keeps out of linked images. native_sim
+  standalone, 30 s: the same markers on both (handler `on_timer` 298,
+  `call_mrm` 268, emergency operator ticks 904 / 902, INIT timeout 1).
+  QEMU, 40 s with a router: the same host topic list, heap peak 65,960 B
+  (66,152 at the old pin). `play_launch check` 14/14, `tlcommon`
+  selftest OK, demo-down bystander test PASS.
+- **Open, at both pins (not the port).** (1) The contract above needs a
+  nano-ros whose play_launch is >= 0.14.0 before any image builds from
+  `main`. (2) The native_sim island dies of HEAP EXHAUSTED in
+  `ddsrt_malloc` (Cyclone, `dq.builtins`) when it joins a running
+  Autoware: 1 MiB and 4 MiB both exhaust, at either pin, so the demo
+  cannot run on native_sim. (3) The host `just build` fails to link
+  (`nros_cpp_declare_param` undefined: nros-cpp built without
+  `param-store`). (4) `nros sync`'s source-metadata probe finds no
+  producer for the four nodes.
