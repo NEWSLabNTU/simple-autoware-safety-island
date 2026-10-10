@@ -80,3 +80,16 @@ config ISLAND_DEBUG_OVERRUN
 	  It is the board's end-to-end test of the violation channel
 	  (docs/takeover-trace.md section 12). No link entity, no parameter
 	  service, no contract change: only a debugger can command it.
+
+config ISLAND_APP_CONSOLE
+	bool "The application's own console prints (ISLAND_PRINTF)"
+	default y
+	help
+	  The MRM handler's std::printf lines (state changes, the takeover
+	  request, operator calls, INIT progress). Off, ISLAND_PRINTF compiles
+	  to nothing. The board turns it off: its console (lpuart0) is unwired
+	  and each line in the reaction tick cost 4.9 ms at 115,200 baud on
+	  the spin thread (phase9, nano-ros phase-474 I10: the last
+	  release-jitter verdict in an encore). native_sim and QEMU, whose
+	  consoles are read, keep the default.
+
