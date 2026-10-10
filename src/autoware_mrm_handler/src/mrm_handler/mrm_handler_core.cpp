@@ -67,7 +67,7 @@ double abs_d(double v) { return v < 0 ? -v : v; }
 enum : uint32_t { ARM_VIA_INIT_DONE = 1u, ARM_VIA_INIT_RECOVERY = 2u };
 void arm_contract_monitors(uint32_t via)
 {
-  nros::arm_monitors();
+  rclcpp::arm_monitors();
 #if defined(__ZEPHYR__)
   island_monitors_armed_uptime_ms = k_uptime_get_32();
   island_monitors_armed_via = via;
@@ -90,7 +90,7 @@ double now_sec()
 // Durations (now_sec) stay on the monotonic clock either way.
 builtin_interfaces::msg::Time now_stamp()
 {
-  const int64_t wall = ::nros::Clock(NROS_CLOCK_SYSTEM_TIME).now().nanoseconds();
+  const int64_t wall = ::rclcpp::Clock(NROS_CLOCK_SYSTEM_TIME).now().nanoseconds();
   const uint64_t ns = wall > 0 ? static_cast<uint64_t>(wall) : nros_cpp_time_ns();
   builtin_interfaces::msg::Time t;
   t.sec = static_cast<int32_t>(ns / 1000000000ull);
@@ -146,8 +146,8 @@ void print_inputs(uint32_t mask)
 namespace autoware::mrm_handler
 {
 
-MrmHandler::MrmHandler(::nros::NodeHandle handle)
-: ::nros::NodeWithTimers<1>(handle, "mrm_handler")
+MrmHandler::MrmHandler(::rclcpp::NodeHandle handle)
+: ::rclcpp::NodeWithTimers<1>(handle, "mrm_handler")
 {
   ::setvbuf(stdout, nullptr, _IONBF, 0);
 
@@ -175,16 +175,16 @@ MrmHandler::MrmHandler(::nros::NodeHandle handle)
   // subscribers became caching callbacks (porting-notes 14).
   NROS_SUBSCRIBE(
     tier4_system_msgs::msg::OperationModeAvailability, onOperationModeAvailability,
-    "/system/operation_mode/availability", ::nros::QoS(1));
-  NROS_SUBSCRIBE(nav_msgs::msg::Odometry, onOdometry, "/localization/kinematic_state", ::nros::QoS(1));
+    "/system/operation_mode/availability", ::rclcpp::QoS(1));
+  NROS_SUBSCRIBE(nav_msgs::msg::Odometry, onOdometry, "/localization/kinematic_state", ::rclcpp::QoS(1));
   NROS_SUBSCRIBE(
-    autoware_vehicle_msgs::msg::ControlModeReport, onControlMode, "/vehicle/status/control_mode", ::nros::QoS(1));
+    autoware_vehicle_msgs::msg::ControlModeReport, onControlMode, "/vehicle/status/control_mode", ::rclcpp::QoS(1));
   NROS_SUBSCRIBE(
     tier4_system_msgs::msg::MrmBehaviorStatus, onComfortableStopStatus,
-    "/system/mrm/comfortable_stop/status", ::nros::QoS(1));
+    "/system/mrm/comfortable_stop/status", ::rclcpp::QoS(1));
   NROS_SUBSCRIBE(
     tier4_system_msgs::msg::MrmBehaviorStatus, onEmergencyStopStatus,
-    "/system/mrm/emergency_stop/status", ::nros::QoS(1));
+    "/system/mrm/emergency_stop/status", ::rclcpp::QoS(1));
   // TRANSIENT_LOCAL, as upstream: /api/operation_mode/state is published on
   // CHANGE by default_adapi (latched), so a reader that joins after the mode
   // was set sees nothing until the next change unless it reads the publisher's
@@ -193,7 +193,7 @@ MrmHandler::MrmHandler(::nros::NodeHandle handle)
   // because the backend refused it then.
   create_subscription_in<autoware_adapi_v1_msgs::msg::OperationModeState, MrmHandler,
                          &MrmHandler::onOperationModeState>(
-    "/api/operation_mode/state", ::nros::QoS(1).transient_local());
+    "/api/operation_mode/state", ::rclcpp::QoS(1).transient_local());
 
   // Publisher (phase8-W8a: turn indicators, gear and emergency holding
   // dropped for the demo image; see the header).
@@ -206,10 +206,10 @@ MrmHandler::MrmHandler(::nros::NodeHandle handle)
 
   // Clients — POLL model (porting-notes 14). Callback groups dropped (single
   // executor); pull_over client dropped (no on-island operator).
-  ::nros::create_service_client_raw(
+  ::rclcpp::create_service_client_raw(
     *this, client_mrm_comfortable_stop_.bytes, "/system/mrm/comfortable_stop/operate",
     tier4_system_msgs::srv::OperateMrm::TYPE_NAME);
-  ::nros::create_service_client_raw(
+  ::rclcpp::create_service_client_raw(
     *this, client_mrm_emergency_stop_.bytes, "/system/mrm/emergency_stop/operate",
     tier4_system_msgs::srv::OperateMrm::TYPE_NAME);
 

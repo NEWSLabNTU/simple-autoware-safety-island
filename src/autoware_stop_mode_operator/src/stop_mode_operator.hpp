@@ -17,15 +17,15 @@
 
 #include "continuous_condition.hpp"
 
-// nano-ros port: <rclcpp/rclcpp.hpp> -> nros::Node (porting-notes 01). A
+// nano-ros port: <rclcpp/rclcpp.hpp> -> rclcpp::Node (porting-notes 01). A
 // component IS-A node since nano-ros 1f3b88aec; the timer pool is the base's
 // template argument, so a node with one timer derives NodeWithTimers<1>.
 #include <nros/component.hpp>
 // component_node.hpp used to pull this in; component.hpp does not, and the
-// nros::Publisher<M> members below plus create_publisher_in need it complete.
+// rclcpp::Publisher<M> members below plus create_publisher_in need it complete.
 #include <nros/publisher.hpp>
 // The freestanding parameter forwarders the declare_parameter helper below
-// calls (nros::Node hosts the same facade, but only under NROS_CPP_STD).
+// calls (rclcpp::Node hosts the same facade, but only under NROS_CPP_STD).
 #include <nros/node_parameters.hpp>
 
 #include <autoware_control_msgs/msg/control.hpp>
@@ -47,16 +47,16 @@ using autoware_vehicle_msgs::msg::SteeringReport;
 using autoware_vehicle_msgs::msg::TurnIndicatorsCommand;
 using autoware_vehicle_msgs::msg::VelocityReport;
 
-class StopModeOperator : public ::nros::NodeWithTimers<1>
+class StopModeOperator : public ::rclcpp::NodeWithTimers<1>
 {
 public:
   // nano-ros port: NodeOptions ctor → NodeHandle ctor (porting-notes 01).
-  explicit StopModeOperator(::nros::NodeHandle handle);
+  explicit StopModeOperator(::rclcpp::NodeHandle handle);
 
 private:
 
   // nano-ros port: the parameter facade `ComponentNode` carried unconditionally
-  // now lives on `nros::Node` behind NROS_CPP_NODE_HOSTED, which nano-ros
+  // now lives on `rclcpp::Node` behind NROS_CPP_NODE_HOSTED, which nano-ros
   // phase-438 W2 made an opt-in (`NROS_CPP_STD`) this node cannot take: the
   // same sources build for Zephyr, whose minimal libcpp has no <memory> /
   // <string> / <vector>. Same shape, same store -- the freestanding forwarders
@@ -66,15 +66,15 @@ private:
   T declare_parameter(const char * name, T default_value = T{})
   {
     const nros_cpp_node_t * h = ffi_handle();
-    const ::nros::Result r = ::nros::detail::node_param_declare(h, name, default_value);
+    const ::rclcpp::Result r = ::rclcpp::detail::node_param_declare(h, name, default_value);
     // A launch-seeded parameter is declared before this ctor runs, so a
     // re-declare adopts the override instead of failing.
-    if (!r.ok() && r.code() != ::nros::ErrorCode::AlreadyExists) {
+    if (!r.ok() && r.code() != ::rclcpp::ErrorCode::AlreadyExists) {
       set_error("declare_parameter", r.raw());
       return default_value;
     }
     T out{};
-    const ::nros::Result g = ::nros::detail::node_param_get(h, name, out);
+    const ::rclcpp::Result g = ::rclcpp::detail::node_param_get(h, name, out);
     if (!g.ok()) {
       set_error("declare_parameter(read-back)", g.raw());
       return default_value;
@@ -93,10 +93,10 @@ private:
   void on_velocity(const VelocityReport & msg);
   void on_route_state(const RouteState & msg);
 
-  ::nros::Publisher<Control> pub_control_;
-  ::nros::Publisher<GearCommand> pub_gear_;
-  ::nros::Publisher<TurnIndicatorsCommand> pub_turn_indicators_;
-  ::nros::Publisher<HazardLightsCommand> pub_hazard_lights_;
+  ::rclcpp::Publisher<Control> pub_control_;
+  ::rclcpp::Publisher<GearCommand> pub_gear_;
+  ::rclcpp::Publisher<TurnIndicatorsCommand> pub_turn_indicators_;
+  ::rclcpp::Publisher<HazardLightsCommand> pub_hazard_lights_;
 
   SteeringReport current_steering_;
   RouteState current_route_state_;

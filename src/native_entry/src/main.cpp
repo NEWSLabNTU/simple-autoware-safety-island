@@ -4,4 +4,4 @@
 
 #include <nros/main.hpp>
 
-NROS_MAIN(::nros::board::NativeBoard, "safety_island_bringup");
+NROS_MAIN(::rclcpp::board::NativeBoard, "safety_island_bringup");

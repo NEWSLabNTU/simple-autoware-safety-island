@@ -36,7 +36,7 @@ double max_d(double a, double b) { return a > b ? a : b; }
 // Durations (now_sec) stay on the monotonic clock either way.
 builtin_interfaces::msg::Time now_stamp()
 {
-  const int64_t wall = ::nros::Clock(NROS_CLOCK_SYSTEM_TIME).now().nanoseconds();
+  const int64_t wall = ::rclcpp::Clock(NROS_CLOCK_SYSTEM_TIME).now().nanoseconds();
   const uint64_t ns = wall > 0 ? static_cast<uint64_t>(wall) : nros_cpp_time_ns();
   builtin_interfaces::msg::Time t;
   t.sec = static_cast<int32_t>(ns / 1000000000ull);
@@ -55,8 +55,8 @@ double seconds_since(const builtin_interfaces::msg::Time & then)
 namespace autoware::mrm_emergency_stop_operator
 {
 
-MrmEmergencyStopOperator::MrmEmergencyStopOperator(::nros::NodeHandle handle)
-: ::nros::NodeWithTimers<1>(handle, "mrm_emergency_stop_operator")
+MrmEmergencyStopOperator::MrmEmergencyStopOperator(::rclcpp::NodeHandle handle)
+: ::rclcpp::NodeWithTimers<1>(handle, "mrm_emergency_stop_operator")
 {
   // Parameter
   // nano-ros port: upstream declares these without defaults (values injected
@@ -72,11 +72,11 @@ MrmEmergencyStopOperator::MrmEmergencyStopOperator(::nros::NodeHandle handle)
   // parses launch remaps but does not route them yet, and `~/` private
   // expansion is unsupported (porting-notes 07). Upstream:
   //   ~/input/control/control_cmd  → /control/command/control_cmd
-  NROS_SUBSCRIBE(Control, onControlCommand, "/control/command/control_cmd", ::nros::QoS(1));
+  NROS_SUBSCRIBE(Control, onControlCommand, "/control/command/control_cmd", ::rclcpp::QoS(1));
 
   // Server
   //   ~/input/mrm/emergency_stop/operate → /system/mrm/emergency_stop/operate
-  ::nros::bind_service<OperateMrm, MrmEmergencyStopOperator,
+  ::rclcpp::bind_service<OperateMrm, MrmEmergencyStopOperator,
                        &MrmEmergencyStopOperator::operateEmergencyStop>(
     *this, "/system/mrm/emergency_stop/operate", this);
 

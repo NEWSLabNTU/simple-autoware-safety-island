@@ -41,8 +41,8 @@ builtin_interfaces::msg::Time now_stamp()
 namespace autoware::stop_mode_operator
 {
 
-StopModeOperator::StopModeOperator(::nros::NodeHandle handle)
-: ::nros::NodeWithTimers<1>(handle, "stop_mode_operator")
+StopModeOperator::StopModeOperator(::rclcpp::NodeHandle handle)
+: ::rclcpp::NodeWithTimers<1>(handle, "stop_mode_operator")
 {
   current_steering_ = {};
   current_steering_.steering_tire_angle = 0.0f;
@@ -53,8 +53,8 @@ StopModeOperator::StopModeOperator(::nros::NodeHandle handle)
   stop_hold_acceleration_ = declare_parameter<double>("stop_hold_acceleration", -1.5);
   enable_auto_parking_ = declare_parameter<bool>("enable_auto_parking", true);
 
-  const auto control_qos = ::nros::QoS(5);
-  const auto durable_qos = ::nros::QoS(1).transient_local();
+  const auto control_qos = ::rclcpp::QoS(5);
+  const auto durable_qos = ::rclcpp::QoS(1).transient_local();
 
   // Resolved contract names (porting-notes 07). Upstream remaps these into
   // the control_command_gate "stop" source; without the gate on-island they
@@ -66,9 +66,9 @@ StopModeOperator::StopModeOperator(::nros::NodeHandle handle)
   pub_hazard_lights_ =
     create_publisher_in<HazardLightsCommand>("/system/stop_mode/hazard_lights", durable_qos);
 
-  NROS_SUBSCRIBE(SteeringReport, on_steering, "/vehicle/status/steering_status", ::nros::QoS(1));
-  NROS_SUBSCRIBE(VelocityReport, on_velocity, "/vehicle/status/velocity_status", ::nros::QoS(1));
-  NROS_SUBSCRIBE(RouteState, on_route_state, "/planning/route_state", ::nros::QoS(1));
+  NROS_SUBSCRIBE(SteeringReport, on_steering, "/vehicle/status/steering_status", ::rclcpp::QoS(1));
+  NROS_SUBSCRIBE(VelocityReport, on_velocity, "/vehicle/status/velocity_status", ::rclcpp::QoS(1));
+  NROS_SUBSCRIBE(RouteState, on_route_state, "/planning/route_state", ::rclcpp::QoS(1));
 
   // Upstream: rate is a double parameter fed to rclcpp::Rate.
   const double rate = declare_parameter<double>("rate", 30.0);

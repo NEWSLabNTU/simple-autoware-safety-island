@@ -32,7 +32,7 @@ namespace
 // Durations (now_sec) stay on the monotonic clock either way.
 builtin_interfaces::msg::Time now_stamp()
 {
-  const int64_t wall = ::nros::Clock(NROS_CLOCK_SYSTEM_TIME).now().nanoseconds();
+  const int64_t wall = ::rclcpp::Clock(NROS_CLOCK_SYSTEM_TIME).now().nanoseconds();
   const uint64_t ns = wall > 0 ? static_cast<uint64_t>(wall) : nros_cpp_time_ns();
   builtin_interfaces::msg::Time t;
   t.sec = static_cast<int32_t>(ns / 1000000000ull);
@@ -44,8 +44,8 @@ builtin_interfaces::msg::Time now_stamp()
 namespace autoware::mrm_comfortable_stop_operator
 {
 
-MrmComfortableStopOperator::MrmComfortableStopOperator(::nros::NodeHandle handle)
-: ::nros::NodeWithTimers<1>(handle, "mrm_comfortable_stop_operator")
+MrmComfortableStopOperator::MrmComfortableStopOperator(::rclcpp::NodeHandle handle)
+: ::rclcpp::NodeWithTimers<1>(handle, "mrm_comfortable_stop_operator")
 {
   // Parameter — upstream config/mrm_comfortable_stop_operator.param.yaml
   // values as node-local defaults (porting-notes 06).
@@ -56,7 +56,7 @@ MrmComfortableStopOperator::MrmComfortableStopOperator(::nros::NodeHandle handle
 
   // Server — resolved contract name (porting-notes 07):
   //   ~/input/mrm/comfortable_stop/operate → /system/mrm/comfortable_stop/operate
-  ::nros::bind_service<tier4_system_msgs::srv::OperateMrm, MrmComfortableStopOperator,
+  ::rclcpp::bind_service<tier4_system_msgs::srv::OperateMrm, MrmComfortableStopOperator,
                        &MrmComfortableStopOperator::operateComfortableStop>(
     *this, "/system/mrm/comfortable_stop/operate", this);
 
@@ -68,11 +68,11 @@ MrmComfortableStopOperator::MrmComfortableStopOperator(::nros::NodeHandle handle
     "/system/mrm/comfortable_stop/status");
   pub_velocity_limit_ = create_publisher_in<autoware_internal_planning_msgs::msg::VelocityLimit>(
     "/planning/scenario_planning/max_velocity_candidates",
-    ::nros::QoS(1).transient_local());
+    ::rclcpp::QoS(1).transient_local());
   pub_velocity_limit_clear_command_ =
     create_publisher_in<autoware_internal_planning_msgs::msg::VelocityLimitClearCommand>(
       "/planning/scenario_planning/clear_velocity_limit",
-      ::nros::QoS(1).transient_local());
+      ::rclcpp::QoS(1).transient_local());
 
   // Timer
   NROS_CREATE_WALL_TIMER(static_cast<uint64_t>(1000 / params_.update_rate), onTimer);
