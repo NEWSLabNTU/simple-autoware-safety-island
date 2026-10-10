@@ -29,7 +29,7 @@
 # the ones that never source it -- CI, an agent's tool shell, a bare `just`.
 # An override now has to name itself, which cannot happen by inheritance.
 NROS_ROOT := if env("NANO_ROS_ALLOW_EXTERNAL_ROOT", "") == "1" {
-    env("NANO_ROS_ROOT", justfile_directory() / "third-party/nano-ros")
+    env("NANO_ROS_ROOT", env("NROS_REPO_DIR", justfile_directory() / "third-party/nano-ros"))
 } else if path_exists(justfile_directory() / "third-party/nano-ros/activate.sh") == "true" {
     justfile_directory() / "third-party/nano-ros"
 } else {
@@ -47,7 +47,8 @@ export nano_ros_ROOT := NROS_ROOT
 # resolution and the NANO_ROS_ALLOW_EXTERNAL_ROOT=1 NANO_ROS_ROOT=<path>
 # override are unchanged, and what a recipe's processes inherit is
 # NROS_REPO_DIR naming the same tree, never NANO_ROS_ROOT (a direnv shell from
-# before this change still exports it).
+# before this change still exports it). A nested `just` under the override
+# therefore finds the root in NROS_REPO_DIR, which the outer recipe exported.
 unexport NANO_ROS_ROOT
 export NROS_REPO_DIR := NROS_ROOT
 # Optional: a play_launch SOURCE checkout to build+install from. Unset (the
