@@ -550,6 +550,23 @@ phases, this repository by fast-forward push.
     the handler's own `std::printf` on the 115,200 baud console in the
     reaction tick, two lines of about 56 characters, 4.9 ms each (ENTRY to
     CALL 4.93 ms in the trace); route carries it.
+  - [x] grid release, nano-ros `1551851d6` (`fix/spin-cadence-319715968`:
+    `9eed444b3` + phase-474 I11, draft PR #1896 on main): a `spin_once(10)`
+    loop parks to the next point of an absolute 10 ms grid instead of 10 ms
+    from its own entry, skips (counts) only whole missed periods, and the
+    jitter rule judges release minus grid point; Zephyr's ms wait no longer
+    adds a tick. Run `sl-cadence-diag` (pin + diag, on `9e20a42`, console
+    prints off), act only: 5810 spin intervals (more than 3997: a spin woken
+    early by data is now its own interval), 61 at 1 ms or more late (before,
+    `sl-diag-fix`: 603), 2 at 5 ms or more (13), 0 at 10 ms or more (1),
+    max 5.9 ms (14.5), p99 in the 1-2 ms bin (3-4). The diag measures entry
+    to entry, so a long dispatch still reads late here though the release
+    after it is on the grid: the 5.9 ms interval is a 5.5 ms callback
+    (2.8 ms waiting for the link in a send). Encore VERDICT PASS, detect
+    561.48, route 32.04, total 3506.54 ms; no `release-jitter-runtime`
+    verdict stored (the record holds only the known
+    `silence-runtime operation_mode_availability`). Diag image RAM
+    314,672 B; the clean image at this pin was not built.
 - **W18 - the contract's head comment, sorted by where each explanation
   belongs.** The island contract opens with a 102-line comment before
   `version: 1` (src/safety_island_bringup/launch/safety_island.contract.yaml,
