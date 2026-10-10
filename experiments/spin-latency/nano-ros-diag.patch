@@ -1,0 +1,152 @@
+From 032060200b4cefa5537e6b94f9bb85a5727f5666 Mon Sep 17 00:00:00 2001
+From: aeon <jerry73204@gmail.com>
+Date: Sat, 10 Oct 2026 04:34:53 +0800
+Subject: [PATCH] DIAG (spin latency): spin phase events, zenoh mutex wait hook
+ (not for merge)
+
+---
+ .../nros-node/src/executor/callback_trace.rs  | 10 ++++++++++
+ packages/core/nros-node/src/executor/spin.rs  | 16 ++++++++++++++++
+ zephyr/nros_zenoh_zephyr_system.c             | 19 +++++++++++++++++--
+ 3 files changed, 43 insertions(+), 2 deletions(-)
+
+diff --git a/packages/core/nros-node/src/executor/callback_trace.rs b/packages/core/nros-node/src/executor/callback_trace.rs
+index 3e187cff0..04b79b22a 100644
+--- a/packages/core/nros-node/src/executor/callback_trace.rs
++++ b/packages/core/nros-node/src/executor/callback_trace.rs
+@@ -145,6 +145,8 @@ pub use super::monitor::{
+ /// phase-474 I3 -- one sample taken for a subscription:
+ /// `handle << 24 | take seq` (seq image-wide, low 24 bits).
+ pub const MARKER_TAKE: u32 = 25;
++/// DIAG (spin latency) -- one spin phase: arg = phase | value << 8.
++pub const MARKER_SPIN_PHASE: u32 = 40;
+ /// phase-474 I3 -- the taken sample's `stamp.sec`, after a [`MARKER_TAKE`].
+ pub const MARKER_TAKE_STAMP_SEC: u32 = 26;
+ /// phase-474 I3 -- the taken sample's `stamp.nanosec`, after a
+@@ -338,6 +340,14 @@ pub(crate) fn end(handle: u8) {
+     }
+ }
+ 
++/// DIAG (spin latency) -- a spin phase boundary.
++#[inline]
++pub(crate) fn spin_phase(phase: u8, value: u32) {
++    if let Some(sink) = sink() {
++        emit(sink, MARKER_SPIN_PHASE, (phase as u32) | (value << 8));
++    }
++}
++
+ /// phase-474 I1 -- one stored contract violation, as four events (see the
+ /// module table). Pre-arm verdicts (phase-474 I2) are not stored and emit
+ /// nothing.
+diff --git a/packages/core/nros-node/src/executor/spin.rs b/packages/core/nros-node/src/executor/spin.rs
+index c6531ebea..a369d84eb 100644
+--- a/packages/core/nros-node/src/executor/spin.rs
++++ b/packages/core/nros-node/src/executor/spin.rs
+@@ -160,6 +160,15 @@ fn trace_register(slot: usize, kind: EntryKind, name: TraceName<'_>) {
+ #[inline]
+ fn trace_register(_slot: usize, _kind: EntryKind, _name: TraceName<'_>) {}
+ 
++
++#[cfg(feature = "trace-callbacks")]
++#[inline]
++fn diag_spin_phase(phase: u8, value: u32) {
++    super::callback_trace::spin_phase(phase, value);
++}
++#[cfg(not(feature = "trace-callbacks"))]
++#[inline]
++fn diag_spin_phase(_phase: u8, _value: u32) {}
+ // ============================================================================
+ // Executor::open() factory method
+ // ============================================================================
+@@ -9311,6 +9320,7 @@ impl<'s> Executor<'s> {
+         // Issue 1705 — releases deferred behind a dispatch that has since
+         // finished (an OS-priority worker's) are completed here, before this
+         // pass looks at the entries.
++        diag_spin_phase(0, 0);
+         self.reap_deferred_releases();
+         // phase-436 W2 (issue 1193) — the budget is carried in MICROSECONDS.
+         // This was `as_millis()`, which truncates: `from_micros(500)` became
+@@ -9415,6 +9425,7 @@ impl<'s> Executor<'s> {
+         //
+         // Additive by construction: with no primitive installed this is a
+         // no-op and every existing port keeps the behaviour it has.
++        diag_spin_phase(1, park_achieved_us.min(0x00ff_ffff) as u32);
+         let parked = match self.park_primitive {
+             Some((park, ctx)) if park_achieved_us > 0 => {
+                 // SAFETY: `park` and `ctx` were supplied together by the port
+@@ -9621,6 +9632,7 @@ impl<'s> Executor<'s> {
+             // invisible. It is now the only `let _ =` of the two.
+             let _ = extra.drive_io(0);
+         }
++        diag_spin_phase(2, 0);
+ 
+         // phase-359 W4 — ONE clock read per spin, shared by the delta below and
+         // every consumer further down. Replaces the std/no_std delta pair AND
+@@ -9834,8 +9846,10 @@ impl<'s> Executor<'s> {
+ 
+             // phase-474 I7 -- an idle spin is the natural slot for the queued
+             // reports.
++            diag_spin_phase(3, 1);
+             self.flush_violation_reports();
+ 
++            diag_spin_phase(4, 1);
+             return SpinOnceResult::new();
+         }
+ 
+@@ -10464,6 +10478,7 @@ impl<'s> Executor<'s> {
+         // spin: the activations it reports were dropped by the dispatch
+         // that just happened, and a tier that is stalling should not have
+         // to wait for the next spin to say so.
++        diag_spin_phase(3, 0);
+         self.check_timer_overruns();
+         self.check_release_jitter_rule();
+         self.check_stack_headroom_rule();
+@@ -10536,6 +10551,7 @@ impl<'s> Executor<'s> {
+             }
+         }
+ 
++        diag_spin_phase(4, 0);
+         result
+     }
+ 
+diff --git a/zephyr/nros_zenoh_zephyr_system.c b/zephyr/nros_zenoh_zephyr_system.c
+index 4dbadbea4..58f09f64d 100644
+--- a/zephyr/nros_zenoh_zephyr_system.c
++++ b/zephyr/nros_zenoh_zephyr_system.c
+@@ -193,8 +193,23 @@ z_result_t _z_mutex_drop(_z_mutex_t *m) {
+     return m == NULL || pthread_mutex_destroy(m) == 0 ? 0 : -1;
+ }
+ 
++/* DIAG (spin latency): a weak hook told how long a contended lock waited. */
++extern void island_diag_lock_wait(void *m, uint32_t cycles, void *ra) __attribute__((weak));
++static inline int nros_diag_mutex_lock(pthread_mutex_t *m, void *ra) {
++    if (island_diag_lock_wait == NULL) {
++        return pthread_mutex_lock(m);
++    }
++    if (pthread_mutex_trylock(m) == 0) {
++        return 0;
++    }
++    uint32_t t0 = k_cycle_get_32();
++    int rc = pthread_mutex_lock(m);
++    island_diag_lock_wait((void *)m, k_cycle_get_32() - t0, ra);
++    return rc;
++}
++
+ z_result_t _z_mutex_lock(_z_mutex_t *m) {
+-    return pthread_mutex_lock(m) == 0 ? 0 : -1;
++    return nros_diag_mutex_lock(m, __builtin_return_address(0)) == 0 ? 0 : -1;
+ }
+ 
+ z_result_t _z_mutex_try_lock(_z_mutex_t *m) {
+@@ -222,7 +237,7 @@ z_result_t _z_mutex_rec_drop(_z_mutex_rec_t *m) {
+ }
+ 
+ z_result_t _z_mutex_rec_lock(_z_mutex_rec_t *m) {
+-    return pthread_mutex_lock(m) == 0 ? 0 : -1;
++    return nros_diag_mutex_lock(m, __builtin_return_address(0)) == 0 ? 0 : -1;
+ }
+ 
+ z_result_t _z_mutex_rec_try_lock(_z_mutex_rec_t *m) {
+-- 
+2.34.1
+

@@ -735,3 +735,9 @@ counts (total, dropped, suppressed_before_arm, armed); the trace keeps
 every verdict after the window opened, which is how runs with more than 8
 can be read whole (`w4-bringup2`: 17 in the trace, 8 in the record).
 
+**Spin-latency diagnostic (not in the image).** `CONFIG_ISLAND_SPIN_DIAG`
+(off) consumes a nano-ros event 40 (`phase | value << 8`, five spin phases)
+that exists only with `experiments/spin-latency/nano-ros-diag.patch`; the
+sink never writes it to the trace. It fills `island_spin_diag` (lateness
+histogram, per-segment CPU of the late intervals), read over SWD by
+`tools/timeline/spin_diag.py` (nano-ros phase-474 I10).

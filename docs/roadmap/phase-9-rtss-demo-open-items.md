@@ -524,6 +524,32 @@ phases, this repository by fast-forward push.
   Closed at this pin: the reporter's per-verdict cost (with the log floor),
   the rate rule's floored quotient (I9), max-latency on sweep-fired
   timers (I6). Still open: silence without an epoch (W3).
+  Spin release latency (2026-10-10, branch `phase9-spin-latency` on
+  `9727131`; nano-ros phase-474 I10, draft PR #1857). The four 13.6-17.9 ms
+  release-jitter verdicts above were the serial reader: the read task
+  (k_thread 4, above main at 5) and the RX ISR held the CPU for each
+  frame's wire time (11.5 ms per 1 KB kinematic_state) because the reader
+  woke once per byte. Measured with a diagnostic build
+  (`CONFIG_ISLAND_SPIN_DIAG`, off; needs `experiments/spin-latency/*.patch`
+  on nano-ros; `tools/timeline/spin_diag.py` reads it over SWD).
+  - [x] before, `sl-diag-before` (pin `319715968` + diag), act only: 3589
+    spin intervals, 74 at 10 ms or more late (max 19 ms), 199 at 5 ms or
+    more, p99 in the 12-13 ms bin; 8 verdicts 10.0-18.8 ms; each 10 ms+
+    interval had zpico_read 11.5-17.3 ms of CPU in the 10 ms park.
+  - [x] after, `sl-diag-fix` (pin + zenoh-pico `199e611f` + diag), act
+    only: 3997 intervals, 1 at 10 ms or more (14.5 ms), 13 at 5 ms or more,
+    p99 in the 3-4 ms bin; zpico_read at most 1.5 ms per interval;
+    rx_wakes 1548 for 1542 frames, no bad frame, no ring overflow.
+  - [x] pinned clean image, nano-ros `9eed444b3`
+    (`fix/spin-release-latency-319715968`: `319715968` + the same pin bump;
+    the PR head on nano-ros main cannot be pinned, main's phase-483 W1
+    moved the C++ API to `rclcpp::`), `sl-bp-encore`: VERDICT PASS, detect
+    513.35, route 11.62, total 3460.51 ms; one verdict, release-jitter
+    10.3 ms. RAM 305,056 B as before.
+  - [ ] open, island side: the remaining verdict (and the 14.5 ms one) is
+    the handler's own `std::printf` on the 115,200 baud console in the
+    reaction tick, two lines of about 56 characters, 4.9 ms each (ENTRY to
+    CALL 4.93 ms in the trace); route carries it.
 - **W18 - the contract's head comment, sorted by where each explanation
   belongs.** The island contract opens with a 102-line comment before
   `version: 1` (src/safety_island_bringup/launch/safety_island.contract.yaml,
