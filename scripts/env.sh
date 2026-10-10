@@ -136,6 +136,14 @@ else
     echo "env: MISSING nano-ros checkout at $NANO_ROS_ROOT (set NANO_ROS_ROOT)" >&2
 fi
 
+# nano-ros phase-484 W1 (RFC-0103 D6): NANO_ROS_ROOT is no longer an
+# ENVIRONMENT name. nano-ros's cmake package refuses to configure while it is
+# exported, and NROS_REPO_DIR (which activate.sh exports) is the one name for
+# the root. Keep the shell variable for this file's consumers, export the new
+# name for the same tree, and stop exporting the old one.
+export NROS_REPO_DIR="$NANO_ROS_ROOT"
+export -n NANO_ROS_ROOT
+
 # The island links the nano-ros SDK CycloneDDS, never the ROS one (a sourced
 # ROS env otherwise shadows the SDK lib at runtime -- porting-notes env entry).
 export NROS_CYCLONEDDS_HOME="${NROS_CYCLONEDDS_HOME:-$HOME/.nros/sdk/cyclonedds/0.10.5-nros1}"

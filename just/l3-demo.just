@@ -171,7 +171,7 @@ l3-island-qemu elf="build-qemu/zephyr/zephyr.elf" port="7447" secs="60" host="12
     #!/usr/bin/env bash
     set -eo pipefail
     [ -f "{{elf}}" ] || { echo "l3-island-qemu: no {{elf}} (just qemu-build)"; exit 1; }
-    qemu_dir="$("{{NANO_ROS_ROOT}}/packages/cli/target/release/nros" sdk-path qemu --require --index "{{NANO_ROS_ROOT}}/nros-sdk-index.toml" 2>/dev/null || true)"
+    qemu_dir="$("{{NROS_ROOT}}/packages/cli/target/release/nros" sdk-path qemu --require --index "{{NROS_ROOT}}/nros-sdk-index.toml" 2>/dev/null || true)"
     qemu="${qemu_dir:+$qemu_dir/bin/}qemu-system-arm"
     mkdir -p build/emulation; log="build/emulation/l3-island-$(date +%Y%m%dT%H%M%S).log"
     echo "l3-island-qemu: {{elf}} ($(sha256sum "{{elf}}" | cut -c1-12)) -> tcp/{{host}}:{{port}}, console $log, {{secs}} s"

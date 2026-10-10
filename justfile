@@ -28,7 +28,7 @@
 # directory` and carried on. .envrc guards the interactive path; this guards
 # the ones that never source it -- CI, an agent's tool shell, a bare `just`.
 # An override now has to name itself, which cannot happen by inheritance.
-NANO_ROS_ROOT := if env("NANO_ROS_ALLOW_EXTERNAL_ROOT", "") == "1" {
+NROS_ROOT := if env("NANO_ROS_ALLOW_EXTERNAL_ROOT", "") == "1" {
     env("NANO_ROS_ROOT", justfile_directory() / "third-party/nano-ros")
 } else if path_exists(justfile_directory() / "third-party/nano-ros/activate.sh") == "true" {
     justfile_directory() / "third-party/nano-ros"
@@ -38,7 +38,18 @@ NANO_ROS_ROOT := if env("NANO_ROS_ALLOW_EXTERNAL_ROOT", "") == "1" {
 # cmake's find_package(nano_ros) hint. Honoured OVER CMAKE_PREFIX_PATH, so a
 # stale value resolves the cmake package to a different tree than the CLI --
 # the two halves of one build disagreeing with no diagnostic. Pin it to match.
-export nano_ros_ROOT := NANO_ROS_ROOT
+export nano_ros_ROOT := NROS_ROOT
+# nano-ros phase-484 W1 (RFC-0103 D6) retired NANO_ROS_ROOT as an ENVIRONMENT
+# name: its cmake package now refuses to configure while the variable is set
+# ("the ENVIRONMENT variable NANO_ROS_ROOT is retired"), and NROS_REPO_DIR is
+# the one environment name for the root. So the just variable is NROS_ROOT
+# (it was NANO_ROS_ROOT; just refuses to unexport a name it also defines), its
+# resolution and the NANO_ROS_ALLOW_EXTERNAL_ROOT=1 NANO_ROS_ROOT=<path>
+# override are unchanged, and what a recipe's processes inherit is
+# NROS_REPO_DIR naming the same tree, never NANO_ROS_ROOT (a direnv shell from
+# before this change still exports it).
+unexport NANO_ROS_ROOT
+export NROS_REPO_DIR := NROS_ROOT
 # Optional: a play_launch SOURCE checkout to build+install from. Unset (the
 # default) means `just setup` installs the published package instead.
 PLAY_LAUNCH_REPO := env("PLAY_LAUNCH_REPO", "")
@@ -88,11 +99,11 @@ doctor:
     # `nros` an activate.sh or ~/.nros/bin put first on PATH. The message uses
     # the justfile value: $NANO_ROS_ROOT is not exported, and under `set -u`
     # expanding it killed this recipe instead of reporting.
-    [ -x "{{NANO_ROS_ROOT}}/packages/cli/target/release/nros" ] \
-        || { echo "MISSING: nros CLI at {{NANO_ROS_ROOT}}/packages/cli/target/release/nros — run: (cd {{NANO_ROS_ROOT}} && just setup-cli)"; ok=0; }
+    [ -x "{{NROS_ROOT}}/packages/cli/target/release/nros" ] \
+        || { echo "MISSING: nros CLI at {{NROS_ROOT}}/packages/cli/target/release/nros — run: (cd {{NROS_ROOT}} && just setup-cli)"; ok=0; }
     command -v cmake >/dev/null || { echo "MISSING: cmake"; ok=0; }
     command -v parallel >/dev/null || { echo "MISSING: GNU parallel (apt install parallel) — supervises demo-all"; ok=0; }
-    [ -d "{{NANO_ROS_ROOT}}/cmake" ] || { echo "MISSING: NANO_ROS_ROOT ({{NANO_ROS_ROOT}}) is not a nano-ros checkout"; ok=0; }
+    [ -d "{{NROS_ROOT}}/cmake" ] || { echo "MISSING: NANO_ROS_ROOT ({{NROS_ROOT}}) is not a nano-ros checkout"; ok=0; }
     [ -f /opt/ros/humble/setup.bash ] || { echo "MISSING: /opt/ros/humble"; ok=0; }
     [ -f /opt/autoware/1.5.0/setup.bash ] || { echo "MISSING: /opt/autoware/1.5.0 (needed by the demo recipes)"; ok=0; }
     if ! command -v {{PLAY_LAUNCH}} >/dev/null; then
@@ -115,7 +126,7 @@ doctor:
     else
         echo "  WARNING: no X server on DISPLAY=$disp (no /tmp/.X11-unix/X$dn) -- RViz and the demo UI will not open; start one (vncserver $disp) or set VNC_DISPLAY"
     fi
-    [ "$ok" = 1 ] && echo "doctor: OK (NANO_ROS_ROOT={{NANO_ROS_ROOT}}, DISPLAY={{VNC_DISPLAY}})"
+    [ "$ok" = 1 ] && echo "doctor: OK (NROS_ROOT={{NROS_ROOT}}, DISPLAY={{VNC_DISPLAY}})"
     [ "$ok" = 1 ]
 
 # Regenerate the generated inputs the build consumes: the message crates and
@@ -144,7 +155,7 @@ sync:
     #!/usr/bin/env bash
     set -e
     source /opt/ros/humble/setup.bash
-    source "{{NANO_ROS_ROOT}}/activate.sh"
+    source "{{NROS_ROOT}}/activate.sh"
     nros sync
 
 # One-time workspace prep, in dependency order:
@@ -218,7 +229,7 @@ build: sync
     #!/usr/bin/env bash
     set -e
     source /opt/ros/humble/setup.bash
-    env NROS_EXECUTOR_MAX_CBS=32 cmake -S . -B {{BUILD_DIR}} -DNANO_ROS_ROOT={{NANO_ROS_ROOT}} \
+    env NROS_EXECUTOR_MAX_CBS=32 cmake -S . -B {{BUILD_DIR}} -DNANO_ROS_ROOT={{NROS_ROOT}} \
         -DCycloneDDS_DIR={{CYCLONEDDS_HOME}}/lib/cmake/CycloneDDS
     env NROS_EXECUTOR_MAX_CBS=32 cmake --build {{BUILD_DIR}} -j
 
@@ -257,7 +268,7 @@ zephyr-build: sync
     set -e
     # The 3.7 LTS workspace and its SDK come from the nros store, the same way
     # the board's do (`just zephyr-setup` provisions them).
-    source scripts/board-env.sh "{{NANO_ROS_ROOT}}" 3.7
+    source scripts/board-env.sh "{{NROS_ROOT}}" 3.7
     # This image uses Cyclone, whose typesupport step runs ROS's rosidl_adapter
     # inside the nested build; ROS is sourced here for the reason `build`
     # sources it (the board image is zenoh and never needed it).
@@ -266,7 +277,7 @@ zephyr-build: sync
     # Capabilities from system.toml, as board-build does (see the note there).
     caps="$PWD/build/nros/nros_capabilities.cmake"
     mkdir -p "$(dirname "$caps")"
-    "{{NANO_ROS_ROOT}}/packages/cli/target/release/nros" config show \
+    "{{NROS_ROOT}}/packages/cli/target/release/nros" config show \
         --workspace "$PWD" --system {{BRINGUP}} --format cmake > "$caps"
     # Name the `nros` Zephyr module -- THIS submodule -- on the command line.
     #
@@ -286,8 +297,8 @@ zephyr-build: sync
     # <root>/zephyr, which configure rejects as "not a valid zephyr module".
     # Naming it while the link still exists is harmless -- Zephyr keys modules
     # by name, so the same tree listed twice is one module.
-    source "{{NANO_ROS_ROOT}}/scripts/lib/zephyr-module.sh"
-    module_arg="$(nros_zephyr_module_cmake_arg "{{NANO_ROS_ROOT}}")"
+    source "{{NROS_ROOT}}/scripts/lib/zephyr-module.sh"
+    module_arg="$(nros_zephyr_module_cmake_arg "{{NROS_ROOT}}")"
     # src/native_sim_entry, not src/zephyr_entry: the board image is zenoh
     # and nano-ros checks an image's declared `rmw` against Kconfig per ENTRY
     # PACKAGE, so the Cyclone native_sim image has its own (see the
@@ -296,7 +307,7 @@ zephyr-build: sync
         -C "$caps" \
         -DCONF_FILE="prj.conf;prj-cyclonedds.conf" \
         "$module_arg" \
-        -Dnano_ros_ROOT={{NANO_ROS_ROOT}} -DCMAKE_PREFIX_PATH={{NANO_ROS_ROOT}}
+        -Dnano_ros_ROOT={{NROS_ROOT}} -DCMAKE_PREFIX_PATH={{NROS_ROOT}}
 
 # Run the Zephyr island (domain 2 baked; host side: `just host-env`).
 # One line on purpose: each recipe line is its own shell, and the SNTP responder
@@ -327,7 +338,7 @@ zephyr-run:
 board-setup: (_zephyr-provision "4.4")
     #!/usr/bin/env bash
     set -e
-    source scripts/board-env.sh "{{NANO_ROS_ROOT}}" 4.4
+    source scripts/board-env.sh "{{NROS_ROOT}}" 4.4
     # patches/zephyr/0001 (DTCM relocation), board-only. See board-doctor for
     # what its absence looks like.
     if ! grep -q 'trailing_match' "$ISLAND_ZEPHYR_WS/zephyr/scripts/build/gen_relocate_app.py"; then
@@ -362,7 +373,7 @@ board-setup: (_zephyr-provision "4.4")
 zephyr-setup: (_zephyr-provision "3.7")
     #!/usr/bin/env bash
     set -e
-    source scripts/board-env.sh "{{NANO_ROS_ROOT}}" 3.7
+    source scripts/board-env.sh "{{NROS_ROOT}}" 3.7
     echo "workspace: $ISLAND_ZEPHYR_WS"
     echo "sdk:       $ZEPHYR_SDK_INSTALL_DIR"
 
@@ -372,7 +383,7 @@ zephyr-setup: (_zephyr-provision "3.7")
 _zephyr-provision line:
     #!/usr/bin/env bash
     set -e
-    root="{{NANO_ROS_ROOT}}"
+    root="{{NROS_ROOT}}"
     nros="$root/packages/cli/target/release/nros"
     index="$root/nros-sdk-index.toml"
     if [ ! -x "$nros" ]; then
@@ -408,7 +419,7 @@ board-doctor:
     fail=0
     # Resolve exactly what board-build will use; on a miss board-env.sh names
     # what is missing and the remedy.
-    if source scripts/board-env.sh "{{NANO_ROS_ROOT}}"; then
+    if source scripts/board-env.sh "{{NROS_ROOT}}"; then
         echo "  [OK]      zephyr 4.4 workspace: $ISLAND_ZEPHYR_WS"
         echo "  [OK]      zephyr sdk: $ZEPHYR_SDK_INSTALL_DIR"
         echo "  [OK]      west (py3.12 venv): $(python --version 2>&1)"
@@ -500,7 +511,7 @@ board-doctor:
 board-hello:
     #!/usr/bin/env bash
     set -e
-    source scripts/board-env.sh "{{NANO_ROS_ROOT}}"
+    source scripts/board-env.sh "{{NROS_ROOT}}"
     # Build output stays with this project, never inside the shared store
     # workspace (nano-ros RFC-0095 D2).
     # hal_nxp is not in nano-ros's west-4.4 allowlist (see board-build); the
@@ -531,7 +542,7 @@ board-build: sync
     # its py3.12 venv (west itself; 4.4 needs python >= 3.12) and the SDK from
     # the nros store, and puts the pinned checkout's `nros` first on PATH
     # (never ~/.nros/bin -- see the note in board-env.sh).
-    source scripts/board-env.sh "{{NANO_ROS_ROOT}}"
+    source scripts/board-env.sh "{{NROS_ROOT}}"
     export NROS_INTERFACE_SEARCH_PATH=$PWD/src
     # -- Kconfig sizing: the board conf, not -D -----------------------------
     # Until nano-ros 3d52070ec (2026-08-24; in the pin f03d9d190) the
@@ -568,9 +579,9 @@ board-build: sync
     # which wins; say so when the env disagrees, because the symptom otherwise is
     # an error citing a path you did not choose.
     if [ -n "${nano_ros_ROOT:-}" ] && \
-       [ "$(readlink -f "$nano_ros_ROOT")" != "$(readlink -f "{{NANO_ROS_ROOT}}")" ]; then
+       [ "$(readlink -f "$nano_ros_ROOT")" != "$(readlink -f "{{NROS_ROOT}}")" ]; then
         echo "board-build: NOTE \$nano_ros_ROOT=$nano_ros_ROOT is being overridden"
-        echo "board-build:       building against {{NANO_ROS_ROOT}}"
+        echo "board-build:       building against {{NROS_ROOT}}"
     fi
 
     EXTRA=()
@@ -590,7 +601,7 @@ board-build: sync
     # exactly an initial-cache file for `-C`. Nothing here restates the list.
     caps="$PWD/build/nros/nros_capabilities.cmake"
     mkdir -p "$(dirname "$caps")"
-    "{{NANO_ROS_ROOT}}/packages/cli/target/release/nros" config show \
+    "{{NROS_ROOT}}/packages/cli/target/release/nros" config show \
         --workspace "$PWD" --system {{BRINGUP}} --format cmake > "$caps"
     # hal_nxp is NOT in nano-ros's west-4.4 allowlist, on purpose:
     # `nros-sdk-index.toml` `[zephyr_module.hal_nxp]` says "no build in this
@@ -622,14 +633,14 @@ board-build: sync
         exit 1
     fi
 
-    source "{{NANO_ROS_ROOT}}/scripts/lib/zephyr-module.sh"
-    nros_module="$(nros_zephyr_module_root "{{NANO_ROS_ROOT}}")"
+    source "{{NROS_ROOT}}/scripts/lib/zephyr-module.sh"
+    nros_module="$(nros_zephyr_module_root "{{NROS_ROOT}}")"
 
     west build -b {{BOARD}} -S {{BOARD_RMW}} -S {{BOARD_LINK}} -d {{BOARD_BUILD_DIR}} $PWD/src/zephyr_entry -- \
         -C "$caps" \
-        -Dnano_ros_ROOT={{NANO_ROS_ROOT}} \
+        -Dnano_ros_ROOT={{NROS_ROOT}} \
         -DZEPHYR_EXTRA_MODULES="$nros_module;$hal_nxp" \
-        -DCMAKE_PREFIX_PATH={{NANO_ROS_ROOT}} "${EXTRA[@]}"
+        -DCMAKE_PREFIX_PATH={{NROS_ROOT}} "${EXTRA[@]}"
 
     # A DERIVED value being right is not the question; whether it ARRIVED is.
     #
@@ -659,7 +670,7 @@ board-build: sync
     # recipe exit 1 on an image that had in fact linked. Same tolerance as
     # qemu-build (just/emulation.just). Any OTHER undelivered knob refuses.
     knob_log={{BOARD_BUILD_DIR}}/check-knob-delivery.log
-    if ! python3 {{NANO_ROS_ROOT}}/scripts/check-knob-delivery.py {{BOARD_BUILD_DIR}} > "$knob_log" 2>&1; then
+    if ! python3 {{NROS_ROOT}}/scripts/check-knob-delivery.py {{BOARD_BUILD_DIR}} > "$knob_log" 2>&1; then
         cat "$knob_log"
         if grep '^  - ' "$knob_log" \
                 | grep -qv '^  - NROS_DERIVED_SUBSCRIBED_TYPE_BOUNDS='; then
@@ -694,7 +705,7 @@ board-build: sync
 board-flash:
     #!/usr/bin/env bash
     set -e
-    source scripts/board-env.sh "{{NANO_ROS_ROOT}}"
+    source scripts/board-env.sh "{{NROS_ROOT}}"
     west flash -d {{BOARD_BUILD_DIR}} -r pyocd
 
 # 320 KiB SRAM total for .data + .bss + heap + every stack.
@@ -703,7 +714,7 @@ board-flash:
 board-size:
     #!/usr/bin/env bash
     set -e
-    source scripts/board-env.sh "{{NANO_ROS_ROOT}}"
+    source scripts/board-env.sh "{{NROS_ROOT}}"
     # A missing or unconfigured build dir makes ninja complain that `rom_report`
     # is an unknown target, which reads as "this build cannot produce a report"
     # rather than "there is no build here". Say the true thing.

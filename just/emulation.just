@@ -28,15 +28,15 @@ qemu-build: sync
     set -e
     # The board's Zephyr line (4.4), workspace, venv and SDK, from the nros
     # store -- the same resolver board-build uses.
-    source scripts/board-env.sh "{{NANO_ROS_ROOT}}"
+    source scripts/board-env.sh "{{NROS_ROOT}}"
     export NROS_INTERFACE_SEARCH_PATH=$PWD/src
     # Capabilities from system.toml, as board-build does.
     caps="$PWD/build/nros/nros_capabilities.cmake"
     mkdir -p "$(dirname "$caps")"
-    "{{NANO_ROS_ROOT}}/packages/cli/target/release/nros" config show \
+    "{{NROS_ROOT}}/packages/cli/target/release/nros" config show \
         --workspace "$PWD" --system {{BRINGUP}} --format cmake > "$caps"
-    source "{{NANO_ROS_ROOT}}/scripts/lib/zephyr-module.sh"
-    nros_module="$(nros_zephyr_module_root "{{NANO_ROS_ROOT}}")"
+    source "{{NROS_ROOT}}/scripts/lib/zephyr-module.sh"
+    nros_module="$(nros_zephyr_module_root "{{NROS_ROOT}}")"
     # Triage lever, as board-build's: an env var named like a Kconfig symbol
     # overrides it for ONE build without editing a tracked file. Unset ones
     # are not passed. (ZPICO_* cargo knobs reach build.rs from the env as is.)
@@ -61,10 +61,10 @@ qemu-build: sync
     set -o pipefail
     west build -b {{QEMU_BOARD}} -S nros-zenoh -S {{QEMU_LINK}} -d {{QEMU_BUILD_DIR}} $PWD/src/qemu_entry -- \
         -C "$caps" \
-        -Dnano_ros_ROOT={{NANO_ROS_ROOT}} \
-        -Dnano_ros_DIR={{NANO_ROS_ROOT}} \
+        -Dnano_ros_ROOT={{NROS_ROOT}} \
+        -Dnano_ros_DIR={{NROS_ROOT}} \
         -DZEPHYR_EXTRA_MODULES="$nros_module" \
-        -DCMAKE_PREFIX_PATH={{NANO_ROS_ROOT}} "${EXTRA[@]}" 2>&1 | tee {{QEMU_LOG_DIR}}/{{QEMU_BUILD_DIR}}.build.log
+        -DCMAKE_PREFIX_PATH={{NROS_ROOT}} "${EXTRA[@]}" 2>&1 | tee {{QEMU_LOG_DIR}}/{{QEMU_BUILD_DIR}}.build.log
     # Same refusal as board-build, for the same reason (see the note there):
     # a derived knob that did not ARRIVE is not a derived image.
     #
@@ -73,7 +73,7 @@ qemu-build: sync
     # "red only on the upstream NROS_DERIVED_SUBSCRIBED_TYPE_BOUNDS line
     # (phase-412 W4)"), and a second pass does not converge it. Any OTHER
     # undelivered knob still refuses the image.
-    if ! python3 {{NANO_ROS_ROOT}}/scripts/check-knob-delivery.py {{QEMU_BUILD_DIR}} \
+    if ! python3 {{NROS_ROOT}}/scripts/check-knob-delivery.py {{QEMU_BUILD_DIR}} \
             > {{QEMU_LOG_DIR}}/{{QEMU_BUILD_DIR}}.knob-delivery.log 2>&1; then
         cat {{QEMU_LOG_DIR}}/{{QEMU_BUILD_DIR}}.knob-delivery.log
         if grep '^  - ' {{QEMU_LOG_DIR}}/{{QEMU_BUILD_DIR}}.knob-delivery.log \
@@ -93,7 +93,7 @@ qemu-build: sync
 qemu-size:
     #!/usr/bin/env bash
     set -e
-    source scripts/board-env.sh "{{NANO_ROS_ROOT}}"
+    source scripts/board-env.sh "{{NROS_ROOT}}"
     if [ ! -f "{{QEMU_BUILD_DIR}}/build.ninja" ]; then
         echo "qemu-size: no configured build at {{QEMU_BUILD_DIR}}; run 'just qemu-build'" >&2
         exit 1
@@ -117,10 +117,10 @@ qemu-run secs="40":
     set -euo pipefail
     elf="{{QEMU_BUILD_DIR}}/zephyr/zephyr.elf"
     [ -f "$elf" ] || { echo "qemu-run: no $elf; run 'just qemu-build'" >&2; exit 1; }
-    nros="{{NANO_ROS_ROOT}}/packages/cli/target/release/nros"
+    nros="{{NROS_ROOT}}/packages/cli/target/release/nros"
     # The nros store's patched QEMU (nros-sdk-index.toml [tool.qemu]); the
     # distro one is the fallback, and which one ran is printed.
-    qemu_dir="$("$nros" sdk-path qemu --require --index "{{NANO_ROS_ROOT}}/nros-sdk-index.toml" 2>/dev/null || true)"
+    qemu_dir="$("$nros" sdk-path qemu --require --index "{{NROS_ROOT}}/nros-sdk-index.toml" 2>/dev/null || true)"
     qemu="${qemu_dir:+$qemu_dir/bin/}qemu-system-arm"
     command -v "$qemu" >/dev/null || { echo "qemu-run: no qemu-system-arm (nros setup --tool qemu)" >&2; exit 1; }
     mkdir -p {{QEMU_LOG_DIR}}
@@ -203,7 +203,7 @@ qemu-run secs="40":
     # the QEMU monitor, 3 s before the bound, and decoded by nano-ros's reader.
     report="{{QEMU_LOG_DIR}}/qemu-$stamp.boot-report.txt"
     dump="$PWD/{{QEMU_LOG_DIR}}/qemu-$stamp.boot-report.bin"
-    read -r addr len < <(python3 {{NANO_ROS_ROOT}}/scripts/read-boot-report.py --addr-only "$elf" 2>/dev/null)
+    read -r addr len < <(python3 {{NROS_ROOT}}/scripts/read-boot-report.py --addr-only "$elf" 2>/dev/null)
     ( now=$(date +%s); left=$(( qstart + {{secs}} - 3 - now ))
       sleep $(( left > 0 ? left : 0 ))
       printf 'stop\npmemsave %s %s "%s"\ncont\n' "$addr" "$len" "$dump" \
@@ -228,7 +228,7 @@ qemu-run secs="40":
     echo ""
     echo "qemu-run: console captured in $log"
     if [ -s "$dump" ]; then
-        python3 {{NANO_ROS_ROOT}}/scripts/read-boot-report.py "$elf" "$dump" > "$report" 2>&1 || true
+        python3 {{NROS_ROOT}}/scripts/read-boot-report.py "$elf" "$dump" > "$report" 2>&1 || true
         echo "qemu-run: boot report ($addr, $len B) decoded into $report:"
         cat "$report"
     else
@@ -324,7 +324,7 @@ renode-run elf="build-board/zephyr/zephyr.elf" secs="40": renode-setup
     echo start | timeout 3 nc -q1 localhost $port >/dev/null || true   # nc does not return on its own here
     echo "renode-run: image $(sha256sum "$elf" | cut -c1-12), bounded to {{secs}} s"
     sleep {{secs}}
-    read -r addr len < <(python3 {{NANO_ROS_ROOT}}/scripts/read-boot-report.py --addr-only "$elf" 2>/dev/null)
+    read -r addr len < <(python3 {{NROS_ROOT}}/scripts/read-boot-report.py --addr-only "$elf" 2>/dev/null)
     ( echo "sysbus ReadBytes $addr $len"; sleep 2 ) | timeout 6 nc -q3 localhost $port > "$out/renode-$stamp.mon.log" || true
     python3 - "$out/renode-$stamp.mon.log" "$out/renode-$stamp.boot-report.bin" <<'PY'
     import re, sys
@@ -335,7 +335,7 @@ renode-run elf="build-board/zephyr/zephyr.elf" secs="40": renode-setup
     echo "renode-run: console (lpuart0) $log:"
     cat "$log"; echo
     echo "renode-run: boot report ($addr, $len B):"
-    python3 {{NANO_ROS_ROOT}}/scripts/read-boot-report.py "$elf" "$out/renode-$stamp.boot-report.bin" 2>&1 \
+    python3 {{NROS_ROOT}}/scripts/read-boot-report.py "$elf" "$out/renode-$stamp.boot-report.bin" 2>&1 \
         | tee "$out/renode-$stamp.boot-report.txt" || true
 
 # The FVP rung: is any Arm FVP model on this host?
