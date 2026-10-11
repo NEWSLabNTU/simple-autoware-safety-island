@@ -18,7 +18,7 @@ import sys
 
 SYM = "island_spin_diag"
 EXTRA = ["_z_zephyr_serial_stats", "_z_zephyr_serial_tx_stats", "_z_zephyr_serial_isr_cycles",
-         "_z_zephyr_serial_isr_calls"]
+         "_z_zephyr_serial_isr_calls", "_z_zephyr_serial_async_stats"]
 SEGS = ["S0 pre", "S1 wait", "S2 disp", "S3 post", "S4 loop"]
 REC = ["uptime_ms", "interval_us"] + [f"wall{i}" for i in range(5)] + [f"main{i}" for i in range(5)] \
     + [f"idle{i}" for i in range(5)] + ["park_bound_us", "idle_path", "ncb", "ntake", "cb_slot", "cb_wall_us",
