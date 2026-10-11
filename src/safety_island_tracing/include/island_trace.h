@@ -332,8 +332,15 @@ static uint8_t island_trace_last_take = 0xFFu;  /* slot of the last take (25) */
 static uint8_t island_trace_last_start = 0xFFu; /* slot of an open start (18) */
 static uint8_t island_trace_take_cur = 0xFFu;   /* input whose stamp follows */
 
+#if defined(CONFIG_ISLAND_SPIN_DIAG)
+#include "island_spin_diag.h"
+#endif
+
 static void island_trace_nros_sink(uint32_t id, uint32_t arg)
 {
+#if defined(CONFIG_ISLAND_SPIN_DIAG)
+	island_spin_diag_event(id, arg);
+#endif
 	if (id >= ISLAND_TRACE_NROS_FIRST && id <= ISLAND_TRACE_NROS_LAST) {
 		ISLAND_TRACE(ISLAND_TRACE_NROS_BASE + id, arg);
 		return;

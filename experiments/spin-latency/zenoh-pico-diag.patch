@@ -1,0 +1,59 @@
+From 26b0d6f743539f8e87ff119eb83666dcb8ad127f Mon Sep 17 00:00:00 2001
+From: aeon <jerry73204@gmail.com>
+Date: Sat, 10 Oct 2026 04:34:53 +0800
+Subject: [PATCH] DIAG (spin latency): serial ISR time and TX-wait hook (not
+ for merge)
+
+---
+ src/system/zephyr/network.c | 19 ++++++++++++++++++-
+ 1 file changed, 18 insertions(+), 1 deletion(-)
+
+diff --git a/src/system/zephyr/network.c b/src/system/zephyr/network.c
+index 62b641be..802e82be 100644
+--- a/src/system/zephyr/network.c
++++ b/src/system/zephyr/network.c
+@@ -1067,8 +1067,18 @@ static const struct device *_z_serial_rx_dev = NULL;
+    from a UART overrun -- this one is OUR backlog, not the hardware's. */
+ static volatile bool _z_serial_rx_ring_full = false;
+ 
++static void _z_serial_isr_body(const struct device *dev);
++/* DIAG (spin latency): serial ISR time, read by the island's spin diag. */
++volatile uint32_t _z_diag_isr_cycles;
++volatile uint32_t _z_diag_isr_count;
+ static void _z_serial_isr(const struct device *dev, void *user_data) {
+     ARG_UNUSED(user_data);
++    uint32_t t0 = k_cycle_get_32();
++    _z_serial_isr_body(dev);
++    _z_diag_isr_cycles += k_cycle_get_32() - t0;
++    _z_diag_isr_count++;
++}
++static void _z_serial_isr_body(const struct device *dev) {
+ 
+     /* The canonical Zephyr shape. An earlier version guarded the loop with
+        `uart_irq_is_pending()` and `break`-ed when RX was not ready -- which
+@@ -1239,6 +1249,7 @@ static size_t _z_serial_rx_frame(uint8_t *buf, size_t cap, uint32_t timeout_ms,
+    _Z_ZEPHYR_SERIAL_TX_TIMEOUT_MS (TX interrupts stopped). Returning with bytes
+    still queued is correct: the next frame queues behind them, and COBS
+    framing does not care when a byte leaves. */
++extern void island_diag_lock_wait(void *m, uint32_t cycles, void *ra) __attribute__((weak));
+ static int _z_serial_tx_put(const struct device *dev, const uint8_t *data, size_t len) {
+     size_t done = 0;
+     while (done < len) {
+@@ -1254,7 +1265,13 @@ static int _z_serial_tx_put(const struct device *dev, const uint8_t *data, size_
+             /* A "room was made" hint, like the RX sem: re-check the ring on
+                every wake. A stale give from an earlier drain only costs one
+                extra loop. */
+-            if (k_sem_take(&_z_serial_tx_sem, K_MSEC(_Z_ZEPHYR_SERIAL_TX_TIMEOUT_MS)) != 0 &&
++            uint32_t _diag_t0 = k_cycle_get_32();
++            int _diag_rc = k_sem_take(&_z_serial_tx_sem, K_MSEC(_Z_ZEPHYR_SERIAL_TX_TIMEOUT_MS));
++            if (island_diag_lock_wait != NULL) {
++                island_diag_lock_wait((void *)&_z_serial_tx_sem, k_cycle_get_32() - _diag_t0,
++                                      __builtin_return_address(0));
++            }
++            if (_diag_rc != 0 &&
+                 ring_buf_space_get(&_z_serial_tx_ring) == 0u) {
+                 _z_zephyr_serial_tx_stats.timeouts++;
+                 return -1;
+-- 
+2.34.1
+

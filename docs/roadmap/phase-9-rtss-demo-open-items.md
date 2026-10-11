@@ -542,6 +542,49 @@ phases, this repository by fast-forward push.
     expected: no rate verdict after a commanded overrun. Open in rlm: a
     nominal rate and a floor are one key (DX gap 1.4; play_launch phase
     85).
+  Spin release latency (2026-10-10, branch `phase9-spin-latency` on
+  `9727131`; nano-ros phase-474 I10, draft PR #1857). The four 13.6-17.9 ms
+  release-jitter verdicts above were the serial reader: the read task
+  (k_thread 4, above main at 5) and the RX ISR held the CPU for each
+  frame's wire time (11.5 ms per 1 KB kinematic_state) because the reader
+  woke once per byte. Measured with a diagnostic build
+  (`CONFIG_ISLAND_SPIN_DIAG`, off; needs `experiments/spin-latency/*.patch`
+  on nano-ros; `tools/timeline/spin_diag.py` reads it over SWD).
+  - [x] before, `sl-diag-before` (pin `319715968` + diag), act only: 3589
+    spin intervals, 74 at 10 ms or more late (max 19 ms), 199 at 5 ms or
+    more, p99 in the 12-13 ms bin; 8 verdicts 10.0-18.8 ms; each 10 ms+
+    interval had zpico_read 11.5-17.3 ms of CPU in the 10 ms park.
+  - [x] after, `sl-diag-fix` (pin + zenoh-pico `199e611f` + diag), act
+    only: 3997 intervals, 1 at 10 ms or more (14.5 ms), 13 at 5 ms or more,
+    p99 in the 3-4 ms bin; zpico_read at most 1.5 ms per interval;
+    rx_wakes 1548 for 1542 frames, no bad frame, no ring overflow.
+  - [x] pinned clean image, nano-ros `9eed444b3`
+    (`fix/spin-release-latency-319715968`: `319715968` + the same pin bump;
+    the PR head on nano-ros main cannot be pinned, main's phase-483 W1
+    moved the C++ API to `rclcpp::`), `sl-bp-encore`: VERDICT PASS, detect
+    513.35, route 11.62, total 3460.51 ms; one verdict, release-jitter
+    10.3 ms. RAM 305,056 B as before.
+  - [ ] open, island side: the remaining verdict (and the 14.5 ms one) is
+    the handler's own `std::printf` on the 115,200 baud console in the
+    reaction tick, two lines of about 56 characters, 4.9 ms each (ENTRY to
+    CALL 4.93 ms in the trace); route carries it.
+  - [x] grid release, nano-ros `1551851d6` (`fix/spin-cadence-319715968`:
+    `9eed444b3` + phase-474 I11, draft PR #1896 on main): a `spin_once(10)`
+    loop parks to the next point of an absolute 10 ms grid instead of 10 ms
+    from its own entry, skips (counts) only whole missed periods, and the
+    jitter rule judges release minus grid point; Zephyr's ms wait no longer
+    adds a tick. Run `sl-cadence-diag` (pin + diag, on `9e20a42`, console
+    prints off), act only: 5810 spin intervals (more than 3997: a spin woken
+    early by data is now its own interval), 61 at 1 ms or more late (before,
+    `sl-diag-fix`: 603), 2 at 5 ms or more (13), 0 at 10 ms or more (1),
+    max 5.9 ms (14.5), p99 in the 1-2 ms bin (3-4). The diag measures entry
+    to entry, so a long dispatch still reads late here though the release
+    after it is on the grid: the 5.9 ms interval is a 5.5 ms callback
+    (2.8 ms waiting for the link in a send). Encore VERDICT PASS, detect
+    561.48, route 32.04, total 3506.54 ms; no `release-jitter-runtime`
+    verdict stored (the record holds only the known
+    `silence-runtime operation_mode_availability`). Diag image RAM
+    314,672 B; the clean image at this pin was not built.
 - **W18 - the contract's head comment, sorted by where each explanation
   belongs.** The island contract opens with a 102-line comment before
   `version: 1` (src/safety_island_bringup/launch/safety_island.contract.yaml,

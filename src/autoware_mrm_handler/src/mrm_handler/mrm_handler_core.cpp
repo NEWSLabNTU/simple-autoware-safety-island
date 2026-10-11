@@ -21,6 +21,7 @@
 // TU also carries the tracing runtime (heartbeat, provenance, native_sim dump).
 #define ISLAND_TRACE_DEFINE_RUNTIME
 #include "../../../safety_island_tracing/include/island_trace.h"
+#include "../../../safety_island_tracing/include/island_log.h"
 
 // nano-ros port: platform monotonic stamps (porting-notes 05); RCLCPP_* logs →
 // printf (porting-notes 01). <cmath> avoided — Zephyr minimal libcpp
@@ -130,13 +131,13 @@ int to_ms(double sec) { return static_cast<int>(sec * 1000.0); }
 void print_inputs(uint32_t mask)
 {
   if (mask == 0) {
-    std::printf("none");
+    ISLAND_PRINTF("none");
     return;
   }
   const char * sep = "";
   for (uint32_t i = 0; i < sizeof(kRequiredInputNames) / sizeof(kRequiredInputNames[0]); ++i) {
     if (mask & (1u << i)) {
-      std::printf("%s%s", sep, kRequiredInputNames[i]);
+      ISLAND_PRINTF("%s%s", sep, kRequiredInputNames[i]);
       sep = ", ";
     }
   }
@@ -375,7 +376,7 @@ void MrmHandler::operateMrm()
   if (mrm_state_.state == MrmState::MRM_FAILED) {
     return;
   }
-  std::printf("[mrm_handler] WARN: invalid MRM state: %d\n", mrm_state_.state);
+  ISLAND_PRINTF("[mrm_handler] WARN: invalid MRM state: %d\n", mrm_state_.state);
 }
 
 void MrmHandler::handleFailedRequest()
@@ -417,7 +418,7 @@ bool MrmHandler::requestMrmBehavior(uint16_t mrm_behavior, RequestType request_t
       return true;
     case MrmState::PULL_OVER:
       // No on-island pull_over operator (use_pull_over defaults false).
-      std::printf("[mrm_handler] WARN: pull_over requested but not available on-island\n");
+      ISLAND_PRINTF("[mrm_handler] WARN: pull_over requested but not available on-island\n");
       return false;
     case MrmState::COMFORTABLE_STOP:
       client_storage = client_mrm_comfortable_stop_.bytes;
@@ -428,17 +429,17 @@ bool MrmHandler::requestMrmBehavior(uint16_t mrm_behavior, RequestType request_t
       ISLAND_TRACE(ISLAND_MK_CALL_MRM_HANDLER_EMERGENCY_STOP_OPERATE, request.operate);
       break;
     default:
-      std::printf("[mrm_handler] ERROR: invalid behavior: %d\n", mrm_behavior);
+      ISLAND_PRINTF("[mrm_handler] ERROR: invalid behavior: %d\n", mrm_behavior);
       return false;
   }
 
   if (nros_cpp_service_client_send_request(client_storage, buf, written) != 0) {
-    std::printf(
+    ISLAND_PRINTF(
       "[mrm_handler] ERROR: %s %s request send failed\n", behavior2string(mrm_behavior),
       request.operate ? "call" : "cancel");
     return false;
   }
-  std::printf(
+  ISLAND_PRINTF(
     "[mrm_handler] %s is %s (request sent).\n", behavior2string(mrm_behavior),
     request.operate ? "operated" : "canceled");
   return true;
@@ -456,7 +457,7 @@ void MrmHandler::drainMrmClientReplies()
       tier4_system_msgs::srv::OperateMrm::Response r{};
       if (tier4_system_msgs::srv::OperateMrm::Response::ffi_deserialize(resp, rlen, &r) == 0) {
         if (!r.response.success) {
-          std::printf("[mrm_handler] ERROR: MRM operate request rejected by operator\n");
+          ISLAND_PRINTF("[mrm_handler] ERROR: MRM operate request rejected by operator\n");
         }
       }
       rlen = 0;
@@ -554,7 +555,7 @@ bool MrmHandler::updatePhase()
       // init failure gone, isEmergency() is judged on the inputs alone.
       is_init_failed_ = false;
       arm_contract_monitors(ARM_VIA_INIT_RECOVERY);
-      std::printf(
+      ISLAND_PRINTF(
         "[mrm_handler] init failure cleared: every input established %d ms after boot\n",
         to_ms(since_boot));
     }
@@ -565,7 +566,7 @@ bool MrmHandler::updatePhase()
     phase_ = Phase::Run;
     ISLAND_TRACE(ISLAND_MK_MRM_HANDLER_INIT_DONE, static_cast<uint32_t>(to_ms(since_boot)));
     arm_contract_monitors(ARM_VIA_INIT_DONE);
-    std::printf(
+    ISLAND_PRINTF(
       "[mrm_handler] INIT -> RUN: every input established %d ms after boot\n", to_ms(since_boot));
     return true;
   }
@@ -576,12 +577,12 @@ bool MrmHandler::updatePhase()
     // arg: bits 0-3 the inputs never heard, bits 8-11 those heard but not
     // established (bit order: RequiredInput).
     ISLAND_TRACE(ISLAND_MK_MRM_HANDLER_INIT_TIMEOUT, never_heard | (not_steady << 8));
-    std::printf(
+    ISLAND_PRINTF(
       "[mrm_handler] ERROR: init failure: %d ms after boot, never heard: ", to_ms(since_boot));
     print_inputs(never_heard);
-    std::printf("; not yet steady: ");
+    ISLAND_PRINTF("; not yet steady: ");
     print_inputs(not_steady);
-    std::printf("; INIT -> RUN in fault, emergency until they are established\n");
+    ISLAND_PRINTF("; INIT -> RUN in fault, emergency until they are established\n");
     return true;
   }
 
@@ -590,11 +591,11 @@ bool MrmHandler::updatePhase()
   if (!has_stamp_init_log_ || since_boot - stamp_init_log_ >= 1.0) {
     has_stamp_init_log_ = true;
     stamp_init_log_ = since_boot;
-    std::printf("[mrm_handler] INIT %d ms: never heard: ", to_ms(since_boot));
+    ISLAND_PRINTF("[mrm_handler] INIT %d ms: never heard: ", to_ms(since_boot));
     print_inputs(never_heard);
-    std::printf("; not yet steady: ");
+    ISLAND_PRINTF("; not yet steady: ");
     print_inputs(not_steady);
-    std::printf("\n");
+    ISLAND_PRINTF("\n");
   }
   return false;
 }
@@ -671,7 +672,7 @@ void MrmHandler::onTimer()
 
 void MrmHandler::transitionTo(const int new_state)
 {
-  std::printf(
+  ISLAND_PRINTF(
     "[mrm_handler] MRM State changed: %s -> %s\n", state2string(mrm_state_.state),
     state2string(new_state));
   mrm_state_.state = static_cast<uint16_t>(new_state);
@@ -724,7 +725,7 @@ void MrmHandler::updateMrmState()
 
     default:
       // nano-ros port: upstream throws; no exceptions here (porting-notes 01).
-      std::printf("[mrm_handler] ERROR: invalid state: %d\n", mrm_state_.state);
+      ISLAND_PRINTF("[mrm_handler] ERROR: invalid state: %d\n", mrm_state_.state);
       return;
   }
 }
@@ -761,7 +762,7 @@ bool MrmHandler::updateTakeoverRequest(const bool is_control_mode_autonomous)
     is_takeover_requested_ = true;
     stamp_takeover_request_ = now_sec();
     // Integer ms: the Zephyr image's minimal printf has no %f.
-    std::printf(
+    ISLAND_PRINTF(
       "[mrm_handler] takeover request: on, the driver has %d ms\n",
       static_cast<int>(param_.takeover_request_timeout * 1000.0));
     return true;
@@ -777,7 +778,7 @@ bool MrmHandler::updateTakeoverRequest(const bool is_control_mode_autonomous)
 void MrmHandler::clearTakeoverRequest(const char * why)
 {
   is_takeover_requested_ = false;
-  std::printf(
+  ISLAND_PRINTF(
     "[mrm_handler] takeover request: off after %d ms, %s\n",
     static_cast<int>((now_sec() - stamp_takeover_request_) * 1000.0), why);
 }
@@ -797,7 +798,7 @@ uint16_t MrmHandler::getCurrentMrmBehavior()
       return MrmState::COMFORTABLE_STOP;
     }
     if (!operation_mode_availability_.emergency_stop) {
-      std::printf("[mrm_handler] WARN: no mrm operation available: operate emergency_stop\n");
+      ISLAND_PRINTF("[mrm_handler] WARN: no mrm operation available: operate emergency_stop\n");
     }
     return MrmState::EMERGENCY_STOP;
   }
@@ -812,7 +813,7 @@ uint16_t MrmHandler::getCurrentMrmBehavior()
       return MrmState::COMFORTABLE_STOP;
     }
     if (!operation_mode_availability_.emergency_stop) {
-      std::printf("[mrm_handler] WARN: no mrm operation available: operate emergency_stop\n");
+      ISLAND_PRINTF("[mrm_handler] WARN: no mrm operation available: operate emergency_stop\n");
     }
     return MrmState::EMERGENCY_STOP;
   }
@@ -824,7 +825,7 @@ uint16_t MrmHandler::getCurrentMrmBehavior()
       return MrmState::PULL_OVER;
     }
     if (!operation_mode_availability_.emergency_stop) {
-      std::printf("[mrm_handler] WARN: no mrm operation available: operate emergency_stop\n");
+      ISLAND_PRINTF("[mrm_handler] WARN: no mrm operation available: operate emergency_stop\n");
     }
     return MrmState::EMERGENCY_STOP;
   }
@@ -888,7 +889,7 @@ bool MrmHandler::isAvailableCurrentOperationMode()
     case OperationModeState::REMOTE:
       return operation_mode_availability_.remote;
     default:
-      std::printf("[mrm_handler] WARN: invalid operation mode: %d\n", operation_mode);
+      ISLAND_PRINTF("[mrm_handler] WARN: invalid operation mode: %d\n", operation_mode);
       return false;
   }
 }
