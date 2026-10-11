@@ -214,3 +214,10 @@ nano_ros_add_executable(zephyr_entry
     BRINGUP "${CMAKE_CURRENT_SOURCE_DIR}/../safety_island_bringup"
     TYPED
     DEPLOY  zephyr)
+
+# phase9 spin latency: the executor runs above the transport once registration
+# is done (src/spin_priority.c).
+if(CONFIG_ISLAND_SPIN_RAISE)
+    target_sources(app PRIVATE src/spin_priority.c)
+    zephyr_ld_options(-Wl,--wrap=nros_cpp_spin_once)
+endif()

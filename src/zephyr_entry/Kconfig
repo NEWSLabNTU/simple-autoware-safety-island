@@ -2,4 +2,16 @@
 # island's trace-window options. Nothing else is defined here.
 rsource "../safety_island_tracing/Kconfig.island_trace"
 
+config ISLAND_SPIN_RAISE
+	bool "Raise the executor above the transport after registration"
+	help
+	  phase9 spin latency. On the first spin, set the spin thread's priority
+	  to ISLAND_SPIN_THREAD_PRIORITY (src/spin_priority.c). Registration
+	  still runs at CONFIG_MAIN_THREAD_PRIORITY, below the read task.
+
+config ISLAND_SPIN_THREAD_PRIORITY
+	int "Executor priority after registration"
+	depends on ISLAND_SPIN_RAISE
+	default 3
+
 source "Kconfig.zephyr"
