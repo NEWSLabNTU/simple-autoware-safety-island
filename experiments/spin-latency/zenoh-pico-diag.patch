@@ -1,18 +1,18 @@
-From 26b0d6f743539f8e87ff119eb83666dcb8ad127f Mon Sep 17 00:00:00 2001
+From 07fc298ae74773a21b05929771838c4949df20a9 Mon Sep 17 00:00:00 2001
 From: aeon <jerry73204@gmail.com>
-Date: Sat, 10 Oct 2026 04:34:53 +0800
-Subject: [PATCH] DIAG (spin latency): serial ISR time and TX-wait hook (not
+Date: Sun, 11 Oct 2026 09:55:51 +0800
+Subject: [PATCH] DIAG (spin latency): serial ISR time and TX-wait hooks (not
  for merge)
 
 ---
- src/system/zephyr/network.c | 19 ++++++++++++++++++-
- 1 file changed, 18 insertions(+), 1 deletion(-)
+ src/system/zephyr/network.c | 24 +++++++++++++++++++++++-
+ 1 file changed, 23 insertions(+), 1 deletion(-)
 
 diff --git a/src/system/zephyr/network.c b/src/system/zephyr/network.c
-index 62b641be..802e82be 100644
+index 41c37bc6..699a0fe2 100644
 --- a/src/system/zephyr/network.c
 +++ b/src/system/zephyr/network.c
-@@ -1067,8 +1067,18 @@ static const struct device *_z_serial_rx_dev = NULL;
+@@ -1097,8 +1097,18 @@ static const struct device *_z_serial_rx_dev = NULL;
     from a UART overrun -- this one is OUR backlog, not the hardware's. */
  static volatile bool _z_serial_rx_ring_full = false;
  
@@ -31,15 +31,15 @@ index 62b641be..802e82be 100644
  
      /* The canonical Zephyr shape. An earlier version guarded the loop with
         `uart_irq_is_pending()` and `break`-ed when RX was not ready -- which
-@@ -1239,6 +1249,7 @@ static size_t _z_serial_rx_frame(uint8_t *buf, size_t cap, uint32_t timeout_ms,
-    _Z_ZEPHYR_SERIAL_TX_TIMEOUT_MS (TX interrupts stopped). Returning with bytes
-    still queued is correct: the next frame queues behind them, and COBS
-    framing does not care when a byte leaves. */
+@@ -1270,6 +1280,7 @@ static size_t _z_serial_rx_frame(uint8_t *buf, size_t cap, uint32_t timeout_ms,
+    appeared for _Z_ZEPHYR_SERIAL_TX_TIMEOUT_MS (TX interrupts stopped).
+    Returning with bytes still queued is correct: the next frame queues behind
+    them, and COBS framing does not care when a byte leaves. */
 +extern void island_diag_lock_wait(void *m, uint32_t cycles, void *ra) __attribute__((weak));
  static int _z_serial_tx_put(const struct device *dev, const uint8_t *data, size_t len) {
      size_t done = 0;
-     while (done < len) {
-@@ -1254,7 +1265,13 @@ static int _z_serial_tx_put(const struct device *dev, const uint8_t *data, size_
+     if (len > _z_zephyr_serial_tx_stats.max_frame) {
+@@ -1291,7 +1302,13 @@ static int _z_serial_tx_put(const struct device *dev, const uint8_t *data, size_
              /* A "room was made" hint, like the RX sem: re-check the ring on
                 every wake. A stale give from an earlier drain only costs one
                 extra loop. */
@@ -54,6 +54,19 @@ index 62b641be..802e82be 100644
                  ring_buf_space_get(&_z_serial_tx_ring) == 0u) {
                  _z_zephyr_serial_tx_stats.timeouts++;
                  return -1;
+@@ -1538,7 +1555,12 @@ static size_t _z_send_serial_frame_locked(const _z_sys_net_socket_t sock, uint8_
+ }
+ 
+ size_t _z_send_serial_internal(const _z_sys_net_socket_t sock, uint8_t header, const uint8_t *ptr, size_t len) {
++    uint32_t _diag_l0 = k_cycle_get_32();
+     (void)k_mutex_lock(&_z_serial_tx_lock, K_FOREVER);
++    if (island_diag_lock_wait != NULL) {
++        island_diag_lock_wait((void *)&_z_serial_tx_lock, k_cycle_get_32() - _diag_l0,
++                              __builtin_return_address(0));
++    }
+     size_t ret = _z_send_serial_frame_locked(sock, header, ptr, len);
+     (void)k_mutex_unlock(&_z_serial_tx_lock);
+     return ret;
 -- 
 2.34.1
 
