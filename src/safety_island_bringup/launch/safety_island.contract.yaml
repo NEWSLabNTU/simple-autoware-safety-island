@@ -251,12 +251,14 @@ version: 1
 # matters is that they are written down and checked. The old 3 s cannot be
 # met at the decided bound by any island: from 8.33 m/s the emergency stop
 # alone takes 4165.33 ms to standstill; 3 s was chosen for the 3.0 m/s the
-# old settle assumed. 10 s (brief D's figure) leaves the floor 5095.33 ms of
-# slack with the board's 206 ms handler hop (5191.33 before phase8-W30). odd_exit's 30 s is decision 3, a stated judgement like the old 3 s:
-# the takeover window is 10 s of it, and the comfortable stop at the bound
-# fits the rest with 9491.33 ms to spare (the demo composition, with its
-# 20 ms gate path and the 300 ms planner placeholder, reads 9171.33; before
-# phase8-W30's board budget, 9683.33 and 9363.33).
+# old settle assumed. 10 s (brief D's figure) leaves the floor 5065.33 ms of
+# slack with the board's 81 ms link and 149 ms handler hop (phase9-W5; 5095.33
+# with the 206 ms hop of phase8-W30, 5191.33 before it). odd_exit's 30 s is
+# decision 3, a stated judgement like the old 3 s: the takeover window is 10 s
+# of it, and the comfortable stop at the bound fits the rest with 9524.33 ms
+# to spare (the demo composition, with its 10 Hz gate's 20 ms path and the
+# 300 ms planner placeholder, reads 9204.33; 9491.33 and 9171.33 with the
+# 206 ms hop, 9683.33 and 9363.33 before phase8-W30).
 # `play_launch check --explain` prints every term; docs/takeover-trace.md
 # sets the observed runs against them.
 #
@@ -715,8 +717,9 @@ nodes:
 # message waits for the next tick) plus the tick's own budget (100 ms). Until
 # phase8-W30 the fault route (110 ms) was shorter than that, and declaring
 # 110 here made `scope-budget` reject the file against the 200 ms critical
-# path. With the board's `call_mrm` (206 ms) the critical path is `call_mrm`
-# itself, 206 ms, and 210 still holds it. It is the scope's own budget, from
+# path. From phase8-W30 to phase9-W5 the board's `call_mrm` (206 ms) was the
+# critical path, and 210 held it; at 149 ms (phase9-W5) the 200 ms tick path
+# is critical again. It is the scope's own budget, from
 # the handler's take: the link in front of the take is not in it, and the
 # 57 ms `max_transport` on that subscriber is not charged here (0.13.0 has no
 # edge to weigh from an external publisher). island.emergency_stop has the
@@ -758,11 +761,12 @@ topics:
   # checker derives a reported fault's detection from the publisher of the
   # verdict (its period plus its declared path latency). With no publisher
   # named, odd_exit is `hazard-unguarded` and `just sync` refuses the file.
-  # The name is the demo's: takeover_demo's availability_gate republishes
-  # Autoware's availability with the ODD verdict folded into `autonomous`
-  # (phase-8 doc D5). Its own 20 ms path is declared in the demo composition
-  # (demo/l3/contracts/l3_takeover.contract.yaml), not here, so this file
-  # charges the 100 ms period alone.
+  # The name is the demo's: the L3 compositions' availability_gate (its
+  # `gate-rt` container) republishes Autoware's availability with the ODD
+  # verdict folded into `autonomous` (phase-8 doc D5). It is a 10 Hz timer;
+  # its 20 ms path and 6 ms measured jitter are declared in the demo
+  # composition (demo/l3/contracts/l3_takeover.contract.yaml, phase9-W6), not
+  # here, so this file charges the 100 ms period alone.
   /system/operation_mode/availability:
     type: tier4_system_msgs/msg/OperationModeAvailability
     external: pub
