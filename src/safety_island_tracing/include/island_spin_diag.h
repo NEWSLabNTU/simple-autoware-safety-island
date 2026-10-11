@@ -29,8 +29,12 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-extern volatile uint32_t _z_diag_isr_cycles;
-extern volatile uint32_t _z_diag_isr_count;
+/* The serial ISR's time and calls: zenoh-pico's own counters
+ * (CONFIG_NROS_ZENOH_SERIAL_ISR_STATS, nano-ros phase-474 I13). */
+extern volatile uint32_t _z_zephyr_serial_isr_cycles;
+extern volatile uint32_t _z_zephyr_serial_isr_calls;
+#define _z_diag_isr_cycles _z_zephyr_serial_isr_cycles
+#define _z_diag_isr_count _z_zephyr_serial_isr_calls
 #ifdef __cplusplus
 }
 #endif
@@ -63,6 +67,8 @@ struct sd_rec {
 	uint32_t isr_n;
 	uint32_t top_tid[3];
 	uint32_t top_us[3];
+	uint32_t cb_isr_us; /* serial ISR time inside the longest callback */
+	uint32_t cb_isr_n;
 };
 
 struct sd_thr {
@@ -106,6 +112,7 @@ static uint64_t sd_thr_now[SD_THREADS];
 static uint32_t sd_cb_t0, sd_cb_slot;
 static uint64_t sd_cb_main0, sd_cb_idle0;
 static uint32_t sd_isr_c0, sd_isr_n0;
+static uint32_t sd_cb_isr_c0, sd_cb_isr_n0;
 
 static inline uint32_t sd_us(uint32_t cyc)
 {
@@ -294,6 +301,8 @@ static void island_spin_diag_event(uint32_t id, uint32_t arg)
 		sd_cb_slot = arg;
 		sd_cb_main0 = sd_main_cyc();
 		sd_cb_idle0 = sd_idle_cyc();
+		sd_cb_isr_c0 = _z_diag_isr_cycles;
+		sd_cb_isr_n0 = _z_diag_isr_count;
 		return;
 	case 19u: {
 		uint32_t now = k_cycle_get_32();
@@ -306,6 +315,8 @@ static void island_spin_diag_event(uint32_t id, uint32_t arg)
 			sd_cur.cb_main_us = sd_us64(sd_main_cyc() - sd_cb_main0);
 			sd_cur.cb_idle_us = sd_us64(sd_idle_cyc() - sd_cb_idle0);
 			sd_cur.cb_off_us = sd_us(sd_cb_t0 - sd_ph_cyc[0]);
+			sd_cur.cb_isr_us = sd_us(_z_diag_isr_cycles - sd_cb_isr_c0);
+			sd_cur.cb_isr_n = _z_diag_isr_count - sd_cb_isr_n0;
 		}
 		return;
 	}

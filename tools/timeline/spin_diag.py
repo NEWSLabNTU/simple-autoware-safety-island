@@ -17,14 +17,15 @@ import subprocess
 import sys
 
 SYM = "island_spin_diag"
-EXTRA = ["_z_zephyr_serial_stats", "_z_zephyr_serial_tx_stats"]
+EXTRA = ["_z_zephyr_serial_stats", "_z_zephyr_serial_tx_stats", "_z_zephyr_serial_isr_cycles",
+         "_z_zephyr_serial_isr_calls"]
 SEGS = ["S0 pre", "S1 wait", "S2 disp", "S3 post", "S4 loop"]
 REC = ["uptime_ms", "interval_us"] + [f"wall{i}" for i in range(5)] + [f"main{i}" for i in range(5)] \
     + [f"idle{i}" for i in range(5)] + ["park_bound_us", "idle_path", "ncb", "ntake", "cb_slot", "cb_wall_us",
                                         "cb_main_us", "cb_idle_us", "cb_off_us", "lk_main_n", "lk_main_us",
                                         "lk_main_max_us", "lk_main_max_ra", "lk_main_max_m", "lk_oth_n",
                                         "lk_oth_us", "lk_oth_max_us", "lk_oth_max_ra", "isr_us", "isr_n",
-                                        "tt0", "tt1", "tt2", "tu0", "tu1", "tu2"]
+                                        "tt0", "tt1", "tt2", "tu0", "tu1", "tu2", "cb_isr_us", "cb_isr_n"]
 BINS, RING, NTHR = 40, 48, 16
 ADDR2LINE = ("/home/aeon/.nros/sdk/zephyr-sdk-1-0-1/1.0.1/zephyr-sdk-1.0.1/gnu/arm-zephyr-eabi/bin/"
              "arm-zephyr-eabi-addr2line")
@@ -58,8 +59,14 @@ def decode(elf, blob):
     magic, rec_words, spins, late, max_late = w(0, 5)
     if magic != 0x31474453:
         return f"spin_diag: bad magic {magic:#x} (no spin yet?)\n"
-    if rec_words != len(REC):
+    if rec_words == len(REC) - 2:
+        # an image from before cb_isr_us/cb_isr_n (the ISR time inside the
+        # longest callback): decode without them
+        fields = REC[:-2]
+    elif rec_words != len(REC):
         return f"spin_diag: record is {rec_words} words, decoder knows {len(REC)}\n"
+    else:
+        fields = REC
     off = 20
     hist = w(off, BINS); off += 4 * BINS
     segmax = w(off, 5); off += 20
@@ -74,7 +81,7 @@ def decode(elf, blob):
     recsz = 4 * rec_words
 
     def rec(o):
-        return dict(zip(REC, w(o, rec_words)))
+        return dict(zip(fields, w(o, rec_words)))
     worst = rec(off); off += recsz
     ring = [rec(off + i * recsz) for i in range(RING)]
     out = [f"spins={spins} late(>=2ms)={late} max_late_us={max_late}",
@@ -92,7 +99,7 @@ def decode(elf, blob):
             wl, mn, idl = r[f"wall{i}"], r[f"main{i}"], r[f"idle{i}"]
             s.append(f"    {SEGS[i]}: wall={wl:6d} spin={mn:6d} idle={idl:6d} other={wl - mn - idl:6d}")
         s.append(f"    longest cb: slot={r['cb_slot']} wall={r['cb_wall_us']} spin={r['cb_main_us']} "
-                 f"idle={r['cb_idle_us']} at +{r['cb_off_us']}us")
+                 f"idle={r['cb_idle_us']} isr={r.get('cb_isr_us', '-')}us/{r.get('cb_isr_n', '-')} at +{r['cb_off_us']}us")
         s.append(f"    spin lock waits: n={r['lk_main_n']} total={r['lk_main_us']}us max={r['lk_main_max_us']}us "
                  f"in {fn_at(elf, r['lk_main_max_ra'])} m={r['lk_main_max_m']:#x}")
         s.append(f"    other lock waits: n={r['lk_oth_n']} total={r['lk_oth_us']}us max={r['lk_oth_max_us']}us "
