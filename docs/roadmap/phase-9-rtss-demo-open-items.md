@@ -682,6 +682,27 @@ phases, this repository by fast-forward push.
   30525.67), only line numbers; README's verbatim outputs and
   tools/timeline/testdata/explain.txt follow (selftest OK);
   `.github/check-contracts.sh` 14/14 as expected.
+  Status (2026-10-12, the jitter gap): play_launch PR #18
+  (NEWSLabNTU/play_launch, branch `fix/timer-jitter-detection`, not
+  released) charges a timer's declared jitter in a reported fault's
+  detection and in a scope path's critical path. These contracts are not
+  re-pinned and not re-derived; this is what the PR build reads on them
+  (the comments that say the checker adds no jitter stay, each with a note
+  that points at the PR). L3 compositions: odd_exit detection 120 -> 126
+  (`reports every 100.00ms + 6.00ms jitter + 20.00ms`), comfortable_stop
+  20795.67 -> 20801.67, floor 14703.67 -> 14709.67; variants 30795.67 ->
+  30801.67 and 30525.67 -> 30531.67, still failing only their
+  comfortable-stop rung; hpc_loss 4934.67 unchanged. island.tor's critical
+  path is 350 -> 356, which is the declared 356, so there is no warning (a
+  probe at 300 ms printed 250 + 106 sampling). Island contract alone: its
+  totals do not move (odd_exit's gate is external there, detection 100),
+  but island.tor's critical path through the handler's tick becomes 218
+  (100 + 18 jitter + 100), more than its declared 210: one new
+  `warning[scope-budget]`, so the re-pin must re-derive island.tor (to at
+  least 218). `.github/check-contracts.sh` with the PR build: 14/14 as
+  expected. At the re-pin: README verbatim outputs, smallest breaks,
+  tools/timeline/testdata/explain.txt (the island's own table does not
+  move) and the paper's odd_exit figures.
 - **W7 - on-demand topics.** The contract's 10 Hz `min_rate_hz` on the
   comfortable-stop operator's `clear_velocity_limit` and
   `max_velocity_candidates` tripped `rate-hierarchy-runtime` at start-up

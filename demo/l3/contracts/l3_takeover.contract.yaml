@@ -53,6 +53,8 @@
 #                               jitter, 6 ms, is declared on the timer; the
 #                               checker charges a publisher's period and path
 #                               here, not its jitter (play_launch 0.15.1).
+#                               play_launch PR #18 (unreleased) charges
+#                               it: detection 126, totals +6 (phase9-W6).
 #   hpc_loss detection 500 ms   mrm_handler's
 #                               `timeout_operation_mode_availability: 0.5`.
 #   handler reaction 230 ms     ON THE BOARD (phase9-W5; 206 from
@@ -162,7 +164,7 @@ modes:
 # `max_transport`) + `call_mrm` (149). The checker's critical path is 350
 # (`/availability_gate -> /mrm_handler`, 250 event segment + 100 sampling
 # cost): it does not add a timer's jitter to the sampling cost, so the 6 ms
-# is ours. History: 226 from phase8-W30 (the input-triggered gate's 20 +
+# is ours (play_launch PR #18, unreleased, adds it: 356). History: 226 from phase8-W30 (the input-triggered gate's 20 +
 # `call_mrm` 206, the link inside it), 210 before (the island contract's
 # argument, when `call_mrm` was 110). phase9-W5 moved the link out of
 # `call_mrm` into `max_transport`, which play_launch 0.14.0 counts in a
