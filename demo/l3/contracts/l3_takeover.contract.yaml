@@ -253,7 +253,10 @@ nodes:
         # reaction route (F1) and not after the window's deadline, so it is
         # declared here and no longer inside `call_mrm`.
         max_transport: 81ms
-        qos: { depth: 1, liveliness: manual_by_topic, lease_duration: 500ms }
+        # No liveliness/lease (phase9-W6): the handler subscribes with
+        # `nros::QoS(1)` and checks the 500 ms itself (`max_age`,
+        # `mechanism: application`); the island contract says why.
+        qos: { depth: 1 }
         on_violation:
           on: [omission, reported]
           mechanism: application
@@ -360,8 +363,13 @@ nodes:
       # "ODD left" (W3's rule).
       odd_exit: { min_rate_hz: 10, max_age: 1s, qos: { depth: 1 }, state: true }
     pub:
-      # 10 Hz is derived from the timer.
-      availability: { qos: { depth: 1, liveliness: manual_by_topic, lease_duration: 500ms } }
+      # 10 Hz is derived from the timer. The QoS is the code's
+      # (availability_gate.cpp: KeepLast(1), reliable, volatile, rclcpp's
+      # default AUTOMATIC liveliness), as takeover.contract.yaml states it.
+      # Until phase9-W6 this said `liveliness: manual_by_topic,
+      # lease_duration: 500ms`, which the gate never offered; the 500 ms
+      # detection is the handler's own staleness check (`max_age`).
+      availability: { qos: { depth: 1, durability: volatile } }
 
   planning_hop:
     paths:

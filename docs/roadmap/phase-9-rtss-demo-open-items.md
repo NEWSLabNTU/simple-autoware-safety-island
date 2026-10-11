@@ -651,6 +651,37 @@ phases, this repository by fast-forward push.
   expected on 0.15.1 and 0.14.0. demo/l3/contracts/README.md's verbatim
   outputs, scratch variants and smallest breaks (19.20 s, 63.1 km/h)
   refreshed.
+  Status (2026-10-12, the gate's liveliness): the contracts now state the
+  QoS the code runs. The three compositions declared the gate's publisher
+  `liveliness: manual_by_topic, lease_duration: 500ms`; the gate
+  (availability_gate.cpp:261) publishes `KeepLast(1).reliable()
+  .durability_volatile()` with rclcpp's default AUTOMATIC liveliness, and
+  takeover.contract.yaml already said `{ depth: 1, durability: volatile }`.
+  The compositions now say the same. The handler's subscriber (island
+  contract and compositions) also lost its lease: the handler subscribes
+  with `nros::QoS(1)` (no liveliness) and checks the 500 ms itself, which
+  `max_age: 500ms` + `mechanism: application` already state, and a
+  MANUAL_BY_TOPIC request against an AUTOMATIC offer is RxO-incompatible
+  under DDS. The lease was not read where the old comment said: nano-ros
+  takes only depth/reliability/durability/history from a contract's qos
+  (qos_agreement.rs, "the contract has no key for" liveliness); play_launch's
+  model did turn it into two `qos_overrides./system/operation_mode/
+  availability.subscription.liveliness*` parameters on mrm_handler, but the
+  C++ component entry bakes no override table from them, so the image never
+  requested it. Checked by derivation, not a board build: `nros sync` +
+  `nros ws entity-inventory` (cmake, json, entity and params headers) and
+  `nros codegen entry --lang cpp --typed` on the island model before and
+  after give identical outputs (NROS_DERIVED_MAX_LIVELINESS 27, MAX_CBS 14);
+  the model differs only by the two derived parameters. This used
+  island-dma's nano-ros (6ad29e721): the pinned 319715968 refuses the island
+  contract (`trigger.timer.jitter` unknown, `nros sync` writes
+  system_model.refused), so a board build from main's submodule needs the
+  nano-ros bump first. `play_launch check --explain` (0.15.1): no verdict
+  or total moves (hpc_loss 4934.67, odd_exit comfortable_stop 20795.67,
+  floor 14703.67; island alone floor 14683.67; variants 30795.67 and
+  30525.67), only line numbers; README's verbatim outputs and
+  tools/timeline/testdata/explain.txt follow (selftest OK);
+  `.github/check-contracts.sh` 14/14 as expected.
 - **W7 - on-demand topics.** The contract's 10 Hz `min_rate_hz` on the
   comfortable-stop operator's `clear_velocity_limit` and
   `max_velocity_candidates` tripped `rate-hierarchy-runtime` at start-up
