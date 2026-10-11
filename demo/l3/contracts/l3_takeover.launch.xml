@@ -7,13 +7,17 @@
      change (unit W7) adds. stop_mode_operator is left out, as decision D4
      leaves it out of the demo image.
 
-     The two HPC-side nodes are DECLARATIVE STAND-INS: `play_launch check`
-     reads the launch tree and the contract sidecar beside it, and needs no
-     executable. `availability_gate` is the takeover_demo node that republishes
-     Autoware's availability with the ODD verdict folded in (D5).
-     `planning_hop` is a PLACEHOLDER for Autoware's planning and control path
-     from the velocity limit to the trajectory follower's command; its 300 ms
-     is a placeholder until it is measured. -->
+     The two HPC-side nodes are declared, not run: `play_launch check` reads
+     the launch tree and the contract sidecar beside it, and needs no
+     executable. `availability_gate` is the gate as the container starts it
+     (phase8-W16/W24, phase9-W6): W16's C++ node of package availability_gate
+     (demo/host_ws/src/availability_gate) through its `gate-rt` wrapper,
+     with W3's `odd_timeout_s` 1.0, as in
+     demo/l3/takeover_demo/launch/takeover.launch.xml. It republishes
+     Autoware's availability with the ODD verdict folded in (D5) from a 10 Hz
+     timer. `planning_hop` is a PLACEHOLDER for Autoware's planning and
+     control path from the velocity limit to the trajectory follower's
+     command; its 300 ms is a placeholder until it is measured. -->
 <launch>
   <node pkg="autoware_mrm_handler" exec="mrm_handler" name="mrm_handler">
     <param from="$(dirname)/../../../src/autoware_mrm_handler/config/mrm_handler.param.yaml"/>
@@ -29,6 +33,8 @@
   <node pkg="autoware_mrm_emergency_stop_operator" exec="mrm_emergency_stop_operator" name="mrm_emergency_stop_operator">
     <param from="$(dirname)/../../../src/autoware_mrm_emergency_stop_operator/config/mrm_emergency_stop_operator.param.yaml"/>
   </node>
-  <node pkg="takeover_demo" exec="availability_gate" name="availability_gate"/>
+  <node pkg="availability_gate" exec="gate-rt" name="availability_gate">
+    <param name="odd_timeout_s" value="1.0"/>
+  </node>
   <node pkg="takeover_demo" exec="planning_hop" name="planning_hop"/>
 </launch>

@@ -34,8 +34,8 @@
 #                               request lasts at least the window; the
 #                               handler reads the deadline on its 100 ms
 #                               tick, and that late notice is charged in the
-#                               206 ms handler reaction of the rung below,
-#                               from the deadline (`window-expiry`), once.
+#                               149 ms `call_mrm` of the rung below, from
+#                               the deadline (`window-expiry`), once.
 #   odd_exit interval 30 s      decision 3, a stated judgement like the 3 s
 #                               of the island contract.
 #   hpc_loss interval 10 s      NOT the island's 3 s. At 30 km/h the
@@ -44,19 +44,29 @@
 #                               island; 3 s was chosen for the 3.0 m/s the
 #                               island contract assumed. 10 s is the brief's
 #                               figure and leaves the floor 5191.33 ms.
-#   odd_exit detection 120 ms   the availability gate's 10 Hz period plus its
-#                               20 ms path (declared, not measured).
+#   odd_exit detection 120 ms   the availability gate's 10 Hz timer
+#                               (phase8-W16/W24; the gate as it runs, see
+#                               `availability_gate` below): its 100 ms period
+#                               plus its tick's 20 ms path (declared, not
+#                               measured; the figure these files have used
+#                               since phase8-W6). The tick's measured release
+#                               jitter, 6 ms, is declared on the timer; the
+#                               checker charges a publisher's period and path
+#                               here, not its jitter (play_launch 0.15.1).
 #   hpc_loss detection 500 ms   mrm_handler's
 #                               `timeout_operation_mode_availability: 0.5`.
-#   handler reaction 206 ms     ON THE BOARD (phase8-W30; 110 ms, the tick
-#                               + `timeout_call_mrm_behavior`, until then):
-#                               the serial link in 57 + the tick 118 (100 +
-#                               jitter) + in-tick work 31, each the maximum
-#                               over the 13 W8 board runs + 20 %. The
-#                               derivation is at `call_mrm` in the island
-#                               contract, src/safety_island_bringup/launch/
-#                               safety_island.contract.yaml, and this file
-#                               states the same numbers.
+#   handler reaction 230 ms     ON THE BOARD (phase9-W5; 206 from
+#                               phase8-W30, 110 before): the serial link 81
+#                               (`max_transport` on the handler's guard
+#                               subscriber; phase8-W31's 67.02 ms x 1.2) +
+#                               `call_mrm` 149 (the tick 118 + in-tick work
+#                               31, each the maximum over the 13 W8 board
+#                               runs + 20 %). The link is charged once on the
+#                               reaction route and not after the window's
+#                               deadline. The derivation is at `call_mrm` in
+#                               the island contract, src/safety_island_bringup/
+#                               launch/safety_island.contract.yaml, and this
+#                               file states the same numbers.
 #   operator tick 33.33 ms      the emergency operator's 30 Hz timer, walked
 #                               as a sampling hop across the operate service.
 #   planner hop 300 ms          PLACEHOLDER, see `planning_hop` below.
@@ -143,19 +153,30 @@ modes:
 # The reactions, as scope paths from the guarded input to the topic that
 # commits each rung. What each rung costs is the REACTION walk the hazards
 # take, which the checker derives; a scope path's own `max_latency` is the
-# NOMINAL traversal, and only island.tor declares one. 226 ms on the board
-# (phase8-W30): the checker's critical path is the gate's 20 ms path and the
-# handler's `call_mrm`, 206 ms, which holds the serial link, the tick and the
-# in-tick work. Until W30 it was 210 ms, one sampling wait of the 10 Hz
-# handler plus the tick's budget, the island contract's argument, when
-# `call_mrm` was 110. The other two cross an operate service, which the nominal graph
-# does not walk, so a budget there would be checked against a flat sum of
-# every node in this file (the planner placeholder included) and say nothing.
+# NOMINAL traversal, and only island.tor declares one.
+#
+# island.tor, 356 ms (phase9-W6), from the ODD verdict at the gate to the
+# request state on the board: the gate's tick, as a sampling wait (100 ms)
+# + its release jitter (6, measured; see `availability_gate`) + its tick's
+# path (20, declared) + the serial link (81, the guard subscriber's
+# `max_transport`) + `call_mrm` (149). The checker's critical path is 350
+# (`/availability_gate -> /mrm_handler`, 250 event segment + 100 sampling
+# cost): it does not add a timer's jitter to the sampling cost, so the 6 ms
+# is ours. History: 226 from phase8-W30 (the input-triggered gate's 20 +
+# `call_mrm` 206, the link inside it), 210 before (the island contract's
+# argument, when `call_mrm` was 110). phase9-W5 moved the link out of
+# `call_mrm` into `max_transport`, which play_launch 0.14.0 counts in a
+# path's latency (250 ms against 226: `warning[scope-budget]`), and W6's
+# timer gate adds its sampling wait.
+#
+# The other two cross an operate service, which the nominal graph does not
+# walk, so a budget there would be checked against a flat sum of every node
+# in this file (the planner placeholder included) and say nothing.
 paths:
   island.tor:
     trigger: { input: [/system/operation_mode/availability] }
     output: [/system/takeover_request/state]
-    max_latency: 226ms
+    max_latency: 356ms
   island.comfortable_stop:
     trigger: { input: [/system/operation_mode/availability] }
     output: [/control/trajectory_follower/control_cmd]
@@ -301,19 +322,46 @@ nodes:
       emergency_control_cmd: { min_rate_hz: 27, qos: { durability: volatile } }
       status: { min_rate_hz: 27, qos: { durability: volatile } }
 
-  # ---- the HPC side (takeover_demo stand-ins) --------------------------------
+  # ---- the HPC side ----------------------------------------------------------
+  # The gate as it runs (phase8-W16/W24, phase9-W6): package availability_gate
+  # (demo/host_ws/src/availability_gate), started through `gate-rt`, as
+  # demo/l3/takeover_demo/launch/takeover.launch.xml starts it, and modelled
+  # as demo/l3/takeover_demo/launch/takeover.contract.yaml models it. A 10 Hz
+  # wall timer (`period_ms` 100) republishes the LATEST raw sample with
+  # `autonomous &= !odd_exit` while that sample is younger than
+  # `raw_max_age_ms` (1000); older, nothing. Neither input starts a
+  # traversal: the timer sets the cadence, so the ODD verdict reaches the
+  # island at the next tick, a sampling wait the checker charges as the
+  # publisher's period plus the timer's release jitter.
+  #
+  # jitter 6 ms: MEASURED. The gate's own largest publish gap under
+  # SCHED_FIFO 20 (gate-rt in the L3 image, `--cap-add SYS_NICE --ulimit
+  # rtprio=20`) was 104.53 ms over 600 s at a 1-min load of 41.3-125.4
+  # (docs/takeover-trace.md section 7, run s3), i.e. a tick 4.53 ms past
+  # its period; x 1.2 = 5.44, rounded up, the margin rule of the island's
+  # other timers. The container's own idle 600 s (phase8-W24, load
+  # 42.6-67.0) stayed under it: 101.67 ms. A publish gap bounds how late one
+  # tick was against the one before it, not against the timer's schedule;
+  # no run measured the release lateness itself. Under SCHED_OTHER (a host
+  # without the rtprio limit) the same load reached 131.39 ms (s2): this
+  # figure assumes the container's SCHED_FIFO.
   availability_gate:
+    params:
+      odd_timeout_s: { type: double }
     paths:
-      # Republishes Autoware's availability with the ODD verdict folded
-      # into `autonomous`. 20 ms is declared, not measured.
-      gate:
-        trigger: { input: [availability_raw] }
+      on_timer:
+        trigger: { timer: { rate_hz: 10, jitter: 6ms } }
         output: [availability]
         max_latency: 20ms
     sub:
-      availability_raw: { min_rate_hz: 10, qos: { depth: 1 } }
+      # Read-latest: the timer, not the raw sample, sets the cadence.
+      availability_raw: { min_rate_hz: 10, max_age: 1s, qos: { depth: 1 }, state: true }
+      # Read-latest; silent for more than odd_timeout_s (1.0) reads as
+      # "ODD left" (W3's rule).
+      odd_exit: { min_rate_hz: 10, max_age: 1s, qos: { depth: 1 }, state: true }
     pub:
-      availability: { min_rate_hz: 10, qos: { depth: 1, liveliness: manual_by_topic, lease_duration: 500ms } }
+      # 10 Hz is derived from the timer.
+      availability: { qos: { depth: 1, liveliness: manual_by_topic, lease_duration: 500ms } }
 
   planning_hop:
     paths:
@@ -338,11 +386,16 @@ topics:
     external: pub
     sub: [availability_gate/availability_raw]
     rate_hz: 10
+  # The ODD monitor's verdict (takeover_demo's odd_monitor, 10 Hz).
+  /demo/odd/exit:
+    type: std_msgs/msg/Bool
+    external: pub
+    sub: [availability_gate/odd_exit]
+    rate_hz: 10
   /system/operation_mode/availability:
     type: tier4_system_msgs/msg/OperationModeAvailability
     pub: [availability_gate/availability]
     sub: [mrm_handler/operation_mode_availability]
-    rate_hz: 10
   # ---- the takeover request and the driver's answer ------------------------
   /system/takeover_request/state:
     type: tier4_system_msgs/msg/MrmBehaviorStatus
