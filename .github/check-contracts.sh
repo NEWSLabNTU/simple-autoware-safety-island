@@ -34,8 +34,8 @@ declare -A EXPECT=(
     # README.md). The base contract and the island's own contract pass
     # since play_launch 0.13.0 (phases 82-84: the service-edge walk, the
     # takeover keys, window-expiry).
-    [demo/l3/contracts/l3_takeover_window20]=1:ladder-rung-budget   # 30828.67 ms
-    [demo/l3/contracts/l3_takeover_65kmh]=1:ladder-rung-budget      # 30558.67 ms
+    [demo/l3/contracts/l3_takeover_window20]=1:ladder-rung-budget   # 30795.67 ms
+    [demo/l3/contracts/l3_takeover_65kmh]=1:ladder-rung-budget      # 30525.67 ms
 )
 
 echo "play_launch: $(command -v "$PL") ($("$PL" --version 2>/dev/null))"

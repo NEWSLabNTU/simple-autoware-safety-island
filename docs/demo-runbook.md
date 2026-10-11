@@ -26,14 +26,15 @@ use that until W21 lands.
 
 ## Remaining steps
 
-### 1. play_launch >= 0.13.1 on PATH -- THE BLOCKER
+### 1. play_launch >= 0.15.1 on PATH -- THE BLOCKER
 
 The demo launches Autoware with play_launch. The 0.5.x line stalls on
 Autoware's busy composable containers and has no `resolve` verb, and 0.12.0
 rejects the island contract's grammar ("unknown key in `hazards.<name>`")
 without naming a version. The minimum is the version CI pins
-(`PLAY_LAUNCH_VERSION`, .github/workflows/check.yml), 0.13.1 as of
-2026-10-05, and `just doctor` and `.envrc` both warn on anything older,
+(`PLAY_LAUNCH_VERSION`, .github/workflows/check.yml), 0.15.1 as of
+2026-10-11 (0.14.x and older reject the demo contracts' timer `jitter` key),
+and `just doctor` and `.envrc` both warn on anything older,
 naming the required version.
 
 ```sh
@@ -57,7 +58,7 @@ Two failures hit while doing this, both worth expecting again:
   checkout, then rebuild.
 * The rebuild takes a long time (colcon + a full release cargo build).
 
-Verify with `play_launch --version` -> `play_launch 0.13.1` (or newer).
+Verify with `play_launch --version` -> `play_launch 0.15.1` (or newer).
 
 ### 2. Island images
 
@@ -151,7 +152,7 @@ not in the build.
   dependency of `just build` / `just zephyr-build` / `just board-build`)
   resolves it into `build/nros/models/safety_island_bringup/system_model.yaml`
   and costs 0.08 s when nothing changed. It needs play_launch's `resolve`
-  verb (0.8.x and later), and the island contract needs 0.13.0 (the CI pin is 0.13.1), so
+  verb (0.8.x and later), and the island contract needs 0.13.0 (the CI pin is 0.15.1), so
   `just doctor` checks the version.
 * Clock domains: the ported operators integrate `dt` from message stamps;
   host Autoware stamps are wall-clock while the island clock boots at ~0.
@@ -245,4 +246,4 @@ What to expect, and what not to believe:
   The `play_launch` on PATH here is a newer source build that calls itself
   0.12.0; it passed the island contract where the published 0.12.0 did not,
   so do not read a verdict from it as the CI's. `just doctor` now flags any
-  0.12.0 (the minimum is the CI pin, 0.13.1).
+  0.12.0 (the minimum is the CI pin, 0.15.1).
