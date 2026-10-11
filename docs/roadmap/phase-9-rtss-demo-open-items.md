@@ -1050,3 +1050,44 @@ this pin; re-pin at or after its merge commit.
   (`nros_cpp_declare_param` undefined: nros-cpp built without
   `param-store`). (4) `nros sync`'s source-metadata probe finds no
   producer for the four nodes.
+
+## 6. Spin latency after the TX fixes (2026-10-12)
+
+The board image on nano-ros `4f91dfd7b` (#1944 play_launch 0.15.1, #1946
+the non-blocking serial TX, phase-474 I12), TX ring 4096, encore with the
+spin diag (`CONFIG_ISLAND_SPIN_DIAG` + `experiments/spin-latency/*.patch`;
+runs kept in `build/timeline/` and `/mnt/mx500/aeon/worktrees/spinlat-logs/`).
+
+| run | spins | >= 2 ms late per 10k | >= 1 ms per 10k | worst |
+| --- | ---: | ---: | ---: | ---: |
+| `sl-cadence-diag` (I10 + I11, before #1946) | 10,968 | 26.4 | 68.4 | 5.9 ms |
+| `sl-rclcpp-diag` (#1946, ring 4096) | 10,121 | 33.6 | 51.4 | 5.1 ms |
+| `sl-rclcpp-prio` (+ executor at 3, `e93e258`) | 127,823 | 6.4 | 21.9 | 4.0 ms |
+
+- [x] #1946 on the board: `frames_waited` 0, TX `waits` 0, lock waits at
+  link.c:253 / tx.c:660 down to 2-10 us. The late spins stayed.
+- [x] Thread priorities (`e93e258`): zenoh-pico's read, flush and lease
+  tasks (k_thread 4) ran ahead of a due release with the executor at 5
+  (1.7 ms median of a late interval). Registration still runs at 5, below
+  the read task (phase8-W10); `src/zephyr_entry/src/spin_priority.c`
+  raises the spin thread to 3 on its first spin
+  (`CONFIG_ISLAND_SPIN_RAISE`). RX ring high water 1006 of 4096 B, no
+  overflow; gate table PASS (total 3573.62 of 4934.67 ms).
+- [ ] The rest is one callback's dispatch (executor slot 2, about 1.8 ms)
+  with the per-byte serial ISRs inside it (2.5 ms over about 350 calls per
+  late interval, 7-10 us a call). nano-ros phase-474, in order:
+  - [ ] I13: zenoh-pico's network.c text to ITCM and its rings and framing
+    buffers to DTCM (`CONFIG_NROS_ZENOH_SERIAL_TCM`; frees about 12 KiB of
+    SRAM, which is at 95.7%), a leaner ISR body, and an ISR-time hook. The
+    island's spin diag gains the ISR time inside the longest callback, so
+    the callback's own work and the ISRs are told apart.
+  - [ ] I14: LPUART FIFO watermarks + receiver idle (no DMA): about 3x
+    fewer calls; watch overruns (2-character margin).
+  - [ ] I15: TX by eDMA (UART async API; lpuart2 already has `dmas`,
+    edma0 ch16/17).
+  - [ ] I16: RX by eDMA, double 256 B DTCM buffers into the same RX ring.
+    Zephyr 4.4's idle flush runs on the system workqueue (1-2 ms per
+    frame), its idle type is never applied, and an RX error stops RX.
+  Each is checked by one encore with the spin diag: late-spin rates, ISR
+  time and count per late interval, `_z_zephyr_serial_stats` overruns /
+  bad frames / ring overflows 0, gate PASS.
