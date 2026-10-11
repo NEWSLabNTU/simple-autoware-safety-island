@@ -323,16 +323,21 @@ version: 1
 #     "something outside this image, and it is not declared anywhere yet".
 #     Silencing it would be worse than carrying it.
 #
-#   info[path-exclusion] is no longer printed (phase8-W30). Until then it
-#     said `on_timer` may wait up to 110 ms for `call_mrm` and `driver_exit`,
-#     because every path of a node is assumed to serialise unless the node
-#     declares otherwise; for mrm_handler that is exactly right -- the three
-#     paths ARE the same callback body. With the board's 206 ms, island.tor's
-#     nominal critical path runs through `call_mrm` itself instead of the
-#     tick (206 > 100 sampling + 100), and 0.13.0 prints no note for it here
-#     (the demo composition, with the gate in the tree, still prints one:
-#     `call_mrm` may wait for `driver_exit` and `on_timer`, up to 149 ms).
-#     Nothing was declared to make it go away.
+#   info[path-exclusion]: `on_timer` may wait up to 149 ms for `call_mrm`
+#     and `driver_exit`, because every path of a node is assumed to
+#     serialise unless the node declares otherwise; for mrm_handler that is
+#     exactly right -- the three paths ARE the same callback body. From
+#     phase8-W30 to phase9-W5 it was not printed: `call_mrm` was 206 ms (the
+#     link inside it), so island.tor's nominal critical path ran through
+#     `call_mrm` itself instead of the tick (206 > 100 sampling + 100).
+#     Since W5 `call_mrm` is 149 (tick 118 + work 31) and the link is the
+#     subscriber's 81 ms `max_transport`, which this scope path does not
+#     charge (the guarded topic's publisher is `external: pub`, outside this
+#     tree), so the critical path is the tick again, 200 ms (100 sampling +
+#     100), and the note is back, naming `on_timer` (play_launch 0.14.0 and
+#     0.15.1). The demo compositions, with the gate in the tree, print their
+#     own: `call_mrm` may wait for `driver_exit` and `on_timer`, up to 149
+#     ms. Nothing was declared to make it go away.
 #
 # One more thing worth knowing, because it is invisible in the output: the
 # hazards make the checker DERIVE criticality, which is what carries the
