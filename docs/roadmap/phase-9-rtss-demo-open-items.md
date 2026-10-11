@@ -1073,21 +1073,26 @@ runs kept in `build/timeline/` and `/mnt/mx500/aeon/worktrees/spinlat-logs/`).
   raises the spin thread to 3 on its first spin
   (`CONFIG_ISLAND_SPIN_RAISE`). RX ring high water 1006 of 4096 B, no
   overflow; gate table PASS (total 3573.62 of 4934.67 ms).
-- [ ] The rest is one callback's dispatch (executor slot 2, about 1.8 ms)
-  with the per-byte serial ISRs inside it (2.5 ms over about 350 calls per
-  late interval, 7-10 us a call). nano-ros phase-474, in order:
-  - [ ] I13: zenoh-pico's network.c text to ITCM and its rings and framing
-    buffers to DTCM (`CONFIG_NROS_ZENOH_SERIAL_TCM`; frees about 12 KiB of
-    SRAM, which is at 95.7%), a leaner ISR body, and an ISR-time hook. The
-    island's spin diag gains the ISR time inside the longest callback, so
-    the callback's own work and the ISRs are told apart.
-  - [ ] I14: LPUART FIFO watermarks + receiver idle (no DMA): about 3x
-    fewer calls; watch overruns (2-character margin).
-  - [ ] I15: TX by eDMA (UART async API; lpuart2 already has `dmas`,
-    edma0 ch16/17).
-  - [ ] I16: RX by eDMA, double 256 B DTCM buffers into the same RX ring.
-    Zephyr 4.4's idle flush runs on the system workqueue (1-2 ms per
-    frame), its idle type is never applied, and an RX error stops RX.
-  Each is checked by one encore with the spin diag: late-spin rates, ISR
-  time and count per late interval, `_z_zephyr_serial_stats` overruns /
-  bad frames / ring overflows 0, gate PASS.
+- [x] The rest was the per-byte serial ISRs (about 505k calls per act,
+  6 us each). nano-ros phase-474 I13-I16, PR #1987 (branch
+  `fix/serial-isr-cost`); spin-diag encores, the act segment only (the
+  rates of whole runs mislead: `sl-rclcpp-prio` idled 10 min before its
+  act, and the same image varies 11-77 late spins per 10k run to run):
+
+  | run | image | act: >= 1 ms late | worst | overruns / bad | ISR CPU |
+  | --- | --- | ---: | ---: | --- | ---: |
+  | `sl-i13`, `-b` | I13: ISR trim, network.c in ITCM/DTCM | 61, 61 | 6-7 ms | 0 / 0 | 4.46 s |
+  | `sl-i14` | I14: LPUART FIFO watermark, RXWATER 2 | 0 | 0.76 ms | 4 / 4 | 0.66 s |
+  | `sl-i14w1` | I14, RXWATER 1 | 0 | 0.94 ms | 0 / 0 | 0.85 s |
+  | `sl-i16b` | I16: async UART on eDMA | 0 | 0.57 ms | 0 / 0 | 0.04 s |
+
+  Gate PASS in all. I13 alone changed nothing (6.2 us a call with TCM, 6.0
+  without; it frees 12.9 KiB of SRAM). I16 first asserted at boot: Zephyr
+  4.4.0's TCM linker sections `SUBALIGN(4)` broke the eDMA TCD pool's
+  32-byte alignment once I13 moved DTCM; nano-ros backports the upstream
+  `ALIGN(4)` fix (`just setup zephyr` applies it).
+- [ ] The island takes I14 at RXWATER 1 with TCM
+  (`CONFIG_NROS_ZENOH_SERIAL_TCM`, `CONFIG_NROS_ZENOH_SERIAL_FIFO_WATERMARK`)
+  after #1987 merges: re-pin, board conf, one plain encore.
+  `experiments/spin-latency/*.patch` and the spin diag now read zenoh-pico's
+  own ISR counters (`CONFIG_NROS_ZENOH_SERIAL_ISR_STATS`, diag builds only).
