@@ -622,6 +622,35 @@ phases, this repository by fast-forward push.
   10 Hz timer it is, under its own package. Gate: the compositions'
   verdicts printed and explained, CI script green.
   DX: see DX-UX-GAPS 6.6 (the compositions; the rtprio host setup is W21).
+  Status (2026-10-11): done on play_launch 0.15.1 (0.14.0 gives the same
+  output). The three compositions name package `availability_gate`, exec
+  `gate-rt`, `odd_timeout_s` 1.0, and model it as takeover.contract.yaml
+  does: `on_timer`, `timer: { rate_hz: 10, jitter: 6ms }`, the raw sample
+  and the ODD verdict read-latest (`state: true`, `max_age: 1s`). The 6 ms
+  is measured: the gate's largest publish gap under SCHED_FIFO 20, 104.53
+  ms (docs/takeover-trace.md section 7, s3; the container's idle 600 s in
+  phase8-W24 reached 101.67), 4.53 x 1.2 rounded up. The tick's path keeps
+  the 20 ms declared since phase8-W6 (not measured), so odd_exit's
+  detection stays 120 ms and no explain row moves: hpc_loss 4934.67,
+  odd_exit comfortable_stop 20795.67, floor 14703.67; the variants still
+  fail only their comfortable-stop rung (30795.67, 30525.67). The
+  `warning[scope-budget]` play_launch 0.14.0 printed on all three
+  (island.tor 226 against 250) was stale since W5: the link moved into
+  `max_transport`, which 0.14.0 counts in a path's latency. island.tor is
+  re-derived to 356 ms (gate sampling 100 + jitter 6 + path 20 + link 81 +
+  `call_mrm` 149; the checker's critical path is 350, it adds no jitter to
+  a sampling cost) and the warning is gone. Checker gap: a reported fault's
+  detection charges the publisher's period and path, not its timer's
+  jitter (6 ms short here; no verdict is that close). The island contract
+  changed in one comment only (its path-exclusion note is printed again
+  since W5, naming `on_timer`); tools/timeline/testdata/explain.txt
+  regenerated (line numbers only), selftest OK. CI: main's run of W5
+  failed, the 0.13.1 pin refusing `trigger.timer.jitter`
+  (`manifest-parse`) on four contracts; the pin and the doctor's minimum
+  are now 0.15.1, and `.github/check-contracts.sh` gives 14/14 as
+  expected on 0.15.1 and 0.14.0. demo/l3/contracts/README.md's verbatim
+  outputs, scratch variants and smallest breaks (19.20 s, 63.1 km/h)
+  refreshed.
 - **W7 - on-demand topics.** The contract's 10 Hz `min_rate_hz` on the
   comfortable-stop operator's `clear_velocity_limit` and
   `max_velocity_candidates` tripped `rate-hierarchy-runtime` at start-up
