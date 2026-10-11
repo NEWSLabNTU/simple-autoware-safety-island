@@ -1091,8 +1091,17 @@ runs kept in `build/timeline/` and `/mnt/mx500/aeon/worktrees/spinlat-logs/`).
   4.4.0's TCM linker sections `SUBALIGN(4)` broke the eDMA TCD pool's
   32-byte alignment once I13 moved DTCM; nano-ros backports the upstream
   `ALIGN(4)` fix (`just setup zephyr` applies it).
-- [ ] The island takes I14 at RXWATER 1 with TCM
-  (`CONFIG_NROS_ZENOH_SERIAL_TCM`, `CONFIG_NROS_ZENOH_SERIAL_FIFO_WATERMARK`)
-  after #1987 merges: re-pin, board conf, one plain encore.
+- [x] The island takes I14 at RXWATER 1 with TCM
+  (`CONFIG_NROS_ZENOH_SERIAL_TCM`, `CONFIG_NROS_ZENOH_SERIAL_FIFO_WATERMARK`),
+  nano-ros pinned at the #1987 merge `9a0e7ec0f` (zenoh-pico `17b14961`).
+  Plain encore `sl-i14-final`: VERDICT PASS, total 3508.51 of 4934.67 ms,
+  trace-check PASS. Serial counters read over SWD after the run: 423,204
+  bytes and 1447 frames in, 1 overrun, 1 bad frame (CRC, dropped and
+  recovered), ring high water 1212 of 4096 B, no ring overflow. `sl-i14w1`
+  had 0 / 0; at RXWATER 1 the 4-deep FIFO leaves two characters (about
+  170 us) for the ISR to be entered, and one stretch with interrupts masked
+  went past it. Not pursued: one frame in an encore costs nothing the gate
+  sees. If it recurs, RXWATER 0 (interrupt on the first byte, still a FIFO
+  drain per interrupt) or the I16 DMA mode are the next steps.
   `experiments/spin-latency/*.patch` and the spin diag now read zenoh-pico's
   own ISR counters (`CONFIG_NROS_ZENOH_SERIAL_ISR_STATS`, diag builds only).
