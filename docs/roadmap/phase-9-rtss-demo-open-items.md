@@ -1279,13 +1279,26 @@ image of main.
 
 ### UX frictions
 
-- [ ] **U1 - every run records its own evidence.** The serial counters,
+- [x] **U1 - every run records its own evidence.** The serial counters,
   the boot record (heap and arena at FirstSpin and at the dump) and the
   violation ring are read by hand today. tools/timeline/readout.py
   reads all three in its halted read at the end of each act, into
   `serial.txt` and `bootrec.txt` beside `violations.txt`, and
   run-board.sh prints one summary line (verdict, total, stored verdicts,
   overruns / bad frames, heap peak). Enables C3.
+  Status (2026-10-12): readout.py reads `_z_zephyr_serial_stats` and
+  `NROS_BOOT_REPORT` in its halted read (serial.txt, bootrec.txt decoded by
+  the pinned read-boot-report.py); `--serial-only` snapshots the counters
+  without a halt just before the act (run-board.sh step 7), so serial.txt
+  says how many overruns and bad frames fell inside the act;
+  tools/timeline/run_summary.py prints one SUMMARY line per run (also
+  summary.txt). On the board, encore `u1-e2` (image rebuilt at 190890d):
+  `SUMMARY u1-e2 encore: PASS; table 8/8 PASS, total 3529.61 of 4934.67
+  ms; trace-check PASS; stored 1 (silence-runtime x1); serial in act 0/0
+  (overruns/bad frames); heap peak 66640 of 107008 B`. Found on the way:
+  `u1-e1` ran with the probe refused ("the model is STALE ... run `just
+  sync`") and still printed VERDICT PASS with an empty table; U5 refuses
+  that.
 - [ ] **U2 - `just board-build` exits 0 on a good image.** It exits 1 from
   the post-link `ram_report` (`size_report` fails), so every caller has to
   know the ELF is fine. Fix the report or make `board-size` advisory, and
@@ -1307,8 +1320,11 @@ image of main.
   timed out at 60 s when `fuser` crawled under a stray filesystem walk;
   the run left an empty directory. Preflight in run-board.sh: probe held,
   container state, load (C6), and a bounded `fuser`; on failure, a reason
-  in `run.log` and a non-zero exit before flashing. Gate: each preflight
-  failure, forced once, produces its reason.
+  in `run.log` and a non-zero exit before flashing. Also refuse to call a
+  run PASS when the probe or the gate did not start (`u1-e1`: the probe
+  refused a stale model, the table was empty, the scenario still printed
+  VERDICT PASS), and run the model's staleness check before flashing.
+  Gate: each preflight failure, forced once, produces its reason.
 - [ ] **U6 - one priority story.** `CONFIG_ISLAND_SPIN_RAISE` showed no
   clear gain over the act (section 6); the I14 watermark removed the late
   spins. Measure one round without it on the I14 image; keep it only if
