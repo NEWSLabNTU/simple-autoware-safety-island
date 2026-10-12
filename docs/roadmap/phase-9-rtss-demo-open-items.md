@@ -1105,3 +1105,56 @@ runs kept in `build/timeline/` and `/mnt/mx500/aeon/worktrees/spinlat-logs/`).
   drain per interrupt) or the I16 DMA mode are the next steps.
   `experiments/spin-latency/*.patch` and the spin diag now read zenoh-pico's
   own ISR counters (`CONFIG_NROS_ZENOH_SERIAL_ISR_STATS`, diag builds only).
+
+## 7. A board round on the I14 image (2026-10-12)
+
+Ten acts with `tools/timeline/run-board.sh` on the plain board image of this
+branch at `3329eac` (ELF sha256 `924c7abd9bb2c511...`, nano-ros `9a0e7ec0f`,
+FIFO watermark and serial TCM on, no spin diag; the 149 / 81 budgets),
+under `env -i` + scripts/env.sh, `L3_IMAGE=sai-l3-autoware:1.5.0-w24`. Run
+ids `build/timeline/d12-*`; the serial counters (`_z_zephyr_serial_stats`)
+were read over SWD after each run's teardown.
+
+| run | act | VERDICT | total (ms) | stored verdicts | overruns / bad |
+| --- | --- | --- | ---: | --- | --- |
+| `d12-e1` | encore | PASS | 3472.95 of 4934.67 | silence only | 1 / 1 |
+| `d12-a1` | a | PASS | (exit route 60.68 of 149) | silence only | 1 / 1 |
+| `d12-b1` | b | PASS | 18049.64 of 20475.67 | silence only | 1 / 1 |
+| `d12-e2` | encore | PASS | 3291.07 | silence only | 1 / 1 |
+| `d12-a2` | a | PASS | (exit route 91.80) | silence only | 1 / 1 |
+| `d12-b2` | b | PASS | 14698.75 | silence only | 3 / 3 |
+| `d12-e3r` | encore | PASS | 3537.84 | silence only | 1 / 1 |
+| `d12-a3r` | a | PASS | (exit route 61.08) | silence only | 1 / 1 |
+| `d12-b3s` | b | PASS | 15849.78 | silence only | 1 / 1 |
+| `d12-b3r` | b | FAIL | 12997.38 (EMERGENCY_STOP) | silence only | 2 / 2 |
+
+- [x] Nine of ten PASS every row. "silence only" = the record holds the one
+  known `silence-runtime /mrm_handler/operation_mode_availability` (W3):
+  no release-jitter or timer-overrun verdict in any act run (the 14.4 /
+  W4 (c) finding does not recur on this image).
+- [x] `d12-b3r` FAIL is host-side: load average 189 at its start
+  (unrelated builds); detect 186.06 of 100 (the host gate), and Autoware's
+  availability carried `comfortable_stop: false` for one sample 1.8 s into
+  the comfortable stop, so the island escalated to EMERGENCY_STOP as the
+  ladder says (W15/W16). `d12-e3`, `-a3`, `-b3` never reached the act (the
+  gateway step timed out: `fuser` on the tty took over 60 s while a stray
+  filesystem scan held the host's /proc busy); rerun as `-e3r`, `-a3r`,
+  `-b3r`, and b once more as `-b3s`.
+- [x] Terms (`/mnt/mx500/aeon/worktrees/w30-reanalysis/terms.py` over the
+  nine, `build/timeline/d12-terms.txt`): `max: link 38.13, wait 88.16,
+  spacing 101.50, work 1.04, tor_on 0.27, call 0.04, tor_off 0.68,
+  operate 0.49, exit 91.80`; link 19.19-38.13 over 13 edges (W14), tick
+  spacing 98.87-101.50 over 1053 ticks, work 0.40-1.04. All inside the
+  81 / 118 / 31 terms; nothing re-derived.
+- [x] `d12-ab` (encore with the act replaced by readouts, gate (a)/(b)
+  shape): 40 s after RUN only the silence; `violations.py overrun 250`:
+  `max-latency-runtime` hazard_lights_cmd 250 / 100, mrm_state 250 / 149,
+  takeover_request_state 250 / 149, then timer-overrun 7, 1, 1 and
+  release-jitter 242715 us; no rate verdict 6 s later (the 9 / 27 floors).
+  Serial counters 0 / 0 at the act's start, at 40 s and after the overrun,
+  1 / 1 only after teardown: the one bad frame per run is the teardown.
+- Open: trace-check FAILs on 7 of the 9 PASS runs on completeness only
+  (the 40,960 B buffer fills before the readout: the window opens at the
+  arming-time silence verdict, about 9 s after boot); every table edge was
+  inside the window. Whether `d12-b2`'s 3 / 3 and `d12-b3r`'s 2 / 2 were in
+  the act is not known.
