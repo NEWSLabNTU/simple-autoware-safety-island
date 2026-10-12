@@ -282,6 +282,7 @@ static const char island_trace_provenance[] =
 	";heartbeat_ms=" ISLAND_TRACE_STR(ISLAND_TRACE_HEARTBEAT_MS)
 #if defined(CONFIG_NROS_TRACE_CALLBACKS)
 	";nros_base=" ISLAND_TRACE_STR(ISLAND_TRACE_NROS_BASE)
+	";take_keep=" ISLAND_TRACE_TAKE_KEEPS
 #endif
 #if ISLAND_TRACE_WINDOW
 	";window=trigger"

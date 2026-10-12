@@ -1251,13 +1251,43 @@ image of main.
   `island.b1_degrade_ads`, as on 0.15.1). selftest OK on the regenerated
   testdata/explain.txt; demo/l3/contracts/README.md's verbatim outputs and
   scratch variants are 0.16.0's.
-- [ ] **C2 - trace completeness on every act.** trace-check fails on 7 of
+- [x] **C2 - trace completeness on every act.** trace-check fails on 7 of
   9 passing runs because the 40,960 B RAM buffer fills before the
   readout. DTCM has about 52 KiB free on the I14 image (75,400 of 128 KiB
   used): move the trace buffer there and size it from the act's marker
   volume, or read it out mid-act; drop or decimate the per-tick markers
   that no table reads. Gate: trace-check PASS on every act of a round
   (encore, a, b) with the same table rows.
+  Status (2026-10-12, branch `phase9-c2-trace`): done. Measured over the
+  section 7 traces (`d12-*`, `u1-e1`, `u1-e2`, board format): the window
+  opens at the arming verdict and spends 29-35 s idle at 579-633 B/s
+  (16.9-20.5 KB) before the act, the act runs at 1,140-1,318 B/s
+  (5.5-18.3 KB), the tail to the readout at 916-1,312 B/s; extrapolated to
+  each readout the window needed encore 28.0-28.9 KB, a 41.6-60.3 KB, b
+  44.3-64.4 KB (`d12-e2` 112.9 KB, a readout 92 s after its act). The
+  forwarded F4 takes were 40-46 % of the bytes. DTCM alone (55,672 B free)
+  cannot hold 64 KB; opening at the act gives up the violation trigger.
+  Done: `ram_tracing` relocated to DTCM (`zephyr_code_relocate(FILES
+  tracing_backend_ram.c LOCATION DTCM_BSS)`, at 0x20003250) and sized
+  53,248 B, and the F4 takes thinned to one in 4 / 1 / 12 (2.5 Hz each;
+  provenance `take_keep=4,1,12`); replayed, the worst b needs 45.4 KB.
+  `check` is unchanged (`complete` = the last heartbeat emitted is in the
+  buffer). Regions, I14 image -> C2 image: RAM 300,624 (91.74 %) ->
+  259,656 (79.24 %), DTCM 75,400 (57.53 %) -> 128,656 (98.16 %), ITCM
+  14,548 both, FLASH 572,496 -> 572,544. Board round (ELF sha256
+  `8d6b39a65ec1a90b...`):
+  `SUMMARY c2-encore1 encore: PASS; table 8/8 PASS, total 3465.08 of 4934.67 ms; trace-check PASS; stored 1 (silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 66640 of 107008 B`
+  (buffer 20,782 of 53,248 B);
+  `SUMMARY c2-a1 a: PASS; table 6/6 PASS; trace-check PASS; stored 1 (silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 66416 of 107008 B`
+  (30,439 B);
+  `SUMMARY c2-b2 b: PASS; table 15/15 PASS, total 15950.07 of 20475.67 ms; trace-check PASS; stored 1 (silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 66688 of 107008 B`
+  (32,907 B, 61.8 % of the buffer). The first b, `c2-b1`, was trace-check
+  PASS (32,146 B) with table 14/15: the host-clock dwell row read 9,996.56
+  against [10,000, 10,149] because the request-on reached the host 18.4 ms
+  after its publish and the request-off 14.1 ms after (island clock
+  10,000.91, PASS); not the trace, and `c2-b2` passed every row. Same row
+  counts as the d12 round (8, 6, 15). docs/tracing.md section 8, "The
+  buffer in DTCM". DTCM is now 2,416 B from full.
 - [ ] **C3 - serial errors inside the act.** Every run ends with about one
   overrun and one bad frame; in `d12-ab` they came at teardown, the
   others are unattributed. Snapshot `_z_zephyr_serial_stats` at the act's

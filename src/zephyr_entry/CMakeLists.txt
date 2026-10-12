@@ -158,6 +158,18 @@ endforeach()
 # Verify by the DTCM line of the region report, never by the build succeeding.
 zephyr_code_relocate(LIBRARY app LOCATION DTCM_BSS)
 
+# phase9-C2: the RAM tracing backend's buffer (`ram_tracing`, with its `pos`
+# and `buffer_full`) goes to DTCM as well. It is written by the CPU only
+# (tracing_backend_ram.c: a bounds check and a memcpy) and read over SWD,
+# so the DMA constraint above does not apply. This takes the buffer out of
+# SRAM, which runs near capacity, and lets it grow into DTCM's idle half:
+# the board conf sizes it (CONFIG_RAM_TRACING_BUFFER_SIZE, docs/tracing.md
+# section 8). A Zephyr-tree source matches without the patch above; verify by
+# the DTCM line of the region report and `ram_tracing`'s address (0x2000xxxx).
+if(CONFIG_CODE_DATA_RELOCATION AND CONFIG_TRACING_BACKEND_RAM)
+    zephyr_code_relocate(FILES ${ZEPHYR_BASE}/subsys/tracing/tracing_backend_ram.c LOCATION DTCM_BSS)
+endif()
+
 # ---------------------------------------------------------------------------
 # ITCM: the safety application's own code.
 #

@@ -9,7 +9,9 @@ application markers and thread switches are kept. The marker ids are
 generated from the island contract. A heartbeat carries a sequence counter,
 and a provenance record at boot names the marker table and the knob values.
 On the native_sim demo every reachable marker fires and the sequence is
-contiguous. The board image links, with 7,776 B of RAM left.
+contiguous. The board image links, with 7,776 B of RAM left. (phase9-C2:
+the board's buffer is now 52 KiB in DTCM, not SRAM; section 8, "The buffer
+in DTCM".)
 
 ## 1. Design and why
 
@@ -199,7 +201,9 @@ and not call sites in the island: the executor emits them, and the sink in
 The takes (nano-ros phase-474 I3) are forwarded only for the inputs in
 `markers.json` `nros.take_inputs`: 0 `/mrm_handler/kinematic_state`, 1
 `/mrm_handler/operation_mode_state`, 2
-`/mrm_emergency_stop_operator/control_cmd` (one in three). The sink learns
+`/mrm_emergency_stop_operator/control_cmd`, thinned to one in four and one
+in twelve (2.5 Hz each; phase9-C2, section 8; the provenance's `take_keep`
+lists the keeps in index order). The sink learns
 each input's slot from the take it saw just before the input's callback
 (`ISLAND_TRACE_TAKE_BIND`, `include/island_trace.h`; a C/C++ subscription
 registers as `sub#N`), turns on the stamp at offset 4
@@ -672,6 +676,84 @@ component, which includes `<zephyr/kernel.h>` once tracing is on, before
 signals the island that writes this run's trace instead of the first
 `build-zephyr/zephyr/zephyr.exe` on the host (run w17-nb3 signalled another
 process and lost its dump).
+
+### The buffer in DTCM, 52 KiB (phase9-C2)
+
+The 40,960 B SRAM buffer filled before the readout on 7 of the 9 passing
+board runs of the I14 round (docs/roadmap/phase-9-rtss-demo-open-items.md
+section 7): `check` failed `complete` only, every table edge was inside the
+window. The cause is the window, not the act. A stored violation opens it
+(section 9), and on this image the arming-time `silence-runtime` verdict
+(W3) does so 7-22 s after boot, about 30 s before the act; the readout
+comes after the act's observe tail. So the buffer holds the idle wait, the
+act and the tail, 37-69 s in that round, and up to 130 s in `d12-e2`.
+
+Measured over the round's traces (`d12-*`, `u1-e1`, `u1-e2`; bytes in the
+board's format, by record):
+
+| phase | rate | bytes |
+| --- | ---: | ---: |
+| trigger -> the act's first `call_mrm` (29-35 s) | 579-633 B/s | 16.9-20.5 KB |
+| the act (4-16 s) | 1,140-1,318 B/s | 5.5-18.3 KB |
+| after the act, to the readout | 916-1,312 B/s | |
+| fixed: provenance, history, trigger | | 2.05-2.08 KB |
+
+By record over a whole window (`d12-e1`, `-a1`, `-b1`, mean): the forwarded
+takes 328 B/s (`NROS_TAKE` and its stamp, 40-46 % of the bytes; 534 B/s
+during an act), the heartbeat 145, the guarded take 117, the emergency
+operator's tick 76, `call_mrm` 65 (220 in an MRM), the rest under 30.
+Extrapolated to each run's readout (the last 10 s's rate times the time the
+buffer was already full), the window needed: encore 28.0-28.9 KB, a
+41.6-60.3 KB, b 44.3-64.4 KB, and `d12-e2` 112.9 KB (its readout came
+92 s after the act).
+
+Three changes were weighed. DTCM alone: on the I14 image it had 55,672 B
+free (75,400 of 131,072 used), short of 64 KB. Opening the window at the
+act instead of at a violation: about 44.7 KB for the worst b, but it gives
+up the violation trigger (section 9) and the idle ticks the budgets are
+derived from. Thinning the takes, which no table row reads (they feed
+F4's hop estimate, `merge.py` `take` events and `render.py`'s tick row),
+from one in 1 / 1 / 3 to one in 4 / 1 / 12: the worst b then needs
+45.4 KB. Taken: DTCM plus the thinning. The window, the trigger, the
+record policy and `check` are unchanged; `complete` still fails if the
+last heartbeat the image emitted is not in the buffer.
+
+- `src/zephyr_entry/CMakeLists.txt` relocates `tracing_backend_ram.c`'s
+  .bss (`ram_tracing`, `pos`, `buffer_full`) to `DTCM_BSS`
+  (`zephyr_code_relocate(FILES ...)`). CPU-only memory, read over SWD like
+  `_z_zephyr_serial_stats`, which is in DTCM already. `ram_tracing` links
+  at 0x20003250.
+- The board conf sets `CONFIG_RAM_TRACING_BUFFER_SIZE=53248`.
+- `gen_markers.py` `NROS_TAKE_INPUTS`: keeps 4, 1, 12; the provenance
+  carries them as `take_keep=4,1,12` (the table digest does not cover the
+  keeps).
+
+| region | I14 image (`board-u1.log`) | C2 image | delta |
+| --- | ---: | ---: | ---: |
+| FLASH | 572,496 B | 572,544 B | +48 |
+| RAM | 300,624 B (91.74 %) | 259,656 B (79.24 %) | -40,968 |
+| DTCM | 75,400 B (57.53 %) | 128,656 B (98.16 %) | +53,256 |
+| ITCM | 14,548 B | 14,548 B | 0 |
+
+DTCM has 2,416 B left; SRAM has 68,024 B. The next DTCM growth (the app
+library's .bss) has to come out of the buffer or move it back.
+
+The board round on this image (`build/timeline/c2-*`, ELF sha256
+`8d6b39a65ec1a90b...`, `L3_IMAGE=sai-l3-autoware:1.5.0-w24`):
+
+| run | act | buffer used | window after the trigger | trace-check | table |
+| --- | --- | ---: | --- | --- | --- |
+| `c2-encore1` | encore | 20,782 of 53,248 B | 38.00 s, 495 B/s | PASS | 8/8 PASS |
+| `c2-a1` | a | 30,439 | 51.18 s, 556 B/s | PASS | 6/6 PASS |
+| `c2-b1` | b | 32,146 | 53.03 s, 569 B/s | PASS | 14/15, see below |
+| `c2-b2` | b | 32,907 | 53.97 s, 573 B/s | PASS | 15/15 PASS |
+
+`c2-b1`'s one FAIL is the host-clock dwell row, 9,996.56 ms against
+[10,000, 10,149]: the request-on arrived 18.4 ms after its publish and the
+request-off 14.1 ms after, so the host saw a dwell 3.44 ms short of the
+island's 10,000.91 (PASS on the island clock). Not the trace; `c2-b2` passes
+every row. The largest act used 61.8 % of the buffer: 20,341 B spare, about
+35 s more at the b window's mean rate or 18 s at the act's.
 
 ## 9. Contract violations in the trace (phase9-W4)
 

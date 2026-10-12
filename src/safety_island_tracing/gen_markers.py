@@ -137,12 +137,14 @@ NROS_TIMER_MARKERS = {
     "END": ("NROS_TIMER_END", "timer slot (the bound timer only)"),
 }
 # (subscriber endpoint ref, forward one take in N): the three inputs whose link
-# hop F4 measures. control_cmd arrives at 30 Hz and is thinned to 10 Hz to fit
-# the RAM trace window (docs/tracing.md section 9).
+# hop F4 measures. kinematic_state arrives at 10 Hz and control_cmd at 30 Hz;
+# both are thinned to 2.5 Hz to fit the RAM trace window (phase9-C2: at 1 and
+# 3 the takes were 40-46 % of the board trace's bytes; docs/tracing.md
+# sections 8 and 9). operation_mode_state changes rarely and is kept whole.
 NROS_TAKE_INPUTS = [
-    ("/mrm_handler/kinematic_state", 1),
+    ("/mrm_handler/kinematic_state", 4),
     ("/mrm_handler/operation_mode_state", 1),
-    ("/mrm_emergency_stop_operator/control_cmd", 3),
+    ("/mrm_emergency_stop_operator/control_cmd", 12),
 ]
 NROS_TAKE_STAMP_OFFSET = 4
 # Stand-in endpoint refs the runtime uses for rules with no endpoint
@@ -439,6 +441,9 @@ def render(model, markers):
     for t in takes:
         w(f"#define {('ISLAND_TRACE_TAKE_' + c_ident(t['endpoint'])).ljust(tw)} {t['index']} /* {t['endpoint']} */")
         w(f"#define {('ISLAND_TRACE_TAKE_KEEP_' + c_ident(t['endpoint'])).ljust(tw)} {t['keep']}")
+    # phase9-C2: the keeps in index order, for the provenance (a trace says how
+    # its takes were thinned; the table digest does not cover the keeps)
+    w(f'#define ISLAND_TRACE_TAKE_KEEPS "{",".join(str(t["keep"]) for t in takes)}"')
     w("")
     w("/* Knobs that size the image, as the build delivered them (autoconf.h). */")
     for k in knobs:

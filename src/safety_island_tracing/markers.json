@@ -1,6 +1,6 @@
 {
  "generator": "src/safety_island_tracing/gen_markers.py",
- "contract_sha256": "ab5beb68e9d07ce0d0ad5377b7372f2bccc0d59f30d4b7c9ad9ce77dcc1aa6d4",
+ "contract_sha256": "c11510013d602a539a73e3678ecb74c17f63bebe5c8da60079b7bee92e5e8240",
  "table_sha256": "6025ced37ad77b75a27584928b1918b6d1982d49b3bf090f5f02a683ac106665",
  "entities": {
   "pub": 8,
@@ -34,6 +34,7 @@
   "CONFIG_NROS_SNTP_TIMEOUT_MS",
   "CONFIG_NROS_TRACE_TIMER_EVERY",
   "CONFIG_NROS_ZENOH_SERIAL_RX_RING_BYTES",
+  "CONFIG_NROS_ZENOH_SERIAL_TX_RING_BYTES",
   "CONFIG_NROS_ZEPHYR_HEAP_SIZE",
   "CONFIG_NROS_ZEPHYR_TASK_SLOTS",
   "CONFIG_NROS_ZEPHYR_TASK_STACK_SIZE",
@@ -116,7 +117,7 @@
    "element": "/mrm_handler/call_mrm",
    "node": "mrm_handler",
    "trigger": "input",
-   "max_latency_ms": 206.0,
+   "max_latency_ms": 149.0,
    "record": "every"
   },
   {
@@ -126,7 +127,7 @@
    "element": "/mrm_handler/call_mrm",
    "node": "mrm_handler",
    "trigger": "input",
-   "max_latency_ms": 206.0,
+   "max_latency_ms": 149.0,
    "record": "every"
   },
   {
@@ -442,7 +443,7 @@
    {
     "index": 0,
     "endpoint": "/mrm_handler/kinematic_state",
-    "keep": 1,
+    "keep": 4,
     "stamp_offset": 4
    },
    {
@@ -454,7 +455,7 @@
    {
     "index": 2,
     "endpoint": "/mrm_emergency_stop_operator/control_cmd",
-    "keep": 3,
+    "keep": 12,
     "stamp_offset": 4
    }
   ]
