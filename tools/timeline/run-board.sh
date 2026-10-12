@@ -248,6 +248,12 @@ bg "$dir/probe.stdout" l3 "exec $RB_PROBE"
 
 step "7. the act ($act), after ${settle} s"
 [ "$dry" = 1 ] || sleep "$settle"
+# phase9-U1: the serial counters at the act's start (attach, no halt), so the
+# readout can say which overruns and bad frames fell inside the act
+if [ "$target" = board ] && [ "$dry" != 1 ]; then
+    python3 tools/timeline/readout.py --target board --elf "$elf" --out "$dir/serial-pre" --serial-only \
+        2>&1 | sed 's/^/   /'
+fi
 if [ "$dry" = 1 ]; then echo "   [dry-run] $RB_ACT"; rc=0; else
     l3 "$RB_ACT" 2>&1 | tee "$dir/act.log"; rc=${PIPESTATUS[0]}; fi
 
@@ -258,7 +264,7 @@ if [ "$dry" = 1 ] && [ -f "$elf" ]; then
 fi
 if [ "$target" = board ]; then
     # pyocd over SWD, attach mode, the core halted for the read (about 0.2 s)
-    run python3 tools/timeline/readout.py --target board --elf "$elf" --out "$out"
+    run python3 tools/timeline/readout.py --target board --elf "$elf" --out "$out" --serial-pre "$dir/serial-pre.json"
 else
     run python3 tools/timeline/readout.py --target qemu --elf "$elf" --out "$out" --monitor "$mon"
 fi
@@ -285,4 +291,6 @@ for l in open(sys.argv[1]):
     if e["kind"] == "verdict":
         v = e["value"]
         print("VERDICT: %s %s: v at the fault %.2f m/s; %s" % ("PASS" if v["ok"] else "FAIL", e["marker"], v["v0"], v["why"]))' "$dir/scenario.jsonl"
+# phase9-U1: one line per run, from the files this run wrote
+python3 tools/timeline/run_summary.py "$dir" | tee "$dir/summary.txt"
 exit $rc

@@ -33,12 +33,23 @@ phase9-W4: in the same halt, the nano-ros violation record
 them; decoded by tools/timeline/violations.py into violations.txt (and the
 raw record violations.bin) in the output's directory, so every act's run
 directory carries the board's own violation readout beside its trace.
+
+phase9-U1: in the same halt, zenoh-pico's serial counters
+(`_z_zephyr_serial_stats`) into serial.txt and the nano-ros boot record
+(`NROS_BOOT_REPORT`: heap and arena, at FirstSpin and running) into
+bootrec.txt, decoded by the pinned nano-ros scripts/read-boot-report.py.
+`--serial-only` reads the serial counters alone, attach, no halt, into
+<out>.json: run-board.sh takes one just before the act, so serial.txt
+can say which overruns and bad frames fell inside the act (end read minus
+act-start snapshot) and which came before it.
 """
 import argparse
 import json
 import os
 import re
 import socket
+import struct
+import subprocess
 import sys
 import time
 
@@ -55,6 +66,51 @@ WORDS = [
     "island_trace_filtered", "island_trace_pre_n", "island_trace_pre_lost",
     "island_trace_cost_n", "island_trace_cost_min", "island_trace_cost_max", "island_trace_cost_empty",
 ]
+
+# zenoh-pico src/system/zephyr/network.c, `_z_zephyr_serial_stats_t`, all u32
+SERIAL = "_z_zephyr_serial_stats"
+SERIAL_FIELDS = ["rx_bytes", "rx_frames", "rx_bad_frames", "rx_partial", "overruns", "ring_overflows",
+                 "ring_high_water", "tx_bytes", "tx_frames", "tx_busy_cycles", "framing_errors",
+                 "noise_errors", "parity_errors", "rx_wakes"]
+# the counters that mean a lost or damaged frame (ring_high_water is a level, the rest are volume)
+SERIAL_ERRORS = ["rx_bad_frames", "overruns", "ring_overflows", "framing_errors", "noise_errors",
+                 "parity_errors"]
+BOOTREC = "NROS_BOOT_REPORT"
+BOOTREC_TOOL = os.path.join(ROOT, "third-party/nano-ros/scripts/read-boot-report.py")
+
+
+def serial_decode(blob):
+    n = min(len(blob) // 4, len(SERIAL_FIELDS))
+    return dict(zip(SERIAL_FIELDS, struct.unpack_from(f"<{n}I", blob)))
+
+
+def serial_text(end, pre=None):
+    """serial.txt: the counters at the readout and, with the act-start
+    snapshot, how many of the error counters moved during the act."""
+    lines = [f"serial counters ({SERIAL}) at the readout, after the act:",
+             "  " + " ".join(f"{k}={v}" for k, v in end.items())]
+    errs = {k: end[k] for k in SERIAL_ERRORS if k in end}
+    if pre is None:
+        lines.append("  no act-start snapshot: errors since boot " +
+                     " ".join(f"{k}={v}" for k, v in errs.items()))
+        lines.append(f"  in the act: unknown; since boot: overruns={errs.get('overruns', 0)} "
+                     f"bad_frames={errs.get('rx_bad_frames', 0)}")
+    else:
+        d = {k: end[k] - pre.get(k, 0) for k in errs}
+        lines.append("  at the act's start: " + " ".join(f"{k}={pre.get(k, 0)}" for k in errs))
+        lines.append("  during the act:     " + " ".join(f"{k}={v}" for k, v in d.items()))
+        lines.append(f"  in the act: overruns={d.get('overruns', 0)} bad_frames={d.get('rx_bad_frames', 0)}"
+                     f"; before it: overruns={pre.get('overruns', 0)} bad_frames={pre.get('rx_bad_frames', 0)}"
+                     f"; ring high water {end.get('ring_high_water', 0)} B")
+    return "\n".join(lines) + "\n"
+
+
+def bootrec_text(elf, dump):
+    """bootrec.txt: the pinned decoder's report of the dump (it prints the
+    heap at FirstSpin and the running peak, and the arena use)."""
+    r = subprocess.run([sys.executable, BOOTREC_TOOL, elf, dump], capture_output=True, text=True)
+    out = r.stdout + "".join(l + "\n" for l in r.stderr.splitlines() if "self-test" not in l)
+    return out if out.strip() else f"read-boot-report.py exit {r.returncode}, no output\n"
 
 
 def symbols(elf, names):
@@ -156,8 +212,26 @@ def main():
     ap.add_argument("--zephyr", default="4.4")
     ap.add_argument("--no-resume", action="store_true", help="leave the core halted after the read")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--serial-only", action="store_true",
+                    help="board: read the serial counters alone (attach, no halt) into <out>.json")
+    ap.add_argument("--serial-pre", help="the act-start snapshot (<out>.json of a --serial-only read)")
     a = ap.parse_args()
-    syms = symbols(a.elf, set(WORDS) | {BUFFER, violations.RECORD} | set(violations.ARM_WORDS))
+    syms = symbols(a.elf, set(WORDS) | {BUFFER, violations.RECORD, SERIAL, BOOTREC} | set(violations.ARM_WORDS))
+    if a.serial_only:
+        if SERIAL not in syms:
+            print(f"readout: {a.elf} has no {SERIAL}: no serial snapshot")
+            return 0
+        if a.dry_run:
+            print(f"readout: read {SERIAL} @ {syms[SERIAL][0]:#010x}, {syms[SERIAL][1]} B (no halt)")
+            return 0
+        dev = Board()
+        try:
+            snap = serial_decode(dev.read_block(syms[SERIAL][0], syms[SERIAL][1], a.out + ".bin"))
+        finally:
+            dev.close()
+        json.dump(snap, open(a.out + ".json", "w"), indent=1)
+        print("readout: serial at the act's start: " + " ".join(f"{k}={snap[k]}" for k in SERIAL_ERRORS if k in snap))
+        return 0
     if BUFFER not in syms:
         sys.exit(f"readout: {a.elf} has no {BUFFER} (tracing is not in this image)")
     addr, size = syms[BUFFER]
@@ -166,6 +240,9 @@ def main():
     if violations.RECORD in syms:
         plan += [f"read {violations.RECORD} @ {syms[violations.RECORD][0]:#010x}, {syms[violations.RECORD][1]} B"] + \
             [f"read32 {n} @ {syms[n][0]:#010x}" for n in violations.ARM_WORDS if n in syms and n not in WORDS]
+    for n in (SERIAL, BOOTREC):
+        if n in syms:
+            plan.append(f"read {n} @ {syms[n][0]:#010x}, {syms[n][1]} B")
     print(f"readout: {a.target}, {a.elf}")
     for p in plan:
         print(f"readout:   {p}")
@@ -184,6 +261,7 @@ def main():
     dev.halt()
     vdir = os.path.dirname(os.path.abspath(a.out))
     vrec = None
+    extra = {}
     try:
         vals = {n: dev.read32(syms[n][0]) for n in WORDS if n in syms}
         data = dev.read_block(addr, size, raw)
@@ -193,6 +271,9 @@ def main():
             for n in violations.ARM_WORDS:
                 if n in syms and n not in vals:
                     vals[n] = dev.read32(syms[n][0])
+        for n, fname in ((SERIAL, "serial.bin"), (BOOTREC, "bootrec.bin")):
+            if n in syms:
+                extra[n] = dev.read_block(syms[n][0], syms[n][1], os.path.join(vdir, fname))
     finally:
         if not a.no_resume:
             dev.resume()
@@ -216,6 +297,19 @@ def main():
             text = f"violation record unreadable: {e!r} (raw bytes in violations.bin)\n"
         open(vtxt, "w").write(text)
         print("readout: " + text.rstrip().replace("\n", "\nreadout: "))
+    if SERIAL in extra:
+        pre = None
+        if a.serial_pre and os.path.exists(a.serial_pre):
+            pre = json.load(open(a.serial_pre))
+        stext = serial_text(serial_decode(extra[SERIAL]), pre)
+        open(os.path.join(vdir, "serial.txt"), "w").write(stext)
+        print("readout: " + stext.rstrip().replace("\n", "\nreadout: "))
+    if BOOTREC in extra:
+        btext = bootrec_text(a.elf, os.path.join(vdir, "bootrec.bin"))
+        open(os.path.join(vdir, "bootrec.txt"), "w").write(btext)
+        for line in btext.splitlines():
+            if "HEAP HEADROOM" in line or "PEAK" in line or "arena used" in line:
+                print("readout: " + line.strip())
     island_trace.wrap(raw, a.out, a.zephyr, vals.get("island_trace_hb_seq", 0),
                       vals.get("island_trace_hb_last_uptime_ms", 0))
     if "island_trace_triggered" in vals and not vals["island_trace_triggered"]:
