@@ -220,10 +220,10 @@ void island_trace_marker_windowed(uint16_t marker, uint32_t arg);
  * timer's, on the spin thread, and the sink below remembers the last slot of
  * each. ISLAND_TRACE_TAKE_BIND(input), called first thing in an input's
  * callback, binds that slot to the input (an index of markers.json
- * `nros.take_inputs`), turns on its stamp (nros_trace_set_take(slot, true, 4))
+ * `nros.take_inputs`), turns on its stamp (rclc_trace_set_take(slot, true, 4))
  * and from then on the sink forwards its takes at 281-283.
  * ISLAND_TRACE_TIMER_BIND(every), in a timer's callback, sets that timer's
- * sampling (nros_trace_set_timer_every(slot, every)). Each binds once; after
+ * sampling (rclc_trace_set_timer_every(slot, every)). Each binds once; after
  * that the call is one compare. */
 #if defined(CONFIG_NROS_TRACE_CALLBACKS)
 #ifdef __cplusplus
@@ -314,9 +314,9 @@ static struct k_timer island_trace_hb_timer;
 #ifdef __cplusplus
 extern "C" {
 #endif
-void nros_set_trace_sink(void (*sink)(uint32_t, uint32_t));
-void nros_trace_set_take(uint8_t handle, bool on, int32_t stamp_offset);
-void nros_trace_set_timer_every(uint8_t handle, uint16_t every);
+void rclc_set_trace_sink(void (*sink)(uint32_t, uint32_t));
+void rclc_trace_set_take(uint8_t handle, bool on, int32_t stamp_offset);
+void rclc_trace_set_timer_every(uint8_t handle, uint16_t every);
 
 /* phase9-W4 rerun: the take forwarding (see ISLAND_TRACE_TAKE_BIND above).
  * Readable by name over SWD: island_trace_take_slot[i] is input i's slot + 1
@@ -409,7 +409,7 @@ void island_trace_take_bind(uint8_t input, uint8_t keep)
 	island_trace_take_keep[input] = keep ? keep : 1u;
 	island_trace_take_n[input] = (uint8_t)(island_trace_take_keep[input] - 1u); /* the next one */
 	island_trace_take_sec[input] = 0xFFFFFFFFu;
-	nros_trace_set_take(island_trace_last_take, true, ISLAND_TRACE_TAKE_STAMP_OFFSET);
+	rclc_trace_set_take(island_trace_last_take, true, ISLAND_TRACE_TAKE_STAMP_OFFSET);
 	island_trace_take_slot[input] = (uint8_t)(island_trace_last_take + 1u);
 }
 
@@ -418,7 +418,7 @@ void island_trace_timer_bind(uint16_t every)
 	if (island_trace_timer_slot != 0u || island_trace_last_start == 0xFFu) {
 		return;
 	}
-	nros_trace_set_timer_every(island_trace_last_start, every);
+	rclc_trace_set_timer_every(island_trace_last_start, every);
 	island_trace_timer_slot = (uint8_t)(island_trace_last_start + 1u);
 }
 #endif
@@ -724,7 +724,7 @@ static int island_trace_start(void)
 	}
 #endif
 #if defined(CONFIG_NROS_TRACE_CALLBACKS)
-	nros_set_trace_sink(island_trace_nros_sink);
+	rclc_set_trace_sink(island_trace_nros_sink);
 #endif
 	k_timer_init(&island_trace_hb_timer, island_trace_heartbeat, NULL);
 	k_timer_start(&island_trace_hb_timer, K_MSEC(ISLAND_TRACE_HEARTBEAT_MS),

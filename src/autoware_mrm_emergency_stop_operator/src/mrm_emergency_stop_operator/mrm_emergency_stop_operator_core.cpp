@@ -36,7 +36,7 @@ double max_d(double a, double b) { return a > b ? a : b; }
 // Durations (now_sec) stay on the monotonic clock either way.
 builtin_interfaces::msg::Time now_stamp()
 {
-  const int64_t wall = ::rclcpp::Clock(NROS_CLOCK_SYSTEM_TIME).now().nanoseconds();
+  const int64_t wall = ::rclcpp::Clock(RCL_SYSTEM_TIME).now().nanoseconds();
   const uint64_t ns = wall > 0 ? static_cast<uint64_t>(wall) : nros_cpp_time_ns();
   builtin_interfaces::msg::Time t;
   t.sec = static_cast<int32_t>(ns / 1000000000ull);

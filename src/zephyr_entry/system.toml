@@ -35,3 +35,7 @@ board = "zephyr"
 # image id gives the same answer; naming it keeps src/native_sim_entry from
 # ever being a candidate for this block.
 entry = "zephyr_entry"
+# nano-ros knobs (RFC-0103 D2a, phase-484 W5b): these three were Kconfig lines
+# in boards/mr_canhubk3_s32k344.conf, which states why each has its value; the
+# pin of 2026-10-13 refuses them there. The values are unchanged.
+env = { NROS_ZEPHYR_HEAP_SIZE = "106496", NROS_ZENOH_GRAPH_CACHE_SIZE = "4096", NROS_EXECUTOR_MAX_VIOLATIONS = "8" }

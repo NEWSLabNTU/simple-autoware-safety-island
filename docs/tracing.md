@@ -207,13 +207,13 @@ lists the keeps in index order). The sink learns
 each input's slot from the take it saw just before the input's callback
 (`ISLAND_TRACE_TAKE_BIND`, `include/island_trace.h`; a C/C++ subscription
 registers as `sub#N`), turns on the stamp at offset 4
-(`nros_trace_set_take`), and puts the input's index where nano-ros had the
+(`rclc_trace_set_take`), and puts the input's index where nano-ros had the
 slot. `island_trace.py takes` lists them; `merge.py` writes `take` events.
 
 The dispatch events 18/19 (callback start, end) are dropped for every slot
 but one: the timer bound by `ISLAND_TRACE_TIMER_BIND` (the emergency
 operator's 30 Hz timer, sampled every tick by
-`nros_trace_set_timer_every(slot, 1)`) is forwarded at 274/275, so the trace
+`rclc_trace_set_timer_every(slot, 1)`) is forwarded at 274/275, so the trace
 holds that timer's tick-to-tick spacing, with
 `CONFIG_ISLAND_TRACE_TIMER_TICKS=y` (off in the board and QEMU confs) (phase9-W4 rerun: the 29773/30000
 mHz rate readout on its two topics). `island_trace.py ticks` prints the
@@ -791,7 +791,7 @@ nano-ros's executor judges the contract's runtime rules (rate, age,
 silence, latency, timer overrun, release jitter) every spin, and from
 phase-474 I1 (pin `5b3ac4567`, PR #1729) it emits every STORED violation, at
 detection, as four trace events through the callback trace sink
-(`nros_set_trace_sink`, `CONFIG_NROS_TRACE_CALLBACKS`):
+(`rclc_set_trace_sink`, `CONFIG_NROS_TRACE_CALLBACKS`):
 
 | nano-ros id | arg |
 | ---: | --- |
