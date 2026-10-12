@@ -50,7 +50,12 @@ _island_zephyr_env() {
 
     # Which index entry: the one whose version the Zephyr tree asks for.
     read -r tool sdk_ver < <("$here/zephyr-sdk-tool.sh" "$root" "$ws") || true
-    [ -n "${tool:-}" ] || return 1
+    if [ -z "${tool:-}" ]; then
+        # zephyr-sdk-tool.sh says why on stderr when it knows; this line is for
+        # when it does not (it once died silently on an EPIPE, phase9-U2).
+        echo "board-env: no Zephyr SDK entry resolved for $ws (scripts/zephyr-sdk-tool.sh)" >&2
+        return 1
+    fi
     if ! prefix="$("$nros" sdk-path "$tool" --require --index "$index" 2>/dev/null)"; then
         echo "board-env: Zephyr SDK $sdk_ver ($tool) is not in the store" >&2
         echo "board-env:   provision it: just board-setup / just zephyr-setup" >&2

@@ -42,6 +42,14 @@ bootrec.txt, decoded by the pinned nano-ros scripts/read-boot-report.py.
 <out>.json: run-board.sh takes one just before the act, so serial.txt
 can say which overruns and bad frames fell inside the act (end read minus
 act-start snapshot) and which came before it.
+
+phase9-C4: in the same halt, the island's assert record
+(`island_assert_record`, src/zephyr_entry/src/assert_record.c). When an
+assert has failed, assert.txt in the output's directory names its file and
+line (the file string resolved from the ELF), its uptime and context, and
+any nested assert that fired while it was being handled. `--assert-only`
+reads the record alone (attach, halted for the read) and prints it, for a
+board that stopped outside an act.
 """
 import argparse
 import json
@@ -77,6 +85,10 @@ SERIAL_ERRORS = ["rx_bad_frames", "overruns", "ring_overflows", "framing_errors"
                  "parity_errors"]
 BOOTREC = "NROS_BOOT_REPORT"
 BOOTREC_TOOL = os.path.join(ROOT, "third-party/nano-ros/scripts/read-boot-report.py")
+# src/zephyr_entry/src/assert_record.c, `struct island_assert_record`, all 32-bit
+ASSERT = "island_assert_record"
+ASSERT_FIELDS = ["magic", "count", "file", "line", "uptime_ms", "in_isr", "nested_file", "nested_line"]
+ASSERT_MAGIC = 0x54525341
 
 
 def serial_decode(blob):
@@ -111,6 +123,35 @@ def bootrec_text(elf, dump):
     r = subprocess.run([sys.executable, BOOTREC_TOOL, elf, dump], capture_output=True, text=True)
     out = r.stdout + "".join(l + "\n" for l in r.stderr.splitlines() if "self-test" not in l)
     return out if out.strip() else f"read-boot-report.py exit {r.returncode}, no output\n"
+
+
+def elf_string(elf, addr, limit=256):
+    """The NUL-terminated string at a target address, read from the ELF's
+    loadable sections (__FILE__ strings live in flash)."""
+    from elftools.elf.elffile import ELFFile
+    if not addr:
+        return None
+    with open(elf, "rb") as f:
+        for sec in ELFFile(f).iter_sections():
+            a, n = sec["sh_addr"], sec["sh_size"]
+            if sec["sh_type"] == "SHT_PROGBITS" and a <= addr < a + n and sec["sh_flags"] & 2:
+                data = sec.data()[addr - a:addr - a + limit]
+                return data.split(b"\0", 1)[0].decode("ascii", "replace")
+    return f"<{addr:#010x}: not in the ELF>"
+
+
+def assert_text(elf, blob):
+    """assert.txt, or None when no assert has failed (magic unset)."""
+    n = min(len(blob) // 4, len(ASSERT_FIELDS))
+    r = dict(zip(ASSERT_FIELDS, struct.unpack_from(f"<{n}I", blob)))
+    if r.get("magic") != ASSERT_MAGIC:
+        return None
+    lines = [f"ASSERT {elf_string(elf, r['file'])}:{r['line']} at uptime {r['uptime_ms']} ms"
+             f" ({'ISR/exception' if r['in_isr'] else 'thread'} context); failing asserts seen: {r['count']}"]
+    if r.get("nested_file"):
+        lines.append(f"  nested: {elf_string(elf, r['nested_file'])}:{r['nested_line']} fired while the first was"
+                     f" handled; the record halted the core there")
+    return "\n".join(lines) + "\n"
 
 
 def symbols(elf, names):
@@ -215,8 +256,35 @@ def main():
     ap.add_argument("--serial-only", action="store_true",
                     help="board: read the serial counters alone (attach, no halt) into <out>.json")
     ap.add_argument("--serial-pre", help="the act-start snapshot (<out>.json of a --serial-only read)")
+    ap.add_argument("--assert-only", action="store_true",
+                    help="board: read the assert record alone (halted for the read) and print it; "
+                         "assert.txt beside --out when set")
     a = ap.parse_args()
-    syms = symbols(a.elf, set(WORDS) | {BUFFER, violations.RECORD, SERIAL, BOOTREC} | set(violations.ARM_WORDS))
+    syms = symbols(a.elf, set(WORDS) | {BUFFER, violations.RECORD, SERIAL, BOOTREC, ASSERT} |
+                   set(violations.ARM_WORDS))
+    if a.assert_only:
+        if ASSERT not in syms:
+            print(f"readout: {a.elf} has no {ASSERT} (CONFIG_ISLAND_ASSERT_RECORD is off)")
+            return 0
+        if a.dry_run:
+            print(f"readout: read {ASSERT} @ {syms[ASSERT][0]:#010x}, {syms[ASSERT][1]} B")
+            return 0
+        os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
+        dev = Board()
+        try:
+            dev.halt()
+            blob = dev.read_block(syms[ASSERT][0], syms[ASSERT][1], a.out + ".assert.bin")
+        finally:
+            if not a.no_resume:
+                dev.resume()
+            dev.close()
+        text = assert_text(a.elf, blob)
+        if text is None:
+            print("readout: no failing assert recorded")
+            return 0
+        open(os.path.join(os.path.dirname(os.path.abspath(a.out)), "assert.txt"), "w").write(text)
+        print("readout: " + text.rstrip().replace("\n", "\nreadout: "))
+        return 0
     if a.serial_only:
         if SERIAL not in syms:
             print(f"readout: {a.elf} has no {SERIAL}: no serial snapshot")
@@ -240,7 +308,7 @@ def main():
     if violations.RECORD in syms:
         plan += [f"read {violations.RECORD} @ {syms[violations.RECORD][0]:#010x}, {syms[violations.RECORD][1]} B"] + \
             [f"read32 {n} @ {syms[n][0]:#010x}" for n in violations.ARM_WORDS if n in syms and n not in WORDS]
-    for n in (SERIAL, BOOTREC):
+    for n in (SERIAL, BOOTREC, ASSERT):
         if n in syms:
             plan.append(f"read {n} @ {syms[n][0]:#010x}, {syms[n][1]} B")
     print(f"readout: {a.target}, {a.elf}")
@@ -271,7 +339,7 @@ def main():
             for n in violations.ARM_WORDS:
                 if n in syms and n not in vals:
                     vals[n] = dev.read32(syms[n][0])
-        for n, fname in ((SERIAL, "serial.bin"), (BOOTREC, "bootrec.bin")):
+        for n, fname in ((SERIAL, "serial.bin"), (BOOTREC, "bootrec.bin"), (ASSERT, "assert.bin")):
             if n in syms:
                 extra[n] = dev.read_block(syms[n][0], syms[n][1], os.path.join(vdir, fname))
     finally:
@@ -310,6 +378,11 @@ def main():
         for line in btext.splitlines():
             if "HEAP HEADROOM" in line or "PEAK" in line or "arena used" in line:
                 print("readout: " + line.strip())
+    if ASSERT in extra:
+        atext = assert_text(a.elf, extra[ASSERT])
+        if atext is not None:
+            open(os.path.join(vdir, "assert.txt"), "w").write(atext)
+            print("readout: " + atext.rstrip().replace("\n", "\nreadout: "))
     island_trace.wrap(raw, a.out, a.zephyr, vals.get("island_trace_hb_seq", 0),
                       vals.get("island_trace_hb_last_uptime_ms", 0))
     if "island_trace_triggered" in vals and not vals["island_trace_triggered"]:

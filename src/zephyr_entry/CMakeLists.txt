@@ -227,6 +227,11 @@ nano_ros_add_executable(zephyr_entry
     TYPED
     DEPLOY  zephyr)
 
+# phase9-C4: a failing assert's file and line, for the SWD readout.
+if(CONFIG_ISLAND_ASSERT_RECORD)
+    target_sources(app PRIVATE src/assert_record.c)
+endif()
+
 # phase9 spin latency: the executor runs above the transport once registration
 # is done (src/spin_priority.c).
 if(CONFIG_ISLAND_SPIN_RAISE)

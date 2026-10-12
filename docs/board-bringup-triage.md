@@ -290,7 +290,8 @@ Built in deliberately. Use them before guessing.
 | `CONFIG_THREAD_ANALYZER` | `kernel thread stacks` | **actual stack high-water per thread** — settles every stack question in §2 with a number |
 | `CONFIG_INIT_STACKS` | (enables the above) | stacks are pattern-filled so usage is measurable |
 | `CONFIG_NET_SHELL` | `net iface`, `net conn`, `net stats` | PHY link, addresses, connection count vs `NET_MAX_CONN` |
-| `CONFIG_LOG_MODE_IMMEDIATE` | — | logs are not buffered; the last line before a fault is real |
+| `CONFIG_LOG_MODE_DEFERRED` | - | logs are buffered and printed by the log thread; a fault's `LOG_PANIC()` flushes them, so the last line before a fault is still real. Not IMMEDIATE: an assert under `irq_lock` recursed through the shell's lock into a usage fault (phase9-C4) |
+| `CONFIG_ISLAND_ASSERT_RECORD` | `readout.py --assert-only` over SWD | the first failing assert's file and line, uptime and context (`assert.txt`); the console is not wired |
 | `CONFIG_ASSERT_VERBOSE` | — | assertion messages carry file and line |
 | `CONFIG_THREAD_NAME` | — | thread names in analyzer and fault output |
 

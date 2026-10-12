@@ -11,7 +11,8 @@ run-board.sh prints it last and keeps it as <run dir>/summary.txt:
 
 Each field reads one file and says "-" when the file is not there (a QEMU
 run has no serial.txt, an older run no bootrec.txt), so a missing input
-never reads as a clean one.
+never reads as a clean one. A run whose readout found a failing assert
+(assert.txt, phase9-C4) ends the line with `; ASSERT <file>:<line>`.
 """
 import json
 import os
@@ -86,6 +87,13 @@ def heap(d):
     return f"heap peak {m.group(1)} of {m.group(2)} B" if m else "heap -"
 
 
+def asserted(d):
+    """phase9-C4: only when readout.py found a failing assert (assert.txt)."""
+    t = read(d, "assert.txt")
+    m = re.match(r"ASSERT (\S+)", t or "")
+    return f"; ASSERT {m.group(1)}" if m else ""
+
+
 def main():
     d = sys.argv[1].rstrip("/")
     run = os.path.basename(d)
@@ -95,7 +103,7 @@ def main():
         m = re.search(r"^act=(\S+)", meta, re.M)
         act = f" {m.group(1)}" if m else ""
     print(f"SUMMARY {run}{act}: {verdict(d)}; {table(d)}; {trace_check(d)}; {stored(d)}; "
-          f"{serial(d)}; {heap(d)}")
+          f"{serial(d)}; {heap(d)}{asserted(d)}")
     return 0
 
 

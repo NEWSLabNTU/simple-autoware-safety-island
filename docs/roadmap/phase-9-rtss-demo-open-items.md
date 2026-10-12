@@ -1296,13 +1296,50 @@ image of main.
   drain), else the I16 eDMA mode (needs `just setup zephyr`'s TCM
   backport). Gate: a round with 0 overruns and 0 bad frames inside every
   act. Supersedes W16.
-- [ ] **C4 - an assert must not fault the fault report.** The board conf
+- [x] **C4 - an assert must not fault the fault report.** The board conf
   has `CONFIG_ASSERT=y` with immediate logging to the shell backend, so an
   assert recurses into a usage fault and the reason is lost (the first
   I16 image, `EDMA_TcdSetTransferConfig`). Make the assert path print once
   (deferred log mode, or `CONFIG_ASSERT_NO_MSG_INFO` with the file and
   line kept) and land in the fatal handler. Gate: a forced assert on the
   board leaves its file and line readable over SWD or the console.
+  Status (2026-10-13, branch `phase9-c4-u2`): done. Cause, read off the
+  board with the I16 ELF flashed again (stack walk over SWD, the core in
+  the UsageFault handler, IPSR 6): in immediate mode `assert_print` ->
+  `z_log_vprintk` -> the shell log backend -> `z_shell_lock`, a
+  `k_sem_take(K_FOREVER)` on the shell's lock. The assert fired under
+  `irq_lock` (dma_mcux_edma.c) with that lock held, so the take had to
+  pend, `z_swap_irqlock`'s `CONFIG_SPIN_VALIDATE` assert ("Context
+  switching while holding lock!", kswap.h:217) fired, its own message took
+  the same path, and the recursion ran the stack out into a usage fault;
+  no message reached the console and the fatal handler printed nothing
+  useful. A forced assert under the same condition
+  (`CONFIG_ISLAND_DEBUG_FORCE_ASSERT_LOCKED`: the shell's lock taken, then
+  `irq_lock`, then `__ASSERT`) reproduced it exactly (the same recursing
+  frames, a usage fault frame under the fatal handler, no record); without the shell's lock held
+  (plain thread, `irq_lock` only, or a timer ISR) the immediate image
+  landed in the fatal handler cleanly, which is why it bit only at boot.
+  Fix: `CONFIG_LOG_MODE_DEFERRED=y` in the board conf (the caller only
+  enqueues; the fatal handler's `LOG_PANIC()` puts the shell in polled
+  panic mode and flushes), plus `CONFIG_ISLAND_ASSERT_RECORD`
+  (src/zephyr_entry/src/assert_record.c, default y with `CONFIG_ASSERT`):
+  an `assert_post_action()` override writes the first assert's file,
+  line, uptime and context into `island_assert_record` and then
+  `k_panic()`s as Zephyr's does; a second assert while handling it is
+  recorded as `nested` and halts there. readout.py reads the record in
+  every act's halted read (assert.bin; assert.txt only when set) and
+  `--assert-only` reads it alone; run_summary.py appends `; ASSERT
+  <file>:<line>` when assert.txt is there. Board, the same forced assert
+  on the deferred image: `readout: ASSERT
+  CMAKE_SOURCE_DIR/src/assert_record.c:86 at uptime 3001 ms (thread
+  context); failing asserts seen: 1` (line 86 is the `__ASSERT`), the core
+  in `arch_system_halt` from `k_sys_fatal_error_handler` via the SVC
+  (IPSR 11), CFSR 0. Cost against the C2 image: RAM 259,656 -> 263,176
+  (+3,520: the log thread's 2,048 B stack and the 1,024 B log buffer),
+  DTCM 128,656 -> 128,688 (+32, the record; 2,384 B left), FLASH
+  572,544 -> 576,728 (+4,184). The normal image (ELF sha256
+  `9475bca518b14817...`), flashed back:
+  `SUMMARY c4-encore1 encore: PASS; table 8/8 PASS, total 3440.93 of 4934.67 ms; trace-check PASS; stored 1 (silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 66640 of 107008 B`.
 - [ ] **C5 - contract QoS reaches the image.** play_launch lowers contract
   QoS into `qos_overrides.*` parameters, but nano-ros's C++ component
   entry bakes no override table from them (the generated main has no
@@ -1348,11 +1385,36 @@ image of main.
   `u1-e1` ran with the probe refused ("the model is STALE ... run `just
   sync`") and still printed VERDICT PASS with an empty table; U5 refuses
   that.
-- [ ] **U2 - `just board-build` exits 0 on a good image.** It exits 1 from
+- [x] **U2 - `just board-build` exits 0 on a good image.** It exits 1 from
   the post-link `ram_report` (`size_report` fails), so every caller has to
   know the ELF is fine. Fix the report or make `board-size` advisory, and
   keep a real link failure fatal. Gate: a clean build exits 0; a forced
   link error exits non-zero.
+  Status (2026-10-13, branch `phase9-c4-u2`): done. Two causes, neither
+  the ELF. (1) The exit 1 was ours: board-i14-final.log ends in `failed
+  printing to stdout: Broken pipe` from the nros CLI, inside board-size's
+  `source scripts/board-env.sh`. scripts/zephyr-sdk-tool.sh piped `nros
+  setup --list` into an awk that exited on the first match; under
+  pipefail, when awk was gone before nros wrote its last 15 lines, nros
+  panicked on EPIPE, set -e exited 1 and board-env.sh returned 1 with
+  nothing printed. 2 failures in 200 runs of the script before, 0 in 400
+  after: it now reads the whole list, then matches; board-env.sh names the
+  failure if it ever recurs. (2) `size_report` fails on every build with
+  `ModuleNotFoundError: No module named 'anytree'` (the Zephyr workspace
+  venv lacks it; requirements-base.txt lists it, the nros provisioning
+  installs a subset); `| tail -20` without pipefail hid it, so it never
+  set the exit status, only scrolled a traceback (the "FAILED" in
+  board-u1.log and board-c2.log). board-size now links the image first,
+  fatally, then runs rom_report and ram_report as advisory: a failure
+  prints one line (`board-size: ram_report failed (advisory, the image is
+  fine): ModuleNotFoundError: ...`) and the log path. Gate: a clean
+  `just board-build` exits 0 (all nine clean builds on this branch); with
+  a temporary call to an undefined `island_u2_forced_undefined()` inside
+  `assert_post_action` the link stops (`undefined reference to
+  'island_u2_forced_undefined'`) and `just board-build` exits 1. (The same
+  call in an unreferenced function linked: `--gc-sections` drops it.)
+  Not done here: adding `anytree` to the venv, a nano-ros provisioning
+  matter.
 - [ ] **U3 - the spin-latency tools in the tree.** `build-diag.sh`,
   `actseg.py`, `run-encore-rclcpp.sh` and the `ienv.sh` pattern live in a
   scratch directory. Move them under `tools/timeline/` (or `experiments/

@@ -724,9 +724,30 @@ board-size:
         echo "board-size: run 'just board-build' first (or pass BOARD_BUILD_DIR=<dir>)" >&2
         exit 1
     fi
-    west build -d {{BOARD_BUILD_DIR}} -t rom_report | tail -20
-    echo "── RAM ──"
-    west build -d {{BOARD_BUILD_DIR}} -t ram_report | tail -20
+    # The image first, and fatally: the report targets depend on zephyr.elf and
+    # relink it (the cargo step is always out of date), so a link error must
+    # not hide behind the advisory reports below.
+    west build -d {{BOARD_BUILD_DIR}} > "{{BOARD_BUILD_DIR}}/board-size-link.log" 2>&1 \
+        || { tail -40 "{{BOARD_BUILD_DIR}}/board-size-link.log"; echo "board-size: the image does not link" >&2; exit 1; }
+    # The reports are ADVISORY (phase9-U2). Zephyr's size_report needs
+    # `anytree`, which the workspace venv this repo provisions does not carry
+    # (requirements-base.txt lists it; the nros provisioning installs a
+    # subset), so both reports fail on every build with ModuleNotFoundError.
+    # The `| tail -20` this used to end in hid that (no pipefail), so the
+    # traceback scrolled past and the recipe exited 0. A report failure is
+    # printed, named, and does not fail board-build; the linker's own
+    # "Memory region" table above is the footprint of record.
+    for rep in rom_report ram_report; do
+        echo "-- $rep --"
+        log="{{BOARD_BUILD_DIR}}/board-size-$rep.log"
+        if west build -d {{BOARD_BUILD_DIR}} -t "$rep" > "$log" 2>&1; then
+            tail -20 "$log"
+        else
+            why="$(grep -E 'Error|error:' "$log" | grep -v '^FATAL ERROR' | tail -1)"
+            echo "board-size: $rep failed (advisory, the image is fine): ${why:-see $log}"
+            echo "board-size:   the full output is in $log"
+        fi
+    done
 
 # Board DTS puts zephyr,console on lpuart2. Ctrl-A k to quit screen.
 #

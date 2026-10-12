@@ -21,8 +21,16 @@ if [ ! -f "$ws/zephyr/SDK_VERSION" ]; then
     exit 1
 fi
 ver="$(tr -d '[:space:]' < "$ws/zephyr/SDK_VERSION")"
-tool="$("$nros" setup --list --index "$index" \
-    | awk -v v="$ver" '$1 == "[tool]" && $2 ~ /^zephyr-sdk/ && $3 == v { print $2; exit }')"
+# Read the whole list before matching (phase9-U2). This used to pipe the
+# list into an awk that exited on the first match: under pipefail, when awk
+# was gone before nros wrote its last lines, nros panicked on EPIPE ("failed
+# printing to stdout: Broken pipe"), the assignment failed, set -e exited 1,
+# and board-env.sh returned 1 with nothing printed. About 1 run in 100
+# (2 of 200 measured), so `just board-build` (which sources board-env.sh
+# twice, the second time in board-size) exited 1 now and then on a good image.
+list="$("$nros" setup --list --index "$index")"
+tool="$(printf '%s\n' "$list" \
+    | awk -v v="$ver" '!found && $1 == "[tool]" && $2 ~ /^zephyr-sdk/ && $3 == v { print $2; found = 1 }')"
 if [ -z "$tool" ]; then
     echo "zephyr-sdk-tool: $ws/zephyr/SDK_VERSION asks for Zephyr SDK $ver," >&2
     echo "zephyr-sdk-tool:   and $index pins no zephyr-sdk entry at that version" >&2

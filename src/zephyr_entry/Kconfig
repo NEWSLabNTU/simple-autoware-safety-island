@@ -1,5 +1,5 @@
 # The application Kconfig of this entry (phase8-W17): Zephyr's, plus the
-# island's trace-window options. Nothing else is defined here.
+# island's trace-window options, the spin raise and the assert record.
 rsource "../safety_island_tracing/Kconfig.island_trace"
 
 config ISLAND_SPIN_RAISE
@@ -13,5 +13,36 @@ config ISLAND_SPIN_THREAD_PRIORITY
 	int "Executor priority after registration"
 	depends on ISLAND_SPIN_RAISE
 	default 3
+
+config ISLAND_ASSERT_RECORD
+	bool "Record a failing assert's file and line for the SWD readout"
+	depends on ASSERT
+	default y
+	help
+	  phase9-C4. Overrides assert_post_action() (src/assert_record.c): the
+	  first failing __ASSERT writes its file, line and uptime into
+	  island_assert_record, then panics; tools/timeline/readout.py writes
+	  assert.txt from it. The console is not wired on the board.
+
+config ISLAND_DEBUG_FORCE_ASSERT_MS
+	int "Fail an __ASSERT this many ms after boot (test only)"
+	depends on ISLAND_ASSERT_RECORD
+	default 0
+	help
+	  phase9-C4's gate: 0 (the default) is off. Never set in a committed
+	  conf.
+
+config ISLAND_DEBUG_FORCE_ASSERT_ISR
+	bool "Fire the forced assert from a timer ISR instead of the work queue"
+	depends on ISLAND_DEBUG_FORCE_ASSERT_MS > 0
+
+config ISLAND_DEBUG_FORCE_ASSERT_LOCKED
+	bool "Fire the forced assert under irq_lock() with the shell's lock held"
+	depends on ISLAND_DEBUG_FORCE_ASSERT_MS > 0 && !ISLAND_DEBUG_FORCE_ASSERT_ISR
+	depends on SHELL_BACKEND_SERIAL
+	help
+	  The condition of the I16 assert (dma_mcux_edma.c under irq_lock,
+	  nano-ros phase-474) with the shell busy: an immediate-mode print of
+	  the assert has to pend on the shell's lock with interrupts locked.
 
 source "Kconfig.zephyr"
