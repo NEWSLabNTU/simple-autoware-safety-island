@@ -53,6 +53,8 @@
 #                               jitter, 6 ms, is declared on the timer; the
 #                               checker charges a publisher's period and path
 #                               here, not its jitter (play_launch 0.15.1).
+#                               play_launch PR #18 (unreleased) charges
+#                               it: detection 126, totals +6 (phase9-W6).
 #   hpc_loss detection 500 ms   mrm_handler's
 #                               `timeout_operation_mode_availability: 0.5`.
 #   handler reaction 230 ms     ON THE BOARD (phase9-W5; 206 from
@@ -162,7 +164,7 @@ modes:
 # `max_transport`) + `call_mrm` (149). The checker's critical path is 350
 # (`/availability_gate -> /mrm_handler`, 250 event segment + 100 sampling
 # cost): it does not add a timer's jitter to the sampling cost, so the 6 ms
-# is ours. History: 226 from phase8-W30 (the input-triggered gate's 20 +
+# is ours (play_launch PR #18, unreleased, adds it: 356). History: 226 from phase8-W30 (the input-triggered gate's 20 +
 # `call_mrm` 206, the link inside it), 210 before (the island contract's
 # argument, when `call_mrm` was 110). phase9-W5 moved the link out of
 # `call_mrm` into `max_transport`, which play_launch 0.14.0 counts in a
@@ -253,7 +255,10 @@ nodes:
         # reaction route (F1) and not after the window's deadline, so it is
         # declared here and no longer inside `call_mrm`.
         max_transport: 81ms
-        qos: { depth: 1, liveliness: manual_by_topic, lease_duration: 500ms }
+        # No liveliness/lease (phase9-W6): the handler subscribes with
+        # `nros::QoS(1)` and checks the 500 ms itself (`max_age`,
+        # `mechanism: application`); the island contract says why.
+        qos: { depth: 1 }
         on_violation:
           on: [omission, reported]
           mechanism: application
@@ -360,8 +365,13 @@ nodes:
       # "ODD left" (W3's rule).
       odd_exit: { min_rate_hz: 10, max_age: 1s, qos: { depth: 1 }, state: true }
     pub:
-      # 10 Hz is derived from the timer.
-      availability: { qos: { depth: 1, liveliness: manual_by_topic, lease_duration: 500ms } }
+      # 10 Hz is derived from the timer. The QoS is the code's
+      # (availability_gate.cpp: KeepLast(1), reliable, volatile, rclcpp's
+      # default AUTOMATIC liveliness), as takeover.contract.yaml states it.
+      # Until phase9-W6 this said `liveliness: manual_by_topic,
+      # lease_duration: 500ms`, which the gate never offered; the 500 ms
+      # detection is the handler's own staleness check (`max_age`).
+      availability: { qos: { depth: 1, durability: volatile } }
 
   planning_hop:
     paths:

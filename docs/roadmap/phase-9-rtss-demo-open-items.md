@@ -694,6 +694,58 @@ phases, this repository by fast-forward push.
   expected on 0.15.1 and 0.14.0. demo/l3/contracts/README.md's verbatim
   outputs, scratch variants and smallest breaks (19.20 s, 63.1 km/h)
   refreshed.
+  Status (2026-10-12, the gate's liveliness): the contracts now state the
+  QoS the code runs. The three compositions declared the gate's publisher
+  `liveliness: manual_by_topic, lease_duration: 500ms`; the gate
+  (availability_gate.cpp:261) publishes `KeepLast(1).reliable()
+  .durability_volatile()` with rclcpp's default AUTOMATIC liveliness, and
+  takeover.contract.yaml already said `{ depth: 1, durability: volatile }`.
+  The compositions now say the same. The handler's subscriber (island
+  contract and compositions) also lost its lease: the handler subscribes
+  with `nros::QoS(1)` (no liveliness) and checks the 500 ms itself, which
+  `max_age: 500ms` + `mechanism: application` already state, and a
+  MANUAL_BY_TOPIC request against an AUTOMATIC offer is RxO-incompatible
+  under DDS. The lease was not read where the old comment said: nano-ros
+  takes only depth/reliability/durability/history from a contract's qos
+  (qos_agreement.rs, "the contract has no key for" liveliness); play_launch's
+  model did turn it into two `qos_overrides./system/operation_mode/
+  availability.subscription.liveliness*` parameters on mrm_handler, but the
+  C++ component entry bakes no override table from them, so the image never
+  requested it. Checked by derivation, not a board build: `nros sync` +
+  `nros ws entity-inventory` (cmake, json, entity and params headers) and
+  `nros codegen entry --lang cpp --typed` on the island model before and
+  after give identical outputs (NROS_DERIVED_MAX_LIVELINESS 27, MAX_CBS 14);
+  the model differs only by the two derived parameters. This used
+  island-dma's nano-ros (6ad29e721): the pinned 319715968 refuses the island
+  contract (`trigger.timer.jitter` unknown, `nros sync` writes
+  system_model.refused), so a board build from main's submodule needs the
+  nano-ros bump first. `play_launch check --explain` (0.15.1): no verdict
+  or total moves (hpc_loss 4934.67, odd_exit comfortable_stop 20795.67,
+  floor 14703.67; island alone floor 14683.67; variants 30795.67 and
+  30525.67), only line numbers; README's verbatim outputs and
+  tools/timeline/testdata/explain.txt follow (selftest OK);
+  `.github/check-contracts.sh` 14/14 as expected.
+  Status (2026-10-12, the jitter gap): play_launch PR #18
+  (NEWSLabNTU/play_launch, branch `fix/timer-jitter-detection`, not
+  released) charges a timer's declared jitter in a reported fault's
+  detection and in a scope path's critical path. These contracts are not
+  re-pinned and not re-derived; this is what the PR build reads on them
+  (the comments that say the checker adds no jitter stay, each with a note
+  that points at the PR). L3 compositions: odd_exit detection 120 -> 126
+  (`reports every 100.00ms + 6.00ms jitter + 20.00ms`), comfortable_stop
+  20795.67 -> 20801.67, floor 14703.67 -> 14709.67; variants 30795.67 ->
+  30801.67 and 30525.67 -> 30531.67, still failing only their
+  comfortable-stop rung; hpc_loss 4934.67 unchanged. island.tor's critical
+  path is 350 -> 356, which is the declared 356, so there is no warning (a
+  probe at 300 ms printed 250 + 106 sampling). Island contract alone: its
+  totals do not move (odd_exit's gate is external there, detection 100),
+  but island.tor's critical path through the handler's tick becomes 218
+  (100 + 18 jitter + 100), more than its declared 210: one new
+  `warning[scope-budget]`, so the re-pin must re-derive island.tor (to at
+  least 218). `.github/check-contracts.sh` with the PR build: 14/14 as
+  expected. At the re-pin: README verbatim outputs, smallest breaks,
+  tools/timeline/testdata/explain.txt (the island's own table does not
+  move) and the paper's odd_exit figures.
 - **W7 - on-demand topics.** The contract's 10 Hz `min_rate_hz` on the
   comfortable-stop operator's `clear_velocity_limit` and
   `max_velocity_candidates` tripped `rate-hierarchy-runtime` at start-up

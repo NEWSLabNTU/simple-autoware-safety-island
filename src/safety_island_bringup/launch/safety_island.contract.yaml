@@ -160,8 +160,10 @@ version: 1
 #     src/autoware_mrm_handler/config/mrm_handler.param.yaml. That parameter
 #     IS the detector: the handler treats the availability stream as lost
 #     once it has been silent for half a second. It is restated below as
-#     `lease_duration: 500ms` on the subscriber, which is the same fact in
-#     the vocabulary FDTI is derived from. Note what does NOT count: the
+#     `max_age: 500ms` with `mechanism: application` on the subscriber: a
+#     staleness bound the handler checks on its own tick, which is what the
+#     code does. It is not a DDS lease (no `liveliness`/`lease_duration` on
+#     either side since phase9-W6; see the subscriber). Note what does NOT count: the
 #     `min_rate_hz: 10` already declared on that subscriber is a requirement,
 #     not a mechanism -- nothing fires when a period passes -- so the 10 Hz
 #     floor buys no detection on its own.
@@ -626,9 +628,9 @@ nodes:
         output: [takeover_request_state]
         max_latency: 149ms
     sub:
-      # `lease_duration` is `timeout_operation_mode_availability: 0.5` from
-      # this node's own parameter file, restated as the middleware fact it
-      # is. `on_violation` is what makes this subscriber a DETECTOR rather
+      # `max_age` is `timeout_operation_mode_availability: 0.5` from this
+      # node's own parameter file. `on_violation` is what makes this
+      # subscriber a DETECTOR rather
       # than a consumer that happens to have a rate wish: without it the
       # hazards above have nothing watching their guard, and the checker
       # says so.
@@ -636,9 +638,22 @@ nodes:
         min_rate_hz: 10
         # `timeout_operation_mode_availability: 0.5` is a STALENESS bound the
         # handler evaluates itself on its 10 Hz tick, not a DDS lease: so the
-        # mechanism is `application`, and `max_age` is the same 500 ms. The
-        # lease stays declared because it is the same fact in QoS terms and
-        # nano-ros's inventory reads it; both give a 500 ms detection.
+        # mechanism is `application`, and `max_age` is the same 500 ms; the
+        # 500 ms detection is this key's.
+        #
+        # NO LIVELINESS (phase9-W6). Until then the qos below also said
+        # `liveliness: manual_by_topic, lease_duration: 500ms`, "the same
+        # fact in QoS terms". It was not a fact about this image: the code
+        # subscribes with `nros::QoS(1)` (no liveliness policy); nano-ros
+        # reads only depth, reliability, durability and history from a
+        # contract's qos (qos_agreement.rs: the contract "has no key for"
+        # liveliness), so the knobs never saw it; play_launch did turn the
+        # pair into two `qos_overrides.*` parameters on this node's model,
+        # but the C++ component entry bakes no override table from them,
+        # so the image never requested it. And the publisher, the gate on
+        # the host, offers rclcpp's default AUTOMATIC liveliness, which a
+        # MANUAL_BY_TOPIC request is RxO-incompatible with under DDS.
+        # Dropping it moves no verdict, total or derived knob.
         max_age: 500ms
         # THE SERIAL LINK (phase8-W30). This subscriber sits behind the
         # island gateway and the UART, so its transport is its own, not the
@@ -655,7 +670,7 @@ nodes:
         # 0.14.0 charges it once on the reaction route (F1), so it is no
         # longer inside `call_mrm`; W14 re-sizes it as more edges come.
         max_transport: 81ms
-        qos: { depth: 1, liveliness: manual_by_topic, lease_duration: 500ms }
+        qos: { depth: 1 }
         on_violation:
           # `reported` since phase8-W7: the handler also reacts to the VALUE
           # (isAvailableCurrentOperationMode()), which is odd_exit.
