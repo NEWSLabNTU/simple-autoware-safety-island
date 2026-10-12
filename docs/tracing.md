@@ -652,12 +652,42 @@ ELF symbols the board read uses.
 
 ```
 just board-build                                   # the image with the window
-flock <demo lock> tools/timeline/run-board.sh b <id>          # the board (phase8-W8)
-flock <demo lock> tools/timeline/run-board.sh --dry-run b <id> # print the steps, resolve the addresses
+tools/timeline/run-board.sh b <id>          # the board (phase8-W8)
+tools/timeline/run-board.sh --dry-run b <id> # print the steps, resolve the addresses
 just trace-qemu-build
-flock <demo lock> tools/timeline/run-board.sh --target qemu b <id>   # the rehearsal
+tools/timeline/run-board.sh --target qemu b <id>   # the rehearsal
 just l3-traced-act b <id> [target] [elf] [flags]   # the same, as a recipe
 ```
+
+The script takes the demo lock itself (phase9-W22); do not wrap it in
+`flock` on the same file. Before anything is flashed it runs a preflight
+(phase9-U5, C6), and a run that cannot start prints one line
+`run-board: REFUSED <reason>` (also in `run.log` and `refused.txt`), a
+`SUMMARY <id> <act>: REFUSED <reason>` line, and exits 3:
+
+| check | refused with |
+| --- | --- |
+| the host overlay (`RB_HOST_WS`, else build/l3-host-ws, else demo/host_ws) | `no host overlay: <ws>/setup.bash missing -- run \`just l3-host-ws\`` |
+| the SystemModel fresh against its inputs (probe.py's own check) | `timeline: the model is STALE against <input> -- run \`just sync\`` |
+| no `sai-l3*` container running | `container(s) running: <names> -- another act or a leftover; ...` |
+| board: no other pyocd user (pyocd CLI, readout.py, spin_diag.py) | `the probe is in use by another process: <pid> <cmd>` |
+| board: `pyocd list` shows the MCU-Link (30 s bound) | `no debug probe: ...` |
+| board: the gateway tty exists, nothing holds it, `fuser` within `FUSER_TIMEOUT` (10 s) | `fuser on <tty> took over 10 s (host /proc busy: a filesystem walk?)` |
+| the 1-min load at most `RB_LOAD_MAX` (35), waiting up to `RB_LOAD_WAIT` (180 s) | `host load: 1-min load <l> above RB_LOAD_MAX=35 before flashing, still after 180 s (RB_LOAD_WAIT); busiest: ...` |
+
+Right before the act (after the settle) the load is checked again (`...
+at the act`), and the act is refused if the probe or the gate has already
+exited (`the probe exited before the act: <its last line>`). If l3-peer
+gives up (a held tty, a slow fuser), the gateway step stops at once with its
+last line instead of waiting out 60 s. `island.trace.meta` keeps
+`loadavg_start`, `loadavg_act` and `loadavg_end`; the SUMMARY line reads
+`load <1-min> at act`. A run whose probe or gate did not run through the
+act (probe.jsonl or gate.jsonl missing or empty, STALE in their stdout, or
+the process gone before the act ended) prints `VERDICT: VOID <reason>`
+instead of the scenario's verdict, keeps the reason in `void.txt`, reads
+`VOID (<reason>)` in the SUMMARY and exits 4. The ceiling does not mask the
+island's behaviour under overload: a run that starts under it and still
+escalates reads FAIL (`d12-b3r`, load 189, escalated correctly).
 
 It flashes (board), starts the stock router, the island's link (the gateway
 on the UART and a reset; for QEMU the same gateway config on a unix socket),

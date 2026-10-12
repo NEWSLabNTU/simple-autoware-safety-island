@@ -52,9 +52,16 @@ PEER_DIR := "build/trace"
 board-peer tty=PEER_TTY port=PEER_TCP log=(PEER_DIR / "board-peer-router.log") baud=PEER_BAUD:
     #!/usr/bin/env bash
     set -eo pipefail
-    if holders="$(fuser "{{tty}}" 2>/dev/null)" && [ -n "$holders" ]; then
+    # bounded (phase9-U5): under a stray filesystem walk fuser crawled /proc
+    # for over 60 s (section 7, d12-e3); give a reason instead of a hang
+    holders="$(timeout "${FUSER_TIMEOUT:-10}" fuser "{{tty}}" 2>/dev/null)" && frc=0 || frc=$?
+    if [ "$frc" = 124 ]; then
+        echo "board-peer: fuser on {{tty}} took over ${FUSER_TIMEOUT:-10} s (host /proc busy: a filesystem walk? see uptime) -- not starting"
+        exit 1
+    fi
+    if [ -n "$holders" ]; then
         echo "board-peer: {{tty}} is held by pid(s)$holders -- stop them first:"
-        fuser -v "{{tty}}" 2>&1 || true
+        timeout "${FUSER_TIMEOUT:-10}" fuser -v "{{tty}}" 2>&1 || true
         exit 1
     fi
     if ss -ltn | awk '{print $4}' | grep -qE "[:.]{{port}}$"; then

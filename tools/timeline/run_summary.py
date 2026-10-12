@@ -5,7 +5,7 @@
 
 run-board.sh prints it last and keeps it as <run dir>/summary.txt:
 
-  SUMMARY d12-e1 encore: PASS; table 9/9 PASS, total 3472.95 of 4934.67 ms;
+  SUMMARY d12-e1 encore: PASS; load 21.85 at act; table 9/9 PASS, total 3472.95 of 4934.67 ms;
   trace-check PASS; stored 1 (silence-runtime x1); serial in act 0/0
   (overruns/bad frames); heap peak 66640 of 107008 B
 
@@ -13,6 +13,11 @@ Each field reads one file and says "-" when the file is not there (a QEMU
 run has no serial.txt, an older run no bootrec.txt), so a missing input
 never reads as a clean one. A run whose readout found a failing assert
 (assert.txt, phase9-C4) ends the line with `; ASSERT <file>:<line>`.
+
+phase9-C6 / U5: `load <1-min> at act` is island.trace.meta's loadavg_act
+(the load the act ran under). A run refused before its act (refused.txt)
+prints `REFUSED <reason>` and nothing else; a run whose probe or gate did
+not run (void.txt) reads `VOID (<reason>)` in place of the verdict.
 """
 import json
 import os
@@ -27,6 +32,9 @@ def read(d, name):
 
 
 def verdict(d):
+    v = read(d, "void.txt")
+    if v is not None:
+        return f"VOID ({v.strip()})"
     t = read(d, "scenario.jsonl")
     if t is None:
         return "-"
@@ -87,6 +95,11 @@ def heap(d):
     return f"heap peak {m.group(1)} of {m.group(2)} B" if m else "heap -"
 
 
+def load(meta):
+    m = re.search(r"^loadavg_act=(\S+)", meta or "", re.M)
+    return f"load {m.group(1)} at act" if m else "load -"
+
+
 def asserted(d):
     """phase9-C4: only when readout.py found a failing assert (assert.txt)."""
     t = read(d, "assert.txt")
@@ -102,7 +115,11 @@ def main():
     if meta:
         m = re.search(r"^act=(\S+)", meta, re.M)
         act = f" {m.group(1)}" if m else ""
-    print(f"SUMMARY {run}{act}: {verdict(d)}; {table(d)}; {trace_check(d)}; {stored(d)}; "
+    refused = read(d, "refused.txt")
+    if refused is not None:
+        print(f"SUMMARY {run}{act}: REFUSED {refused.strip()}")
+        return 0
+    print(f"SUMMARY {run}{act}: {verdict(d)}; {load(meta)}; {table(d)}; {trace_check(d)}; {stored(d)}; "
           f"{serial(d)}; {heap(d)}{asserted(d)}")
     return 0
 

@@ -53,7 +53,38 @@
 # gate image: on this host the bare tag sai-l3-autoware:1.5.0 is still W3's
 # build without W11's rmw_zenoh 0.1.10 and rclcpp patch, and sat at 63-64/68
 # composables in 3 of 5 starts; `just l3-container` rebuilds the tag),
-# DRIVE_SECS / OBSERVE_SECS / RESPOND_AFTER (scenario.py's), SAI_DEMO_LOCK.
+# DRIVE_SECS / OBSERVE_SECS / RESPOND_AFTER (scenario.py's), SAI_DEMO_LOCK,
+# RB_HOST_WS (the host overlay; default build/l3-host-ws/install, else
+# demo/host_ws/install), RB_LOAD_MAX (the 1-min load ceiling, 35),
+# RB_LOAD_WAIT (how long to wait for the load to drop, 180 s), FUSER_TIMEOUT
+# (10 s, the bound on `fuser` here and in just l3-peer).
+#
+# Preflight (phase9-U5), after the lock, before anything is flashed. Each
+# failure prints one line `run-board: REFUSED <reason>` (kept in
+# <dir>/run.log and <dir>/refused.txt), the SUMMARY line, and exits 3:
+#   - the host overlay the gate needs exists (just l3-host-ws);
+#   - the SystemModel is fresh against its inputs: the check probe.py runs at
+#     its start (tlcommon.load_model), so a stale model is refused here, not
+#     found after the act (u1-e1: the probe refused it, the run said PASS);
+#   - no sai-l3* container is running (this run starts its own);
+#   - board: `pyocd list` shows the probe (MCU-Link), and no other pyocd user
+#     (the pyocd CLI, readout.py, spin_diag.py) runs on this host;
+#   - board: the gateway tty exists and nothing holds it, `fuser` bounded by
+#     FUSER_TIMEOUT (it took over 60 s under a filesystem walk, d12-e3);
+#   - the 1-min load (phase9-C6) is at most RB_LOAD_MAX, waiting up to
+#     RB_LOAD_WAIT s for it to drop.
+# The load is checked again right before the act (after the settle): still
+# above the ceiling after the wait, the act is refused, torn down, exit 3.
+# 35 is the ceiling the section-9/10 rounds of docs/takeover-trace.md kept by
+# hand on this 20-thread host; d12-b3r escalated at 189 (Autoware withdrew
+# comfortable-stop availability for a sample; the island's escalation was
+# correct and still reads FAIL). island.trace.meta keeps loadavg_start,
+# loadavg_act (what the act ran under) and loadavg_end.
+# A probe or gate already gone when the act is due: the act is refused,
+# exit 3. After the act, a run whose probe or gate did not run through it
+# (probe.jsonl or gate.jsonl missing or empty, STALE in their stdout, or the
+# process gone before the act ended) prints `VERDICT: VOID <reason>` instead
+# of the scenario's verdict (<dir>/void.txt) and exits 4.
 #
 # The board steps (1, 3 and 8) ran on the S32K344 in phase8-W8
 # (docs/takeover-trace.md, section 9); W17 wrote them against the QEMU island.
@@ -107,14 +138,20 @@ bg() {  # bg <log> <cmd...>: a background job in its own process group
     pids+=($!)
     echo "   started pid $! -> $log"
 }
+# the host overlay: RB_HOST_WS, else just l3-host-ws's, else demo-host-ws's
+host_ws() {
+    local ws
+    if [ -n "${RB_HOST_WS:-}" ]; then ws="$RB_HOST_WS"
+    else ws="$repo/build/l3-host-ws/install"; [ -f "$ws/setup.bash" ] || ws="$repo/demo/host_ws/install"; fi
+    echo "$ws"; [ -f "$ws/setup.bash" ]
+}
+export -f host_ws
 # The host side of the demo: ROS 2 + Autoware messages, rmw_zenoh_cpp,
 # domain 10, a clean environment (see the head of this file).
 l3() {
     # the overlay that carries the C++ availability gate (phase8-W16), which
     # `scenario.py gate` execs: just l3-host-ws, else just demo-host-ws
-    local ws="$repo/build/l3-host-ws/install"
-    [ -f "$ws/setup.bash" ] || ws="$repo/demo/host_ws/install"
-    [ -f "$ws/setup.bash" ] || ws=/nonexistent
+    local ws; ws="$(host_ws)" || ws=/nonexistent
     env -i HOME="$HOME" USER="$USER" PATH=/usr/bin:/bin:$HOME/.local/bin \
         ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-10}" L3_WS="$ws" \
         DRIVE_SECS="${DRIVE_SECS:-3}" OBSERVE_SECS="${OBSERVE_SECS:-30}" RESPOND_AFTER="${RESPOND_AFTER:-3}" \
@@ -159,7 +196,15 @@ else
     fi
     echo "pid $$ run $id act $act" > "$lock"
 fi
-[ "$dry" = 1 ] || { mkdir -p "$dir"; rm -f "$dir"/*.jsonl; }
+if [ "$dry" = 0 ]; then
+    mkdir -p "$dir"
+    rm -f "$dir"/*.jsonl "$dir"/{refused,void,summary}.txt
+    # phase9-U5: the run keeps its own log, so a refusal is on disk even when
+    # the caller did not redirect (run-diag.sh redirects into this same file)
+    if [ "$(readlink -f /proc/$$/fd/1)" != "$(readlink -f "$dir/run.log")" ]; then
+        exec > >(tee "$dir/run.log") 2>&1
+    fi
+fi
 [ -f "$elf" ] || { echo "run-board: no $elf"; [ "$dry" = 1 ] || exit 1; }
 echo "run-board: act $act, run $id, target $target, image $elf"
 if [ "$dry" = 0 ]; then
@@ -168,6 +213,80 @@ if [ "$dry" = 0 ]; then
     { echo "target=$target"; echo "act=$act"; echo "loadavg_start=$(cut -d' ' -f1-3 /proc/loadavg)"; } >> "$out.meta"
 fi
 start=$SECONDS
+
+# ---- phase9-U5 / C6: refuse what cannot run, with one line of reason ----
+load_max="${RB_LOAD_MAX:-35}"
+load_wait="${RB_LOAD_WAIT:-180}"
+fuser_to="${FUSER_TIMEOUT:-10}"
+export FUSER_TIMEOUT="$fuser_to"
+tty="${L3_PEER_TTY:-/dev/serial/by-id/usb-FTDI_FT232R_USB_UART_B001UCTE-if00-port0}"
+refuse() {  # refuse <reason>: one line, kept in refused.txt
+    echo "run-board: REFUSED $*"
+    [ "$dry" = 1 ] || echo "$*" > "$dir/refused.txt"
+}
+finish_refused() {  # the record of a refused run, then exit 3
+    echo "loadavg_end=$(cut -d' ' -f1-3 /proc/loadavg)" >> "$out.meta"
+    python3 tools/timeline/run_summary.py "$dir" | tee "$dir/summary.txt"
+    exit 3
+}
+load_ok() { awk -v l="$(cut -d' ' -f1 /proc/loadavg)" -v m="$load_max" 'BEGIN { exit !(l + 0 <= m + 0) }'; }
+wait_load() {  # wait_load <where>: the 1-min load at most RB_LOAD_MAX, or a refusal
+    local t0=$SECONDS
+    until load_ok; do
+        if (( SECONDS - t0 >= load_wait )); then
+            refuse "host load: 1-min load $(cut -d' ' -f1 /proc/loadavg) above RB_LOAD_MAX=$load_max $1," \
+                   "still after ${load_wait} s (RB_LOAD_WAIT); busiest: $(timeout 5 top -b -n 1 -w 200 2>/dev/null | awk 'NR > 7 && NF >= 12 { print $12 " " $9 "%" }' | head -n 3 | paste -sd, -)"
+            return 1
+        fi
+        echo "   1-min load $(cut -d' ' -f1 /proc/loadavg) above $load_max $1; waiting (up to ${load_wait} s)"
+        sleep 5
+    done
+    echo "   1-min load $(cut -d' ' -f1 /proc/loadavg) (ceiling $load_max) $1"
+}
+others_pyocd() {  # pids of other pyocd users on this host, not this run's ancestors
+    local anc=" " p=$$
+    while [ -n "$p" ] && [ "$p" != 0 ] && [ "$p" != 1 ]; do anc+="$p "; p=$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' '); done
+    pgrep -af 'pyocd|readout\.py|spin_diag\.py' 2>/dev/null | while read -r pid cmd; do
+        case "$anc" in *" $pid "*) ;; *) echo "$pid ${cmd:0:80}";; esac
+    done
+}
+preflight() {
+    step "0. preflight"
+    if [ "$dry" = 1 ]; then
+        echo "   [dry-run] host overlay, model freshness, no sai-l3 container, the probe free," \
+             "the tty free (fuser, ${fuser_to} s bound), 1-min load <= $load_max (wait ${load_wait} s)"
+        return 0
+    fi
+    local ws; ws="$(host_ws)" || { refuse "no host overlay: $ws/setup.bash missing -- run \`just l3-host-ws\`"; return 1; }
+    echo "   host overlay $ws"
+    local m
+    m="$(timeout 60 python3 -c 'import sys; sys.path.insert(0, "tools/timeline"); import tlcommon as tl; tl.load_model()' 2>&1)" \
+        || { refuse "${m##*$'\n'}"; return 1; }
+    echo "   the model is fresh against its inputs"
+    local c rc
+    c="$(timeout 20 docker ps --format '{{.Names}}' 2>&1)"; rc=$?
+    [ "$rc" = 0 ] || { refuse "docker ps failed or took over 20 s (exit $rc): ${c##*$'\n'}"; return 1; }
+    c="$(grep -E "^(sai-l3|${L3_NAME:-sai-l3}$)" <<< "$c" | paste -sd' ' -)"
+    [ -z "$c" ] || { refuse "container(s) running: $c -- another act or a leftover; \`docker stop $c\` if nothing uses it"; return 1; }
+    echo "   no sai-l3 container running"
+    if [ "$target" = board ]; then
+        local o
+        o="$(others_pyocd)"
+        [ -z "$o" ] || { refuse "the probe is in use by another process: $(head -n1 <<< "$o")$( [ "$(wc -l <<< "$o")" -gt 1 ] && echo " (+$(( $(wc -l <<< "$o") - 1 )) more)")"; return 1; }
+        o="$(timeout 30 pyocd list 2>&1)"; rc=$?
+        [ "$rc" != 124 ] || { refuse "\`pyocd list\` took over 30 s -- is the probe wedged? replug the MCU-Link"; return 1; }
+        grep -qiE 'mcu-?link|cmsis-dap' <<< "$o" || { refuse "no debug probe: \`pyocd list\` shows no MCU-Link (${o##*$'\n'})"; return 1; }
+        echo "   probe: $(grep -iE 'mcu-?link|cmsis-dap' <<< "$o" | head -n1 | tr -s ' ' | cut -c1-80)"
+        [ -e "$tty" ] || { refuse "the gateway tty $tty does not exist -- is the DCD-LZ cable plugged in?"; return 1; }
+        local h
+        h="$(timeout "$fuser_to" fuser "$tty" 2>/dev/null)"; rc=$?
+        [ "$rc" != 124 ] || { refuse "fuser on $tty took over ${fuser_to} s (host /proc busy: a filesystem walk?)"; return 1; }
+        [ -z "$h" ] || { refuse "the gateway tty $tty is held by pid(s)$h"; return 1; }
+        echo "   gateway tty free"
+    fi
+    wait_load "before flashing"
+}
+preflight || finish_refused
 trap 'teardown; exit 130' INT TERM
 
 step "1. flash"
@@ -191,7 +310,24 @@ if [ "$target" = board ]; then
     # the gateway listens; just/l3-demo.just).
     bg "$dir/l3-peer.stdout" just l3-peer "${L3_PEER_TTY:-/dev/serial/by-id/usb-FTDI_FT232R_USB_UART_B001UCTE-if00-port0}" \
         921600 tcp/127.0.0.1:7447 7449 "$repo/$dir/l3-peer-router.log"
-    wait_for 60 "the gateway on the serial line" grep -q "reached at: serial" "$dir/l3-peer-router.log" || { teardown; exit 1; }
+    # phase9-U5: stop waiting when l3-peer itself gave up (a held tty, a slow
+    # fuser) and say why, rather than a 60 s timeout and an empty directory
+    if [ "$dry" = 1 ]; then echo "   [dry-run] wait up to 60 s for the gateway on the serial line"
+    else
+        peer=${pids[-1]} t0=$SECONDS
+        until grep -qs "reached at: serial" "$dir/l3-peer-router.log"; do
+            if ! kill -0 "$peer" 2>/dev/null; then
+                refuse "the gateway (just l3-peer) exited: $(grep -v '^\s*$' "$dir/l3-peer.stdout" | tail -n1)"
+                teardown; finish_refused
+            fi
+            if (( SECONDS - t0 >= 60 )); then
+                refuse "the gateway did not reach the serial line in 60 s (see $dir/l3-peer.stdout)"
+                teardown; finish_refused
+            fi
+            sleep 1
+        done
+        echo "   the gateway on the serial line after $(( SECONDS - t0 )) s"
+    fi
     run pyocd reset -t s32k344
 else
     # The board's topology, with a unix socket for the UART: the island
@@ -243,11 +379,27 @@ done
 [ "$aw_ok" = 1 ] || { teardown; exit 1; }
 
 step "6. the gate and the probe"
-bg "$dir/gate.stdout" l3 "exec $RB_GATE"
-bg "$dir/probe.stdout" l3 "exec $RB_PROBE"
+bg "$dir/gate.stdout" l3 "exec $RB_GATE"; gate_pid="${pids[*]: -1}"
+bg "$dir/probe.stdout" l3 "exec $RB_PROBE"; probe_pid="${pids[*]: -1}"
 
 step "7. the act ($act), after ${settle} s"
 [ "$dry" = 1 ] || sleep "$settle"
+# phase9-C6: the act runs under the ceiling or not at all
+if [ "$dry" = 1 ]; then echo "   [dry-run] 1-min load <= $load_max (wait ${load_wait} s)"
+else
+    wait_load "at the act" || { echo "loadavg_act=$(cut -d' ' -f1-3 /proc/loadavg)" >> "$out.meta"; teardown; finish_refused; }
+    echo "loadavg_act=$(cut -d' ' -f1-3 /proc/loadavg)" >> "$out.meta"
+    # phase9-U5: an act without its probe or its gate is not run at all
+    # (u1-e1: the probe refused a stale model at its start, the act ran
+    # and the scenario said PASS over an empty table)
+    for w in probe gate; do
+        p="${w}_pid"
+        if ! kill -0 "${!p}" 2>/dev/null; then
+            refuse "the $w exited before the act: $(grep -v '^\s*$' "$dir/$w.stdout" | tail -n1)"
+            teardown; finish_refused
+        fi
+    done
+fi
 # phase9-U1: the serial counters at the act's start (attach, no halt), so the
 # readout can say which overruns and bad frames fell inside the act
 if [ "$target" = board ] && [ "$dry" != 1 ]; then
@@ -256,6 +408,12 @@ if [ "$target" = board ] && [ "$dry" != 1 ]; then
 fi
 if [ "$dry" = 1 ]; then echo "   [dry-run] $RB_ACT"; rc=0; else
     l3 "$RB_ACT" 2>&1 | tee "$dir/act.log"; rc=${PIPESTATUS[0]}; fi
+# phase9-U5: were the probe and the gate still up when the act ended?
+gone=""
+if [ "$dry" != 1 ]; then
+    kill -0 "$probe_pid" 2>/dev/null || gone+="the probe exited before the act ended; "
+    kill -0 "$gate_pid" 2>/dev/null || gone+="the gate exited before the act ended; "
+fi
 
 step "8. the readout ($target)"
 if [ "$dry" = 1 ] && [ -f "$elf" ]; then
@@ -277,6 +435,14 @@ trap - INT TERM
 { echo "loadavg_end=$(cut -d' ' -f1-3 /proc/loadavg)"; echo "wall_secs=$(( SECONDS - start ))"; } >> "$out.meta"
 
 step "10. check, merge, analysis"
+# phase9-U5: a run whose probe or gate did not run is VOID, whatever the
+# scenario says (u1-e1 printed PASS over an empty table)
+void="$gone"
+for f in probe gate; do [ -s "$dir/$f.jsonl" ] || void+="$f.jsonl missing or empty; "; done
+stale="$(grep -hs STALE "$dir/probe.stdout" "$dir/gate.stdout" | head -n1)"
+[ -z "$stale" ] || void+="${stale}; "
+void="${void%; }"
+[ -z "$void" ] || echo "$void" > "$dir/void.txt"
 echo "== run $id ($act, $target): act exit $rc; readout exit $trc_read; trace $(stat -c %s "$out" 2>/dev/null || echo 0) B"
 python3 src/safety_island_tracing/island_trace.py check "$out" > "$out.check.txt" 2>&1
 grep -E "^(ok|FAIL|info) +(window|violations)|trace-check" "$out.check.txt"
@@ -285,12 +451,22 @@ grep -E "^(ok|FAIL|info) +(window|violations)|trace-check" "$out.check.txt"
 python3 -c 'import sys; sys.path.insert(0,"tools/timeline"); import tlcommon as tl; open(sys.argv[1],"w").write(tl.explain_text())' "$dir/explain.txt"
 python3 tools/timeline/merge.py "$out" "$dir" || echo "merge failed: the plot has host events only"
 python3 tools/timeline/render.py "$dir" --table | tee "$dir/table.md"
+if [ -n "$void" ]; then
+    echo "VERDICT: VOID $void (the scenario's own verdict is not evidence without them)"
+    [ -f "$dir/scenario.jsonl" ] && python3 -c 'import json,sys
+for l in open(sys.argv[1]):
+    e = json.loads(l)
+    if e["kind"] == "verdict":
+        print("   (the scenario said %s)" % ("PASS" if e["value"]["ok"] else "FAIL"))' "$dir/scenario.jsonl"
+else
 [ -f "$dir/scenario.jsonl" ] && python3 -c 'import json,sys
 for l in open(sys.argv[1]):
     e = json.loads(l)
     if e["kind"] == "verdict":
         v = e["value"]
         print("VERDICT: %s %s: v at the fault %.2f m/s; %s" % ("PASS" if v["ok"] else "FAIL", e["marker"], v["v0"], v["why"]))' "$dir/scenario.jsonl"
+fi
 # phase9-U1: one line per run, from the files this run wrote
 python3 tools/timeline/run_summary.py "$dir" | tee "$dir/summary.txt"
+[ -z "$void" ] || exit 4
 exit $rc

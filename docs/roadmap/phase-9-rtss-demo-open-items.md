@@ -1348,7 +1348,7 @@ image of main.
   test that a contract-only QoS change changes the baked table. Gate: an
   island build whose entry carries the contract's overrides, verified in
   the generated source.
-- [ ] **C6 - the host under load (was W15).** The tenth run of section 7
+- [x] **C6 - the host under load (was W15).** The tenth run of section 7
   (`d12-b3r`, load 189 from unrelated builds) escalated because
   Autoware withdrew comfortable-stop availability for one sample.
   run-board.sh takes the demo lock but not a load ceiling: refuse to start
@@ -1356,6 +1356,34 @@ image of main.
   the run record, and keep the island's correct escalation as the
   expected outcome under overload. Gate: a round run with the ceiling,
   no host-side escalation; a forced overload refused before the act.
+  Status (2026-10-13, branch `phase9-c6-u5`): done. run-board.sh reads the
+  1-min load in its preflight (before flashing) and again right before the
+  act (after the settle); above `RB_LOAD_MAX` it waits up to
+  `RB_LOAD_WAIT` s (default 180) and then refuses with one line and exit 3
+  (at the act: torn down first). Default ceiling 35: the load the
+  section-9/10 rounds of docs/takeover-trace.md kept by hand on this
+  20-thread host; the C2 and C4 runs started at 13-19, section 7's
+  passing acts at 15-45 (and `d12-a2` / `d12-b2` at 245 / 78, the latter
+  with 3 / 3 serial errors), `d12-b3r` escalated at 189. island.trace.meta
+  keeps `loadavg_start`, `loadavg_act` (new) and `loadavg_end`;
+  run_summary.py prints `load <1-min> at act` after the verdict. The
+  escalation is not masked: a run under the ceiling that escalates still
+  reads FAIL. Forced, before flashing (`RB_LOAD_MAX=0.1 RB_LOAD_WAIT=5`,
+  `u5-load`): `run-board: REFUSED host load: 1-min load 15.46 above
+  RB_LOAD_MAX=0.1 before flashing, still after 5 s (RB_LOAD_WAIT);
+  busiest: anydesk 106.2%,xrdp 100.0%,xrdp 100.0%`, exit 3. Forced at the act (`c6-overload`,
+  `RB_LOAD_MAX=25 RB_LOAD_WAIT=10`, 60 niced busy loops started once the
+  board was flashed and joined): `1-min load 41.90 above 25 at the act;
+  waiting (up to 10 s)`, then `run-board: REFUSED host load: 1-min load
+  48.64 above RB_LOAD_MAX=25 at the act, still after 10 s (RB_LOAD_WAIT);
+  busiest: rustc 505.3%,xrdp 94.7%,anydesk 89.5%`, torn down, exit 3, no
+  act. A real wait: `u5-void` started at 44.31 and flashed after the load
+  fell to 34.12. On the C4 image (ELF sha256 `9475bca518b14817...`, no
+  firmware change since):
+  `SUMMARY c6-encore2 encore: PASS; load 24.65 at act; table 8/8 PASS, total 3518.56 of 4934.67 ms; trace-check PASS; stored 1 (silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 66640 of 107008 B`
+  (and `c6-encore1`, before the pre-act probe check: PASS, load 14.31 at
+  act, total 3482.34). Not run here: a and b with the ceiling; the final
+  board round (section 8, Order) runs them.
 - [ ] **C7 - the budgets from the current image (was W14).** tick 118 and
   work 31 ms were set from the pre-I14 image; the I14 runs read tick
   spacing 98.87-101.50 and work 0.40-1.04 ms. Re-derive with max + 20 %
@@ -1491,7 +1519,7 @@ image of main.
   other sources than third-party/nano-ros now holds` (built from
   514def1aa07b45b9, the pin's sources are b5505cd9bf7afb77), the DX 3.1
   case.
-- [ ] **U5 - a run that cannot start says why, fast.** The gateway step
+- [x] **U5 - a run that cannot start says why, fast.** The gateway step
   timed out at 60 s when `fuser` crawled under a stray filesystem walk;
   the run left an empty directory. Preflight in run-board.sh: probe held,
   container state, load (C6), and a bounded `fuser`; on failure, a reason
@@ -1500,6 +1528,49 @@ image of main.
   refused a stale model, the table was empty, the scenario still printed
   VERDICT PASS), and run the model's staleness check before flashing.
   Gate: each preflight failure, forced once, produces its reason.
+  Status (2026-10-13, branch `phase9-c6-u5`): done. run-board.sh writes
+  its own `run.log` (unless the caller already redirects into it) and runs
+  a preflight after the demo lock and before flashing; each failure is one
+  `run-board: REFUSED <reason>` line (also `refused.txt`), a `SUMMARY <id>
+  <act>: REFUSED <reason>` line, exit 3. Forced once each (encore, the
+  board idle):
+  stale model (a comment appended to the contract, restored), `u5-stale`:
+  `REFUSED timeline: the model is STALE against
+  launch/safety_island.contract.yaml -- run \`just sync\`` (the check is
+  tlcommon.load_model, the probe's own);
+  a second container (`docker run --name sai-l3-u5fake ... sleep`),
+  `u5-container`: `REFUSED container(s) running: sai-l3-u5fake -- another
+  act or a leftover; \`docker stop sai-l3-u5fake\` if nothing uses it`;
+  a held probe (`pyocd gdbserver -t s32k344` in the background),
+  `u5-probe`: `REFUSED the probe is in use by another process: 409350
+  timeout 60 pyocd gdbserver -t s32k344 --port 3399 (+1 more)` (the
+  run's own ancestors are excluded, so a shell whose command line names
+  pyocd does not refuse itself);
+  a slow fuser (`FUSER_TIMEOUT=0.001`), `u5-fuser`: `REFUSED fuser on
+  /dev/serial/by-id/usb-FTDI_FT232R_USB_UART_B001UCTE-if00-port0 took over
+  0.001 s (host /proc busy: a filesystem walk?)`; just l3-peer and
+  board-peer bound their own fuser the same way (`l3-peer: fuser on ...
+  took over 0.001 s ... -- not starting`, exit 1), and run-board.sh stops
+  waiting for the gateway as soon as l3-peer exits, with its last line;
+  a missing overlay (`RB_HOST_WS=/nonexistent/l3-host-ws/install`),
+  `u5-overlay`: `REFUSED no host overlay:
+  /nonexistent/l3-host-ws/install/setup.bash missing -- run \`just
+  l3-host-ws\``;
+  the load ceiling: C6 above.
+  After the board is up: a probe that exits before the act (a stand-in
+  RB_PROBE printing the u1-e1 STALE line), `u5-noprobe`: `REFUSED the
+  probe exited before the act: timeline: the model is STALE against ...`,
+  torn down, no act, exit 3. A probe that dies 5 s into the act
+  (`u5-void2`): the scenario's own act output still says `VERDICT: PASS`,
+  but run-board.sh prints `VERDICT: VOID the probe exited before the act
+  ended; probe.jsonl missing or empty; timeline: the model is STALE
+  against ... (the scenario's own verdict is not evidence without them)`,
+  `(the scenario said PASS)`, keeps `void.txt`, exits 4, and
+  `SUMMARY u5-void2 encore: VOID (the probe exited before the act ended;
+  probe.jsonl missing or empty; timeline: ...); load 18.98 at act; table
+  0/7 PASS, total - of 4934.67 ms; ...`. The same holds for the gate
+  (gate.jsonl, gate.stdout). The encore: C6's `c6-encore2`. Not forced:
+  `pyocd list` without a probe (the MCU-Link stayed plugged in).
 - [ ] **U6 - one priority story.** `CONFIG_ISLAND_SPIN_RAISE` showed no
   clear gain over the act (section 6); the I14 watermark removed the late
   spins. Measure one round without it on the I14 image; keep it only if
