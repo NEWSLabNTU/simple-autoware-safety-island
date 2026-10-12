@@ -1210,3 +1210,113 @@ were read over SWD after each run's teardown.
   arming-time silence verdict, about 9 s after boot); every table edge was
   inside the window. Whether `d12-b2`'s 3 / 3 and `d12-b3r`'s 2 / 2 were in
   the act is not known.
+
+## 8. Correctness and UX first (2026-10-12)
+
+The order for the next sitting: what makes a stated claim wrong or
+unverifiable first, then the frictions that cost time on every run. The
+booth units (W1, W2, W11, W9, W10) wait until this section is done. Each
+unit names its gate; a unit is done when the gate passes on the board
+image of main.
+
+### Correctness
+
+- [ ] **C1 - charge the timer jitter (play_launch PR #18).** Release
+  play_launch with the PR, re-pin CI and the doctor's minimum (W19's
+  three surfaces together), raise the island contract's `island.tor` from
+  210 to at least 218 ms (its critical path through the handler tick is
+  100 + 18 + 100 with the PR), regenerate `tools/timeline/testdata/explain.txt`
+  and the README's verbatim outputs. Expected: odd_exit detection 120 ->
+  126 ms, comfortable_stop 20,795.67 -> 20,801.67, floor 14,703.67 ->
+  14,709.67, the variants 30,801.67 and 30,531.67 (still refused at the
+  comfortable rung only), hpc_loss unchanged. Gate:
+  `.github/check-contracts.sh` 14/14 with no `warning[scope-budget]`,
+  selftest OK; the deck's totals follow.
+- [ ] **C2 - trace completeness on every act.** trace-check fails on 7 of
+  9 passing runs because the 40,960 B RAM buffer fills before the
+  readout. DTCM has about 52 KiB free on the I14 image (75,400 of 128 KiB
+  used): move the trace buffer there and size it from the act's marker
+  volume, or read it out mid-act; drop or decimate the per-tick markers
+  that no table reads. Gate: trace-check PASS on every act of a round
+  (encore, a, b) with the same table rows.
+- [ ] **C3 - serial errors inside the act.** Every run ends with about one
+  overrun and one bad frame; in `d12-ab` they came at teardown, the
+  others are unattributed. Snapshot `_z_zephyr_serial_stats` at the act's
+  start and end (C6's readout) so a run says which errors fell in the
+  act. If any do: RXWATER 0 (an interrupt on the first byte, still a FIFO
+  drain), else the I16 eDMA mode (needs `just setup zephyr`'s TCM
+  backport). Gate: a round with 0 overruns and 0 bad frames inside every
+  act. Supersedes W16.
+- [ ] **C4 - an assert must not fault the fault report.** The board conf
+  has `CONFIG_ASSERT=y` with immediate logging to the shell backend, so an
+  assert recurses into a usage fault and the reason is lost (the first
+  I16 image, `EDMA_TcdSetTransferConfig`). Make the assert path print once
+  (deferred log mode, or `CONFIG_ASSERT_NO_MSG_INFO` with the file and
+  line kept) and land in the fatal handler. Gate: a forced assert on the
+  board leaves its file and line readable over SWD or the console.
+- [ ] **C5 - contract QoS reaches the image.** play_launch lowers contract
+  QoS into `qos_overrides.*` parameters, but nano-ros's C++ component
+  entry bakes no override table from them (the generated main has no
+  `set_qos_overrides`), so a contract QoS that differs from the code's is
+  silently not applied. File it in nano-ros and fix it there, with a
+  test that a contract-only QoS change changes the baked table. Gate: an
+  island build whose entry carries the contract's overrides, verified in
+  the generated source.
+- [ ] **C6 - the host under load (was W15).** The tenth run of section 7
+  (`d12-b3r`, load 189 from unrelated builds) escalated because
+  Autoware withdrew comfortable-stop availability for one sample.
+  run-board.sh takes the demo lock but not a load ceiling: refuse to start
+  an act above a stated 1-min load (or wait for it), print the load in
+  the run record, and keep the island's correct escalation as the
+  expected outcome under overload. Gate: a round run with the ceiling,
+  no host-side escalation; a forced overload refused before the act.
+- [ ] **C7 - the budgets from the current image (was W14).** tick 118 and
+  work 31 ms were set from the pre-I14 image; the I14 runs read tick
+  spacing 98.87-101.50 and work 0.40-1.04 ms. Re-derive with max + 20 %
+  over a full round of the current image, keep the margin rule, and state
+  which image each term came from. Gate: the contract's numbers cite the
+  current image's runs; check-contracts 14/14.
+
+### UX frictions
+
+- [ ] **U1 - every run records its own evidence.** The serial counters,
+  the boot record (heap and arena at FirstSpin and at the dump) and the
+  violation ring are read by hand today. tools/timeline/readout.py
+  reads all three in its halted read at the end of each act, into
+  `serial.txt` and `bootrec.txt` beside `violations.txt`, and
+  run-board.sh prints one summary line (verdict, total, stored verdicts,
+  overruns / bad frames, heap peak). Enables C3.
+- [ ] **U2 - `just board-build` exits 0 on a good image.** It exits 1 from
+  the post-link `ram_report` (`size_report` fails), so every caller has to
+  know the ELF is fine. Fix the report or make `board-size` advisory, and
+  keep a real link failure fatal. Gate: a clean build exits 0; a forced
+  link error exits non-zero.
+- [ ] **U3 - the spin-latency tools in the tree.** `build-diag.sh`,
+  `actseg.py`, `run-encore-rclcpp.sh` and the `ienv.sh` pattern live in a
+  scratch directory. Move them under `tools/timeline/` (or `experiments/
+  spin-latency/`) with a `just` recipe for a diag build and an act-segment
+  count, so the B2 figure is reproducible from the repo. Gate: the B2
+  numbers regenerate from a clean checkout.
+- [ ] **U4 - a stale nros CLI is refused, not used.** Main moved its
+  nano-ros pin; a worktree whose `packages/cli/target/release/nros` was
+  built from another commit still runs it (DX 3.1). The doctor compares
+  the CLI's build commit with the pinned submodule and says which
+  `just setup-cli` to run. Gate: a deliberately stale CLI fails the
+  doctor with that line.
+- [ ] **U5 - a run that cannot start says why, fast.** The gateway step
+  timed out at 60 s when `fuser` crawled under a stray filesystem walk;
+  the run left an empty directory. Preflight in run-board.sh: probe held,
+  container state, load (C6), and a bounded `fuser`; on failure, a reason
+  in `run.log` and a non-zero exit before flashing. Gate: each preflight
+  failure, forced once, produces its reason.
+- [ ] **U6 - one priority story.** `CONFIG_ISLAND_SPIN_RAISE` showed no
+  clear gain over the act (section 6); the I14 watermark removed the late
+  spins. Measure one round without it on the I14 image; keep it only if
+  the round shows a difference, otherwise remove it and its comment.
+
+### Order
+
+C1 (small, unblocks the deck), U1 (makes C3 and C2 measurable), C3, C2,
+C4, U2, U3, C6 with U5, U4, C5 (cross-repo), C7 and U6 on the last board
+round. One board round at the end re-runs encore, a and b on main's
+image and feeds C3, C2, C7 and U6 together.
