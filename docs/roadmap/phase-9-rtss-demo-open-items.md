@@ -1340,7 +1340,7 @@ image of main.
   572,544 -> 576,728 (+4,184). The normal image (ELF sha256
   `9475bca518b14817...`), flashed back:
   `SUMMARY c4-encore1 encore: PASS; table 8/8 PASS, total 3440.93 of 4934.67 ms; trace-check PASS; stored 1 (silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 66640 of 107008 B`.
-- [ ] **C5 - contract QoS reaches the image.** play_launch lowers contract
+- [x] **C5 - contract QoS reaches the image.** play_launch lowers contract
   QoS into `qos_overrides.*` parameters, but nano-ros's C++ component
   entry bakes no override table from them (the generated main has no
   `set_qos_overrides`), so a contract QoS that differs from the code's is
@@ -1348,6 +1348,46 @@ image of main.
   test that a contract-only QoS change changes the baked table. Gate: an
   island build whose entry carries the contract's overrides, verified in
   the generated source.
+  Status (2026-10-13, branch `phase9-c5-qos`): done. The gap as found: the
+  C++ pack rendered the override table only for a `configure`-shape node,
+  and the island's three components are `rclcpp`-shape, so they got a
+  3-argument `NodeHandle` with no table (nano-ros issue 1854). Fixed in
+  nano-ros PR #2068: an rclcpp-shape component's table rides on its
+  `NodeHandle` and is installed before the constructor creates its
+  entities, with a test that a contract-only liveliness line changes the
+  baked table. Re-pinning to it broke the board link: DTCM overflowed by
+  22,608 B. Measured, not guessed: the whole growth is one symbol,
+  `rclcpp::Node::GlobalStorageHolder<0>::storage` (52,056 -> 77,048 B),
+  and `-Zprint-type-sizes` on the island's own nros-cpp build puts 24,744
+  B of the 24,992 B in nano-ros 1812's carved parameter-service home
+  (4 x 3,596 B of empty service sets, 2 x 4,444 B of request/reply
+  buffers, 596 B of event publisher, the rest of the state). The island
+  holds a 22-slot store (its contract declares parameters) and serves no
+  parameter services (`CONFIG_NROS_CAPABILITY_PARAM_SERVICES` off), and
+  1812 reserved the services whenever a store is carved. Fixed in nano-ros
+  PR #2077 (issue 1856): a build that states the services off carves the
+  store's state alone, `ParamHome` 24,744 -> 1,472 B; an image with the
+  services keeps 1812's full home. The same PR fixes issue 1855: the
+  resolver writes a contract's `deadline:` / `lease_duration:` overrides
+  in nanoseconds (rclcpp's unit) and the lowering read milliseconds, so a
+  500 ms lease would have baked as 500,000,000 ms; the lowering now reads
+  nanoseconds and bakes milliseconds (tests: a 500 ms lease and a 4.3 s
+  deadline, end to end through the resolver). Pinned to nano-ros
+  `43fc1c2f7` (#2077's merge, which contains #2068); the phase-492 C API
+  renames and the three board knobs moved into
+  `src/zephyr_entry/system.toml` `[image.zephyr] env` came with the pin.
+  The island's generated entry carries no override table, and that is the
+  right answer: its contract states no deadline, liveliness or lease
+  (`system_model.yaml` has no `qos_overrides.*` parameter) and its
+  capacity QoS agrees with the code (check-contracts 14/14), so the gate
+  is held by nano-ros's tests rather than by an island row. Image against
+  C4: FLASH 576,728 -> 581,688 (+4,960), RAM 263,176 (unchanged), DTCM
+  128,688 -> 130,408 of 131,072 (+1,720: the store's state, now carved
+  instead of on the heap; 664 B left), ITCM 14,760. Explain totals
+  unchanged (hpc_loss 4934.67, odd_exit comfortable_stop 20801.67, floor
+  14709.67, variants 30801.67 / 30531.67); selftest OK. Board, this image
+  (ELF sha256 `df1bf38a1090bb46...`):
+  `SUMMARY c5-encore1 encore: PASS; load 24.44 at act; table 8/8 PASS, total 3504.30 of 4934.67 ms; trace-check PASS; stored 1 (silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 66184 of 107008 B`.
 - [x] **C6 - the host under load (was W15).** The tenth run of section 7
   (`d12-b3r`, load 189 from unrelated builds) escalated because
   Autoware withdrew comfortable-stop availability for one sample.
