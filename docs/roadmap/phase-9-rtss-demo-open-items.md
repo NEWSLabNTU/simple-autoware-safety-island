@@ -1221,7 +1221,7 @@ image of main.
 
 ### Correctness
 
-- [ ] **C1 - charge the timer jitter (play_launch PR #18).** Release
+- [x] **C1 - charge the timer jitter (play_launch PR #18).** Release
   play_launch with the PR, re-pin CI and the doctor's minimum (W19's
   three surfaces together), raise the island contract's `island.tor` from
   210 to at least 218 ms (its critical path through the handler tick is
@@ -1232,6 +1232,25 @@ image of main.
   comfortable rung only), hpc_loss unchanged. Gate:
   `.github/check-contracts.sh` 14/14 with no `warning[scope-budget]`,
   selftest OK; the deck's totals follow.
+  Status (2026-10-12): done on play_launch 0.16.0 (PR #18 released as
+  828a271f, tag v0.16.0, wheels on the GitHub release and the package
+  index). The CI pin, the doctor's `PLAY_LAUNCH_MIN`, .envrc, scripts/env.sh
+  and the runbook say 0.16.0; nano-ros PR 2031 moves the vendored copy to
+  the same tag (rlm v0.1.56), queued. island.tor is 218 ms: the checker's
+  critical path is `/mrm_handler = 218.00ms (100.00ms event-segment +
+  118.00ms sampling_cost)`, the period 100 plus the handler timer's 18 ms
+  jitter, and 217 draws `warning[scope-budget]`. With 0.16.0 from the
+  package index under `env -i`: odd_exit detection 126 (`reports every
+  100.00ms + 6.00ms jitter + 20.00ms`), comfortable stop 20,801.67, floor
+  14,709.67, the variants 30,801.67 and 30,531.67 (refused at the
+  comfortable rung only; floors 24,709.67 and 18,601.67), hpc_loss 4,934.67
+  unchanged; the island contract's own totals do not move (its gate is
+  external, period only). `.github/check-contracts.sh` 14/14; no contract
+  of the island or the demo prints `warning[scope-budget]` (the
+  docs/demo-l4 fixture stage2-rungBudget prints its own on
+  `island.b1_degrade_ads`, as on 0.15.1). selftest OK on the regenerated
+  testdata/explain.txt; demo/l3/contracts/README.md's verbatim outputs and
+  scratch variants are 0.16.0's.
 - [ ] **C2 - trace completeness on every act.** trace-check fails on 7 of
   9 passing runs because the 40,960 B RAM buffer fills before the
   readout. DTCM has about 52 KiB free on the I14 image (75,400 of 128 KiB

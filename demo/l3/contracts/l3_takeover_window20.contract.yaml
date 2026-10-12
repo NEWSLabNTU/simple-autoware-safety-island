@@ -44,17 +44,17 @@
 #                               island; 3 s was chosen for the 3.0 m/s the
 #                               island contract assumed. 10 s is the brief's
 #                               figure and leaves the floor 5191.33 ms.
-#   odd_exit detection 120 ms   the availability gate's 10 Hz timer
+#   odd_exit detection 126 ms   the availability gate's 10 Hz timer
 #                               (phase8-W16/W24; the gate as it runs, see
 #                               `availability_gate` below): its 100 ms period
-#                               plus its tick's 20 ms path (declared, not
-#                               measured; the figure these files have used
-#                               since phase8-W6). The tick's measured release
-#                               jitter, 6 ms, is declared on the timer; the
-#                               checker charges a publisher's period and path
-#                               here, not its jitter (play_launch 0.15.1).
-#                               play_launch PR #18 (unreleased) charges
-#                               it: detection 126, totals +6 (phase9-W6).
+#                               + its tick's measured release jitter, 6 ms,
+#                               declared on the timer + its tick's 20 ms path
+#                               (declared, not measured; the figure these
+#                               files have used since phase8-W6). The checker
+#                               charges all three in a reported fault's
+#                               detection (play_launch 0.16.0), and every
+#                               odd_exit total below it carries the 6 ms
+#                               (phase9-C1; 120 on earlier releases).
 #   hpc_loss detection 500 ms   mrm_handler's
 #                               `timeout_operation_mode_availability: 0.5`.
 #   handler reaction 230 ms     ON THE BOARD (phase9-W5; 206 from
@@ -161,10 +161,10 @@ modes:
 # request state on the board: the gate's tick, as a sampling wait (100 ms)
 # + its release jitter (6, measured; see `availability_gate`) + its tick's
 # path (20, declared) + the serial link (81, the guard subscriber's
-# `max_transport`) + `call_mrm` (149). The checker's critical path is 350
-# (`/availability_gate -> /mrm_handler`, 250 event segment + 100 sampling
-# cost): it does not add a timer's jitter to the sampling cost, so the 6 ms
-# is ours (play_launch PR #18, unreleased, adds it: 356). History: 226 from phase8-W30 (the input-triggered gate's 20 +
+# `max_transport`) + `call_mrm` (149). The checker's critical path is the
+# same 356 (`/availability_gate -> /mrm_handler`, 250 event segment + 106
+# sampling cost: the gate's period and its timer's jitter, play_launch
+# 0.16.0). History: 226 from phase8-W30 (the input-triggered gate's 20 +
 # `call_mrm` 206, the link inside it), 210 before (the island contract's
 # argument, when `call_mrm` was 110). phase9-W5 moved the link out of
 # `call_mrm` into `max_transport`, which play_launch 0.14.0 counts in a
