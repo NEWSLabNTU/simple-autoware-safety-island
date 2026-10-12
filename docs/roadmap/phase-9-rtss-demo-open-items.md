@@ -1415,18 +1415,82 @@ image of main.
   call in an unreferenced function linked: `--gc-sections` drops it.)
   Not done here: adding `anytree` to the venv, a nano-ros provisioning
   matter.
-- [ ] **U3 - the spin-latency tools in the tree.** `build-diag.sh`,
+- [x] **U3 - the spin-latency tools in the tree.** `build-diag.sh`,
   `actseg.py`, `run-encore-rclcpp.sh` and the `ienv.sh` pattern live in a
   scratch directory. Move them under `tools/timeline/` (or `experiments/
   spin-latency/`) with a `just` recipe for a diag build and an act-segment
   count, so the B2 figure is reproducible from the repo. Gate: the B2
   numbers regenerate from a clean checkout.
-- [ ] **U4 - a stale nros CLI is refused, not used.** Main moved its
+  Status (2026-10-13, branch `phase9-u3-u4`): done. The act-segment count
+  is tools/timeline/actseg.py (`just diag-actseg <run>...`, run dirs or ids
+  under build/timeline; `--survival` prints the per-ms curve the figure
+  plots), the driver tools/timeline/run-diag.sh (`just diag-run [a|b|encore]
+  <id>`: run-board.sh's own default act inside RB_ACT, `spin_diag.py read`
+  just before and just after it, the diag ELF by default), the build
+  experiments/spin-latency/build-diag.sh (`just board-build-diag
+  [CONFIG_X=v ...]`: both patches applied, built into build-board-diag with
+  `CONFIG_ISLAND_SPIN_DIAG` and `CONFIG_NROS_ZENOH_SERIAL_ISR_STATS` as -D
+  through board-build's new `ISLAND_BOARD_KCONFIG`, the board conf not
+  edited; an EXIT trap reverts both patches; a tree that still carries one
+  is refused with the `git apply -R` to run). Beside the patches:
+  late_records.py, swd_where.py, swd_stackwalk.py (addr2line from the SDK,
+  no host path: spin_diag.py's lookup), and scripts/ienv.sh for the
+  `env -i` runner; experiments/spin-latency/README.md documents them.
+  Gate, over the island-rclcpp run dirs (read only): `sl-i13` 61 spins
+  >= 1 ms late of 5,779 act spins (35 >= 2 ms, 105.6 / 60.6 per 10k, worst
+  bin 6 ms, ISR 6.21 us a call, 4.46 s), `sl-i14w1` 0 of 6,019 (worst bin
+  0, 2.94 us, 0.85 s): the scratch actseg.py's numbers and section 6's.
+  `just board-build-diag` built on the first pass (FLASH 578,888, RAM
+  273,184, DTCM 128,696, ITCM 16,452 B; `island_spin_diag` and
+  `_z_zephyr_serial_isr_cycles` in the ELF; build-board untouched) and left
+  both submodules clean; with a stub `just`, a failed build and a SIGINT to the
+  process group mid-build each reverted both patches. Found on the way: the
+  scratch build-diag.sh took nano-ros from an inherited `NROS_REPO_DIR`, so
+  run from a shell whose direnv names another checkout it patched THAT
+  checkout; the tree's script uses its own submodule unless the recipe
+  passes the justfile's root. Not run here: a diag encore on the board.
+- [x] **U4 - a stale nros CLI is refused, not used.** Main moved its
   nano-ros pin; a worktree whose `packages/cli/target/release/nros` was
   built from another commit still runs it (DX 3.1). The doctor compares
   the CLI's build commit with the pinned submodule and says which
   `just setup-cli` to run. Gate: a deliberately stale CLI fails the
   doctor with that line.
+  Status (2026-10-13, branch `phase9-u3-u4`): done.
+  scripts/check-nros-fresh.sh, run by `just doctor`: (1) third-party/nano-ros
+  at the island's pin; (2) nano-ros's play_launch and zenoh-pico submodules
+  at the commits nano-ros records (a non-recursive `git submodule update`
+  leaves them behind, the 2026-10-12 `--locked` failure); (3) the CLI the
+  recipes resolve is `<root>/packages/cli/target/release/nros`, also after
+  sourcing activate.sh as `just sync` does, and `nros source-stamp` says it
+  was built from the sources now checked out (nros reports no build commit,
+  `nros --version` is `nros 0.5.0`; the stamp is nano-ros's content hash of
+  the CLI sources and the play_launch pin, embedded at build time, issue
+  0363); (4) nros-launch-resolve through nano-ros's own
+  check-launch-resolve-fresh.sh. Each finding names its command (`git
+  submodule update third-party/nano-ros`, `git -C third-party/nano-ros
+  submodule update --init packages/cli/third-party/play_launch
+  packages/rmw/zenoh/zpico-sys/zenoh-pico`, `(cd third-party/nano-ros &&
+  just setup-cli)`, `... just setup-launch-resolve`); not `--recursive`,
+  which would clone PX4, NuttX and QEMU. A PATH `nros` that is not the
+  checkout's and modified tracked files in those trees (a leftover diag
+  patch is named) are warnings. Gate, in the worktree, each forced and
+  restored: zenoh-pico at HEAD~1 -> `STALE: .../zenoh-pico is at
+  e308088583f2, nano-ros pins 17b1496171b4 -- run: ...`; play_launch at
+  HEAD~1 -> that line plus the CLI (`built from b5505cd9bf7afb77, sources
+  are now dc5efe80e691c3ae`) and the resolver (`built from play_launch
+  d23720c7...`, tree at `bb16802e...`); a comment appended to a CLI source
+  -> `STALE: nros CLI was built from other sources ...`; one in a resolver
+  source -> the resolver line; nano-ros at HEAD~1 -> `STALE:
+  third-party/nano-ros is at cdbb9a85b7c1, this commit pins 9a0e7ec0f824 --
+  run: git submodule update third-party/nano-ros`. Restored, `doctor: OK`.
+  Found on the way: nano-ros's resolver stamp sorts its file list in the
+  caller's locale, so a stamp written under C.UTF-8 reads STALE under
+  en_US.UTF-8; the check accepts a match under the caller's locale or C
+  (collation only reorders the same files; an edit misses under every
+  locale). main's own checkout, read only: `STALE: nros CLI was built from
+  other sources than third-party/nano-ros now holds` (built from
+  514def1aa07b45b9, the pin's sources are b5505cd9bf7afb77), the DX 3.1
+  case.
 - [ ] **U5 - a run that cannot start says why, fast.** The gateway step
   timed out at 60 s when `fuser` crawled under a stray filesystem walk;
   the run left an empty directory. Preflight in run-board.sh: probe held,

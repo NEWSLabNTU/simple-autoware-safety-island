@@ -133,3 +133,21 @@ trace-board out=(TRACE_DIR / "board.trace") elf=(BOARD_BUILD_DIR / "zephyr/zephy
     just _trace-meta "{{out}}" "{{elf}}"
     python3 tools/timeline/readout.py --target board --elf "{{elf}}" --out "{{out}}"
     python3 {{TRACE_PY}} check "{{out}}"
+
+# phase9-U3: the spin-latency diagnostic (docs/tracing.md section 9). One board
+# act on the diag image (`just board-build-diag`) with spin_diag.py read
+# just before and just after the act, into build/timeline/<id>/
+# (spin-diag-pre.txt, spin-diag-act.txt beside run-board.sh's files). Flashes
+# the diag ELF: flash the normal image back after (`just board-flash`).
+# Arguments go to tools/timeline/run-diag.sh: [--no-flash] [a|b|encore] <id>.
+#
+# Board: one act on the spin-diag image, the diag read before and after the act.
+diag-run *args:
+    tools/timeline/run-diag.sh {{args}}
+
+# Late spins inside the act only (act read minus pre read), per run; run dirs
+# or ids under build/timeline. `--survival` prints the per-ms curve too.
+#
+# Count the act segment's late spins of diag runs (tools/timeline/actseg.py).
+diag-actseg +runs:
+    python3 tools/timeline/actseg.py {{runs}}

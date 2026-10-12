@@ -350,6 +350,10 @@ checkout is itself gap 3.1.
   the shared store build dir), #1373 (a fresh worktree fails two gates).
 - Sev: HOURS (repeatedly). Owner: NR. Tracked: NR issues above (open);
   not in NR474.
+- Island side, phase9-U4 (2026-10-13): `just doctor` now refuses a stale
+  or borrowed CLI (scripts/check-nros-fresh.sh: the nano-ros pin, its
+  play_launch and zenoh-pico submodules, `nros source-stamp`, the
+  resolver's stamp), one fix command per finding.
 
 ### 3.2 Environment first: per-worktree setup and the bootstrap doctor
 

@@ -100,8 +100,14 @@ doctor:
     # `nros` an activate.sh or ~/.nros/bin put first on PATH. The message uses
     # the justfile value: $NANO_ROS_ROOT is not exported, and under `set -u`
     # expanding it killed this recipe instead of reporting.
-    [ -x "{{NROS_ROOT}}/packages/cli/target/release/nros" ] \
-        || { echo "MISSING: nros CLI at {{NROS_ROOT}}/packages/cli/target/release/nros — run: (cd {{NROS_ROOT}} && just setup-cli)"; ok=0; }
+    #
+    # phase9-U4 (DX 3.1): present is not enough. A CLI built from another
+    # commit, or one another checkout put first on PATH, still runs; a nested
+    # nano-ros submodule left behind by a non-recursive `git submodule update`
+    # surfaces later as a --locked Cargo.lock error. scripts/check-nros-fresh.sh
+    # checks the pin, the nested submodules the build reads, and both host
+    # tools against their sources, and prints the command for each finding.
+    scripts/check-nros-fresh.sh "{{NROS_ROOT}}" || ok=0
     command -v cmake >/dev/null || { echo "MISSING: cmake"; ok=0; }
     command -v parallel >/dev/null || { echo "MISSING: GNU parallel (apt install parallel) — supervises demo-all"; ok=0; }
     [ -d "{{NROS_ROOT}}/cmake" ] || { echo "MISSING: NANO_ROS_ROOT ({{NROS_ROOT}}) is not a nano-ros checkout"; ok=0; }
@@ -593,6 +599,13 @@ board-build: sync
              CONFIG_COMMON_LIBC_MALLOC_ARENA_SIZE; do
         [ -n "${!k:-}" ] && EXTRA+=("-D${k}=${!k}")
     done
+    # ISLAND_BOARD_KCONFIG="CONFIG_A=y CONFIG_B=2": any Kconfig symbol, as -D,
+    # without editing the tracked board conf. `just board-build-diag` sets it
+    # (with its own build dir); a normal build leaves it unset.
+    for kv in ${ISLAND_BOARD_KCONFIG:-}; do
+        case "$kv" in CONFIG_*=*) EXTRA+=("-D$kv");;
+            *) echo "board-build: ISLAND_BOARD_KCONFIG entry '$kv' is not CONFIG_<name>=<value>" >&2; exit 2;; esac
+    done
     [ ${#EXTRA[@]} -gt 0 ] && echo "board-build: env overrides -> ${EXTRA[*]}"
     # The image's capabilities (param_services), from system.toml through the
     # CLI's SSoT accessor. The Zephyr lane does not resolve them from the
@@ -695,6 +708,17 @@ board-build: sync
     # build-board present that surfaced as `ninja: error: unknown target
     # 'rom_report'` -- an error about the report, from a directory nobody built.
     just BOARD_BUILD_DIR={{BOARD_BUILD_DIR}} board-size
+
+# phase9-U3: the spin-latency diagnostic image (docs/tracing.md section 9,
+# experiments/spin-latency/README.md). Applies the two diag patches to the
+# submodules, builds into build-board-diag (BOARD_DIAG_BUILD_DIR) with
+# CONFIG_ISLAND_SPIN_DIAG and CONFIG_NROS_ZENOH_SERIAL_ISR_STATS (plus any
+# CONFIG_X=value given here), and reverts the patches on any exit. build-board
+# is not touched; never flash this image for a gate run.
+#
+# Build the spin-diag board image into build-board-diag (patches reverted after).
+board-build-diag *conf:
+    ISLAND_NROS_ROOT="{{NROS_ROOT}}" experiments/spin-latency/build-diag.sh {{conf}}
 
 # Flash the island. pyocd via MCU-Link; the runner comes from the board itself.
 #

@@ -27,8 +27,27 @@ REC = ["uptime_ms", "interval_us"] + [f"wall{i}" for i in range(5)] + [f"main{i}
                                         "lk_oth_us", "lk_oth_max_us", "lk_oth_max_ra", "isr_us", "isr_n",
                                         "tt0", "tt1", "tt2", "tu0", "tu1", "tu2", "cb_isr_us", "cb_isr_n"]
 BINS, RING, NTHR = 40, 48, 16
-ADDR2LINE = ("/home/aeon/.nros/sdk/zephyr-sdk-1-0-1/1.0.1/zephyr-sdk-1.0.1/gnu/arm-zephyr-eabi/bin/"
-             "arm-zephyr-eabi-addr2line")
+
+
+def find_addr2line():
+    """arm-zephyr-eabi-addr2line: $ADDR2LINE, else $ZEPHYR_SDK_INSTALL_DIR's
+    (scripts/board-env.sh exports it), else the newest SDK in the nros store
+    (~/.nros/sdk), else PATH."""
+    import glob
+    import shutil
+    tool = "arm-zephyr-eabi-addr2line"
+    if os.environ.get("ADDR2LINE"):
+        return os.environ["ADDR2LINE"]
+    sdk = os.environ.get("ZEPHYR_SDK_INSTALL_DIR")
+    if sdk and os.path.exists(os.path.join(sdk, "gnu/arm-zephyr-eabi/bin", tool)):
+        return os.path.join(sdk, "gnu/arm-zephyr-eabi/bin", tool)
+    store = sorted(glob.glob(os.path.expanduser(f"~/.nros/sdk/zephyr-sdk-*/*/zephyr-sdk-*/gnu/arm-zephyr-eabi/bin/{tool}")))
+    if store:
+        return store[-1]
+    return shutil.which(tool) or tool
+
+
+ADDR2LINE = find_addr2line()
 
 
 def symbols(elf, names):

@@ -24,6 +24,7 @@ Design: `docs/roadmap/phase-8-rtss-work-demo.md`, D7. Results:
 | `run-native.sh` | one traced native_sim run with Autoware, everything above, into `build/timeline/<id>/` |
 | `run-board.sh` | one traced act with the island off the host (phase8-W17): `--target board` flashes the ELF with pyocd, starts the gateway on the UART (`just l3-peer`), resets, waits for the island, starts Autoware in the container, the gate, the probe and the act, reads the trace over SWD, and merges and analyses into `build/timeline/<id>/` as `run-native.sh` does; `--target qemu` does the same against the QEMU island behind the same gateway config (island face on a unix socket) and reads over the QEMU monitor; `--dry-run` prints the steps. The board steps ran on the S32K344 in phase8-W8 (docs/takeover-trace.md section 9; `just l3-traced-act`) |
 | `readout.py` | the island's RAM trace buffer and counters off a running target, every address from the ELF: pyocd over SWD on the board (phase8-W8), the QEMU monitor on QEMU; wraps the buffer in the native_sim dump's header |
+| `spin_diag.py`, `run-diag.sh`, `actseg.py` | DIAG (spin latency, phase9-U3): read and decode `island_spin_diag` over SWD; one act on the diag image (`just board-build-diag`) with the diag read before and after the act (`just diag-run`); the late spins of the act segment (`just diag-actseg`). experiments/spin-latency/README.md |
 | `testdata/explain.txt` | the checker's settle-derived lines and budget table for the live contract (play_launch phase 84, phase8-W12), for `tlcommon.py selftest` |
 
 ## Dependencies
