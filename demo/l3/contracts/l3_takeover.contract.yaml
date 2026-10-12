@@ -57,10 +57,12 @@
 #                               (phase9-C1; 120 on earlier releases).
 #   hpc_loss detection 500 ms   mrm_handler's
 #                               `timeout_operation_mode_availability: 0.5`.
-#   handler reaction 230 ms     ON THE BOARD (phase9-W5; 206 from
-#                               phase8-W30, 110 before): the serial link 81
+#   handler reaction 205 ms     ON THE BOARD (phase9-C7; 230 from
+#                               phase9-W5, 206 from phase8-W30, 110
+#                               before): the serial link 56
 #                               (`max_transport` on the handler's guard
-#                               subscriber; phase8-W31's 67.02 ms x 1.2) +
+#                               subscriber; phase9-C7's 46.42 ms x 1.2 on
+#                               the current image, 81 before) +
 #                               `call_mrm` 149 (the tick 118 + in-tick work
 #                               31, each the maximum over the 13 W8 board
 #                               runs + 20 %). The link is charged once on the
@@ -157,14 +159,15 @@ modes:
 # take, which the checker derives; a scope path's own `max_latency` is the
 # NOMINAL traversal, and only island.tor declares one.
 #
-# island.tor, 356 ms (phase9-W6), from the ODD verdict at the gate to the
+# island.tor, 331 ms (phase9-C7), from the ODD verdict at the gate to the
 # request state on the board: the gate's tick, as a sampling wait (100 ms)
 # + its release jitter (6, measured; see `availability_gate`) + its tick's
-# path (20, declared) + the serial link (81, the guard subscriber's
+# path (20, declared) + the serial link (56, the guard subscriber's
 # `max_transport`) + `call_mrm` (149). The checker's critical path is the
-# same 356 (`/availability_gate -> /mrm_handler`, 250 event segment + 106
+# same 331 (`/availability_gate -> /mrm_handler`, 225 event segment + 106
 # sampling cost: the gate's period and its timer's jitter, play_launch
-# 0.16.0). History: 226 from phase8-W30 (the input-triggered gate's 20 +
+# 0.16.0). History: 356 from phase9-W6 to C7 (the link at 81), 226 from
+# phase8-W30 (the input-triggered gate's 20 +
 # `call_mrm` 206, the link inside it), 210 before (the island contract's
 # argument, when `call_mrm` was 110). phase9-W5 moved the link out of
 # `call_mrm` into `max_transport`, which play_launch 0.14.0 counts in a
@@ -178,7 +181,7 @@ paths:
   island.tor:
     trigger: { input: [/system/operation_mode/availability] }
     output: [/system/takeover_request/state]
-    max_latency: 356ms
+    max_latency: 331ms
   island.comfortable_stop:
     trigger: { input: [/system/operation_mode/availability] }
     output: [/control/trajectory_follower/control_cmd]
@@ -249,12 +252,13 @@ nodes:
       operation_mode_availability:
         min_rate_hz: 10
         max_age: 500ms
-        # The serial hop in (gateway + UART): 81 ms on the board (phase9-W5;
-        # phase8-W31's 12 edges reached 67.02 ms, x 1.2), the island
-        # contract's figure. play_launch 0.14.0 charges it once on the
+        # The serial hop in (gateway + UART): 56 ms on the board (phase9-C7:
+        # 12 edges of a round on the current image reached 46.42 ms, x 1.2;
+        # 81 from phase9-W5, phase8-W31's 67.02 ms), the island contract's
+        # figure. play_launch 0.14.0 charges it once on the
         # reaction route (F1) and not after the window's deadline, so it is
         # declared here and no longer inside `call_mrm`.
-        max_transport: 81ms
+        max_transport: 56ms
         # No liveliness/lease (phase9-W6): the handler subscribes with
         # `nros::QoS(1)` and checks the 500 ms itself (`max_age`,
         # `mechanism: application`); the island contract says why.

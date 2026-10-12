@@ -1288,7 +1288,7 @@ image of main.
   10,000.91, PASS); not the trace, and `c2-b2` passed every row. Same row
   counts as the d12 round (8, 6, 15). docs/tracing.md section 8, "The
   buffer in DTCM". DTCM is now 2,416 B from full.
-- [ ] **C3 - serial errors inside the act.** Every run ends with about one
+- [x] **C3 - serial errors inside the act.** Every run ends with about one
   overrun and one bad frame; in `d12-ab` they came at teardown, the
   others are unattributed. Snapshot `_z_zephyr_serial_stats` at the act's
   start and end (C6's readout) so a run says which errors fell in the
@@ -1296,6 +1296,38 @@ image of main.
   drain), else the I16 eDMA mode (needs `just setup zephyr`'s TCM
   backport). Gate: a round with 0 overruns and 0 bad frames inside every
   act. Supersedes W16.
+  Status (2026-10-13, branch `phase9-round-final`): done, nothing to fix.
+  The final round on main's image (`4cb670c`, ELF sha256
+  `df1bf38a1090bb46...`, the C5 image; spin raise on, FIFO watermark and
+  serial TCM on), `L3_IMAGE=sai-l3-autoware:1.5.0-w24`, run ids
+  `build/timeline/fr-*`; every act reads `serial in act 0/0`:
+
+  | run | act | verdict | load at act | table, total of budget | trace-check | stored | serial in act | heap peak |
+  | --- | --- | --- | ---: | --- | --- | --- | --- | ---: |
+  | `fr-e1` | encore | PASS | 31.08 | 8/8, 3492.44 of 4934.67 | PASS | silence x1 | 0/0 | 66448 |
+  | `fr-a1` | a | PASS | 14.02 | 6/6 | PASS | silence x1 | 0/0 | 65960 |
+  | `fr-b1` | b | PASS | 7.60 | 15/15, 15402.56 of 20475.67 | PASS | silence x1 | 0/0 | 66496 |
+  | `fr-e2` | encore | PASS | 16.86 | 8/8, 3591.54 of 4934.67 | PASS | silence x1 | 0/0 | 66184 |
+  | `fr-a2` | a | PASS | 15.37 | 6/6 | PASS | silence x1 | 0/0 | 66184 |
+  | `fr-b2` | b | PASS | 9.04 | 15/15, 16725.39 of 20475.67 | PASS | silence x1 | 0/0 | 66232 |
+  | `fr-e3` | encore | PASS | 7.74 | 8/8, 3482.40 of 4934.67 | PASS | silence x1 | 0/0 | 66184 |
+  | `fr-a3` | a | PASS | 11.03 | 6/6 | PASS | silence x1 | 0/0 | 65960 |
+  | `fr-b3` | b | PASS | 7.14 | 15/15, 16701.81 of 20475.67 | PASS | silence x1 | 0/0 | 66232 |
+  | `fr-ab` | encore, readouts | - | 6.41 | (no act) | PASS | 8 (below) | 0/0 | 66048 |
+
+  (heap peak of 107,008 B; "silence x1" = the known `silence-runtime
+  /mrm_handler/operation_mode_availability`.) The first `fr-b3` was
+  REFUSED by the preflight (the probe "in use": the operator's own shell
+  loop named readout.py on its command line), not run; rerun as is.
+  `fr-ab` (d12-ab's shape: encore with RB_ACT replaced by `sleep 40`,
+  `violations.py read`, a `--serial-only` snapshot, `violations.py overrun
+  250`, `sleep 6`, the two reads again): 40 s after RUN only the silence;
+  after the overrun `max-latency-runtime` hazard_lights_cmd 250 / 100,
+  mrm_state 250 / 149, takeover_request_state 250 / 149, timer-overrun 7,
+  1, 1, release-jitter 242855 us; no rate verdict 6 s later; serial 0/0 at
+  the act's start, at 40 s, after the overrun and at the readout (ring high
+  water 588 B). The per-run "1 / 1" of section 7 is the teardown: the act
+  has none. RXWATER 0 and the eDMA mode are not needed.
 - [x] **C4 - an assert must not fault the fault report.** The board conf
   has `CONFIG_ASSERT=y` with immediate logging to the shell backend, so an
   assert recurses into a usage fault and the reason is lost (the first
@@ -1424,12 +1456,58 @@ image of main.
   (and `c6-encore1`, before the pre-act probe check: PASS, load 14.31 at
   act, total 3482.34). Not run here: a and b with the ceiling; the final
   board round (section 8, Order) runs them.
-- [ ] **C7 - the budgets from the current image (was W14).** tick 118 and
+- [x] **C7 - the budgets from the current image (was W14).** tick 118 and
   work 31 ms were set from the pre-I14 image; the I14 runs read tick
   spacing 98.87-101.50 and work 0.40-1.04 ms. Re-derive with max + 20 %
   over a full round of the current image, keep the margin rule, and state
   which image each term came from. Gate: the contract's numbers cite the
   current image's runs; check-contracts 14/14.
+  Status (2026-10-13, branch `phase9-round-final`): done. Terms over the
+  nine acts of the C3 round (`fr-e1..3`, `fr-a1..3`, `fr-b1..3`; image
+  `df1bf38a1090bb46...`), W30's terms.py
+  (`/mnt/mx500/aeon/worktrees/w30-reanalysis/terms.py`,
+  `build/timeline/fr-terms.txt`):
+
+  | term | range (n) | max | x 1.2, rounded up | contract | result |
+  | --- | --- | ---: | ---: | ---: | --- |
+  | link (gate publish -> island take, cross-clock) | 18.53-46.42 (12) | 46.42 | 56 | 81 | 81 -> 56 |
+  | tick spacing | 99.00-101.01 (1121) | 101.01 | 100 + 1.21 -> 102 | 118 | kept |
+  | work (tick -> call_mrm EXIT) | 0.41-0.89 (1130) | 0.89 | | | |
+  | work (tick -> velocity limit, expiry tick) | 1.29-1.32 (3) | 1.32 | 2 | 31 | kept |
+  | call_mrm = tick + work | | | 104 | 149 | kept |
+  | driver_exit = tick + work (exit observed 14.73-96.56) | | | 104 | 149 | kept |
+  | wait (fault take -> next tick) | 28.22-86.40 (6) | 86.40 | | | (in tick) |
+
+  The rule gives call_mrm 104 and it is not taken: the b act's host-clock
+  route row (deadline -> velocity limit as received) read 103.50 in
+  `fr-b3` and 104.22 in section 7's `d12-b3s`, and the host dwell 10103.12
+  and 10103.98, because the host rows also carry the difference of two
+  out-link delays, which neither term charges; lowering would fail a
+  measured run. So tick 118, work 31, call_mrm and driver_exit 149, the
+  on_timer jitter 18 and island.tor 218 stay. The link is lowered: every
+  takeover-route row measured since phase9-W5 (max 126.56, `d12-b3s`)
+  fits 56 + 149 = 205. `max_transport` 81 -> 56 in the island contract and
+  the three L3 compositions, provenance in the comments; the compositions'
+  island.tor 356 -> 331 (its sum: 100 + 6 + 20 + 56 + 149; no
+  `warning[scope-budget]`). New totals: island contract hpc_loss 4934.67
+  -> 4909.67, odd_exit takeover route 230 -> 205, comfortable stop
+  20475.67 -> 20450.67, floor 14683.67 -> 14658.67; compositions
+  comfortable stop 20801.67 -> 20776.67, floor 14709.67 -> 14684.67,
+  hpc_loss 4934.67 -> 4909.67; the variants 30801.67 -> 30776.67 and
+  30531.67 -> 30506.67, still refused at the comfortable rung only (floors
+  24684.67 and 18576.67, 65 km/h hpc_loss 8801.67); `ends within` 10149
+  unchanged. testdata/explain.txt and demo/l3/contracts/README.md
+  regenerated (play_launch 0.16.0); selftest OK; check-contracts 14/14. The
+  image does not change (the monitor rows bake 149 only; the board build
+  after the edit is the same `df1bf38a...`). Against the new numbers:
+  `SUMMARY c7-a1 a: PASS; load 26.24 at act; table 6/6 PASS; trace-check PASS; stored 1 (silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 65960 of 107008 B`,
+  `SUMMARY c7-e2 encore: PASS; load 14.09 at act; table 8/8 PASS, total 3445.15 of 4909.67 ms; trace-check PASS; stored 1 (silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 66184 of 107008 B`,
+  `SUMMARY c7-b2 b: PASS; load 11.40 at act; table 15/15 PASS, total 15451.25 of 20450.67 ms; trace-check PASS; stored 1 (silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 66232 of 107008 B`.
+  Environmental, rerun once each: `c7-e1` REFUSED (1-min load 85 from
+  other users, then `pyocd list` over 30 s), `c7-b1` FAIL at load 33.87
+  (5-min 62): EMERGENCY_STOP after one comfortable-stop withdrawal by
+  Autoware, and trace-check FAIL (the buffer full, 53,240 B, after a long
+  loaded start).
 
 ### UX frictions
 
@@ -1611,10 +1689,36 @@ image of main.
   0/7 PASS, total - of 4934.67 ms; ...`. The same holds for the gate
   (gate.jsonl, gate.stdout). The encore: C6's `c6-encore2`. Not forced:
   `pyocd list` without a probe (the MCU-Link stayed plugged in).
-- [ ] **U6 - one priority story.** `CONFIG_ISLAND_SPIN_RAISE` showed no
+- [x] **U6 - one priority story.** `CONFIG_ISLAND_SPIN_RAISE` showed no
   clear gain over the act (section 6); the I14 watermark removed the late
   spins. Measure one round without it on the I14 image; keep it only if
   the round shows a difference, otherwise remove it and its comment.
+  Status (2026-10-13, branch `phase9-round-final`): kept; the round shows a
+  small, consistent difference. Spin-diag encores, alternated, both built
+  by `just board-build-diag` (raise off: `CONFIG_ISLAND_SPIN_RAISE=n` as -D;
+  ELF sha256 `f97b732e1c61b215...` on, `c63093a95e117b25...` off), `just
+  diag-actseg` (`build/timeline/dg-actseg.txt`), act segment only:
+
+  | run | raise | act spins | >= 1 ms late | >= 2 ms | per 10k >= 1 | worst bin | ISR us/call |
+  | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+  | `dg-on1` | on | 5493 | 0 | 0 | 0.0 | 0 ms | 3.28 |
+  | `dg-on2` | on | 6716 | 0 | 0 | 0.0 | 0 ms | 3.29 |
+  | `dg-on3` | on | 5317 | 0 | 0 | 0.0 | 0 ms | 3.29 |
+  | `dg-off1` | off | 6887 | 2 | 0 | 2.9 | 1 ms | 3.36 |
+  | `dg-off2` | off | 5337 | 3 | 0 | 5.6 | 1 ms | 3.36 |
+  | `dg-off3` | off | 5314 | 2 | 0 | 3.8 | 1 ms | 3.34 |
+
+  0 of 17,526 act spins late with the raise, 7 of 17,538 without (all
+  under 2 ms): small, but in every run and never with it. All six encores
+  PASS (8/8, serial 0/0). The plain raise-off image (`ISLAND_BOARD_KCONFIG`
+  into build-board-noraise, sha256 `1f26b52eecb59fb4...`): `u6-e1` encore
+  PASS 8/8 (3488.46); `u6-a1` a PASS 6/6; b four times: `u6-b1` VERDICT PASS
+  with table 14/15 (host dwell 9997.65, the request-on reached the host
+  3.8 ms after its publish: `c2-b1`'s shape), `u6-b2` FAIL (EMERGENCY_STOP
+  at load 8.32: Autoware withdrew comfortable-stop availability in eight
+  single samples, also before engage; not attributed to the island),
+  `u6-b3` and `u6-b4` PASS 15/15. Serial in act 0/0 in all. The board conf
+  keeps `CONFIG_ISLAND_SPIN_RAISE=y` with these numbers in its comment.
 
 ### Order
 

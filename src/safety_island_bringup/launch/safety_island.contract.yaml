@@ -178,9 +178,10 @@ version: 1
 #     126 ms). The value is read
 #     on the handler's next tick, which is the first term of the route below.
 #
-#   reaction route = link 81 + call_mrm 149 = 230 ms ON THE BOARD (phase9-W5;
-#     206 as one number from phase8-W30 to W5, 110 before W30). Two keys:
-#     the serial hop in is `max_transport: 81ms` on the guard subscriber,
+#   reaction route = link 56 + call_mrm 149 = 205 ms ON THE BOARD (phase9-C7;
+#     230 with link 81 from phase9-W5, 206 as one number from phase8-W30 to
+#     W5, 110 before W30). Two keys:
+#     the serial hop in is `max_transport: 56ms` on the guard subscriber,
 #     which play_launch 0.14.0 charges once on the reaction route (its F1)
 #     and not after the window's deadline; `call_mrm` holds the two
 #     on-island terms, tick 118 + work 31. W30's story: `update_rate: 10` gives a
@@ -188,14 +189,17 @@ version: 1
 #     behaviour called. That was set on native_sim, where a callback takes
 #     zero time and the link is the host's loopback. The island is an
 #     S32K344 behind a gateway and a 921,600-baud UART, and there the hop
-#     has three costs, each measured on every W8 board run and sized as the
+#     has three costs, each measured on board runs and sized as the
 #     observed maximum plus 20 %, rounded up to the next ms (the 100 ms
 #     period is the parameter and takes no margin):
-#       link 81 = the serial hop in, max 67.02 ms (phase8-W31 r01; W8's
-#         18 edges reached 47.43, which gave the 57 of W30-W5);
-#       tick 118 = the period 100 + jitter 18 (ticks up to 114.84 ms apart);
-#       work 31 = the tick's start to the reaction's last publish, max 25.04.
-#     118 + 31 = 149 in `call_mrm`, 81 on the subscriber: 230. The
+#       link 56 = the serial hop in, max 46.42 ms over the 12 edges of the
+#         phase9-C7 round on the current image (81 from phase8-W31's 67.02
+#         on the pre-I14 image, from phase9-W5 to C7; 57 from W8 before);
+#       tick 118 = the period 100 + jitter 18 (ticks up to 114.84 ms apart
+#         on the W8 image; kept at C7, see `call_mrm` below);
+#       work 31 = the tick's start to the reaction's last publish, max 25.04
+#         (W8; kept at C7).
+#     118 + 31 = 149 in `call_mrm`, 56 on the subscriber: 205. The
 #     derivation, term by term, with the runs, is at `call_mrm` below. The handler notices the stale stamp, or the
 #     cleared `autonomous`, on a tick, so the tick is genuinely a term and
 #     not a padding allowance. The emergency operator adds its 30 Hz tick as
@@ -254,13 +258,15 @@ version: 1
 # matters is that they are written down and checked. The old 3 s cannot be
 # met at the decided bound by any island: from 8.33 m/s the emergency stop
 # alone takes 4165.33 ms to standstill; 3 s was chosen for the 3.0 m/s the
-# old settle assumed. 10 s (brief D's figure) leaves the floor 5065.33 ms of
-# slack with the board's 81 ms link and 149 ms handler hop (phase9-W5; 5095.33
+# old settle assumed. 10 s (brief D's figure) leaves the floor 5090.33 ms of
+# slack with the board's 56 ms link and 149 ms handler hop (phase9-C7;
+# 5065.33 with the 81 ms link from phase9-W5; 5095.33
 # with the 206 ms hop of phase8-W30, 5191.33 before it). odd_exit's 30 s is
 # decision 3, a stated judgement like the old 3 s: the takeover window is 10 s
-# of it, and the comfortable stop at the bound fits the rest with 9524.33 ms
+# of it, and the comfortable stop at the bound fits the rest with 9549.33 ms
 # to spare (the demo composition, with its 10 Hz gate's 20 ms path and the
-# 300 ms planner placeholder, reads 9204.33; 9491.33 and 9171.33 with the
+# 300 ms planner placeholder, reads 9223.33; 9198.33 with the 81 ms link
+# and play_launch 0.16.0's 6 ms gate jitter; 9491.33 and 9171.33 with the
 # 206 ms hop, 9683.33 and 9363.33 before phase8-W30).
 # `play_launch check --explain` prints every term; docs/takeover-trace.md
 # sets the observed runs against them.
@@ -336,7 +342,7 @@ version: 1
 #     link inside it), so island.tor's nominal critical path ran through
 #     `call_mrm` itself instead of the tick (206 > 100 sampling + 100).
 #     Since W5 `call_mrm` is 149 (tick 118 + work 31) and the link is the
-#     subscriber's 81 ms `max_transport`, which this scope path does not
+#     subscriber's `max_transport` (56 ms since phase9-C7), which this scope path does not
 #     charge (the guarded topic's publisher is `external: pub`, outside this
 #     tree), so the critical path is the tick again, 218 ms (100 sampling +
 #     18 jitter + 100; play_launch 0.16.0 charges the handler's timer jitter
@@ -585,7 +591,7 @@ nodes:
       # plus 20 %, rounded up to the next ms. The 100 ms period is
       # `update_rate: 10` and takes no margin.
       #   (link, NOT here since phase9-W5: the serial hop in is
-      #     `max_transport: 81ms` on the subscriber below, charged by
+      #     `max_transport: 56ms` on the subscriber below, charged by
       #     play_launch 0.14.0 on the reaction route; its derivation is
       #     there.)
       #   tick 118 ms: a take waits for the next tick. Consecutive ticks
@@ -599,6 +605,18 @@ nodes:
       #     operator, served next on the same executor, publishes the
       #     velocity limit 18.48-25.04 ms after the tick began (max
       #     w8-b1). 25.04 x 1.2 = 30.05.
+      # phase9-C7 re-derived both terms over a full round of the current
+      # image (ELF sha256 df1bf38a1090bb46..., main 4cb670c, nano-ros
+      # 43fc1c2f7; runs fr-e1..3, fr-a1..3, fr-b1..3, 2026-10-13): ticks
+      # 99.00-101.01 ms apart (1121 gaps), so 100 + 1.01 x 1.2 = 101.21 ->
+      # 102; tick start to the last publish 0.41-0.89 ms (call_mrm EXIT),
+      # 1.29-1.32 ms to the comfortable operator's velocity limit on the
+      # expiry tick, so 1.32 x 1.2 = 1.58 -> 2. The rule gives 104, and 104
+      # is NOT taken: the b act's host-clock route row (deadline -> velocity
+      # limit as received) read 103.50 in fr-b3 and 104.22 in phase9's d12-b3s
+      # (I14 image), because the host row also carries the difference of two
+      # out-link delays, which neither term charges. Lowering would fail a
+      # measured run, so 118 + 31 stay.
       # 118 + 31 = 149: the on-island part of the takeover route, and the
       # first hop after the window's deadline (window-expiry), where no link
       # is crossed. Before W30 the board went over 110 in 6 of 13 runs (max
@@ -661,17 +679,22 @@ nodes:
         # island gateway and the UART, so its transport is its own, not the
         # topic's (a host subscriber of the same topic has none): the
         # per-subscriber `max_transport` is rlm's key for exactly that.
-        # 81 ms = the measured hop in plus 20 %: the gate's publish on the
+        # 56 ms = the measured hop in plus 20 %: the gate's publish on the
         # host to this subscriber's take on the island (gateway, 921,600-baud
-        # UART, rx), 8.93-67.02 ms over the 12 edges of phase8-W31 (r01
-        # 60.64 and 67.02; W8's 18 edges read 12.29-47.43, which gave 57
-        # from W30 to phase9-W5). 67.02 x 1.2 = 80.42 -> 81. Cross-clock: an
+        # UART, rx), 18.53-46.42 ms over the 12 edges of the phase9-C7 round
+        # on the current image (ELF sha256 df1bf38a1090bb46..., main 4cb670c,
+        # nano-ros 43fc1c2f7; fr-a1..3, fr-b1..3; max fr-a3). 46.42 x 1.2 =
+        # 55.70 -> 56. Before C7 it was 81, from the pre-I14 image (phase8-W31's
+        # 12 edges, 8.93-67.02 ms; 67.02 x 1.2 = 80.42 -> 81), and 57 from
+        # W30 to phase9-W5 (W8's 18 edges, 12.29-47.43). Every takeover-route
+        # row measured since phase9-W5 fits 56 + 149 = 205 (max 126.56,
+        # d12-b3s). Cross-clock: an
         # island stamp moved onto the host clock by the smallest
         # publish->receipt pair is never early, so the term is over-stated
         # by the smallest out-link delay, never under-stated. play_launch
         # 0.14.0 charges it once on the reaction route (F1), so it is no
-        # longer inside `call_mrm`; W14 re-sizes it as more edges come.
-        max_transport: 81ms
+        # longer inside `call_mrm`.
+        max_transport: 56ms
         qos: { depth: 1 }
         on_violation:
           # `reported` since phase8-W7: the handler also reacts to the VALUE
@@ -742,7 +765,7 @@ nodes:
 # (phase9-W5) the tick path is critical again, and play_launch 0.16.0 adds
 # the jitter to it (phase9-C1: 210 -> 218). It is the scope's own budget,
 # from the handler's take: the link in front of the take is not in it, and
-# the 81 ms `max_transport` on that subscriber is not charged here (the
+# the 56 ms `max_transport` on that subscriber is not charged here (the
 # guarded topic's publisher is `external: pub`, outside this tree).
 # island.emergency_stop keeps 210 ms: the checker reports no critical path
 # above it. island.comfortable_stop declares none: it crosses the operate
