@@ -1,0 +1,24 @@
+# play_launch runtime config for the CARLA ego on rmw_zenoh_cpp (unit C1;
+# just/carla.just passes it to CSB's `just ego-av` via EGO_PLAY_LAUNCH_ARGS).
+#
+# Why: the ego runs in play_launch's isolated container mode (one process,
+# hence one zenoh session, per composable: ~200 sessions joining at once), and
+# zenoh 1.8.0 can deadlock a session under that join churn for good (demo/l3
+# README trap 2c; ZENOH_RUNTIME's 8 workers make it rarer, not impossible). In
+# C1's starts a composable then sat "still constructing" at zero CPU
+# (iv_msgs once without ZENOH_RUNTIME, /adapi/node/mrm_request once with it:
+# all 8 net workers and two rx threads in futex waits) and the stack never
+# reached Startup complete.
+#
+#   startup.max_concurrent  fewer processes starting at once, less churn
+#   stall_*                 a composable alive, past 90 s and burning < 1 % of
+#                           a core is cancelled (the container kills it and
+#                           confirms) and loaded again: a wedged session gets a
+#                           fresh one. A normal C1 start loads all 125 in ~15 s.
+startup:
+  max_concurrent: 16
+
+composable_node_loading:
+  stall_after_secs: 90
+  stall_cpu_threshold_pct: 1.0
+  stall_action: restart

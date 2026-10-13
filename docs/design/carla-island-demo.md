@@ -1,9 +1,10 @@
 # CARLA + Autoware + the island on the board, with LEDs
 
 Status: design, 2026-10-14. Not built except the LED prototype (section 3,
-`CONFIG_ISLAND_LED`, measured on the board) and the scenario-declared ODD
+`CONFIG_ISLAND_LED`, measured on the board), the scenario-declared ODD
 (section 2.5: odd_monitor reads it from the `.xosc`, unit-tested; the
-scenario itself not yet run under SSv2). The island keeps today's serial link
+scenario itself not yet run under SSv2) and unit C1, the CARLA ego on the
+island's domain (section 5, G1 passed; runbook demo/carla/README.md). The island keeps today's serial link
 and gateway (1.1); a direct island-Autoware link is recorded as future work
 (1.5), not chosen. Two repositories are named throughout:
 
@@ -36,6 +37,7 @@ contract checks stay exactly as they are.
 | Town01 road for the polygon | lanelets read from `/mnt/evo/aeon/carla-maps-stage/Town01/lanelet2_map.osm` (2.5) |
 | direct-link board builds (1.5), configure only, not flashed | zenoh + `island-ethernet`: refused by Kconfig (`NROS_ZENOH_GRAPH_DISCOVERY ... is not directly user-configurable`); Cyclone: refused by nano-ros (`system.toml [image.zephyr] has rmw = "zenoh"`) |
 | host Ethernet toward the board | none: no media converter for the board's 100BASE-T1 PHY; no spare host NIC (1.5) |
+| C1, the ego on rmw_zenoh_cpp domain 10 with the island's overlay, no island (G1) | five starts: `Startup complete ... composable 125/125` each, no MRM node on the graph, availability 10.0 Hz from `availability_gate`, `town01_ego_drive` failures=0 errors=0 each (section 5, C1 row) |
 
 ## 1. Architecture
 
@@ -94,8 +96,8 @@ must be produced and consumed by the CARLA ego the same way:
 | interface | today | with CARLA | work |
 |---|---|---|---|
 | `/system/operation_mode/availability` | Autoware's converter publishes `.../availability_raw`; `availability_gate` republishes `autonomous &= !odd_exit` | same: pass `operation_mode_availability_topic:=/system/operation_mode/availability_raw` | the arg propagates from the top-level launch into the overlay's `system.launch.xml` (as `l3-autoware` passes it, demo/l3/container/bin/l3-autoware:58) |
-| MRM nodes | the overlay `demo/host_ws/src/tier4_system_launch/launch/system.launch.xml` leaves out Autoware's mrm_handler and both operators | acb includes `$(find-pkg-share tier4_system_launch)/launch/system.launch.xml` (`acb:.../carla_simulator.launch.xml`, the `carla_system` group); with the island's overlay sourced between Autoware and acb, that find resolves to the overlay | source order: Autoware, `build/l3-host-ws/install`, acb install, csb install. Verified only by reading: acb passes 22 args the overlay declares; check with `play_launch check` that none is undeclared |
-| diagnostic graph | the overlay's `l3_diagnostic_graph_path` (phase9-C8, `config/diagnostics/autoware-l3.yaml`) | acb passes its own `acb:.../config/system/diagnostics/autoware-carla.yaml` (node names corrected for 1.5.0 + CARLA) | merge both into one `autoware-carla-l3.yaml` in the overlay and pass it as `l3_diagnostic_graph_path` |
+| MRM nodes | the overlay `demo/host_ws/src/tier4_system_launch/launch/system.launch.xml` leaves out Autoware's mrm_handler and both operators | acb includes `$(find-pkg-share tier4_system_launch)/launch/system.launch.xml` (`acb:.../carla_simulator.launch.xml`, the `carla_system` group); with the island's overlay sourced between Autoware and acb, that find resolves to the overlay | source order: Autoware, `build/l3-host-ws/install` (via `demo/carla/ego-overlay.bash`, CSB's `EGO_OVERLAY`), acb install, csb install; `ros2 pkg prefix tier4_system_launch` stays the overlay's after all four. Verified in C1: `play_launch dump` resolves the overlay's file with both arguments (`converter_node` remapped to `.../availability_raw`, the aggregator's `graph_file` the merged graph) and no MRM node; G1's node lists |
+| diagnostic graph | the overlay's `l3_diagnostic_graph_path` (phase9-C8, `config/diagnostics/autoware-l3.yaml`) | acb passes its own `acb:.../config/system/diagnostics/autoware-carla.yaml` (node names corrected for 1.5.0 + CARLA) | merged into `demo/host_ws/src/tier4_system_launch/config/diagnostics/autoware-carla-l3.yaml` (acb's graph, C8's 1.5 s timeouts where acb has none, `/autoware/map` without the pointcloud_map link, C1), passed as `l3_diagnostic_graph_path` |
 | `/system/fail_safe/mrm_state`, `/system/emergency/*` | island -> vehicle_cmd_gate | same: vehicle_cmd_gate is Autoware's | none |
 | `/vehicle/status/control_mode` | the simulator's | acb_bridge publishes it, always AUTONOMOUS | **acb must accept MANUAL** (section 2.2) |
 | `/control/control_mode_request` | the simulator's server | acb serves it but refuses MANUAL (`acb:src/acb_bridge/src/vehicle_control.rs`, `control_mode_request_accepted`) | same change |
@@ -571,13 +573,65 @@ today's `press` edge.
 
 Each unit ends in a gate that is a run, not a review.
 
-| unit | what | gate |
-|---|---|---|
-| C1 | the ego on zenoh: `just ego-av` with `RMW_IMPLEMENTATION=rmw_zenoh_cpp`, `ROS_DOMAIN_ID=10`, the stock router, the island's overlay sourced between Autoware and acb, `operation_mode_availability_topic:=.../availability_raw`, a merged `autoware-carla-l3.yaml` graph | G1: five starts, each `Startup complete` with every composable; `/system/mrm_handler` not on the host graph; `town01_ego_drive` passes with no island attached (availability flows through the gate) |
-| C2 | acb options: `allow_manual` (MANUAL accepted, reported, Autoware's commands not applied, CARLA autopilot holds the lane) and `emergency_full_brake:=false` | acb unit tests; act a in CARLA reports MANUAL on `/vehicle/status/control_mode` |
-| C3 | the island attached: run-board.sh `--sim carla` (CARLA + scenario + ego instead of the container), RTF recorded per act | G2: encore, a, b each PASS with SUMMARY rows unchanged in meaning, RTF >= 0.95, SSv2 junit PASS |
-| C4 | the scenarios: `town01_island_encore.xosc` (CustomCommandAction -> act daemon), `town01_island_odd.xosc` (written; ODD declared, 2.5) with `scenario_file:=` the same path; confirm SSv2 applies `Performance maxSpeed` as Autoware's velocity limit | each act triggered by the scenario at its place, three times back to back without a reflash (W2's re-arm); act a/b's `ODD EXIT` reason is `segment`, between x 239 and 241 |
-| C5 | LEDs on by default for the booth image (`CONFIG_ISLAND_LED=y` in a booth conf, not the gate image) | the LED record shows the act's transitions with uptimes matching the trace's `mrm_operating` / `mrm_succeeded` edges within one tick |
-| C6 | buttons: SW1 take over, SW2 HPC loss (3.4) | a visitor runs acts a and encore from the board alone |
-| C7 | the container (phase 2, also W10) | C3's gate with Autoware + acb in the image |
-| L1-L3 | direct link, future (1.5): D0 one router on serial, then D1 Ethernet after a media converter | 1.5's gates |
+| unit | what | gate | status |
+|---|---|---|---|
+| C1 | the ego on zenoh: `just ego-av` with `RMW_IMPLEMENTATION=rmw_zenoh_cpp`, `ROS_DOMAIN_ID=10`, the stock router, the island's overlay sourced between Autoware and acb, `operation_mode_availability_topic:=.../availability_raw`, a merged `autoware-carla-l3.yaml` graph | G1: five starts, each `Startup complete` with every composable; `/system/mrm_handler` not on the host graph; `town01_ego_drive` passes with no island attached (availability flows through the gate) | **[x] done 2026-10-14** (below) |
+| C2 | acb options: `allow_manual` (MANUAL accepted, reported, Autoware's commands not applied, CARLA autopilot holds the lane) and `emergency_full_brake:=false` | acb unit tests; act a in CARLA reports MANUAL on `/vehicle/status/control_mode` | |
+| C3 | the island attached: run-board.sh `--sim carla` (CARLA + scenario + ego instead of the container), RTF recorded per act | G2: encore, a, b each PASS with SUMMARY rows unchanged in meaning, RTF >= 0.95, SSv2 junit PASS | |
+| C4 | the scenarios: `town01_island_encore.xosc` (CustomCommandAction -> act daemon), `town01_island_odd.xosc` (written; ODD declared, 2.5) with `scenario_file:=` the same path; confirm SSv2 applies `Performance maxSpeed` as Autoware's velocity limit | each act triggered by the scenario at its place, three times back to back without a reflash (W2's re-arm); act a/b's `ODD EXIT` reason is `segment`, between x 239 and 241 | |
+| C5 | LEDs on by default for the booth image (`CONFIG_ISLAND_LED=y` in a booth conf, not the gate image) | the LED record shows the act's transitions with uptimes matching the trace's `mrm_operating` / `mrm_succeeded` edges within one tick | |
+| C6 | buttons: SW1 take over, SW2 HPC loss (3.4) | a visitor runs acts a and encore from the board alone | |
+| C7 | the container (phase 2, also W10) | C3's gate with Autoware + acb in the image | |
+| L1-L3 | direct link, future (1.5): D0 one router on serial, then D1 Ethernet after a media converter | 1.5's gates | |
+
+**C1 status (2026-10-14, evidence).** Glue: `just/carla.just` (`carla-server`,
+`carla-sim`, `carla-ego`, `carla-takeover`, `carla-standin`,
+`carla-scenario`, `carla-rclcpp`), `demo/carla/ego-overlay.bash`,
+`demo/carla/play_launch.yaml`, `demo/carla/island_standin.py`, the merged
+graph above; CSB `e77f0b0`, `971c184`, `c060ddc` (opt-in `just ego-av`
+knobs `EGO_RMW_IMPLEMENTATION`, `EGO_OVERLAY`, `EGO_LAUNCH_ARGS`,
+`EGO_PLAY_LAUNCH_ARGS`, `EGO_CONTAINER_MODE`; acb unchanged). G1, five
+starts back to back, each from a cold CARLA (`/mnt/evo/aeon/scratch-csb/c1/start1..5`):
+
+| start | 1-min load | Startup complete (play_launch, parse to complete) | MRM nodes on the domain-10 graph | `/system/operation_mode/availability` | `town01_ego_drive` |
+|---|---|---|---|---|---|
+| 1 | 23.7 | 7.7 s, nodes 62/62, containers 16/16, composable 125/125 | none (238 nodes) | 10.000 Hz, one publisher `availability_gate` | failures=0 errors=0 |
+| 2 | 28.5 | 9.3 s, 125/125 | none (238) | 9.999 Hz, `availability_gate` | failures=0 errors=0 |
+| 3 | 19.5 | 8.3 s, 125/125 | none (238) | 10.000 Hz, `availability_gate` | failures=0 errors=0 |
+| 4 | 18.8 | 37.9 s, 125/125 (16 slow constructors, none stalled) | none (238) | 10.000 Hz, `availability_gate` | failures=0 errors=0 |
+| 5 | 34.2 | 37.0 s, 125/125 (16 slow, none stalled) | none (238) | 10.000 Hz, `availability_gate` | failures=0 errors=0 |
+
+"MRM nodes": `ros2 node list` (rmw_zenoh_cpp, domain 10, `just l3-nodes`)
+has no `/mrm_handler`, `/mrm_emergency_stop_operator`,
+`/mrm_comfortable_stop_operator` (only the ADAPI's `/adapi/node/mrm_request`);
+the stock CSB run of section 0 had them. The rate is `ros2 topic hz` over
+15 s; the gate's own counters over each run: largest publish gap 104-112 ms,
+0 gaps over 150 ms, largest gap of the raw converter stream (sim-time
+timer) 142-661 ms. No ODD exit fired (odd_monitor: 30 km/h, no polygon).
+What it took, beyond the plan's list (demo/carla/README.md, traps):
+
+- **a stand-in for the island's always-on outputs** (`carla-standin`:
+  mrm_state NORMAL, the emergency operator's idle pass-through). Without them
+  `/autoware/system` (its `emergency_control_command` topic check) is ERROR,
+  autonomous never available, the agent stays in PLANNING and SSv2 errors
+  out ("waited for ... WAITING_FOR_ENGAGE ... state is PLANNING"). "No
+  island attached" in G1 therefore means no island and this stand-in; it
+  answers no MRM.
+- **the L3 image's rclcpp patch (trap 2b), on the host**: `just
+  carla-rclcpp` builds it over the host's 16.0.21, the ego alone loads it.
+  Without it behavior_path_planner went silent on the first route.
+- **`ZENOH_RUNTIME` 8 workers (trap 2c) and observable container mode.**
+  In CSB's isolated mode (~200 zenoh peers, gossip-meshed) the starts were
+  not clean even with 8 workers: one composable wedged in its constructor
+  (twice, once without `ZENOH_RUNTIME`), one run where behavior_path_planner
+  never received `/planning/scenario_planning/scenario`, one drive that did
+  not arrive within 180 s, and `/map/pointcloud_map` (62 MB, latched) missed
+  by its monitor in 3 of 8 starts. Observable (one process per container):
+  6 of 6 clean (a trial plus G1).
+- `/autoware/map` without the pointcloud_map link in the merged graph
+  (NDT loads the map through a service; the unit stays visible).
+
+Not verified in C1: the island attached (C3); the patched rclcpp over many
+re-routes on CARLA (one route per scenario here); container mode
+`observable` against CSB's reason for isolated (reloading one crashed
+behavior_path_planner, autoware_universe#12460), which no G1 run hit.
