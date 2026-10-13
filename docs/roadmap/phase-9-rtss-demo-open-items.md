@@ -1819,6 +1819,23 @@ image of main.
   `u6-b3` and `u6-b4` PASS 15/15. Serial in act 0/0 in all. The board conf
   keeps `CONFIG_ISLAND_SPIN_RAISE=y` with these numbers in its comment.
 
+- [x] **C9 - the host-received window row allows the link.** About half
+  the b runs read `window dwell, host` FAIL under a VERDICT PASS: 9,999.00
+  (`c8-b2`), 9,997.88 (`c8-b4`), 9,999.87 (`c8f-b1`), 9,993.00 (`c8f-b2`),
+  9,997.65 (`u6-b1`), 9,996.56 (`c2-b1`) against `[10000, 10149]`, while
+  the island-clock row (`dwell`) passed in every one. The host row times
+  two receipts, each one out-link hop after its island edge; the request-on
+  hop was 1-7 ms slower than the request-off hop in those runs (out-link
+  delays 0-43.90 ms over 14 b runs, relative to the fastest receipt). A
+  receiver-side window cannot be held to the island's lower bound.
+  Status (2026-10-13): the host row's bounds widen by the serial link's
+  `max_transport` (56 ms, the same UART and gateway as the guard's in-link;
+  read from the contract by `tlcommon.sub_transport_ms`): `[9944.00,
+  10205.00]`; the island-clock row keeps `[10000, 10149]` and is the check
+  of the window itself. Re-rendered offline from the existing traces, the
+  11 b runs above and `fr-b1..3`, `c7-b2`, `c8f-b3` read 15/15 with
+  unchanged other rows. selftest OK, check-contracts 14/14.
+
 ### Order
 
 C1 (small, unblocks the deck), U1 (makes C3 and C2 measurable), C3, C2,

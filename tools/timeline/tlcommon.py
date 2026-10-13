@@ -230,6 +230,17 @@ def path_latency_ms(node, path, contract=None):
     return duration_ms(v)
 
 
+def sub_transport_ms(node, sub, contract=None):
+    """A subscriber's declared `max_transport` in ms (the serial link on the
+    island's guard subscriber, phase8-W30), read from the island's contract
+    sidecar. None when it declares none."""
+    p = contract or LAUNCH.replace(".launch.xml", ".contract.yaml")
+    with open(p) as f:
+        c = yaml.load(f, Loader=YamlLoader)
+    v = (((c.get("nodes") or {}).get(node) or {}).get("sub") or {}).get(sub, {})
+    return duration_ms(v.get("max_transport") if isinstance(v, dict) else None)
+
+
 def duration_ms(v):
     if v is None:
         return None

@@ -293,13 +293,23 @@ def verdicts(r):
             # The window is a least time, bounded above by the checker's
             # `ends within` (window + the first hop of the route below).
             end = tr.get("window_end")
-            for term, key in (("window dwell, island clock (request on -> off)", "dwell"),
-                              ("window dwell, host (request on -> off as received)", "dwell_host")):
+            # The host row times two receipts, each one out-link hop after
+            # its island edge. Each hop lies in [0, link] (the serial link's
+            # max_transport: the same UART and gateway as the guard's in-link),
+            # so the received window is the island's window +- at most one
+            # link: on 9,993.00-9,999.87 ms in c8-b2/b4, c8f-b1/b2 with the
+            # island's own dwell >= 10,000 (phase9-C9). The island-clock row
+            # is the check of the window itself.
+            link = tl.sub_transport_ms("mrm_handler", "operation_mode_availability") or 0.0
+            for term, key, slack in (("window dwell, island clock (request on -> off)", "dwell", 0.0),
+                                     ("window dwell, host (request on -> off as received)", "dwell_host", link)):
                 dw = o.get(key)
+                lo, hi = w - slack, (None if end is None else end + slack)
                 out.append(dict(term=term, observed=dw,
-                                declared=f"[{w:.2f}, {end:.2f}]" if end is not None else f">= {w:.2f}",
-                                ok=None if dw is None else (w <= dw and (end is None or dw <= end)),
-                                note="at least the window; ends within the checker's `ends within`"))
+                                declared=f"[{lo:.2f}, {hi:.2f}]" if hi is not None else f">= {lo:.2f}",
+                                ok=None if dw is None else (lo <= dw and (hi is None or dw <= hi)),
+                                note="at least the window; ends within the checker's `ends within`"
+                                     + (f"; +- the link {link:.0f} ms, two receipts" if slack else "")))
             cs = dr.get("comfortable_stop", {})
             add("windows (verdict -> deadline = request on + window)", o.get("windows"), cs.get("windows"),
                 CROSS)
