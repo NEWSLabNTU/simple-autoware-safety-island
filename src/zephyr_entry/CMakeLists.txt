@@ -143,8 +143,8 @@ endforeach()
 
 # Relocate the entry's .bss into DTCM. The S32K344 has 64 KiB ITCM + 128 KiB
 # DTCM that this image otherwise leaves idle while SRAM runs near capacity. The
-# app library's .bss is the executor storage (~68 KiB) plus the four per-node
-# component buffers (~10 KiB) -- all CPU-only, which is the constraint that
+# app library's .bss is the executor storage (53,776 B at nano-ros 43fc1c2f7,
+# phase9-C10) plus the per-node component buffers (10,008 B) -- all CPU-only, which is the constraint that
 # matters: TCM is NOT reachable by the DMA masters, so the Ethernet descriptors
 # and the net_pkt/net_buf pools must stay in SRAM. Do not extend this to the
 # net stack.
