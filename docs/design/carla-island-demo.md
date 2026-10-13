@@ -1,0 +1,430 @@
+# CARLA + Autoware + the island on the board, with LEDs
+
+Status: design, 2026-10-14. Not built except the LED prototype (section 3,
+`CONFIG_ISLAND_LED`, measured on the board). Two repositories are named
+throughout:
+
+- this repo (the island): paths without a prefix;
+- carla-scenario-bridge, `NEWSLabNTU/carla-scenario-bridge` (CSB): paths
+  prefixed `csb:`; its vehicle-side submodule autoware_carla_bridge is
+  `acb:` (`csb:src/autoware_carla_bridge/...`).
+
+The idea: a visitor watches a car drive a CARLA town under Autoware. The car
+leaves its operating domain or its HPC dies, and the NXP board on the table
+-- the safety island -- takes it to a stop, its LED showing the state the
+whole time. Today's demo shows the same reactions on Autoware's planning
+simulator (a 2-D ideal vehicle model in RViz); the island, its link and its
+contract checks stay exactly as they are.
+
+## 0. What was verified for this document
+
+| item | result (2026-10-14, this host) |
+|---|---|
+| CSB build, `just build` (51 packages, Autoware 1.5.0, CARLA 0.9.16 feature) | exit 0 |
+| CSB `just check` / `just test` | pass; 282 Rust + 151 Python tests |
+| acb `just check` | **failed** (5 clippy errors); fixed, acb `0a02c2a` |
+| acb `just test` | 218 passed |
+| maps | the TUM pack, `~/nas/autoveh/dataset/CARLA-map-from-TUM/{Town01,02,03,05,10}` (sshfs); Town01 staged with `CSB_MAP_SOURCE=... just download-maps` |
+| quick start: CARLA 0.9.16 offscreen, `just run`, `just ego-av`, `just scenario basic/town01_ego_drive.xosc` | `result.junit.xml` failures=0; ego stack `nodes 62/62, containers 18/18, composable 127/127` in 32 s; 2.0 GB GPU for CARLA |
+| `just acceptance` (same stack) | FAIL on `pose_instability_detector` (a death the CSB user guide documents as harmless); fixed, acb `d9aef17`; then `1/1 runs passed`, 66.2 m, 0.007 m/s^2 longitudinal, 0.044 m cross-track |
+| CSB gitlink bump | CSB `a84a019` (acb `d9aef17`) |
+| LED prototype, encore on the board | `SUMMARY led-e3 encore: PASS; table 8/8 PASS; trace-check PASS`; LED record and pins below |
+
+## 1. Architecture
+
+### 1.1 Today
+
+```
+ planning simulator (container, sai-l3-autoware:1.5.0-c8)       host                       board
+ Autoware 1.5.0, rmw_zenoh_cpp, domain 10  --tcp-->  rmw_zenohd :7447  <-- gateway router --serial 921600--> island
+ (demo/l3/container/bin/l3-autoware,                 (just l3-router)     (demo/l3/router/island-gateway.json5,      (3 MRM nodes,
+  tier4_system_launch overlay)                                             just l3-peer, docs/serial-link.md)         nano-ros, Zephyr 4.4)
+                         takeover_demo on the host: availability_gate (C++, SCHED_FIFO), odd_monitor,
+                         takeover_hmi, driver_button, hazard_relay, graph_watcher (demo/l3/README.md)
+```
+
+### 1.2 With CARLA
+
+```
+ CARLA 0.9.16 (GPU, offscreen)
+   ^ ticks (sync, dt 0.05)                ^ vehicle control / sensors / /clock
+   |                                      |
+ csb bridge + agent relay           ego stack (acb_launch carla_simulator.launch.xml):
+ + SSv2 interpreter                  Autoware 1.5.0 + acb_bridge + acb_agent
+ domain 9, CycloneDDS                rmw_zenoh_cpp, domain 10   --tcp-->  rmw_zenohd :7447 <-- gateway <--serial--> island
+ (csb:justfile `run`, `scenario`)   + the island's tier4_system_launch overlay
+        \______ agent relay (TCP 5560, not ROS) _____/         + takeover_demo nodes, unchanged
+```
+
+The planning simulator is replaced by the CSB **vehicle side**: Autoware with
+CARLA sensors and vehicle interface (`acb:src/acb_launch/launch/carla_simulator.launch.xml`,
+started by `csb:justfile` `ego-av`), driving the CARLA actor `hero`. The
+**scenario side** (csb bridge, agent relay, SSv2) talks to the vehicle side
+only through the agent relay, a TCP socket (csb roadmap 017), so the two
+sides need not share a ROS domain or an RMW. That is what lets the ego move
+to the island's domain without touching the scenario side:
+
+| side | today in CSB | in this demo |
+|---|---|---|
+| scenario (csb, relay, SSv2) | domain 9, CycloneDDS (`csb:config/cyclonedds-localhost.xml`) | unchanged |
+| vehicle (Autoware, acb_bridge, acb_agent) | domain 1, CycloneDDS | **domain 10, rmw_zenoh_cpp**, the stock router on 7447 |
+| island + takeover_demo | domain 10, rmw_zenoh_cpp | unchanged |
+
+acb_bridge and acb_agent are rclrs (rcl underneath), so they follow
+`RMW_IMPLEMENTATION`; nothing in acb is Cyclone-specific except the
+`CYCLONEDDS_URI` its recipes export, which zenoh ignores. Keeping the ego on
+Cyclone domain 1 and bridging the island's topics across (a
+zenoh-bridge-ros2dds or a relay node) was rejected: it adds a hop into
+every measured path, and the island's graph and liveliness semantics
+(`graph_watcher`, the contract's `on: omission`) are rmw_zenoh's.
+
+### 1.3 The island attaches exactly as today
+
+Nothing changes on the board or in the link: the same image, `just l3-router`,
+`just l3-peer`, domain 10. On the host, the island's topics (docs/topic-contract.md)
+must be produced and consumed by the CARLA ego the same way:
+
+| interface | today | with CARLA | work |
+|---|---|---|---|
+| `/system/operation_mode/availability` | Autoware's converter publishes `.../availability_raw`; `availability_gate` republishes `autonomous &= !odd_exit` | same: pass `operation_mode_availability_topic:=/system/operation_mode/availability_raw` | the arg propagates from the top-level launch into the overlay's `system.launch.xml` (as `l3-autoware` passes it, demo/l3/container/bin/l3-autoware:58) |
+| MRM nodes | the overlay `demo/host_ws/src/tier4_system_launch/launch/system.launch.xml` leaves out Autoware's mrm_handler and both operators | acb includes `$(find-pkg-share tier4_system_launch)/launch/system.launch.xml` (`acb:.../carla_simulator.launch.xml`, the `carla_system` group); with the island's overlay sourced between Autoware and acb, that find resolves to the overlay | source order: Autoware, `build/l3-host-ws/install`, acb install, csb install. Verified only by reading: acb passes 22 args the overlay declares; check with `play_launch check` that none is undeclared |
+| diagnostic graph | the overlay's `l3_diagnostic_graph_path` (phase9-C8, `config/diagnostics/autoware-l3.yaml`) | acb passes its own `acb:.../config/system/diagnostics/autoware-carla.yaml` (node names corrected for 1.5.0 + CARLA) | merge both into one `autoware-carla-l3.yaml` in the overlay and pass it as `l3_diagnostic_graph_path` |
+| `/system/fail_safe/mrm_state`, `/system/emergency/*` | island -> vehicle_cmd_gate | same: vehicle_cmd_gate is Autoware's | none |
+| `/vehicle/status/control_mode` | the simulator's | acb_bridge publishes it, always AUTONOMOUS | **acb must accept MANUAL** (section 2.2) |
+| `/control/control_mode_request` | the simulator's server | acb serves it but refuses MANUAL (`acb:src/acb_bridge/src/vehicle_control.rs`, `control_mode_request_accepted`) | same change |
+| `/localization/kinematic_state` | the simulator's ideal pose | Autoware's EKF on CARLA's GNSS/IMU/lidar | none; the island reads speed from it |
+| hazard lights | `hazard_relay` -> `/system/hazard_lights_cmd` -> Autoware's selector -> simulator | the same chain ends in acb, which sets CARLA's blinkers (`vehicle_control.rs` `light_state`): the visitor sees them on the car | none; W9's stamp question remains (section 4) |
+| comfortable stop velocity limit | `max_velocity_candidates` / `clear_velocity_limit` | Autoware's planner, unchanged | none |
+| emergency/comfortable `operate` services | island-internal | island-internal | none |
+
+`acb_launch` also starts its own copies of what the overlay replaces: an
+`mrm_handler.param.yaml` (`carla_mrm_handler_path`) and the stock MRM
+operator params. With the overlay they are dead arguments; the overlay
+ignores them.
+
+### 1.4 Native or container
+
+The L3 container (`sai-l3-autoware:1.5.0-c8`, demo/l3/README.md "The
+container") has Autoware 1.5.0 without `autoware-data`, a TensorRT stub, the
+patched `librclcpp.so` (trap 2b) and the rmw_zenoh 0.1.10 hold. It has no
+acb, no carla client library and no Rust toolchain.
+
+Decision: **phase 1 native, phase 2 container.**
+
+- Native first because it is CSB's tested path (`just ego-av`, section 0)
+  and the GPU (CARLA) is on the host. Risk: the host's stock rclcpp 16.0.21
+  under rmw_zenoh_cpp is not what demo/l3 measured (the container's
+  patched 16.0.19, trap 2b: 63-64/68 composables in 3 of 5 starts on the
+  unpatched image). Gate G1 below counts starts.
+- Container second, `FROM sai-l3-autoware:1.5.0-c8`, adding a non-symlink
+  `colcon build --merge-install` of CSB's acb packages (built on the host
+  against the same Autoware debs) and `~/autoware_data` mounted read-only.
+  The perception stack must not need TensorRT: acb's `clustering` lidar
+  detector does not; the traffic-light classifier does, so the demo route
+  avoids signalled junctions or runs `publish_ground_truth_objects:=true`
+  with camera traffic lights off. This is also the shape W10 (the Orin)
+  needs.
+
+## 2. Scenarios
+
+### 2.1 The three acts in CARLA
+
+The acts stay host-driven (tools/timeline/scenario.py), because their
+measured edges are host events (`press`, `sigstop`, `gate_last`). SSv2
+supplies the world: the route, the traffic, the place where things happen,
+and its own verdict.
+
+| act | today (planning simulator) | in CARLA |
+|---|---|---|
+| encore, HPC loss | `scenario hpc`: SIGSTOP the gate; the availability stream goes silent; the island's 500 ms detection -> EMERGENCY_STOP | same mechanism. Triggered at a place in the route by the scenario: an OpenSCENARIO `CustomCommandAction` with an unknown `type` is fork-exec'd by SSv2 (`csb:src/scenario_simulator_v2/openscenario/openscenario_interpreter/src/syntax/custom_command_action.cpp`, `ForkExecCommand`; it `waitpid`s, so the command must return at once) -> a one-line client that tells the act daemon "hpc-loss" |
+| a, ODD exit + takeover | `/demo/odd/inject` or the 30 km/h bound in `odd_monitor`; the driver answers within 10 s (`driver_button`); control mode MANUAL | the ODD exit is a place: `odd_monitor`'s `segment_polygon` set to a Town01 road segment (the ego drives into it) or the speed bound (an SSv2 speed limit raised above 30 km/h on a straight). The visitor's takeover is a button (section 3.4); MANUAL needs acb support (2.2) |
+| b, ODD exit unanswered | as a, no answer; COMFORTABLE_STOP after 10 s | as a; the comfortable stop's velocity limit is Autoware's planner braking in CARLA physics |
+
+Weather as an ODD exit (the contract's `odd_exit` names "speed bound or
+weather"): SSv2's `EnvironmentAction` is a parse-only no-op and the protocol
+has no weather slot (`csb:docs/design/ssv2-feature-completeness.md`, row 15);
+csb serves `/carla/set_weather` in the scenario domain (9, Cyclone). So the
+weather change is staged, not sensed: the same CustomCommandAction that
+injects the ODD exit also calls `/carla/set_weather` (fog), and the
+`odd_monitor` is told by `/demo/odd/inject`. Sensing it for real (a weather
+reader in domain 9 relaying to domain 10) is a later unit; it would make
+"weather" a monitored ODD condition rather than a stage effect.
+
+New scenario files (in this repo, `demo/carla/scenarios/`, `$(env
+CARLA_MAPS)/Town01` like CSB's):
+
+- `town01_island_encore.xosc`: CSB's `basic/town01_ego_drive.xosc` route,
+  one `ReachPositionCondition` at a straight -> CustomCommandAction
+  `hpc-loss`; success = ego standstill (`StandStillCondition`) within 15 s
+  of the trigger, no collision; failure = timeout.
+- `town01_island_odd.xosc`: the same route through the ODD polygon; success
+  = standstill (act b) or the ego still moving with control mode MANUAL
+  (act a; read by the act daemon, SSv2 cannot see domain 10).
+
+### 2.2 Driver takeover in CARLA (acb change)
+
+acb answers MANUAL with failure and always reports AUTONOMOUS, like SSv2's
+stock ego (`vehicle_control.rs`, the comment on `control_mode_request_accepted`).
+The island's `driver_exit` path reads MANUAL on `/vehicle/status/control_mode`,
+so act a cannot pass without:
+
+- acb accepts MANUAL behind a launch flag (`allow_manual:=true`, default
+  false so CSB's scenarios are unchanged), reports MANUAL, and stops
+  applying Autoware's commands;
+- while MANUAL, the car is driven by a scripted driver: hold the lane at the
+  current speed with CARLA's own controller (`set_autopilot` on the hero,
+  or acb's `carla_manual_control` for a person at the booth).
+
+### 2.3 The verdicts combined
+
+| verdict | from | covers |
+|---|---|---|
+| contract table, `trace-check`, `VERDICT` | run-board.sh SUMMARY (tools/timeline/run-board.sh steps 8-10) | the island's terms: detect, route, settle, FTTI, rung, entry speed |
+| SSv2 `result.junit.xml` | the scenario | the world: the ego reached standstill, no collision, within the scenario's timeout |
+| acceptance-style checks | `acb:scripts/acceptance.py` | no node died, localization against ground truth, tracking |
+
+run-board.sh gains `--sim carla` (Autoware from the CARLA ego stack instead
+of the container; the scenario started at step 7 alongside the act) and a
+row `scenario (SSv2 junit)` in the SUMMARY. An act passes only when both
+agree.
+
+### 2.4 What changes in the numbers
+
+- **Settle.** Today the settle is the planning simulator's ideal model
+  following the emergency operator's ramp. In CARLA, acb applies
+  `/control/command/emergency_cmd` as **full brake** (`vehicle_control.rs`:
+  `throttle 0, brake 1.0`, handbrake below 0.1 m/s), not the operator's
+  `min_acceleration`/`min_jerk` profile. The measured settle will be
+  shorter than the derived one: the FTTI row still passes, but the row
+  stops validating the declared braking profile. For the contract to mean
+  the same thing, acb needs an option to follow the control command's
+  acceleration in an emergency (`emergency_full_brake:=false`) through its
+  pedal maps; then CARLA physics (tyres, load transfer, the brake map)
+  makes the settle a real measurement with an error against the derived
+  value, which is a better demo than the ideal model.
+- **Entry speed.** Measured from CARLA, through the EKF: localization was
+  0.95 m median from GNSS in section 0's run, so a speed derived from pose
+  has noise the planning simulator never had; the table reads the
+  kinematic state's twist, which is the EKF's.
+- **Takeover window.** 10 s on the island's clock (`takeover_request_timeout`,
+  src/autoware_mrm_handler/config/mrm_handler.param.yaml). While it runs
+  the car keeps driving in CARLA; the route needs about 10 s x 8.33 m/s =
+  83 m of road after the ODD boundary plus the comfortable stop's distance
+  (about 35 m from 8.33 m/s at the operator's -1.0 m/s^2) -- choose the
+  polygon so that the stop happens on a straight, not in a junction.
+- **FTTI.** The FTTI argument (`hpc_loss` 10 s, `odd_exit` 30 s,
+  demo/l3/contracts/l3_takeover.contract.yaml) is in wall time, because
+  the island's detection and the gate are wall clock. It survives only if
+  CARLA runs at real time: section 4.
+
+## 3. LEDs
+
+### 3.1 The board
+
+MR-CANHUBK344 (Zephyr `boards/nxp/mr_canhubk3`, `mr_canhubk3_common.dtsi`,
+`doc/index.rst`):
+
+| LED | DT | pin | note |
+|---|---|---|---|
+| user RGB, red | `led0` = `user_led1_red` | PTE14 | gpio-leds, active low; PGPDO(E low) 0x40291712 bit 1 |
+| user RGB, green | `led1` = `user_led1_green` | PTA27 | PGPDO(A high) 0x40291700 bit 4 |
+| user RGB, blue | `led2` = `user_led1_blue` | PTE12 | PGPDO(E low) bit 3 |
+| CAN LED0..5, red | `can_led0..5` | PTC18, PTE5, PTD20, PTB24, PTB26, PTD31 | one beside each CAN connector |
+| SW1, SW2 | `sw0`, `sw1` (gpio-keys) | PTD15, PTA25 | active high |
+
+The `pwm-leds` node drives the same RGB LED through eMIOS and cannot be used
+with gpio-leds; the island enables no eMIOS PWM, so there is no conflict.
+LPUART2 (the serial link) is pinctrl-muxed on its own pins; none of the LED
+or button pins is in the island's pinctrl or the `island-serial` snippet
+(src/zephyr_entry/snippets/island-serial/serial.overlay). The GPIO driver
+(`CONFIG_GPIO_NXP_SIUL2`) is already in the image.
+
+Visibility: these are small SMD LEDs on a board the size of a palm. At a
+booth they read from about a metre. For a crowd, either a camera close-up on
+the screen, or the same three signals wired from the header to a stack light
+through a driver (a later unit; the state mapping below does not change).
+
+### 3.2 State -> LED
+
+| island state | RGB LED | reads as |
+|---|---|---|
+| boot, before the handler's first tick | blue steady | starting |
+| INIT (waiting for Autoware's inputs) | blue blinking 1 Hz | waiting for the car |
+| NORMAL | green steady | the car drives itself, the island watches |
+| NORMAL + takeover requested | amber (R+G) blinking 2.5 Hz | driver, take over |
+| MRM_OPERATING, COMFORTABLE_STOP | amber steady | stopping gently |
+| MRM_OPERATING, EMERGENCY_STOP | red blinking 2.5 Hz | emergency stop |
+| MRM_SUCCEEDED | red steady | stopped, safe |
+| MRM_FAILED | magenta (R+B) blinking | stop failed |
+| CAN LED0 | toggles every 5 handler ticks (1 Hz) | the island is alive; frozen = handler stuck |
+
+The heartbeat is driven by the handler's own tick, so it freezes with the
+handler: the visitor-readable form of "the island is not running".
+
+### 3.3 Where it is driven (the prototype)
+
+`CONFIG_ISLAND_LED` (src/zephyr_entry/Kconfig, default n), `src/zephyr_entry/src/island_led.c`,
+two calls in `MrmHandler::onTimer()` (src/autoware_mrm_handler/src/mrm_handler/mrm_handler_core.cpp):
+one in the INIT branch, one after `publishHazardCmd()`. Chosen over the two
+alternatives:
+
+- a separate LED node subscribing to `/system/fail_safe/mrm_state` on the
+  island: another subscription, another arena slot and receive buffer
+  (about 1.5 KB of the derived sizing), a contract entry, and the LED would
+  lag the state by a publish/take;
+- a Zephyr timer or thread: an ISR or stack the timing analysis has to
+  carry, and the heartbeat would then not prove the handler runs.
+
+No thread, timer or ISR is added; the work is a few register writes on the
+spin thread when a pin changes.
+
+The trap found on the board: **Zephyr 4.4's CTF backend traces every GPIO
+API call** (`subsys/tracing/ctf/ctf_top.c` defines the gpio hooks whatever
+`CONFIG_TRACING_GPIO` says, and it is `n`). With `gpio_pin_set_dt()` on
+every tick the first run (`led-e2`) wrote 2,781 gpio set/clear events in
+34 s and filled the 52 KiB RAM trace buffer before the act:
+`trace-check: FAIL ... it filled at 53246 of 53248 B`, merge.py found no
+anchor, and the composed `detect + route` row failed (794 ms against 744;
+752 in the first run, `led-e1`) while the image without LEDs passed it. Not
+investigated further: after the fix below the row passed (8/8). The image without LEDs used 20,752 B for the same
+act. The prototype therefore calls the driver's `port_set_bits_raw` /
+`port_clear_bits_raw` directly and only on a level change; the act after
+the change used 20,949 B (+197 B).
+
+`island_led_record` (88 B, DTCM .bss) holds the selected pattern, the tick
+count and the last 8 transitions with their uptime;
+`tools/timeline/led_readout.py` reads it and the four pins' PGPDO bits over
+SWD (attach, no halt).
+
+On the board, two acts with the LED image (`ISLAND_BOARD_KCONFIG="CONFIG_ISLAND_LED=y"
+just BOARD_BUILD_DIR=build-board-led board-build`, then
+`tools/timeline/run-board.sh --elf build-board-led/zephyr/zephyr.elf`):
+
+```
+SUMMARY led-e3 encore: PASS; load 13.51 at act; table 8/8 PASS, total 3540.99 of 4909.67 ms; trace-check PASS; ...
+edges (ms from the button): ... detect_tick 582.14, ... mrm_operating 582.60, ... mrm_succeeded 3690.89
+led_readout (after the act):
+pins lit=R   hb=0  record: magic=ok pattern=R blink ticks=553 transitions=7 gpio_errors=0
+  #0       0.119 s  NORMAL/NONE                          -> B blink
+  #1       3.120 s  MRM_OPERATING/EMERGENCY_STOP         -> R blink    (init_timeout: no Autoware yet)
+  #2       6.320 s  NORMAL/NONE                          -> G
+  #3      40.120 s  MRM_OPERATING/EMERGENCY_STOP         -> R blink    (the act)
+  #4      43.220 s  MRM_SUCCEEDED/EMERGENCY_STOP         -> R          (3.10 s later; trace: 3690.89 - 582.60 = 3108 ms)
+  #5      44.420 s  NORMAL/NONE                          -> G          (hpc-restore)
+  #6      45.620 s  MRM_OPERATING/EMERGENCY_STOP         -> R blink    (teardown stops the gate)
+02:07:22 pins lit=off hb=1 pattern=R blink   (--watch: the pins blink)
+02:07:23 pins lit=R   hb=1 pattern=R blink
+
+SUMMARY led-a1 a: PASS; load 24.22 at act; table 6/6 PASS; trace-check PASS; ...
+  #3       8.721 s  NORMAL/NONE                          -> G
+  #4      47.821 s  NORMAL/NONE +takeover                -> RG blink   (ODD exit, takeover request)
+  #5      51.021 s  NORMAL/NONE                          -> G          (the driver's MANUAL)
+```
+
+A read during the encore's drive (attach, no halt, while the act ran) gave
+`pattern=R blink` one second after the press, `lit=off` in the blink's dark
+half. "lit" is read from the pads' output registers, so it is what the LED
+shows, independent of the record. The baseline image on the same host and
+setup: `SUMMARY base-e1 encore: PASS; table 8/8 PASS, total 3529.22 of
+4909.67 ms; trace-check PASS`.
+
+Cost against the gate image (main `5057528`, `just board-build`):
+
+| region | without | with `CONFIG_ISLAND_LED=y` | delta |
+|---|---|---|---|
+| FLASH | 581,868 | 582,612 | +744 |
+| RAM (SRAM) | 276,056 | 276,056 | 0 |
+| DTCM | 117,536 | 117,624 | +88 (13,448 B left; the 8 KiB guard holds) |
+| ITCM | 12,996 | 13,028 | +32 |
+
+### 3.4 Buttons
+
+SW1/SW2 as the visitor's buttons (the W1/W11 alternative to a screen UI):
+
+- **SW1 = take over.** The takeover is the HPC side's (a MANUAL control mode
+  from the vehicle), not the island's. The island would publish a new topic,
+  `/demo/driver/response` (std_msgs/Empty), which `takeover_hmi` already
+  consumes and turns into `/control/control_mode_request` MANUAL. Cost: one
+  publisher on the island (no receive buffer), a contract entry, and the
+  `gpio-keys` input subsystem or a polled read in the handler's tick (no
+  ISR: poll SW1 at 10 Hz, debounce two ticks).
+- **SW2 = HPC loss.** Pressing it must not make the island lie about its
+  inputs. It publishes `/demo/fault/inject` (Empty); a host helper SIGSTOPs
+  the gate, exactly the encore's mechanism. A local fault injection inside
+  the island (ignore the availability) would demonstrate nothing the
+  contract measures.
+
+Both buttons are a demo affordance, not a safety function: they are outside
+the island's contract's hazards and the trace marks them as injections like
+today's `press` edge.
+
+## 4. Measurements and risks
+
+### 4.1 What stays a measurement
+
+| today | with CARLA |
+|---|---|
+| detect (last sample -> reaction tick), route, `call_mrm`, takeover window dwell | unchanged, on the island's clock; contract-checked |
+| settle (braking command -> standstill), the planning simulator's model | CARLA physics; a measurement against the derived profile only with acb's `emergency_full_brake:=false` (2.4); otherwise qualitative (it stops sooner) |
+| entry speed | EKF twist on CARLA sensors; measured, noisier |
+| hazard lights reach the vehicle (W9) | visible as CARLA blinkers; the `hazard_lights_on` row stays `-` until W9's stamp is fixed (it read `-` in `led-e3` too) |
+| the car is safe | new: SSv2 verdict (standstill, no collision) |
+| LED state | new, qualitative for visitors; the LED record makes it checkable (3.3) |
+
+### 4.2 Risks
+
+1. **Simulation time vs the island's wall clock (the main one).** CSB runs
+   CARLA synchronous and csb is the only ticker; between scenarios the
+   world and `/clock` are paused (`csb:docs/design/time-and-ticking.md`,
+   "One ticker"). Autoware runs on `/clock` (`use_sim_time:=true`). The
+   island and the availability gate run on wall time: the island's 500 ms
+   availability timeout and the gate's 1 s freshness are wall-clock. So
+   - a paused world between scenarios silences the availability stream
+     (Autoware's converter timer is sim time) and the island takes an
+     EMERGENCY_STOP: correct, and red on the LED, but it must not be
+     counted as an act. The act daemon arms only while SSv2 runs;
+   - at a real-time factor below 1, sim-time periodic topics arrive slower
+     on the wall clock: at RTF 0.5 the availability's 10 Hz becomes 5 Hz,
+     still inside 500 ms, but the FTTI is wall time and the settle is sim
+     time, so `total = detect (wall) + route (wall) + settle (sim / RTF)`.
+     The contract's sum is only meaningful at RTF ~1;
+   - the island stamps its messages with its own clock; vehicle_cmd_gate
+     and acb see sim-time stamps from everything else. W3/W9 already
+     showed one stamp the host rejects (hazard lights).
+   Gate G2: RTF measured over every act (`/clock` against wall), and an act
+   with RTF below 0.95 is marked invalid in the SUMMARY rather than judged.
+   SSv2 runs at `global_real_time_factor` 1.0 (`csb:src/csb_launch/launch/scenario.launch.xml`),
+   so RTF below 1 only comes from a host that cannot keep up.
+2. **Host load.** Section 0's ego stack is 127 composables plus CARLA; the
+   1-min load was 21 before the start and spiked to 141 during it (other
+   users' jobs were also running). run-board.sh refuses an act above 35
+   (`RB_LOAD_MAX`); the island's serial path measured clean at load 12-14
+   today. The CARLA stack must be started and settled before the act's load
+   check, and CARLA quality stays `Low` offscreen.
+3. **GPU.** CARLA offscreen used 2.0 GB of the 24 GB; acb's default
+   perception (`clustering`) needs no GPU; centerpoint would add TensorRT
+   engines. No conflict expected; measured per start in G1.
+4. **rclcpp under zenoh, native** (1.4): a start flake would look like an
+   island fault (the availability never establishes, INIT -> emergency). G1
+   counts it.
+5. **Emergency brake in acb is full brake** (2.4): an act passes while the
+   contract's settle row no longer tests what it says.
+6. **The stock MRM nodes come back** if the overlay is not first on the
+   path for `tier4_system_launch`: the same shadowing trap as demo-runbook
+   section 0, inverted. G1 checks the node list (`/system/mrm_handler`
+   must be absent on the host graph; section 0's stock CSB run shows it
+   present).
+
+## 5. Plan
+
+Each unit ends in a gate that is a run, not a review.
+
+| unit | what | gate |
+|---|---|---|
+| C1 | the ego on zenoh: `just ego-av` with `RMW_IMPLEMENTATION=rmw_zenoh_cpp`, `ROS_DOMAIN_ID=10`, the stock router, the island's overlay sourced between Autoware and acb, `operation_mode_availability_topic:=.../availability_raw`, a merged `autoware-carla-l3.yaml` graph | G1: five starts, each `Startup complete` with every composable; `/system/mrm_handler` not on the host graph; `town01_ego_drive` passes with no island attached (availability flows through the gate) |
+| C2 | acb options: `allow_manual` (MANUAL accepted, reported, Autoware's commands not applied, CARLA autopilot holds the lane) and `emergency_full_brake:=false` | acb unit tests; act a in CARLA reports MANUAL on `/vehicle/status/control_mode` |
+| C3 | the island attached: run-board.sh `--sim carla` (CARLA + scenario + ego instead of the container), RTF recorded per act | G2: encore, a, b each PASS with SUMMARY rows unchanged in meaning, RTF >= 0.95, SSv2 junit PASS |
+| C4 | the scenarios: `town01_island_encore.xosc`, `town01_island_odd.xosc`, CustomCommandAction -> act daemon | each act triggered by the scenario at its place, three times back to back without a reflash (W2's re-arm) |
+| C5 | LEDs on by default for the booth image (`CONFIG_ISLAND_LED=y` in a booth conf, not the gate image) | the LED record shows the act's transitions with uptimes matching the trace's `mrm_operating` / `mrm_succeeded` edges within one tick |
+| C6 | buttons: SW1 take over, SW2 HPC loss (3.4) | a visitor runs acts a and encore from the board alone |
+| C7 | the container (phase 2, also W10) | C3's gate with Autoware + acb in the image |
