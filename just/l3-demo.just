@@ -29,7 +29,9 @@ l3-help:
 #   * TCP `port` (7449) serves diagnostics only, as in board-peer.
 # The image must carry the same rate: CONFIG_NROS_ZENOH_LOCATOR in
 # src/zephyr_entry/snippets/island-serial/serial.conf.
-L3_PEER_TTY := "/dev/serial/by-id/usb-FTDI_FT232R_USB_UART_B001UCTE-if00-port0"
+# This host's DCD-LZ adapter; another machine sets L3_PEER_TTY to its own
+# /dev/serial/by-id path (run-board.sh reads the same variable).
+L3_PEER_TTY := env("L3_PEER_TTY", "/dev/serial/by-id/usb-FTDI_FT232R_USB_UART_B001UCTE-if00-port0")
 
 # Run the island gateway router on the board's serial line (foreground; Ctrl-C stops). phase8-W2
 l3-peer tty=L3_PEER_TTY baud="921600" stock="tcp/127.0.0.1:7447" port="7449" log="build/trace/l3-peer-router.log":
@@ -93,7 +95,12 @@ l3-peer tty=L3_PEER_TTY baud="921600" stock="tcp/127.0.0.1:7447" port="7449" log
 # `where=host` runs 2-4 on the host instead, under `env -i` with ROS sourced
 # fresh (this shell carries demo/host_ws/install ahead of /opt/autoware and
 # the Cyclone env of `.envrc`); build that overlay first with l3-host-ws.
-L3_IMAGE := env("L3_IMAGE", "sai-l3-autoware:1.5.0")
+# The tag the board demo runs (run-board.sh's default too): main's overlay with
+# phase9-C8's diagnostic graph. The bare 1.5.0 tag was W3's image and, on the
+# demo host, still names that old build (no rmw_zenoh 0.1.10, no rclcpp patch),
+# so `just l3-container` and run-board.sh used to disagree on what "the image"
+# is (phase9-W21). Bump this and run-board.sh's default together.
+L3_IMAGE := env("L3_IMAGE", "sai-l3-autoware:1.5.0-c8")
 L3_NAME := env("L3_NAME", "sai-l3")
 L3_HOST_WS := "build/l3-host-ws"
 

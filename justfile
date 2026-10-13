@@ -122,6 +122,16 @@ doctor:
             echo "  WARNING: play_launch ${ver:-(no version)} is older than the required {{PLAY_LAUNCH_MIN}} (the CI pin; older ones reject the island contract) -- run: just setup-play-launch force"; ok=0
         fi
     fi
+    # The host gate (run-board.sh's RB_GATE, through gate-rt) runs SCHED_FIFO 20
+    # only when this shell's rtprio limit allows it, else SCHED_OTHER with a
+    # line in gate.stdout. A warning: every measured round so far ran it
+    # SCHED_OTHER. The limits.d line is in docs/demo-runbook.md (phase9-W21).
+    rtprio="$(ulimit -r)"
+    if [ "$rtprio" = unlimited ] || [ "$rtprio" -ge 20 ] 2>/dev/null; then
+        echo "rtprio: ulimit -r $rtprio (the host gate can run SCHED_FIFO 20)"
+    else
+        echo "  WARNING: ulimit -r is $rtprio -- the host availability gate will run SCHED_OTHER, not SCHED_FIFO 20 (docs/demo-runbook.md, 'Real-time limits')"
+    fi
     # The display RViz and the demo UI use: a warning, not a failure (the
     # board and CI paths need no display). A headless shell made the demo UI
     # fail with nothing said (phase9-W22, DX 6.10).
@@ -416,7 +426,12 @@ _zephyr-provision line:
     read -r tool ver < <(scripts/zephyr-sdk-tool.sh "$root" "$ws")
     [ -n "$tool" ] || exit 1
     "$nros" setup --tool "$tool" --index "$index"
-    sdk="$("$nros" sdk-path "$tool" --require --index "$index")/zephyr-sdk-$ver"
+    # `nros sdk-path` returns the SDK root itself at this pin (and the store
+    # prefix above it at older ones); accept both, as scripts/board-env.sh does.
+    # Appending unconditionally made every board-setup on a provisioned host
+    # die on `cd: .../zephyr-sdk-1.0.1/zephyr-sdk-1.0.1` (phase9-W21).
+    sdk="$("$nros" sdk-path "$tool" --require --index "$index")"
+    [ "$(basename "$sdk")" = "zephyr-sdk-$ver" ] || sdk="$sdk/zephyr-sdk-$ver"
     (cd "$sdk" && ./setup.sh -t x86_64-zephyr-elf -t arm-zephyr-eabi -h -c)
 
 # Report whether the board toolchain is ready. Read-only.
@@ -756,7 +771,9 @@ board-size:
     # The reports are ADVISORY (phase9-U2). Zephyr's size_report needs
     # `anytree`, which the workspace venv this repo provisions does not carry
     # (requirements-base.txt lists it; the nros provisioning installs a
-    # subset), so both reports fail on every build with ModuleNotFoundError.
+    # subset; nano-ros issue 1870, after the pin: `--create` installs it and
+    # setup warns), so both reports fail with ModuleNotFoundError until it is
+    # installed by hand (docs/demo-runbook.md section 5).
     # The `| tail -20` this used to end in hid that (no pipefail), so the
     # traceback scrolled past and the recipe exited 0. A report failure is
     # printed, named, and does not fail board-build; the linker's own

@@ -42,7 +42,8 @@ set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
 repo="$(cd "$here/../../.." && pwd)"
-IMAGE="${L3_IMAGE:-sai-l3-autoware:1.5.0}"
+# the same default as L3_IMAGE in just/l3-demo.just and run-board.sh (phase9-W21)
+IMAGE="${L3_IMAGE:-sai-l3-autoware:1.5.0-c8}"
 NAME="${L3_NAME:-sai-l3}"
 LOG_HOST="${L3_LOG_HOST:-$repo/build/l3-container-log}"
 mkdir -p "$LOG_HOST"
