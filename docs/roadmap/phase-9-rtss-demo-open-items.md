@@ -790,7 +790,7 @@ phases, this repository by fast-forward push.
   Gate: the three acts triggered from the buttons, back to back without a
   reflash, each followed by its plot, every row PASS.
   DX: see DX-UX-GAPS 6.1, 6.8.
-- **W19 - one play_launch version for the doctor, CI and the vendored
+- [x] **W19 - one play_launch version for the doctor, CI and the vendored
   copy.** Three surfaces move independently (DX 2.3): the binary on PATH
   (0.12.0 on this host), the CI pin (`PLAY_LAUNCH_VERSION: "0.13.0"`,
   .github/workflows/check.yml:21) and the copy vendored inside nano-ros
@@ -806,6 +806,10 @@ phases, this repository by fast-forward push.
   85 by reference. W22 raises the minimum by hand first. Gate: a fresh
   shell with the 0.12.0 wheel on PATH gets a doctor line naming the
   required version before any check runs.
+  Status (2026-10-13): done through section 8 C1. play_launch 0.16.0 is the
+  CI pin, the doctor's `PLAY_LAUNCH_MIN`, `.envrc` and `scripts/env.sh`;
+  nano-ros vendors 15258108 (v0.16.0 plus one commit) since its PR #2038;
+  the doctor also refuses a stale nros CLI or resolver (U4).
 - **W20 - reading the board's log without a console.** lpuart0 (the
   console) is unwired and lpuart2 carries the link (DX 4.1). RTT works, but
   needs "Four things this needs, none of which any error message
@@ -988,11 +992,15 @@ phases, this repository by fast-forward push.
   the `operate` call (section 10). Gate: each hop with a measured range;
   the in-tick time split by function.
   DX: see DX-UX-GAPS 5.6.
-- **W14 - more board runs to size the link.** W31's 12 edges reached
+- [x] **W14 - more board runs to size the link.** W31's 12 edges reached
   67.02 ms against W8's 47.43 (18 edges). Run more acts on the board
   until the link term's maximum is stable, then feed it to W5. Gate: the
   run count, the edge count and the maximum, with the cross-clock caveat
   of W3.
+  Status (2026-10-13): superseded by section 8 C7. The final round on the
+  I14 image measured the link at 18.53-46.42 ms (fr-* and c7-*, terms in
+  build/timeline/fr-terms.txt of that round); `max_transport` is 56 ms
+  (46.42 x 1.2).
 - **W15 - the host under load.** The host gate's gaps at load 30
   (phase8-W14 "Open:"), and the planner's rate under load (phase8-W16
   "Open:": the one W16 FAIL was Autoware's `comfortable_stop`
@@ -1000,12 +1008,21 @@ phases, this repository by fast-forward push.
   timeout). Gate: a soak at the stated load with the largest gate gap and
   the planner's rate reported.
   DX: see DX-UX-GAPS 5.8, 6.6.
+  Status (2026-10-13): partly answered, still open. The comfortable_stop
+  drops were the diagnostic graph's 1.0 s timeout against 1 Hz diag units
+  (section 8 C8, fixed in the overlay with `timeout: 1.5`); run-board.sh now
+  refuses an act above a 1-min load of 35 (C6). The soak the gate asks for
+  (largest gate gap and planner rate at a stated load) has not run.
 - **W16 - bad frames on the serial link.** In-run bad frames with no UART
   error and no ring overflow, about one per 80 min of soak at contract
   rates (3 in 250 min), cause open (docs/serial-link.md). Investigate with
   the frame capture image. Gate: the cause, or a capture of enough frames
   to rule causes out.
   DX: see DX-UX-GAPS 5.9.
+  Status (2026-10-13): still open as a soak question. Since the I14 RX
+  watermark, every act of the C3/C7/C10 rounds read 0 overruns and 0 bad
+  frames inside the act (the per-run 1/1 was teardown, C3). The soak rate
+  above (one per about 80 min) predates I14 and has not been re-measured.
 - **W17 - hygiene, in the background.**
   - Stale out-of-source build trees in the island repository (19 `build-*`
     directories today; 85 at the 2026-09-12 peak) and old worktrees under
