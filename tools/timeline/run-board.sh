@@ -246,8 +246,20 @@ wait_load() {  # wait_load <where>: the 1-min load at most RB_LOAD_MAX, or a ref
 others_pyocd() {  # pids of other pyocd users on this host, not this run's ancestors
     local anc=" " p=$$
     while [ -n "$p" ] && [ "$p" != 0 ] && [ "$p" != 1 ]; do anc+="$p "; p=$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' '); done
-    pgrep -af 'pyocd|readout\.py|spin_diag\.py' 2>/dev/null | while read -r pid cmd; do
-        case "$anc" in *" $pid "*) ;; *) echo "$pid ${cmd:0:80}";; esac
+    # Only a process whose PROGRAM is pyocd, or python running one of the SWD
+    # scripts, holds the probe. A shell whose command line merely names one
+    # (a loop that calls readout.py) does not: matching on the whole command
+    # line refused fr-b3 on the caller's own `zsh -c '... readout.py ...'`.
+    pgrep -af 'pyocd|readout\.py|spin_diag\.py|violations\.py' 2>/dev/null | while read -r pid cmd; do
+        case "$anc" in *" $pid "*) continue;; esac
+        read -r prog arg1 _ <<< "$cmd"
+        case "${prog##*/}" in
+            pyocd|pyocd-*) ;;
+            python|python3|python3.*)
+                case "${arg1##*/}" in pyocd|readout.py|spin_diag.py|violations.py) ;; *) continue;; esac ;;
+            *) continue;;
+        esac
+        echo "$pid ${cmd:0:80}"
     done
 }
 preflight() {
