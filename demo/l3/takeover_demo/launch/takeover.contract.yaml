@@ -26,6 +26,7 @@ nodes:
     params:
       max_speed_kmh: { type: double }
       segment_polygon: { type: string }
+      scenario_file: { type: string }
       rate_hz: { type: double }
     srv:
       inject_exit: {}

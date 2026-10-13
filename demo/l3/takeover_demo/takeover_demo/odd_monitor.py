@@ -7,9 +7,17 @@ again) until `~/clear` or `/demo/odd/inject false`:
   speed    |v| from /localization/kinematic_state above `max_speed_kmh`
            (30 km/h: the user's decision, phase-8 section 7 item 2)
   segment  the pose outside `segment_polygon` ("x,y;x,y;..." in map
-           coordinates; empty = no segment bound)
+           coordinates; empty = no segment bound). Armed by the first pose
+           inside the polygon, so a pose before localization settles (or
+           before the scenario's teleport) cannot latch an exit.
   inject   the booth button: `~/inject_exit` (std_srvs/Trigger) or
            /demo/odd/inject (std_msgs/Bool true)
+
+The ODD can instead come from the scenario: `scenario_file` names an
+OpenSCENARIO file whose ParameterDeclarations state IslandOddPolygon and/or
+IslandOddMaxSpeed (odd_scenario.py). A declared value replaces the
+parameter's; `segment_polygon` and a scenario polygon together are refused
+(two sources for one bound).
 
 Publishes /demo/odd/exit (std_msgs/Bool) and /demo/odd/reason
 (std_msgs/String) at `rate_hz` (10).
@@ -23,35 +31,28 @@ from std_msgs.msg import Bool, String
 from std_srvs.srv import Trigger
 
 from . import common as c
-
-
-def parse_polygon(text):
-    pts = []
-    for pair in filter(None, (p.strip() for p in text.split(';'))):
-        x, y = (float(v) for v in pair.split(','))
-        pts.append((x, y))
-    if pts and len(pts) < 3:
-        raise ValueError(f'segment_polygon needs >= 3 points, got {len(pts)}')
-    return pts
-
-
-def inside(poly, x, y):
-    """Even-odd ray cast."""
-    hit = False
-    j = len(poly) - 1
-    for i, (xi, yi) in enumerate(poly):
-        xj, yj = poly[j]
-        if (yi > y) != (yj > y) and x < (xj - xi) * (y - yi) / (yj - yi) + xi:
-            hit = not hit
-        j = i
-    return hit
+from .odd_scenario import inside, parse_polygon, read_scenario_odd
 
 
 class OddMonitor(Node):
     def __init__(self):
         super().__init__('odd_monitor')
-        self.max_speed = self.declare_parameter('max_speed_kmh', 30.0).value / 3.6
-        self.poly = parse_polygon(self.declare_parameter('segment_polygon', '').value)
+        max_kmh = self.declare_parameter('max_speed_kmh', 30.0).value
+        poly_text = self.declare_parameter('segment_polygon', '').value
+        scenario = self.declare_parameter('scenario_file', '').value
+        source = 'parameters'
+        if scenario:
+            s_poly, s_kmh = read_scenario_odd(scenario)
+            if s_poly is not None:
+                if poly_text:
+                    raise ValueError('segment_polygon and the scenario both state the ODD polygon')
+                poly_text = s_poly
+            if s_kmh is not None:
+                max_kmh = s_kmh
+            source = scenario
+        self.max_speed = max_kmh / 3.6
+        self.poly = parse_polygon(poly_text)
+        self.armed = False
         rate = self.declare_parameter('rate_hz', 10.0).value
         self.exit_reason = ''
         self.v = None
@@ -64,7 +65,8 @@ class OddMonitor(Node):
         self.create_timer(1.0 / rate, self.on_timer)
         self.get_logger().info(
             f'ODD: |v| <= {self.max_speed * 3.6:.1f} km/h'
-            + (f', inside a {len(self.poly)}-point segment' if self.poly else ', no segment bound'))
+            + (f', inside a {len(self.poly)}-point segment' if self.poly else ', no segment bound')
+            + f' (from {source})')
 
     def fire(self, reason):
         if not self.exit_reason:
@@ -81,7 +83,13 @@ class OddMonitor(Node):
         if abs(self.v) > self.max_speed:
             self.fire(f'speed {abs(self.v) * 3.6:.1f} km/h > {self.max_speed * 3.6:.1f}')
         p = m.pose.pose.position
-        if self.poly and not inside(self.poly, p.x, p.y):
+        if not self.poly:
+            return
+        if inside(self.poly, p.x, p.y):
+            if not self.armed:
+                self.armed = True
+                self.get_logger().info(f'ODD segment armed at ({p.x:.1f}, {p.y:.1f}) {c.stamp()}')
+        elif self.armed:
             self.fire(f'segment ({p.x:.1f}, {p.y:.1f}) outside the ODD polygon')
 
     def on_inject(self, m):

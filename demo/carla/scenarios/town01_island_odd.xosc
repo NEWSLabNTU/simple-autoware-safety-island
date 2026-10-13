@@ -1,0 +1,152 @@
+<?xml version="1.0"?>
+<!-- Acts a and b of the CARLA island demo (docs/design/carla-island-demo.md,
+     section 2 and "ODD from the scenario"). NOT YET RUN under SSv2 (unit C4).
+
+     The ODD is data, in the ParameterDeclarations below; odd_monitor reads
+     them from this file (takeover.launch.xml scenario_file:=<this file>).
+     Coordinates are the Autoware map frame of the TUM Town01 Lanelet2 map,
+     the frame of every WorldPosition in this file (CARLA's world, y flipped).
+
+     Road: the straight between the junctions at x 101.4 and x 325.6, lanelet
+     6583 (westbound, y -132.4 .. -128.3) beside 5230 (eastbound, y -136.4 ..
+     -132.3); sidewalks at y -140.8 .. -136.6 and -128.1 .. -123.9.
+
+     ODD polygon: both lanes plus 1.6 m (south) / 2.3 m (north) of margin
+     for the EKF's lateral noise, from x 330 (4 m into the east junction, so
+     the start pose is inside) to x 240. The ego starts at x 315 and leaves
+     the ODD 75 m later. Budget west of the boundary at the 7 m/s cap: 10 s
+     takeover window (70 m) + detection and routing (under 1 s, 7 m) + the
+     comfortable stop at -1.0 m/s^2 (24.5 m) = 101.5 m, standstill near
+     x 138; the west junction is at x 101.4.
+
+     Speed: Performance maxSpeed 7.0 m/s (25.2 km/h; SSv2 hands it to
+     Autoware as the velocity limit) keeps the ego under the 30 km/h ODD
+     bound with 4.8 km/h of margin for the EKF twist, so the polygon, not
+     the speed bound, is what ends the ODD. -->
+<OpenSCENARIO>
+	<FileHeader author="simple-autoware-safety-island" date="2026-10-14T00:00:00+00:00" description="Town01: the ego leaves its ODD road segment; the island raises the takeover request" revMajor="1" revMinor="2" />
+	<ParameterDeclarations>
+		<ParameterDeclaration name="IslandOddPolygon" parameterType="string" value="330.0,-138.0;240.0,-138.0;240.0,-126.0;330.0,-126.0" />
+		<ParameterDeclaration name="IslandOddMaxSpeed" parameterType="double" value="30.0" />
+	</ParameterDeclarations>
+	<CatalogLocations />
+	<RoadNetwork>
+		<LogicFile filepath="$(env CARLA_MAPS)/Town01" />
+	</RoadNetwork>
+	<Entities>
+		<ScenarioObject name="ego">
+			<Vehicle name="vehicle.tesla.model3" vehicleCategory="car">
+				<BoundingBox>
+					<Center x="1.5" y="0.0" z="0.9" />
+					<Dimensions width="2.1" height="1.8" length="4.5" />
+				</BoundingBox>
+				<Performance maxSpeed="7.0" maxAcceleration="15.0" maxDeceleration="15.0" />
+				<Axles>
+					<FrontAxle maxSteering="0.5" wheelDiameter="0.6" trackWidth="1.8" positionX="3.1" positionZ="0.3" />
+					<RearAxle maxSteering="0.0" wheelDiameter="0.6" trackWidth="1.8" positionX="0.0" positionZ="0.3" />
+				</Axles>
+				<Properties />
+			</Vehicle>
+			<ObjectController>
+				<Controller name="Autoware">
+					<Properties>
+						<Property name="maxJerk" value="1.5" />
+						<Property name="minJerk" value="-1.5" />
+					</Properties>
+				</Controller>
+			</ObjectController>
+		</ScenarioObject>
+	</Entities>
+	<Storyboard>
+		<Init>
+			<Actions>
+				<Private entityRef="ego">
+					<PrivateAction>
+						<TeleportAction>
+							<Position>
+								<WorldPosition x="315.0" y="-130.3" z="0.3" h="3.14159" p="0" r="0" />
+							</Position>
+						</TeleportAction>
+					</PrivateAction>
+					<PrivateAction>
+						<RoutingAction>
+							<AcquirePositionAction>
+								<Position>
+									<WorldPosition x="110.0" y="-130.3" z="0.0" h="3.14159" p="0" r="0" />
+								</Position>
+							</AcquirePositionAction>
+						</RoutingAction>
+					</PrivateAction>
+				</Private>
+			</Actions>
+		</Init>
+		<Story name="island_odd">
+			<Act name="odd_act">
+				<ManeuverGroup maximumExecutionCount="1" name="ego_maneuvers">
+					<Actors selectTriggeringEntities="false">
+						<EntityRef entityRef="ego" />
+					</Actors>
+					<Maneuver name="end_conditions">
+						<!-- Act b: the island's comfortable stop. Standstill for 3 s
+						     after 20 s of simulation (the start's standstill does
+						     not count); conditions in one group are ANDed. Act a
+						     (MANUAL, the car keeps driving) is judged by the act
+						     daemon, which can see domain 10; SSv2 cannot. -->
+						<Event name="success" priority="parallel">
+							<Action name="exit_success">
+								<UserDefinedAction>
+									<CustomCommandAction type="exitSuccess" />
+								</UserDefinedAction>
+							</Action>
+							<StartTrigger>
+								<ConditionGroup>
+									<Condition name="after_start" delay="0" conditionEdge="none">
+										<ByValueCondition>
+											<SimulationTimeCondition value="20" rule="greaterThan" />
+										</ByValueCondition>
+									</Condition>
+									<Condition name="stopped" delay="0" conditionEdge="none">
+										<ByEntityCondition>
+											<TriggeringEntities triggeringEntitiesRule="any">
+												<EntityRef entityRef="ego" />
+											</TriggeringEntities>
+											<EntityCondition>
+												<StandStillCondition duration="3.0" />
+											</EntityCondition>
+										</ByEntityCondition>
+									</Condition>
+								</ConditionGroup>
+							</StartTrigger>
+						</Event>
+						<Event name="timeout" priority="parallel">
+							<Action name="exit_failure">
+								<UserDefinedAction>
+									<CustomCommandAction type="exitFailure" />
+								</UserDefinedAction>
+							</Action>
+							<StartTrigger>
+								<ConditionGroup>
+									<Condition name="timeout_condition" delay="0" conditionEdge="none">
+										<ByValueCondition>
+											<SimulationTimeCondition value="120" rule="greaterThan" />
+										</ByValueCondition>
+									</Condition>
+								</ConditionGroup>
+							</StartTrigger>
+						</Event>
+					</Maneuver>
+				</ManeuverGroup>
+				<StartTrigger>
+					<ConditionGroup>
+						<Condition name="start" delay="0" conditionEdge="none">
+							<ByValueCondition>
+								<SimulationTimeCondition value="0" rule="greaterThan" />
+							</ByValueCondition>
+						</Condition>
+					</ConditionGroup>
+				</StartTrigger>
+			</Act>
+		</Story>
+		<StopTrigger />
+	</Storyboard>
+</OpenSCENARIO>

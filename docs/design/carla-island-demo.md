@@ -1,8 +1,11 @@
 # CARLA + Autoware + the island on the board, with LEDs
 
 Status: design, 2026-10-14. Not built except the LED prototype (section 3,
-`CONFIG_ISLAND_LED`, measured on the board). Two repositories are named
-throughout:
+`CONFIG_ISLAND_LED`, measured on the board) and the scenario-declared ODD
+(section 2.5: odd_monitor reads it from the `.xosc`, unit-tested; the
+scenario itself not yet run under SSv2). The island keeps today's serial link
+and gateway (1.1); a direct island-Autoware link is recorded as future work
+(1.5), not chosen. Two repositories are named throughout:
 
 - this repo (the island): paths without a prefix;
 - carla-scenario-bridge, `NEWSLabNTU/carla-scenario-bridge` (CSB): paths
@@ -29,6 +32,10 @@ contract checks stay exactly as they are.
 | `just acceptance` (same stack) | FAIL on `pose_instability_detector` (a death the CSB user guide documents as harmless); fixed, acb `d9aef17`; then `1/1 runs passed`, 66.2 m, 0.007 m/s^2 longitudinal, 0.044 m cross-track |
 | CSB gitlink bump | CSB `a84a019` (acb `d9aef17`) |
 | LED prototype, encore on the board | `SUMMARY led-e3 encore: PASS; table 8/8 PASS; trace-check PASS`; LED record and pins below |
+| ODD from the scenario (2.5): `odd_scenario.py` + `demo/carla/scenarios/town01_island_odd.xosc` | `python3 -m pytest demo/l3/takeover_demo/test`: 11 passed; odd_monitor under rclpy (Humble, `scenario_file:=` that file): pose (0,0) ignored before arming, armed at (315.0, -130.3), `ODD EXIT (segment (239.0, -130.3) outside the ODD polygon)` |
+| Town01 road for the polygon | lanelets read from `/mnt/evo/aeon/carla-maps-stage/Town01/lanelet2_map.osm` (2.5) |
+| direct-link board builds (1.5), configure only, not flashed | zenoh + `island-ethernet`: refused by Kconfig (`NROS_ZENOH_GRAPH_DISCOVERY ... is not directly user-configurable`); Cyclone: refused by nano-ros (`system.toml [image.zephyr] has rmw = "zenoh"`) |
+| host Ethernet toward the board | none: no media converter for the board's 100BASE-T1 PHY; no spare host NIC (1.5) |
 
 ## 1. Architecture
 
@@ -125,6 +132,67 @@ Decision: **phase 1 native, phase 2 container.**
   with camera traffic lights off. This is also the shape W10 (the Orin)
   needs.
 
+### 1.5 Direct link (future; not the chosen design)
+
+Decision 2026-10-14: **the demo keeps the serial link and the gateway** (1.1).
+This section records the options for a link with no bridge between the
+island and Autoware, with the evidence gathered, so a later unit starts from
+it. Nothing here was flashed.
+
+What the "bridge" is today: the gateway is a second `rmw_zenohd` (the stock
+binary) with a serial listen endpoint, connected to Autoware's router on
+7447 (`demo/l3/router/island-gateway.json5`, a full copy of the stock config
+with four deltas: `keep_alive 6`, serial-egress downsampling, a serial-egress
+liveliness ACL, `queue.size.data 16`; docs/serial-link.md section 4). It is
+a process and a hop, not a protocol translation: both ends speak zenoh.
+
+| option | link | what goes away | evidence | verdict |
+|---|---|---|---|---|
+| D0 one router | serial, as today | the gateway process and its TCP hop | the gateway already is `rmw_zenohd`; its downsampling and ACL are already scoped `link_protocols: ["serial"]`, so they mean the same in Autoware's router | cheapest; config only. Deltas 1 and 4 then apply to every link of Autoware's router (keepalive every 10 s; a 16-batch queue on host links). Risk: a serial-face fault (the zenoh 1.8 stall, serial-link.md section 5) now lives in the router all of Autoware depends on |
+| D1 zenoh-pico over Ethernet, client of Autoware's `rmw_zenohd` | 100BASE-T1 + TCP | the gateway and the serial line | `snippets/island-ethernet` exists (locator `tcp/192.168.10.77:7447`, static 192.168.10.20/24, domain 10, discovery off, lease 60 s); phase 3 measured the IP stack at +49 KB RAM / +136 KB flash against serial (phase-3 doc 4c); board-facts lists a 4-node zenoh-over-Ethernet image at RAM 273,072 / 327,680 (an older image). Today it does not configure: `error: NROS_ZENOH_GRAPH_DISCOVERY ... is assigned in a configuration file, but is not directly user-configurable` on pin 43fc1c2f7 (the symbol is now derived; the line has to go) | not a bridge: every rmw_zenoh_cpp system runs `rmw_zenohd`, the island becomes one more client. Blocked by hardware (below) and unmeasured: today's serial image is 276,056 B SRAM, so +49 KB would leave about 1.4 KB, an estimate that needs the net pools cut |
+| D2 Cyclone DDS, native RTPS participant | 100BASE-T1 + UDP | the gateway and every router | nano-ros has `-S nros-cyclonedds`; board-facts: "CycloneDDS builds for the same board at RAM 174,364 (53.21%) -- static footprint only, at a 24 KiB malloc arena; it has never been run". Today the build is refused before Kconfig: "`-S nros-cyclonedds` selects CYCLONEDDS, but src/zephyr_entry/system.toml [image.zephyr] has rmw = "zenoh"" (needs a second image in system.toml) | no router at all, but the riskiest: SPDP/SEDP matching has no "discovery off", so the island holds proxy state for Autoware's whole graph (127 composables) in its heap, the failure class of G3 (zenoh's graph cache filled a 1 MiB QEMU heap in 2.5 s); Autoware, takeover_demo and acb all move from rmw_zenoh to Cyclone, undoing demo/l3's measured setup (graph_watcher, liveliness) |
+| D3 zenoh peer modes, CAN | UDP multicast / CAN FD / ISO-TP | the router hop | nano-ros has `NROS_ZENOH_LINK_UDP_MULTICAST`, `NROS_ZENOH_LINK_CAN`, `NROS_ZENOH_LINK_ISOTP`, `NROS_ZENOH_RAWETH_TRANSPORT` (zephyr/Kconfig) | rmw_zenoh_cpp 0.1 still expects a router for discovery, and the host side of CAN is again a zenoh process: a bridge by another name. XRCE-DDS needs an agent: a bridge |
+
+Host link today (`ip -br link`, `ethtool`, `lsusb`, 2026-10-14): `enp3s0`
+is the lab subnet (192.168.10.77/24, 10 Gb/s, a switch with other hosts on
+it; the address the Ethernet snippet already dials), `enp130s0` the uplink,
+no USB NIC; USB has only the MCU-Link and the FT232R. The board's PHY is a
+TJA1103, **100BASE-T1** (single pair), and the kit has no T1-to-100BASE-TX
+media converter (board-facts "Ethernet is 100 Mbit"; phase-3 Z1 superseded).
+So D1/D2 need, first, a converter (e.g. RDDRONE-T1ADAPT) and then either the
+lab switch (no host change; the board at 192.168.10.20) or a dedicated USB
+NIC with a static address on the board's subnet.
+
+What D1 would change:
+
+- Autoware launch: nothing; `rmw_zenohd` already listens on `tcp/[::]:7447`.
+  `just l3-peer` goes away.
+- Island image: `-S island-ethernet` instead of `island-serial` (fix the
+  graph-discovery line first), net pools sized down, the DMA-reachable SRAM
+  rule for descriptors (board-facts "TCM is not DMA-reachable").
+- Contract: the link's `max_transport` (56 ms, measured on serial) is
+  re-measured; it should fall (no 921,600-baud serialization, no FTDI
+  latency timer), but TCP adds retransmission on loss (an RTO of hundreds of
+  ms) where serial had none, and the lab switch is shared, so the bound is
+  a measurement, not an assumption. The serial-only egress downsampling has
+  no Ethernet counterpart and is not needed at 100 Mbit.
+- Tracing: the gateway hop leaves the merge; the island's CTF RAM backend is
+  unchanged (it never used the link).
+- Domains in CARLA: unchanged under D0/D1 (zenoh domain 10, scenario side
+  Cyclone domain 9). Under D2 the ego and the island would share Cyclone
+  domain 10 and the scenario side stays on 9: separate RTPS port ranges
+  (7400 + 250 x domain), still isolated, since the agent relay is TCP.
+- Risk to the validated serial demo: none while it is a separate snippet
+  and build dir; the serial image and `just l3-peer` stay the default.
+
+Units, when this is picked up: L1 = D0 on the bench (Autoware's router with
+the gateway's deltas and a serial listen endpoint; G: the soak of
+serial-link.md and the encore table unchanged); L2 = a media converter and
+the `island-ethernet` image re-fixed and sized (G: `ros2 node list` under
+`env -i` with rmw_zenoh_cpp lists the three MRM nodes; RAM table); L3 = D1
+acts with `max_transport` re-measured. D2 only after L2 has run, as a
+separate measurement of whether Cyclone holds Autoware's graph at all.
+
 ## 2. Scenarios
 
 ### 2.1 The three acts in CARLA
@@ -137,10 +205,10 @@ and its own verdict.
 | act | today (planning simulator) | in CARLA |
 |---|---|---|
 | encore, HPC loss | `scenario hpc`: SIGSTOP the gate; the availability stream goes silent; the island's 500 ms detection -> EMERGENCY_STOP | same mechanism. Triggered at a place in the route by the scenario: an OpenSCENARIO `CustomCommandAction` with an unknown `type` is fork-exec'd by SSv2 (`csb:src/scenario_simulator_v2/openscenario/openscenario_interpreter/src/syntax/custom_command_action.cpp`, `ForkExecCommand`; it `waitpid`s, so the command must return at once) -> a one-line client that tells the act daemon "hpc-loss" |
-| a, ODD exit + takeover | `/demo/odd/inject` or the 30 km/h bound in `odd_monitor`; the driver answers within 10 s (`driver_button`); control mode MANUAL | the ODD exit is a place: `odd_monitor`'s `segment_polygon` set to a Town01 road segment (the ego drives into it) or the speed bound (an SSv2 speed limit raised above 30 km/h on a straight). The visitor's takeover is a button (section 3.4); MANUAL needs acb support (2.2) |
+| a, ODD exit + takeover | `/demo/odd/inject` or the 30 km/h bound in `odd_monitor`; the driver answers within 10 s (`driver_button`); control mode MANUAL | the ODD is declared by the scenario (2.5): a Town01 road polygon and the speed bound; the ego starts inside the polygon and drives out of it, `odd_monitor` detects it from the ego's pose. The visitor's takeover is a button (section 3.4); MANUAL needs acb support (2.2) |
 | b, ODD exit unanswered | as a, no answer; COMFORTABLE_STOP after 10 s | as a; the comfortable stop's velocity limit is Autoware's planner braking in CARLA physics |
 
-Weather as an ODD exit (the contract's `odd_exit` names "speed bound or
+Weather as an ODD exit (not part of 2.5's declared ODD; the contract's `odd_exit` names "speed bound or
 weather"): SSv2's `EnvironmentAction` is a parse-only no-op and the protocol
 has no weather slot (`csb:docs/design/ssv2-feature-completeness.md`, row 15);
 csb serves `/carla/set_weather` in the scenario domain (9, Cyclone). So the
@@ -157,9 +225,11 @@ CARLA_MAPS)/Town01` like CSB's):
   one `ReachPositionCondition` at a straight -> CustomCommandAction
   `hpc-loss`; success = ego standstill (`StandStillCondition`) within 15 s
   of the trigger, no collision; failure = timeout.
-- `town01_island_odd.xosc`: the same route through the ODD polygon; success
-  = standstill (act b) or the ego still moving with control mode MANUAL
-  (act a; read by the act daemon, SSv2 cannot see domain 10).
+- `town01_island_odd.xosc` (written, not yet run): its own route on the
+  long Town01 straight, the ODD declared in its ParameterDeclarations (2.5);
+  success = standstill for 3 s after 20 s (act b) or the ego still moving
+  with control mode MANUAL (act a; read by the act daemon, SSv2 cannot see
+  domain 10).
 
 ### 2.2 Driver takeover in CARLA (acb change)
 
@@ -208,14 +278,96 @@ agree.
   kinematic state's twist, which is the EKF's.
 - **Takeover window.** 10 s on the island's clock (`takeover_request_timeout`,
   src/autoware_mrm_handler/config/mrm_handler.param.yaml). While it runs
-  the car keeps driving in CARLA; the route needs about 10 s x 8.33 m/s =
-  83 m of road after the ODD boundary plus the comfortable stop's distance
-  (about 35 m from 8.33 m/s at the operator's -1.0 m/s^2) -- choose the
-  polygon so that the stop happens on a straight, not in a junction.
+  the car keeps driving in CARLA; at the scenario's 7 m/s cap (2.5) the
+  route needs 10 s x 7 m/s = 70 m of road after the ODD boundary, about
+  7 m for detection and routing, and the comfortable stop's 24.5 m (7 m/s
+  at the operator's -1.0 m/s^2): 101.5 m. The polygon in 2.5 puts the stop
+  near x 138 on a straight whose junction is at x 101.4.
 - **FTTI.** The FTTI argument (`hpc_loss` 10 s, `odd_exit` 30 s,
   demo/l3/contracts/l3_takeover.contract.yaml) is in wall time, because
   the island's detection and the gate are wall clock. It survives only if
   CARLA runs at real time: section 4.
+
+### 2.5 The ODD from the scenario (option b)
+
+The scenario declares the ODD as data; the host's `odd_monitor` detects the
+exit from the ego's pose and speed; the gate and the island do the rest
+exactly as today. No new node, no new topic, nothing on the island.
+
+**Declaration.** Two OpenSCENARIO `ParameterDeclaration`s at the top of the
+`.xosc` (`demo/carla/scenarios/town01_island_odd.xosc`):
+
+| name | `parameterType` | unit, frame | Town01 value |
+|---|---|---|---|
+| `IslandOddPolygon` | `string` | `"x,y;x,y;..."`, metres, the Autoware map frame | `330.0,-138.0;240.0,-138.0;240.0,-126.0;330.0,-126.0` |
+| `IslandOddMaxSpeed` | `double` | km/h | `30.0` (the contract's `entry_speed` 8.33 m/s) |
+
+Either may be left out; a file with neither is refused. A value that is a
+`$reference` is refused rather than evaluated: the ODD must read as written.
+SSv2 ignores parameters nothing references.
+
+**Frame.** The map frame of the TUM Town01 Lanelet2 map is the frame of
+every `WorldPosition` in a CSB scenario: CARLA's world with y flipped and
+headings negated (`csb:docs/tutorials/02-prepare-a-scenario.md`; the
+projector is `local`, origin 0,0, `map_projector_info.yaml`). The lanelets
+store `local_x`/`local_y` in that frame, so the polygon is drawn straight
+from the `.osm` and `carla_poses` prints in it too. odd_monitor compares it
+with `/localization/kinematic_state`'s position, which is in `map`.
+
+**The polygon.** The straight between the junctions at x 101.4 and x 325.6
+(lanelets 6583 westbound, y -132.4..-128.3, and 5230 eastbound,
+y -136.4..-132.3; one lanelet each, so no junction between): both lanes plus
+1.6 m / 2.3 m of margin for the EKF's lateral noise (0.95 m median in
+section 0's run), from x 330 to x 240. The ego is teleported to (315.0,
+-130.3) heading west, routed to (110.0, -130.3), and leaves the ODD at
+x 240, 75 m after the start. West of the boundary the 101.5 m budget of 2.4
+puts the comfortable stop near x 138, 37 m before the junction.
+
+**The speed bound vs the speed cap.** The lanelets carry no `speed_limit`,
+so Autoware would cruise above 30 km/h and the speed bound, not the polygon,
+would end the ODD. The scenario caps the ego with `Performance maxSpeed
+7.0` (m/s, 25.2 km/h), which SSv2 hands to Autoware as its velocity limit
+(to be confirmed in C4); that leaves 4.8 km/h of margin over EKF twist
+noise. An act on the speed bound is the same file with the cap above 30 km/h.
+
+**How the values reach odd_monitor.** `odd_monitor` takes `scenario_file`
+(launch arg of `takeover.launch.xml`) and reads the two declarations itself
+(`takeover_demo/odd_scenario.py`, stdlib XML). A declared value replaces the
+`max_speed_kmh` / `segment_polygon` parameter; a scenario polygon together
+with `segment_polygon` is refused (two sources for one bound). The node logs
+the source: `ODD: |v| <= 30.0 km/h, inside a 4-point segment (from <file>)`.
+The act daemon (run-board.sh `--sim carla`, C3) passes the same path to SSv2
+and to the takeover launch. Chosen over:
+
+- a `CustomCommandAction` at scenario start: it runs in the scenario
+  process, fork-exec'd and `waitpid`ed (2.1), so it would need its own IPC
+  to a node in another domain, and it arrives after odd_monitor has already
+  started judging poses: a race the file read does not have;
+- the act daemon parsing the `.xosc` into launch arguments: the same parser
+  in a shell-side tool, with the polygon string through two layers of
+  quoting; reading in the node keeps one parser, the one the unit test
+  covers.
+
+**Arming.** The segment check arms on the first pose inside the polygon. A
+pose before localization settles or before the teleport (the EKF's first
+output, or a previous scenario's position) would otherwise latch an exit
+before the act; the pose `(0, 0)` is ignored until then (section 0). The
+speed bound is not armed: a start above 30 km/h is a real exit.
+
+**The evidence chain** (each link already measured in the planning-simulator
+acts; nothing new on the island):
+
+```
+ ego pose (map, EKF) --> odd_monitor: inside(polygon)? armed?  --> /demo/odd/exit true, /demo/odd/reason "segment (x, y) outside ..."
+                                                                     (10 Hz, latched; log line ODD EXIT ... wall= mono=)
+   --> availability_gate: autonomous &= !odd_exit (10 Hz timer)  --> /system/operation_mode/availability autonomous=false
+   --> island mrm_handler: takeover request (detect row, odd_exit)  --> /system/takeover_request/state, LED amber blinking
+   --> driver answers (MANUAL, act a) | 10 s window expires -> COMFORTABLE_STOP (act b)
+```
+
+The SUMMARY's odd_exit rows (detect, `island.tor`, window, settle) stay as
+they are; the act's start edge becomes odd_monitor's `ODD EXIT` stamp
+instead of the `/demo/odd/inject` press.
 
 ## 3. LEDs
 
@@ -424,7 +576,8 @@ Each unit ends in a gate that is a run, not a review.
 | C1 | the ego on zenoh: `just ego-av` with `RMW_IMPLEMENTATION=rmw_zenoh_cpp`, `ROS_DOMAIN_ID=10`, the stock router, the island's overlay sourced between Autoware and acb, `operation_mode_availability_topic:=.../availability_raw`, a merged `autoware-carla-l3.yaml` graph | G1: five starts, each `Startup complete` with every composable; `/system/mrm_handler` not on the host graph; `town01_ego_drive` passes with no island attached (availability flows through the gate) |
 | C2 | acb options: `allow_manual` (MANUAL accepted, reported, Autoware's commands not applied, CARLA autopilot holds the lane) and `emergency_full_brake:=false` | acb unit tests; act a in CARLA reports MANUAL on `/vehicle/status/control_mode` |
 | C3 | the island attached: run-board.sh `--sim carla` (CARLA + scenario + ego instead of the container), RTF recorded per act | G2: encore, a, b each PASS with SUMMARY rows unchanged in meaning, RTF >= 0.95, SSv2 junit PASS |
-| C4 | the scenarios: `town01_island_encore.xosc`, `town01_island_odd.xosc`, CustomCommandAction -> act daemon | each act triggered by the scenario at its place, three times back to back without a reflash (W2's re-arm) |
+| C4 | the scenarios: `town01_island_encore.xosc` (CustomCommandAction -> act daemon), `town01_island_odd.xosc` (written; ODD declared, 2.5) with `scenario_file:=` the same path; confirm SSv2 applies `Performance maxSpeed` as Autoware's velocity limit | each act triggered by the scenario at its place, three times back to back without a reflash (W2's re-arm); act a/b's `ODD EXIT` reason is `segment`, between x 239 and 241 |
 | C5 | LEDs on by default for the booth image (`CONFIG_ISLAND_LED=y` in a booth conf, not the gate image) | the LED record shows the act's transitions with uptimes matching the trace's `mrm_operating` / `mrm_succeeded` edges within one tick |
 | C6 | buttons: SW1 take over, SW2 HPC loss (3.4) | a visitor runs acts a and encore from the board alone |
 | C7 | the container (phase 2, also W10) | C3's gate with Autoware + acb in the image |
+| L1-L3 | direct link, future (1.5): D0 one router on serial, then D1 Ethernet after a media converter | 1.5's gates |

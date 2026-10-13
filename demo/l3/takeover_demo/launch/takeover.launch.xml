@@ -11,6 +11,7 @@
 <launch>
   <arg name="max_speed_kmh" default="30.0" description="ODD speed bound (phase-8 decision 2)"/>
   <arg name="segment_polygon" default="" description="ODD segment in map coordinates, x,y;x,y;... (empty: none)"/>
+  <arg name="scenario_file" default="" description="OpenSCENARIO file whose ParameterDeclarations state the ODD (IslandOddPolygon, IslandOddMaxSpeed); empty: the two args above"/>
   <arg name="takeover_request_timeout" default="10.0" description="takeover window, s (phase-8 decision 3)"/>
   <arg name="driver_button" default="true" description="false when the button runs in its own terminal (ros2 run)"/>
   <arg name="graph_watcher" default="true"/>
@@ -18,6 +19,7 @@
   <node pkg="takeover_demo" exec="odd_monitor" name="odd_monitor" output="screen">
     <param name="max_speed_kmh" value="$(var max_speed_kmh)"/>
     <param name="segment_polygon" value="$(var segment_polygon)" type="str"/>
+    <param name="scenario_file" value="$(var scenario_file)" type="str"/>
     <param name="rate_hz" value="10.0"/>
   </node>
 
