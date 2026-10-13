@@ -45,4 +45,15 @@ config ISLAND_DEBUG_FORCE_ASSERT_LOCKED
 	  nano-ros phase-474) with the shell busy: an immediate-mode print of
 	  the assert has to pend on the shell's lock with interrupts locked.
 
+config ISLAND_LED
+	bool "Show the MRM handler's state on the board's LEDs"
+	depends on GPIO
+	help
+	  The user RGB LED (aliases led0..led2) shows the handler's MRM state
+	  and CAN LED0 is a 1 Hz heartbeat, both set from the handler's own
+	  10 Hz tick (src/island_led.c; docs/design/carla-island-demo.md,
+	  section 3). island_led_record keeps the shown pattern and its last
+	  transitions for the SWD readout (tools/timeline/led_readout.py).
+	  Off by default: the gate image does not carry it.
+
 source "Kconfig.zephyr"

@@ -246,6 +246,11 @@ if(CONFIG_ISLAND_ASSERT_RECORD)
     target_sources(app PRIVATE src/assert_record.c)
 endif()
 
+# The MRM state on the board's LEDs (src/island_led.c, off by default).
+if(CONFIG_ISLAND_LED)
+    target_sources(app PRIVATE src/island_led.c)
+endif()
+
 # phase9 spin latency: the executor runs above the transport once registration
 # is done (src/spin_priority.c).
 if(CONFIG_ISLAND_SPIN_RAISE)

@@ -41,6 +41,11 @@ volatile uint32_t island_monitors_armed_via;
 // tools/timeline/violations.py overrun N.
 volatile uint32_t island_debug_overrun_ms;
 #endif
+#if defined(CONFIG_ISLAND_LED)
+// The MRM state on the board's LEDs (src/zephyr_entry/src/island_led.c),
+// called once per tick from onTimer().
+void island_led_update(uint32_t run, uint32_t state, uint32_t behavior, uint32_t takeover);
+#endif
 }
 #endif
 
@@ -625,6 +630,9 @@ void MrmHandler::onTimer()
   drainMrmClientReplies();
 
   if (!updatePhase()) {
+#if defined(__ZEPHYR__) && defined(CONFIG_ISLAND_LED)
+    island_led_update(0u, mrm_state_.state, mrm_state_.behavior, 0u);
+#endif
     ISLAND_TRACE(ISLAND_MK_PATH_MRM_HANDLER_ON_TIMER_EXIT, 0);
     return;
   }
@@ -657,6 +665,9 @@ void MrmHandler::onTimer()
     ISLAND_TRACE(ISLAND_MK_PATH_MRM_HANDLER_CALL_MRM_EXIT, mrm_state_.state);
   }
   publishHazardCmd();
+#if defined(__ZEPHYR__) && defined(CONFIG_ISLAND_LED)
+  island_led_update(1u, mrm_state_.state, mrm_state_.behavior, is_takeover_requested_ ? 1u : 0u);
+#endif
 #if defined(__ZEPHYR__) && defined(CONFIG_ISLAND_DEBUG_OVERRUN)
   // phase9-W4: the commanded overrun, after this tick's publishes so the
   // monitors charge it to them (one dispatch, every monitored publisher whose
