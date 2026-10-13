@@ -1509,6 +1509,105 @@ image of main.
   Autoware, and trace-check FAIL (the buffer full, 53,240 B, after a long
   loaded start).
 
+- [x] **C8 - comfortable-stop availability glitches on the host.** `d12-b3r`
+  (load 189), `c7-b1` (33.87) and `u6-b2` (8.32) escalated to
+  EMERGENCY_STOP because Autoware's raw availability carried
+  `comfortable_stop: false` for one sample during the comfortable stop; the
+  island's reaction is the ladder's. Find what flips it, and whether the host
+  should emit it. Gate: the publishing node and the condition named with
+  evidence; if the fix is ours to make (overlay, launch, gate), three b runs
+  without a withdrawal, check-contracts 14/14, selftest OK.
+  Status (2026-10-13, branch `phase9-c8-diag-timeout`): done.
+
+  Who and why. `/system/operation_mode/availability_raw` is published by the
+  stock `autoware_diagnostic_graph_aggregator` `converter_node` (inlined in
+  our tier4_system_launch overlay), which copies each mode from the
+  aggregator's `/system/command_mode/availability` (converter.cpp:58); a
+  mode is available while its graph node is OK (command_mode_mapping.cpp:59).
+  In autoware_launch's autoware-main.yaml, `/autoware/modes/comfortable_stop`
+  (line 55) ANDs map, localization, planning, perception, control, vehicle
+  and system; `autonomous` adds `/adapi/mrm_request/delegate`;
+  `emergency_stop` (line 66) only vehicle and system. Every withdrawal in the
+  evidence is `autonomous` and `comfortable_stop` false together, for one
+  sample, with `emergency_stop` true: one leaf under map .. control. No
+  diag unit in the stock graph sets `timeout`, so each goes STALE once its
+  last sample is 1.0 s old (levels.cpp:109 default 1.0, :123
+  `timeout_duration_ <= duration`), checked on the aggregator's 10 Hz timer
+  (aggregator.cpp:73-85; arrival time is the aggregator's `now()`,
+  aggregator.cpp:89). Several leaves are published by a diagnostic_updater
+  at its default 1.0 s period: the default ADAPI's
+  `/adapi/node/localization: state` and `/adapi/node/routing: state`
+  (localization.cpp:29, routing.cpp:59) always, and planning_validator's
+  eleven units, `lane_departure` and `control_state` until a trajectory
+  flows (then 10 Hz). A 1 Hz sample against a 1.0 s timeout has no margin:
+  whenever a tick falls in the few ms between a sample's 1.0 s anniversary
+  and the next sample's arrival, that leaf reads STALE for one tick and
+  every mode above it is withdrawn for one sample. The tick's phase against
+  the 1 Hz samples is fixed at start, so a run either never hits it or
+  hits it repeatedly at the same phase; host load only widens the window
+  (later arrivals).
+
+  Evidence. Recorded with `tools/timeline/diaggraph.py` beside the probe
+  (`build/timeline/c8-*/diag.rec`, island-c2's tree): the 1 Hz leaves
+  arrive every 1000.00 ms with about half the gaps at or over 1000.0 ms
+  (max 1008.6 in `c8-b2`); in `c8-b3` `lane_departure_checker_node:
+  lane_departure` (under /autoware/control) read STALE one tick, its
+  sample arriving 1.0 ms after the tick and 999.9 ms after the previous
+  one. The withdrawals in the probe (`probe.jsonl`, the `availability`
+  samples): `u6-b2` lines 1868/1883, 1988/2004 (before engage),
+  2683/2693, 2909/2921, 3022/3034, 3135/3146, 3822/3836, 4226/4239 (in
+  the stop), all at the same phase (t+28.633, 29.640, 35.644 .. 48.634 s
+  from the first sample); `c7-b1` 9242/9254; `d12-b3r` 3724/3737
+  (island-rclcpp's tree); and one in a passing run, `fr-b1` 1556/1570
+  (before engage, so no reaction was due). The other passing b runs
+  (`fr-b2`, `fr-b3`, `u6-b1`, `u6-b3`, `u6-b4`, `c7-b2`, `c8-b2`,
+  `c8-b4`) have none: about one b run in four is born at a bad phase.
+
+  Options. (a) Give the 1 Hz leaves a `timeout` in our graph file: the
+  diag unit's documented field (doc/format/unit/diag.md), the root cause,
+  no change to Autoware's source or to the contract. (b) A debounce in
+  `availability_gate` (hold a raw withdrawal one sample): hides real
+  withdrawals too and adds 100 ms to every one, which the contract would
+  have to charge. (c) `diagnostic_updater.period` 0.5 on the ADAPI nodes:
+  their launch is stock (not our overlay) and it leaves the validator and
+  control leaves. (d) State it in the contract and accept the escalation:
+  correct but leaves a demo act that fails one run in four for a host
+  configuration fault. Chosen: (a); the island still escalates on any
+  withdrawal it receives, the right reaction to a real one.
+
+  Done. `demo/host_ws/src/tier4_system_launch/config/diagnostics/`:
+  `autoware-l3.yaml` (autoware-main.yaml with its own localization,
+  planning and control files; map, perception, system and vehicle from
+  autoware_launch as they are) and those three files, each the stock file
+  plus `timeout: 1.5` on `/adapi/mrm_request/delegate`,
+  `/autoware/localization/state`, `/autoware/planning/routing/state`, the
+  eleven `trajectory_validation/*`, `lane_departure` and `control_state`.
+  1.5 s keeps a missed sample a fault (a 2.0 s gap) and lets a late one
+  through. The aggregator's `tree` tool prints the same graph for it as for
+  autoware-main.yaml. The overlay's system.launch.xml takes
+  `l3_diagnostic_graph_path` (default: the stock path, so `just autoware`
+  is unchanged); `l3-autoware` passes the new file unless
+  `L3_DIAG_GRAPH=stock` (run.sh forwards it). Image
+  `sai-l3-autoware:1.5.0-c8` (`L3_IMAGE=... just l3-container`, 14 s, all
+  Autoware layers cached), now run-board.sh's default. Note: it is main's
+  overlay, so it also carries W18's `island_hazard_lights_relay`, which the
+  w24 image every earlier round ran lacked.
+
+  Runs (island-c2's board image `df1bf38a...`, recorder beside the probe):
+  `SUMMARY c8f-b1 b: PASS; load 9.94 at act; table 14/15 PASS, total 15324.74 of 20450.67 ms; trace-check PASS; stored 1 (silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 66232 of 107008 B`,
+  `SUMMARY c8f-b2 b: PASS; load 12.35 at act; table 14/15 PASS, total 15373.41 of 20450.67 ms; trace-check PASS; stored 1 (silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 66464 of 107008 B`,
+  `SUMMARY c8f-b3 b: PASS; load 14.93 at act; table 15/15 PASS, total 16498.68 of 20450.67 ms; trace-check PASS; stored 1 (silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 66232 of 107008 B`.
+  No availability withdrawal in any of the three. In `c8f-b1` a
+  `lane_departure` sample was 1005.6 ms old at a tick (STALE under the
+  stock 1.0 s, not under 1.5 s) and the leaf stayed OK; in `c8f-b2`
+  `service_log_checker: response_status`, a 1 Hz leaf left at the stock
+  timeout (it feeds no mode, only /autoware/debug/tools), read STALE three
+  times: the race is still there, and gone from the leaves the modes read.
+  The 14/15 tables (the request-on's host-clock row, `c2-b1`'s shape)
+  occur on the w24 image too (`c8-b2`, `c8-b4`). Three runs alone would
+  not show a one-in-four event gone; the recorder's ages do. check-contracts
+  14/14 (the island contract does not read the graph); selftest OK.
+
 ### UX frictions
 
 - [x] **U1 - every run records its own evidence.** The serial counters,
@@ -1725,4 +1824,5 @@ image of main.
 C1 (small, unblocks the deck), U1 (makes C3 and C2 measurable), C3, C2,
 C4, U2, U3, C6 with U5, U4, C5 (cross-repo), C7 and U6 on the last board
 round. One board round at the end re-runs encore, a and b on main's
-image and feeds C3, C2, C7 and U6 together.
+image and feeds C3, C2, C7 and U6 together. C8 (the host's 1 Hz diagnostics against a 1.0 s graph timeout) came out
+of that round's b escalations.

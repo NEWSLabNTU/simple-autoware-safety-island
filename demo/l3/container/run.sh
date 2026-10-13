@@ -36,6 +36,8 @@
 #                       which fails with ENOMEM under Docker's 64 KiB memlock
 #                       default. GATE_RTPRIO=0 runs it SCHED_OTHER.
 #   L3_DEBUG=1          SYS_PTRACE, for gdb inside.
+#   L3_DIAG_GRAPH=stock the stock diagnostic graph instead of the overlay's
+#                       autoware-l3.yaml (phase9-C8; l3-autoware reads it).
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -63,6 +65,7 @@ args=(
 [ -n "${L3_ROUTER_PORT:-}" ] && args+=(-e L3_ROUTER_PORT="$L3_ROUTER_PORT")
 [ -n "${ZENOH_CONFIG_OVERRIDE:-}" ] && args+=(-e ZENOH_CONFIG_OVERRIDE="$ZENOH_CONFIG_OVERRIDE")
 [ -n "${GATE_RTPRIO:-}" ] && args+=(-e GATE_RTPRIO="$GATE_RTPRIO")
+[ -n "${L3_DIAG_GRAPH:-}" ] && args+=(-e L3_DIAG_GRAPH="$L3_DIAG_GRAPH")  # phase9-C8: stock | l3
 [ -t 0 ] && [ -t 1 ] && args+=(-it)
 
 if [ "${L3_X:-0}" = "1" ]; then

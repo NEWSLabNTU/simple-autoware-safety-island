@@ -40,6 +40,14 @@
        availability_gate republishes it on the stock name with
        `autonomous &= !odd_exit`, so the island reads the GATE's stream. -->
   <arg name="operation_mode_availability_topic" default="/system/operation_mode/availability"/>
+  <!-- phase9-C8: the graph file the aggregator loads. The default is what the
+       caller passed (stock: autoware_launch's autoware-main.yaml), so `just
+       autoware` is unchanged. The L3 demo passes this package's
+       config/diagnostics/autoware-l3.yaml: the stock graph with `timeout: 1.5`
+       on the diag units published at 1 Hz, whose stock 1.0 s timeout let
+       comfortable_stop availability drop for one sample whenever the
+       aggregator's tick phase met a sample's arrival (see that file). -->
+  <arg name="l3_diagnostic_graph_path" default="$(var diagnostic_graph_aggregator_graph_path)"/>
 
   <let name="sensor_launch_pkg" value="$(find-pkg-share $(var sensor_model)_launch)"/>
 
@@ -127,12 +135,14 @@
          inlined, because that file HARD-CODES the converter's output remap
          (`~/operation_mode/availability` -> /system/operation_mode/availability)
          and so cannot be pointed elsewhere by an argument. Identical to it
-         except that one remap reads $(var operation_mode_availability_topic).
-         The node names, parameters and every other remap are the stock ones. -->
+         except that one remap reads $(var operation_mode_availability_topic)
+         and (phase9-C8) graph_file reads $(var l3_diagnostic_graph_path),
+         which defaults to the stock path. The node names, the other
+         parameters and every other remap are the stock ones. -->
     <group>
       <node pkg="autoware_diagnostic_graph_aggregator" exec="aggregator_node">
         <param from="$(var diagnostic_graph_aggregator_param_path)"/>
-        <param name="graph_file" value="$(var diagnostic_graph_aggregator_graph_path)"/>
+        <param name="graph_file" value="$(var l3_diagnostic_graph_path)"/>
         <remap from="~/struct" to="$(var diag_struct_topic)"/>
         <remap from="~/status" to="$(var diag_status_topic)"/>
         <remap from="~/unknowns" to="/diagnostics_graph/unknowns"/>

@@ -7,6 +7,11 @@
 #   L3_GATE=0 l3-autoware        stock wiring (converter -> .../availability),
 #                                no gate needed
 #   L3_RVIZ=true l3-autoware     RViz inside (needs DISPLAY and the X socket)
+#   L3_DIAG_GRAPH=stock l3-autoware
+#                                the stock diagnostic graph (autoware-main.yaml);
+#                                default: the overlay's autoware-l3.yaml, the
+#                                stock graph with a 1.5 s timeout on the 1 Hz
+#                                diag units (phase9-C8)
 #   L3_CONTAINER_MODE=observable  play_launch's container mode (default: stock)
 #   extra args go to play_launch
 #
@@ -43,10 +48,15 @@ if ! (exec 3<>/dev/tcp/127.0.0.1/"$port") 2>/dev/null; then
 fi
 echo "l3-autoware: $(command -v play_launch) ($(play_launch --version 2>/dev/null)), RMW $RMW_IMPLEMENTATION, domain $ROS_DOMAIN_ID"
 echo "l3-autoware: tier4_system_launch from $(ros2 pkg prefix tier4_system_launch), availability converter -> $topic"
+graph=()  # phase9-C8: see tier4_system_launch/config/diagnostics/autoware-l3.yaml
+if [ "${L3_DIAG_GRAPH:-l3}" != stock ]; then
+    graph=(l3_diagnostic_graph_path:="$(ros2 pkg prefix tier4_system_launch)/share/tier4_system_launch/config/diagnostics/autoware-l3.yaml")
+fi
+echo "l3-autoware: diagnostic graph ${graph[0]:-stock}"
 web=(--disable-web-ui)
 [ "${L3_WEB:-0}" = "1" ] && web=()
 exec play_launch launch autoware_launch planning_simulator.launch.xml \
     map_path:="$L3_MAP" vehicle_model:=sample_vehicle sensor_model:=sample_sensor_kit \
     rviz:="${L3_RVIZ:-false}" operation_mode_availability_topic:="$topic" \
-    perception/enable_detection_failure:=false \
+    perception/enable_detection_failure:=false "${graph[@]}" \
     --container-mode "${L3_CONTAINER_MODE:-stock}" --log-dir "$log_dir" "${web[@]}" "$@"

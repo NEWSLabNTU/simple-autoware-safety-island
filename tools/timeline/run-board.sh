@@ -49,10 +49,12 @@
 # RB_ACT (the act command, $act and $dir expanded), RB_SETTLE (15 s after
 # Startup complete), RB_JOIN_TIMEOUT (120 s), RB_AW_TIMEOUT (300 s),
 # RB_QEMU_SECS (900, QEMU's own bound), L3_PEER_TTY (the gateway's tty),
-# L3_IMAGE (the Autoware image; default sai-l3-autoware:1.5.0-w24, W24's C++
-# gate image: on this host the bare tag sai-l3-autoware:1.5.0 is still W3's
-# build without W11's rmw_zenoh 0.1.10 and rclcpp patch, and sat at 63-64/68
-# composables in 3 of 5 starts; `just l3-container` rebuilds the tag),
+# L3_IMAGE (the Autoware image; default sai-l3-autoware:1.5.0-c8, main's
+# overlay with phase9-C8's diagnostic graph, built by `L3_IMAGE=... just
+# l3-container`; before it 1.5.0-w24, W24's C++ gate image, which lacks both
+# C8's graph and W18's hazard relay. On this host the bare tag
+# sai-l3-autoware:1.5.0 is still W3's build without W11's rmw_zenoh 0.1.10
+# and rclcpp patch, and sat at 63-64/68 composables in 3 of 5 starts),
 # DRIVE_SECS / OBSERVE_SECS / RESPOND_AFTER (scenario.py's), SAI_DEMO_LOCK,
 # RB_HOST_WS (the host overlay; default build/l3-host-ws/install, else
 # demo/host_ws/install), RB_LOAD_MAX (the 1-min load ceiling, 35),
@@ -90,7 +92,7 @@
 # (docs/takeover-trace.md, section 9); W17 wrote them against the QEMU island.
 set -u
 # the image that starts (W24); the justfile's default tag is W3's (above)
-: "${L3_IMAGE:=sai-l3-autoware:1.5.0-w24}"
+: "${L3_IMAGE:=sai-l3-autoware:1.5.0-c8}"
 export L3_IMAGE
 target=board elf="" flash=1 dry=0
 while [ $# -gt 0 ]; do
