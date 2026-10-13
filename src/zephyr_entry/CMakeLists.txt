@@ -170,6 +170,20 @@ if(CONFIG_CODE_DATA_RELOCATION AND CONFIG_TRACING_BACKEND_RAM)
     zephyr_code_relocate(FILES ${ZEPHYR_BASE}/subsys/tracing/tracing_backend_ram.c LOCATION DTCM_BSS)
 endif()
 
+# phase9-C10: DTCM headroom. DTCM now holds the trace buffer (53,248 B) and
+# the app library's .bss (the executor storage, 53,776 B, and the component
+# buffers, 10,008 B); the serial link's buffers left it with
+# CONFIG_NROS_ZENOH_SERIAL_TCM off (board conf). Before that it stood at
+# 130,408 of 131,072 B, and the region report is only read when something
+# breaks. linker/dtcm-headroom.ld fails the link below 8 KiB free: room for
+# one more component buffer the size of the largest (5,104 B) plus a store
+# growth like C5's (+1,720 B), with change to spare. A change that needs more
+# moves something out of DTCM, or lowers the guard on purpose, in the same
+# commit.
+if(CONFIG_CODE_DATA_RELOCATION)
+    zephyr_linker_sources(SECTIONS ${CMAKE_CURRENT_SOURCE_DIR}/linker/dtcm-headroom.ld)
+endif()
+
 # ---------------------------------------------------------------------------
 # ITCM: the safety application's own code.
 #

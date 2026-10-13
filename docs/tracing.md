@@ -750,9 +750,10 @@ last heartbeat the image emitted is not in the buffer.
 
 - `src/zephyr_entry/CMakeLists.txt` relocates `tracing_backend_ram.c`'s
   .bss (`ram_tracing`, `pos`, `buffer_full`) to `DTCM_BSS`
-  (`zephyr_code_relocate(FILES ...)`). CPU-only memory, read over SWD like
-  `_z_zephyr_serial_stats`, which is in DTCM already. `ram_tracing` links
-  at 0x20003250.
+  (`zephyr_code_relocate(FILES ...)`). CPU-only memory, read over SWD.
+  `ram_tracing` linked at 0x20003250 on the C2 image, behind the serial
+  link's buffers; since C10 (below) those are in SRAM and it links at
+  0x20000028. readout.py takes every address from the ELF.
 - The board conf sets `CONFIG_RAM_TRACING_BUFFER_SIZE=53248`.
 - `gen_markers.py` `NROS_TAKE_INPUTS`: keeps 4, 1, 12; the provenance
   carries them as `take_keep=4,1,12` (the table digest does not cover the
@@ -767,6 +768,18 @@ last heartbeat the image emitted is not in the buffer.
 
 DTCM has 2,416 B left; SRAM has 68,024 B. The next DTCM growth (the app
 library's .bss) has to come out of the buffer or move it back.
+
+**Headroom since phase9-C10.** C4 and C5 took DTCM to 130,408 of 131,072 B
+(664 B left). The buffer kept its 52 KiB; the serial link's 12,872 B of
+rings and framing buffers (zenoh-pico network.c, placed by
+`CONFIG_NROS_ZENOH_SERIAL_TCM`, measured as no gain in I13) went back to
+SRAM instead. DTCM now holds the buffer (53,248 B), the app library's .bss
+(the executor storage 53,776 B, the component buffers 10,008 B, the monitor
+and age tables 448 B) and the assert record (32 B): 117,536 B, 13,536 B
+free. `src/zephyr_entry/linker/dtcm-headroom.ld` fails the link below 8 KiB
+free. Section 8 of docs/roadmap/phase-9-rtss-demo-open-items.md (C10) has
+the table and the runs; the buffer used 20,520 B (encore) and 32,623 B (b)
+on that image.
 
 The board round on this image (`build/timeline/c2-*`, ELF sha256
 `8d6b39a65ec1a90b...`, `L3_IMAGE=sai-l3-autoware:1.5.0-w24`):

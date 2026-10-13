@@ -1835,6 +1835,61 @@ image of main.
   of the window itself. Re-rendered offline from the existing traces, the
   11 b runs above and `fr-b1..3`, `c7-b2`, `c8f-b3` read 15/15 with
   unchanged other rows. selftest OK, check-contracts 14/14.
+- [x] **C10 - DTCM headroom.** C5 left DTCM at 130,408 of 131,072 B
+  (664 B free) on the board image: the next growth of the app library's
+  .bss or of the trace buffer fails the link, and nothing said so until it
+  did. Measure what lives there and why, leave a deliberate margin without
+  losing what each placement bought, and make the margin a link check.
+  Status (2026-10-13, branch `phase9-dtcm`): done. DTCM on the C5 image
+  (`.dtcm_bss_reloc`, the only DTCM output section in use; Zephyr places
+  no stacks or heap there on this board):
+
+  | contents | bytes | placed by | why in DTCM |
+  | --- | ---: | --- | --- |
+  | `rclcpp::Node::GlobalStorageHolder<0>::storage` (executor storage) | 53,776 | `zephyr_code_relocate(LIBRARY app LOCATION DTCM_BSS)` | space only (330fe2c, "fit the four-node island into the 320 KiB") |
+  | `ram_tracing` (the trace buffer) | 53,248 | `zephyr_code_relocate(FILES tracing_backend_ram.c ...)` | space: C2 needed 52 KiB, SRAM did not have it |
+  | zenoh-pico network.c: RX and TX rings (2 x 4,096), raw RX / TX frame / RX tmp buffers (1,516 + 1,516 + 1,507), stats | 12,872 | `CONFIG_NROS_ZENOH_SERIAL_TCM` (nano-ros cmake) | performance, measured as none: I13 6.0 -> 6.2 us per ISR call |
+  | `__nros_comp_buf_0..2` (component buffers) | 10,008 | app library | space only |
+  | `__nros_mon_storage`, `__nros_age_storage`, `__nros_comp_*` | 460 | app library | space only |
+  | `island_assert_record`, `raised`, trace `pos` / `buffer_full` | 40 | app library, tracing file | space only |
+
+  The executor storage is the biggest space-only item, but moving the app
+  library back moves all of its .bss, about 64.3 KB, (`LIBRARY` cannot split it
+  without a mangled-name FILTER, the silent-empty failure the CMakeLists
+  warns about), and SRAM had 64,504 B free: under 300 B would be left. The
+  serial buffers are the one item placed for performance whose gain was
+  measured as none, and at 12.9 KB they clear the margin alone. Change: the board conf
+  sets `# CONFIG_NROS_ZENOH_SERIAL_TCM is not set` (network.c's code back
+  to flash, its .bss back to SRAM); the trace buffer keeps 53,248 B.
+  Margin: 8 KiB, room for one more component buffer the size of the
+  largest (5,104 B) plus a store growth like C5's (+1,720 B), with change to
+  spare. Guard: `src/zephyr_entry/linker/dtcm-headroom.ld`, added by
+  `zephyr_linker_sources(SECTIONS ...)`, an `ASSERT` that DTCM's end minus
+  `MAX(__dtcm_end, __DTCM_end)` is at least 8,192, so every image built
+  from the entry (normal and diag) fails its link below the margin. Checked
+  by raising it to 16,384 on this image: `ld.bfd: island: DTCM has less
+  than 8 KiB free (phase9-C10 headroom guard)`, link FAILED; at 8,192 the
+  link passes.
+
+  | region | C5 image | C10 image | delta |
+  | --- | ---: | ---: | ---: |
+  | DTCM | 130,408 (99.49 %, 664 free) | 117,536 (89.67 %, 13,536 free) | -12,872 |
+  | RAM | 263,176 (80.31 %, 64,504 free) | 276,040 (84.24 %, 51,640 free) | +12,864 |
+  | ITCM | 14,760 | 12,800 | -1,960 |
+  | FLASH | 581,688 | 581,672 | -16 |
+
+  (diag image: DTCM 117,536, RAM 286,064, 41,616 free, ITCM 14,588, FLASH
+  583,468.) `ram_tracing` now links at 0x20000028. Board, this image (ELF
+  sha256 `ce75327beb28f2bf...`, `L3_IMAGE=sai-l3-autoware:1.5.0-c8`):
+  `SUMMARY c10-encore1 encore: PASS; load 13.11 at act; table 8/8 PASS, total 3461.86 of 4909.67 ms; trace-check PASS; stored 1 (silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 66184 of 107008 B`
+  (buffer 20,520 of 53,248 B);
+  `SUMMARY c10-b1 b: PASS; load 10.67 at act; table 15/15 PASS, total 15674.87 of 20450.67 ms; trace-check PASS; stored 1 (silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 66232 of 107008 B`
+  (32,623 B). The serial ISR left ITCM, so one diag encore on
+  `just board-build-diag` (`c10-dg1`, PASS, 8/8, serial in act 0/0), act
+  segment: 5,619 spins, 0 at >= 1 ms late, ISR 3.35 us per call and 1.11 s
+  of CPU, against `dg-on1..3` (U6, serial TCM on): 0 late, 3.28-3.29 us per
+  call, 0.93 s (and `sl-i14w1`'s 2.94 us). About 2 % per call from flash
+  and cached SRAM, no late spin.
 
 ### Order
 
