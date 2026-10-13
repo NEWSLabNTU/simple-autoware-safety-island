@@ -225,10 +225,49 @@ About 70-80 s per act on a warm host (validation: encore 71 s, a 79 s, b
 - The preflight refuses above a 1-min load of 35 (`RB_LOAD_MAX`), after
   waiting up to 180 s (`RB_LOAD_WAIT`): an overloaded host makes Autoware
   withdraw availability and the island correctly escalates (phase9-C6).
-- `--dry-run` prints every step; `--no-flash` keeps the image on the board;
+- `--dry-run` prints every step; `--no-flash` keeps the image on the board
+  (but still resets it; `--keep-boot` below does not);
   `--target qemu` runs the same act against the QEMU island
   (`just trace-qemu-build` first). `tools/timeline/run-board.sh --help` has
   every option and variable.
+
+### Several acts on one boot (phase9-W2)
+
+The acts above flash and reset the board each time. To run them back to
+back on one boot (the booth), keep the island's link up between them and
+re-arm the trace window instead:
+
+```sh
+scripts/ienv.sh 'tools/timeline/run-board.sh --keep-link encore w2-e2'
+scripts/ienv.sh 'tools/timeline/run-board.sh --keep-boot --keep-link a w2-a2'
+scripts/ienv.sh 'tools/timeline/run-board.sh --keep-boot b w2-b2'
+```
+
+- `--keep-link` leaves the gateway (and the router, if the run started it)
+  up after the act, the island joined, and records their process groups in
+  `build/timeline/link.state`. Autoware, the gate and the probe are still
+  stopped, so the next act starts from a fresh Autoware as before.
+- `--keep-boot` uses that link: no flash and no reset; at step 1 it re-arms
+  the trace window (`readout.py --rearm-only`: `readout: re-armed: window 2
+  since boot ...`), and the new window opens when this act's availability
+  stream starts (docs/tracing.md section 8, "Re-arming"). Its preflight
+  refuses without a live kept link (`REFUSED no kept link ...`), when the
+  tty is held by anything but the kept gateway, or when `--elf` is not the
+  image the kept link's run flashed. Add `--keep-link` again for one more
+  act; the last act without it tears the link down.
+- `run-board.sh --link-down` stops a kept link by hand (after an
+  interrupted chain). A plain run refuses while a kept link holds the tty
+  and says so.
+- The SUMMARY of a re-armed act reads `trace-check PASS (window <n> of the
+  boot)`; its `stored` count is the boot's (the violation record is never
+  drained).
+- Why the link is kept and not restarted: the island rejoined a restarted
+  gateway, without a reset, only after 107 s (zenoh-pico's reconnect), so
+  each act would wait out most of 2 minutes at step 4.
+
+`--late-join` (phase9-W12) holds the island's core halted from step 1 and
+resets it only after Autoware, the gate and the probe are up (step 6b): the
+island joins a running Autoware.
 
 The presenter's manual path (one terminal per part: `just l3-router`,
 `l3-autoware`, `l3-takeover`, `l3-peer` then reset the board, `l3-run`,
@@ -279,6 +318,16 @@ SUMMARY w21-b1 b: PASS; load 7.94 at act; table 15/15 PASS, total 15350.55 of 20
 "stored 1 (silence-runtime x1)" is the known
 `silence-runtime /mrm_handler/operation_mode_availability` verdict at
 arming (phase-9 open items, W3); every act has it.
+
+2026-10-13, phase9-W2, the same worktree on branch `phase9-w2-w12` (ELF
+sha256 `cc55cfcc7a4a4cfd...`), three acts on one boot with section 9's
+"Several acts on one boot" commands:
+
+```
+SUMMARY w2-e2 encore: PASS; load 16.10 at act; table 8/8 PASS, total 3472.83 of 4909.67 ms; trace-check PASS; stored 1 (silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 66432 of 107008 B
+SUMMARY w2-a2 a: PASS; load 20.93 at act; table 6/6 PASS; trace-check PASS (window 2 of the boot); stored 1 (silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 66432 of 107008 B
+SUMMARY w2-b2 b: PASS; load 29.62 at act; table 15/15 PASS, total 15698.33 of 20450.67 ms; trace-check PASS (window 3 of the boot); stored 1 (silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 66432 of 107008 B
+```
 
 ## Legacy: the Cyclone / native_sim demo (phases 2-7)
 

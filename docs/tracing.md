@@ -646,7 +646,8 @@ ELF symbols the board read uses.
   `irq_lock`; the board's DWT bracket (`island_trace_cost_*`) will include it
   in its maximum.
 - The trigger fires once per boot. A second act needs a reset, as
-  `run-board.sh` does (it flashes and resets for every act).
+  `run-board.sh` does (it flashes and resets for every act). Since
+  phase9-W2 the window can be re-armed instead ("Re-arming" below).
 
 ### One traced act off the host: `tools/timeline/run-board.sh`
 
@@ -654,6 +655,8 @@ ELF symbols the board read uses.
 just board-build                                   # the image with the window
 tools/timeline/run-board.sh b <id>          # the board (phase8-W8)
 tools/timeline/run-board.sh --dry-run b <id> # print the steps, resolve the addresses
+tools/timeline/run-board.sh --keep-link encore <id1>  # leave the link up (phase9-W2)
+tools/timeline/run-board.sh --keep-boot b <id2>       # the next act on the same boot, re-armed
 just trace-qemu-build
 tools/timeline/run-board.sh --target qemu b <id>   # the rehearsal
 just l3-traced-act b <id> [target] [elf] [flags]   # the same, as a recipe
@@ -797,6 +800,100 @@ request-off 14.1 ms after, so the host saw a dwell 3.44 ms short of the
 island's 10,000.91 (PASS on the island clock). Not the trace; `c2-b2` passes
 every row. The largest act used 61.8 % of the buffer: 20,341 B spare, about
 35 s more at the b window's mean rate or 18 s at the act's.
+
+### Re-arming: several acts on one boot (phase9-W2)
+
+The window above opens once per boot, so every act was a flash and a reset.
+At a booth the acts follow each other on one boot. phase9-W2 adds an
+explicit re-arm, commanded over SWD, and defines where a re-armed window
+starts.
+
+**What re-arms.** A debugger writes non-zero into `island_trace_rearm`
+(`tools/timeline/readout.py --rearm-only`, attach, no halt). The next
+heartbeat tick (at most 100 ms later; the ack came after 51-103 ms on the
+board) does, under the heartbeat's `irq_lock` (`island_trace_rearm_now`,
+`include/island_trace.h`):
+
+- the RAM backend's own `init` (`tracing_backend_ram_api.init`): the
+  buffer zeroed and its static write position and full flag reset, which
+  nothing outside `tracing_backend_ram.c` can reach; a 53,248 B memset,
+  once, between acts;
+- the provenance written again, so each window decodes on its own;
+- the pre-trigger ring emptied, the record policy's state (`seen`,
+  `spins`, `skip`) cleared, the arm cleared, `pre_n`, `pre_lost`,
+  `filtered` and the trigger uptime zeroed;
+- `island_trace_rearms` counted and `island_trace_rearm_uptime_ms`
+  stamped, `island_trace_triggered` cleared, and last
+  `island_trace_rearm` cleared: the acknowledgement readout.py waits for
+  (2 s bound; `REARM FAILED ...` otherwise, and an image from before W2,
+  which has no such word, is refused by name).
+
+The heartbeat counter is not reset. `check`'s `complete` stays "the last
+heartbeat the image emitted is in the buffer", with the heartbeats
+contiguous from the first one kept: per window, since the readout reads
+the counter at its own halt. readout.py reports `rearms` and
+`rearm_uptime_ms` in every full read; run_summary.py prints `trace-check
+PASS (window <n> of the boot)` for a re-armed window.
+
+**What starts a re-armed window.** The first take of the guarded input
+(`TAKE_..._OPERATION_MODE_AVAILABILITY`, the ARM marker) after the re-arm,
+whatever its arg, or a stored violation, as before; the TRIGGER record
+names marker 15. Why: the first window opens at the arming-time
+`silence-runtime` verdict (C2), 500 ms after the handler armed nano-ros's
+monitors, which it does when its inputs are first established, that is
+when Autoware's availability stream has started. That verdict does not
+recur on the same boot: the monitors arm once, the silence rule reports
+once until its input recovers, and on the board this rule has stored
+nothing after the arming-time verdict, not even for the encore's own
+4.7 s silence (the known "silence without an epoch" item handed to
+nano-ros with W3; none of the five W2 acts stored a second verdict). A
+window that waited for a second verdict would never open. The re-armed window opens at the event it stands for, the
+HPC's availability stream starting again, so it covers the same span as
+the first window: the HPC's start, the idle settle, the act, the tail to
+the readout (C2's sizing holds). The first window is unchanged.
+
+A flap cannot move a re-armed window's start: the window is open from the
+stream's first sample, so a pre-act `autonomous: false` flap is inside it
+(`merge.py`'s `best_onset` picks the act's onset, section 8 above), not a
+trigger. The cost of the rule is the condition it puts on the caller:
+re-arm with the HPC down. With the availability stream still flowing the
+window opens at its next sample (within 100 ms) and the buffer then holds
+from the re-arm on. `run-board.sh --keep-boot` re-arms at its step 1,
+after the previous act's teardown stopped Autoware and the gate.
+
+**run-board.sh.** `--keep-link` leaves the gateway (and the router it
+started) up after the act, the island joined, in
+`build/timeline/link.state`; `--keep-boot` uses that link: no flash, no
+reset, the re-arm at step 1; `--link-down` stops a kept link. The preflight
+of a `--keep-boot` run refuses without a live kept link, when the tty is
+held by anything but the kept gateway, or when `--elf` differs from the
+image the kept link's run flashed. The link is kept rather than restarted
+because the island rejoined a restarted gateway, without a reset, only
+after 107 s (zenoh-pico's reconnect; one measurement).
+docs/demo-runbook.md section 9 has the commands.
+
+**Cost.** Three words in SRAM (the window's state lives in
+mrm_handler_core.cpp's library, which is not relocated to DTCM) and the
+re-arm function: on the W2 image RAM 276,040 -> 276,056 B, FLASH 581,672
+-> 581,868, ITCM 12,800 -> 12,996 (the heartbeat path, which carries the
+re-arm), DTCM 117,536 unchanged (13,536 B free, the 8 KiB guard of C10
+untouched).
+
+**Board, one boot each** (ELF sha256 `cc55cfcc7a4a4cfd...`):
+
+| run | boot / window | opened by | at uptime | buffer used | trace-check | table |
+| --- | --- | --- | ---: | ---: | --- | --- |
+| `w2-e1` | A / 1 | NROS_VIOLATION | 8,772 ms | 20,566 B | PASS | 8/8 |
+| `w2-b1` | A / 2 (re-armed at 59,300) | TAKE availability | 65,344 ms | 33,186 B | PASS | 15/15 |
+| `w2-e2` | B / 1 | NROS_VIOLATION | 9,727 ms | 20,874 B | PASS | 8/8 |
+| `w2-a2` | B / 2 (re-armed at 60,500) | TAKE availability | 66,927 ms | 31,174 B | PASS | 6/6 |
+| `w2-b2` | B / 3 (re-armed at 131,700) | TAKE availability | 137,963 ms | 33,872 B | PASS | 15/15 |
+
+A re-armed window opened 6.0-6.4 s after its re-arm (Autoware's start and
+the gate), and held 53.0-56.4 s after its trigger, about what C2's acts
+used (30-33 KB). Heartbeats contiguous within each window (`w2-b2`: seq
+1364..1943). Every act's VERDICT PASS; the readout between the acts was
+run-board.sh's own step 8.
 
 ## 9. Contract violations in the trace (phase9-W4)
 

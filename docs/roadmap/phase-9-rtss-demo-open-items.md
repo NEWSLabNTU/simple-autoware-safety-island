@@ -85,7 +85,7 @@ phases, this repository by fast-forward push.
   Gate: the design names the process, the event each button writes, and
   the per-act reset sequence.
   DX: see DX-UX-GAPS 6.1, 6.2, 6.3 (the six-terminal manual path), 6.8.
-- **W2 - re-arming the trace trigger.** The trigger fires once per boot,
+- [x] **W2 - re-arming the trace trigger.** The trigger fires once per boot,
   and a pre-act availability flap can fire it early (phase8-W17, "Open:").
   At a booth the acts follow each other without a reflash, so the second
   act's window would start at the first act's trigger. Design: re-arm on
@@ -94,6 +94,49 @@ phases, this repository by fast-forward push.
   dwell). Gate: the design states the re-arm condition and how a flap is
   told apart from an act.
   DX: see DX-UX-GAPS 5.5, 6.2.
+  Status (2026-10-13, branch `phase9-w2-w12`): done, on the board.
+  Re-arm on an explicit command: a debugger writes non-zero into
+  `island_trace_rearm` (`readout.py --rearm-only`, attach, no halt); the
+  next heartbeat tick, under its lock, runs the RAM backend's own init
+  (buffer zeroed, write position 0, not full), writes the provenance
+  again, empties the pre-trigger ring and the record policy's state,
+  clears the arm and the triggered flag, counts `island_trace_rearms` and
+  clears the word as the acknowledgement (51-103 ms on the board). The
+  heartbeat counter runs on, so `check`'s `complete` (the last heartbeat
+  emitted is in the buffer) holds per window. What starts a re-armed
+  window: the first take of the guarded availability after the re-arm,
+  any arg (or a stored violation). The first window opens at the
+  arming-time silence verdict, i.e. when Autoware's availability stream
+  has started; that verdict never recurs on a boot (monitors arm once;
+  the silence rule has stored nothing after it, not even for the encore's
+  4.7 s silence), so the re-armed window opens at the event it stands for
+  and spans the same HPC start, settle, act and tail (C2's sizing holds).
+  A flap is told apart from an act because it cannot be a trigger: the
+  window is already open from the stream's first sample, and a pre-act
+  flap is inside it (`merge.py`'s `best_onset`). The condition on the
+  caller: re-arm with the HPC down (else the window opens at the next
+  sample). run-board.sh: `--keep-link` leaves the gateway and router up
+  after the act (`build/timeline/link.state`); `--keep-boot` skips flash
+  and reset, re-arms at step 1 and uses the kept link (preflight refuses
+  without a live kept link, a tty held by anything else, or a different
+  ELF: `REFUSED no kept link (...): run the previous act with
+  --keep-link`); `--link-down`. The link is kept because the island
+  rejoined a restarted gateway without a reset only after 107 s. Cost:
+  RAM +16 B, FLASH +196, ITCM +196, DTCM unchanged (117,536, the C10 guard
+  untouched). Board, ELF sha256 `cc55cfcc7a4a4cfd...`, two boots:
+  `SUMMARY w2-e1 encore: PASS; load 7.75 at act; table 8/8 PASS, total 3509.07 of 4909.67 ms; trace-check PASS; stored 1 (silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 66184 of 107008 B`,
+  then without a reflash `readout: re-armed: window 2 since boot (re-arm 1) at uptime 59300 ms, acknowledged after 102 ms; triggered=0`
+  and `SUMMARY w2-b1 b: PASS; load 6.92 at act; table 15/15 PASS, total 16078.18 of 20450.67 ms; trace-check PASS (window 2 of the boot); stored 1 (silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 66232 of 107008 B`
+  (window opened by `TAKE_MRM_HANDLER_OPERATION_MODE_AVAILABILITY` at
+  65,344 ms, 33,186 B used); the second boot ran three acts:
+  `SUMMARY w2-e2 encore: PASS; load 16.10 at act; table 8/8 PASS, total 3472.83 of 4909.67 ms; trace-check PASS; stored 1 (silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 66432 of 107008 B`,
+  `SUMMARY w2-a2 a: PASS; load 20.93 at act; table 6/6 PASS; trace-check PASS (window 2 of the boot); stored 1 (silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 66432 of 107008 B`,
+  `SUMMARY w2-b2 b: PASS; load 29.62 at act; table 15/15 PASS, total 15698.33 of 20450.67 ms; trace-check PASS (window 3 of the boot); stored 1 (silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 66432 of 107008 B`.
+  Re-armed windows opened 6.0-6.4 s after the re-arm and used
+  31,174-33,872 of 53,248 B. docs/tracing.md section 8, "Re-arming";
+  docs/demo-runbook.md section 9. Not done here: W11's buttons (the
+  re-arm is the hook they call) and the QEMU target (`--rearm-only` is
+  board-only; the QEMU monitor has no memory write).
 - **W3 - the board's time source.** Two problems with one cause, the
   board stamps from boot (no SNTP over serial):
   - hazard lights never reach the simulator from the board: the island's
@@ -1028,6 +1071,36 @@ phases, this repository by fast-forward push.
   island joining after Autoware is up. Gate: repeated late joins with no
   MRM before the act, or the cause if one recurs.
   DX: see DX-UX-GAPS 4.4 (the late join; the ACL re-measurement is W23).
+  Status (2026-10-13, branch `phase9-w2-w12`): done; it does not recur,
+  no change. `run-board.sh --late-join` holds the island's core halted
+  from step 1 and resets it after Autoware, the gate and the probe are up
+  (step 6b). Board, encore, image `sai-l3-autoware:1.5.0-c8`, ELF sha256
+  `cc55cfcc7a4a4cfd...`, 3 of 3: INIT -> RUN at 317-319 ms uptime
+  (`MRM_HANDLER_INIT_DONE`, the monitors armed `INIT_DONE`), then
+  `mrm_state` NORMAL / NONE until the act 35.5-35.7 s after the reset: no
+  `call_mrm`, no `operate` call in the trace before the act's, and the
+  probe's `mrm_state` and `emergency_stop_status` change only at the act.
+  `SUMMARY w12-lj1 encore: PASS; load 20.52 at act; table 8/8 PASS, total 3466.21 of 4909.67 ms; trace-check PASS; stored 1 (silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 66184 of 107008 B`,
+  `SUMMARY w12-lj2 encore: PASS; load 13.36 at act; table 8/8 PASS, total 3472.78 of 4909.67 ms; trace-check PASS; stored 1 (silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 66184 of 107008 B`,
+  `SUMMARY w12-lj3 encore: PASS; load 10.20 at act; table 8/8 PASS, total 3454.20 of 4909.67 ms; trace-check PASS; stored 1 (silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 66184 of 107008 B`.
+  Cause of the W26 observation: INIT then ended on the first sample of each
+  input, and a stream that stalled after it timed out on RUN's first
+  ticks; W28 (`88a336f`) ends INIT only when each input is established, and
+  the late joiner now meets established streams at once. What does still
+  happen, and is correct per the contract: with the island first (every
+  normal act, and each `--keep-boot` act), the island is in RUN with an
+  input fault while Autoware starts (init failure after `init_timeout`, or
+  the availability timeout after the previous act's teardown). Once the
+  planning simulator reports AUTONOMOUS control mode, that fault takes
+  the EMERGENCY_STOP (`isInputLost()`: the hpc_loss reaction, as upstream
+  for a vehicle that boots in AUTONOMOUS with nothing available), and it
+  is cancelled on the tick the inputs are established: `w2-e1` is
+  MRM_OPERATING at the start of its history (7,371 ms) and cancels at
+  8,271 ms (`init failure cleared`), `w2-b2` (after act a) is
+  MRM_SUCCEEDED / EMERGENCY_STOP from that teardown until the cancel at
+  135,175 ms, as Autoware's inputs came back. The vehicle is at standstill with no route then, and
+  every such act passed. Not an act-time MRM, not a defect: decision,
+  keep it.
 - **W13 - F4 and F5: the unmeasured hops and the handler's in-tick
   work.** F4: the link hop of `kinematic_state`, `operation_mode_state`
   and `control_cmd` (the trace keeps no per-sample take for them), and the

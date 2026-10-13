@@ -18,6 +18,11 @@ phase9-C6 / U5: `load <1-min> at act` is island.trace.meta's loadavg_act
 (the load the act ran under). A run refused before its act (refused.txt)
 prints `REFUSED <reason>` and nothing else; a run whose probe or gate did
 not run (void.txt) reads `VOID (<reason>)` in place of the verdict.
+
+phase9-W2: an act whose trace window was re-armed on the same boot reads
+`trace-check PASS (window <n> of the boot)`. Its `stored` count is the
+boot's: nano-ros's violation record is never drained, so it includes the
+verdicts of the acts before it on that boot.
 """
 import json
 import os
@@ -65,7 +70,18 @@ def table(d):
 def trace_check(d):
     t = read(d, "island.trace.check.txt")
     m = re.search(r"trace-check: (\w+)", t or "")
-    return f"trace-check {m.group(1) if m else '-'}"
+    return f"trace-check {m.group(1) if m else '-'}{window(d)}"
+
+
+def window(d):
+    """phase9-W2: a re-armed window (an act on the same boot as the one
+    before it) says which window of the boot the trace is."""
+    t = read(d, "island.trace.readout.json")
+    try:
+        n = json.loads(t)["values"].get("island_trace_rearms", 0) if t else 0
+    except (ValueError, KeyError):
+        return ""
+    return f" (window {n + 1} of the boot)" if n else ""
 
 
 def stored(d):

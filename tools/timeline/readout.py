@@ -50,6 +50,17 @@ line (the file string resolved from the ELF), its uptime and context, and
 any nested assert that fired while it was being handled. `--assert-only`
 reads the record alone (attach, halted for the read) and prints it, for a
 board that stopped outside an act.
+
+phase9-W2: `--rearm-only` re-arms the trace window for the next act on the
+same boot (board): it writes 1 into `island_trace_rearm` (attach, no halt)
+and waits for the image to clear it, which the next heartbeat tick does
+after resetting the buffer, writing the provenance again and clearing the
+trigger (src/safety_island_tracing/include/island_trace.h, "RE-ARMING").
+The re-armed window opens at the first take of the guarded input after it,
+so re-arm with the HPC down, after the previous act's readout and teardown
+(tools/timeline/run-board.sh --keep-boot does it at its start). Every full
+read also reports the window's re-arm count (`rearms`, 0 = the first window
+since boot) and the uptime of the last re-arm.
 """
 import argparse
 import json
@@ -73,7 +84,9 @@ WORDS = [
     "island_trace_triggered", "island_trace_trigger_uptime_ms",
     "island_trace_filtered", "island_trace_pre_n", "island_trace_pre_lost",
     "island_trace_cost_n", "island_trace_cost_min", "island_trace_cost_max", "island_trace_cost_empty",
+    "island_trace_rearms", "island_trace_rearm_uptime_ms",
 ]
+REARM = "island_trace_rearm"
 
 # zenoh-pico src/system/zephyr/network.c, `_z_zephyr_serial_stats_t`, all u32
 SERIAL = "_z_zephyr_serial_stats"
@@ -235,6 +248,9 @@ class Board:
     def read32(self, addr):
         return self.t.read32(addr)
 
+    def write32(self, addr, value):
+        self.t.write32(addr, value)
+
     def read_block(self, addr, size, path):
         data = bytes(self.t.read_memory_block8(addr, size))
         open(path, "wb").write(data)
@@ -242,6 +258,43 @@ class Board:
 
     def close(self):
         self.session.close()
+
+
+def rearm(a, syms):
+    """phase9-W2: write the re-arm word and wait for the image's acknowledgement."""
+    if REARM not in syms or "island_trace_rearms" not in syms:
+        print(f"readout: REARM FAILED {a.elf} has no {REARM}: an image from before phase9-W2 "
+              f"cannot re-arm its trace window; flash and reset for the next act")
+        return 1
+    if a.target != "board":
+        print("readout: REARM FAILED --rearm-only is board-only")
+        return 1
+    if a.dry_run:
+        print(f"readout: write32 {REARM} @ {syms[REARM][0]:#010x} = 1, wait for 0")
+        return 0
+    dev = Board()
+    try:
+        before = dev.read32(syms["island_trace_rearms"][0])
+        dev.write32(syms[REARM][0], 1)
+        t0 = time.monotonic()
+        while dev.read32(syms[REARM][0]) != 0:
+            if time.monotonic() - t0 > 2.0:
+                print(f"readout: REARM FAILED the image did not acknowledge in 2 s ({REARM} still set): "
+                      f"is the core running?")
+                return 1
+            time.sleep(0.05)
+        took = time.monotonic() - t0
+        n = dev.read32(syms["island_trace_rearms"][0])
+        up = dev.read32(syms["island_trace_rearm_uptime_ms"][0])
+        trig = dev.read32(syms["island_trace_triggered"][0])
+    finally:
+        dev.close()
+    if n != before + 1:
+        print(f"readout: REARM FAILED re-arm count {before} -> {n}")
+        return 1
+    print(f"readout: re-armed: window {n + 1} since boot (re-arm {n}) at uptime {up} ms, "
+          f"acknowledged after {took * 1000:.0f} ms; triggered={trig}")
+    return 0
 
 
 def main():
@@ -259,9 +312,14 @@ def main():
     ap.add_argument("--assert-only", action="store_true",
                     help="board: read the assert record alone (halted for the read) and print it; "
                          "assert.txt beside --out when set")
+    ap.add_argument("--rearm-only", action="store_true",
+                    help="board: re-arm the trace window for the next act (attach, no halt); "
+                         "--out is not written")
     a = ap.parse_args()
     syms = symbols(a.elf, set(WORDS) | {BUFFER, violations.RECORD, SERIAL, BOOTREC, ASSERT} |
-                   set(violations.ARM_WORDS))
+                   set(violations.ARM_WORDS) | {REARM})
+    if a.rearm_only:
+        return rearm(a, syms)
     if a.assert_only:
         if ASSERT not in syms:
             print(f"readout: {a.elf} has no {ASSERT} (CONFIG_ISLAND_ASSERT_RECORD is off)")

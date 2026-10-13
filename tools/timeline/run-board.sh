@@ -13,6 +13,21 @@
 #   --elf <zephyr.elf>    default build-board/zephyr/zephyr.elf (board),
 #                         build-qemu-trace/zephyr/zephyr.elf (qemu)
 #   --no-flash            board: the image on the board is --elf already
+#   --keep-link           board: leave the island's link up after the act (the
+#                         gateway, and the router if this run started it),
+#                         the island joined, for a --keep-boot act; the
+#                         link's process groups are kept in
+#                         build/timeline/link.state (phase9-W2)
+#   --keep-boot           board: the next act on the same boot, over a link
+#                         a --keep-link act left up: no flash, no reset, the
+#                         trace window re-armed (readout.py --rearm-only) at
+#                         step 1; refused without a live kept link, or when
+#                         --elf is not the image that link's run flashed.
+#                         Combine with --keep-link for a third act
+#   --link-down           stop a kept link (build/timeline/link.state) and exit
+#   --late-join           board: the island joins after Autoware (phase9-W12):
+#                         the core is held halted from step 1 until Autoware,
+#                         the gate and the probe are up, then reset (step 6b)
 #   --dry-run             print every step, run none of them
 #
 # The sequence (each step prints `== <n>. <what>`):
@@ -27,6 +42,7 @@
 #   5. Autoware in the container (just l3-autoware), until play_launch says
 #      "Startup complete"
 #   6. the availability gate ($RB_GATE), the probe ($RB_PROBE)
+#  6b. --late-join only: reset the held island now, then step 4's wait
 #   7. the act ($RB_ACT, after RB_SETTLE s): tools/timeline/scenario.py run
 #   8. the readout: tools/timeline/readout.py (board: pyocd over SWD;
 #      qemu: the QEMU monitor) -> island.trace, wrapped; in the same halt the
@@ -95,22 +111,50 @@ set -u
 # the image that starts; the same default as L3_IMAGE in just/l3-demo.just
 : "${L3_IMAGE:=sai-l3-autoware:1.5.0-c8}"
 export L3_IMAGE
-target=board elf="" flash=1 dry=0
+target=board elf="" flash=1 dry=0 keep_link=0 keep_boot=0 link_down=0 late_join=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --target) target="$2"; shift 2;;
         --elf) elf="$2"; shift 2;;
         --no-flash) flash=0; shift;;
+        --keep-link) keep_link=1; shift;;
+        --keep-boot) keep_boot=1; flash=0; shift;;
+        --link-down) link_down=1; shift;;
+        --late-join) late_join=1; shift;;
         --dry-run) dry=1; shift;;
         -h|--help) sed -n '2,/^set -u/p' "$0" | sed '$d'; exit 0;;
         --*) echo "run-board: unknown option $1" >&2; exit 2;;
         *) break;;
     esac
 done
+# phase9-W2: the kept link's record (process groups, image, run)
+linkstate="$(cd "$(dirname "$0")/../.." && pwd)/build/timeline/link.state"
+link_alive() {  # the kept link's gateway is still running
+    [ -f "$linkstate" ] || return 1
+    local pg; pg="$(sed -n 's/^peer_pgid=//p' "$linkstate")"
+    [ -n "$pg" ] && kill -0 -- "-$pg" 2>/dev/null
+}
+if [ "$link_down" = 1 ]; then
+    [ -f "$linkstate" ] || { echo "run-board: no kept link ($linkstate)"; exit 0; }
+    for k in peer_pgid router_pgid; do
+        pg="$(sed -n "s/^$k=//p" "$linkstate")"
+        [ -n "$pg" ] && kill -TERM -- "-$pg" 2>/dev/null && echo "run-board: stopped ${k%_pgid} (process group $pg)"
+    done
+    sleep 3
+    for k in peer_pgid router_pgid; do
+        pg="$(sed -n "s/^$k=//p" "$linkstate")"; [ -n "$pg" ] && kill -KILL -- "-$pg" 2>/dev/null
+    done
+    rm -f "$linkstate"; echo "run-board: the kept link is down"
+    exit 0
+fi
 act="${1:?act: a|b|encore}"
 id="${2:?run id}"
 case "$act" in a|b|encore) ;; *) echo "run-board: act is a, b or encore" >&2; exit 2;; esac
 case "$target" in board|qemu) ;; *) echo "run-board: --target board|qemu" >&2; exit 2;; esac
+if [ "$target" != board ] && [ $((keep_link + keep_boot + late_join)) -gt 0 ]; then
+    echo "run-board: --keep-link, --keep-boot and --late-join are board-only" >&2; exit 2
+fi
+[ "$keep_boot" = 1 ] && [ "$late_join" = 1 ] && { echo "run-board: --late-join resets the board; not with --keep-boot" >&2; exit 2; }
 cd "$(dirname "$0")/../.."
 repo="$PWD"
 [ -n "$elf" ] || elf=$([ "$target" = board ] && echo build-board/zephyr/zephyr.elf || echo build-qemu-trace/zephyr/zephyr.elf)
@@ -173,16 +217,34 @@ wait_for() {  # wait_for <secs> <what> <cmd...>
     done
     echo "   $what after $(( SECONDS - t0 )) s"
 }
+# phase9-W2: the link's process groups (the gateway, the router if this run
+# started it, or the ones a --keep-link run left), kept out of pids so that
+# --keep-link can leave them up
+peer_pg="" router_pg=""
 teardown() {
     step "9. teardown"
-    [ "$dry" = 1 ] && { echo "   [dry-run] stop the act helpers, docker stop ${L3_NAME:-sai-l3}, the link, the router"; return; }
-    for p in "${pids[@]}"; do kill -TERM -- "-$p" 2>/dev/null; done
+    [ "$dry" = 1 ] && { echo "   [dry-run] stop the act helpers, docker stop ${L3_NAME:-sai-l3}," \
+        "$([ "$keep_link" = 1 ] && echo "keep the link (link.state)" || echo "the link, the router")"; return; }
+    local link=()
+    if [ "$keep_link" = 0 ]; then
+        [ -n "$peer_pg" ] && link+=("$peer_pg")
+        [ -n "$router_pg" ] && link+=("$router_pg")
+    fi
+    for p in "${pids[@]}" "${link[@]}"; do kill -TERM -- "-$p" 2>/dev/null; done
     # only what this run started (its own process groups, its container):
     # never a pkill by name, another run may own a router on this host
     docker stop -t 10 "${L3_NAME:-sai-l3}" > /dev/null 2>&1
     sleep 3
-    for p in "${pids[@]}"; do kill -KILL -- "-$p" 2>/dev/null; done
+    for p in "${pids[@]}" "${link[@]}"; do kill -KILL -- "-$p" 2>/dev/null; done
     rm -f "$mon" "$gws"
+    if [ "$keep_link" = 1 ] && [ -n "$peer_pg" ] && kill -0 -- "-$peer_pg" 2>/dev/null; then
+        { echo "peer_pgid=$peer_pg"; echo "router_pgid=$router_pg"; echo "elf=$(readlink -f "$elf")"
+          echo "elf_sha256=$(sha256sum "$elf" | cut -d' ' -f1)"; echo "run=$id"; } > "$linkstate"
+        echo "   the link is kept (gateway $peer_pg${router_pg:+, router $router_pg}): $linkstate;" \
+             "next: --keep-boot, or --link-down"
+    else
+        [ "$keep_boot" = 1 ] && rm -f "$linkstate"
+    fi
 }
 
 # The demo lock (phase9-W22, DX 6.7): one act at a time on this host. Held on
@@ -296,8 +358,23 @@ preflight() {
         local h
         h="$(timeout "$fuser_to" fuser "$tty" 2>/dev/null)"; rc=$?
         [ "$rc" != 124 ] || { refuse "fuser on $tty took over ${fuser_to} s (host /proc busy: a filesystem walk?)"; return 1; }
-        [ -z "$h" ] || { refuse "the gateway tty $tty is held by pid(s)$h"; return 1; }
-        echo "   gateway tty free"
+        if [ "$keep_boot" = 1 ]; then
+            # phase9-W2: the tty is the kept gateway's, and only its
+            link_alive || { refuse "no kept link ($linkstate missing or its gateway gone): run the previous act with --keep-link"; return 1; }
+            local kp ks q; kp="$(sed -n 's/^peer_pgid=//p' "$linkstate")"
+            ks="$(sed -n 's/^elf_sha256=//p' "$linkstate")"
+            [ "$ks" = "$(sha256sum "$elf" | cut -d' ' -f1)" ] || { refuse "--elf $elf is not the image the kept link's run ($(sed -n 's/^run=//p' "$linkstate")) flashed"; return 1; }
+            for q in $h; do
+                [ "$(ps -o pgid= -p "$q" 2>/dev/null | tr -d ' ')" = "$kp" ] || { refuse "the gateway tty $tty is held by pid $q, not the kept gateway (process group $kp)"; return 1; }
+            done
+            echo "   the kept link of run $(sed -n 's/^run=//p' "$linkstate") holds the tty (gateway $kp)"
+        else
+            if [ -n "$h" ] && link_alive; then
+                refuse "a kept link (run $(sed -n 's/^run=//p' "$linkstate")) holds the gateway tty: --keep-boot to use it, or --link-down"; return 1
+            fi
+            [ -z "$h" ] || { refuse "the gateway tty $tty is held by pid(s)$h"; return 1; }
+            echo "   gateway tty free"
+        fi
     fi
     wait_load "before flashing"
 }
@@ -310,17 +387,43 @@ if [ "$target" = board ] && [ "$flash" = 1 ]; then
 else
     echo "   (nothing to flash: target $target, flash=$flash)"
 fi
+if [ "$keep_boot" = 1 ]; then
+    # phase9-W2: the same boot; the trace window re-armed for this act. The
+    # previous act's teardown stopped Autoware and the gate, so the re-armed
+    # window opens when this act's availability stream starts.
+    echo "   keep-boot: no reset; re-arming the trace window"
+    if [ "$dry" = 1 ]; then echo "   [dry-run] python3 tools/timeline/readout.py --target board --elf $elf --out $out --rearm-only"
+    else
+        r="$(python3 tools/timeline/readout.py --target board --elf "$elf" --out "$out" --rearm-only 2>&1)"; rc=$?
+        echo "$r" | sed 's/^/   /'
+        [ "$rc" = 0 ] || { refuse "the trace window was not re-armed: $(tail -n1 <<< "$r")"; finish_refused; }
+        echo "rearm=$(grep -o 're-arm [0-9]* at uptime [0-9]* ms' <<< "$r")" >> "$out.meta"
+    fi
+fi
+if [ "$late_join" = 1 ]; then
+    # phase9-W12: the island stays off the link until Autoware is up
+    echo "   late join: the core held halted until step 6b"
+    run pyocd cmd -t s32k344 -O resume_on_disconnect=false -c halt > /dev/null 2>&1 || { echo "run-board: halt failed"; exit 1; }
+fi
 
 step "2. the stock router, tcp/127.0.0.1:7447"
+if [ "$keep_boot" = 1 ]; then
+    router_pg="$(sed -n 's/^router_pgid=//p' "$linkstate" 2>/dev/null)"
+    peer_pg="$(sed -n 's/^peer_pgid=//p' "$linkstate" 2>/dev/null)"
+    echo "   the kept link's${router_pg:+ (router $router_pg)}"
+fi
 if ss -ltn | awk '{print $4}' | grep -qE '[:.]7447$'; then
     echo "   already listening"
 else
     bg "$dir/router.log" just l3-router; started_router=1
+    [ "$dry" = 1 ] || { router_pg="${pids[-1]}"; unset 'pids[-1]'; }
     wait_for "${RB_ROUTER_TIMEOUT:-90}" "the router" bash -c "ss -ltn | awk '{print \$4}' | grep -qE '[:.]7447\$'" || { teardown; exit 1; }
 fi
 
 step "3. the island's link"
-if [ "$target" = board ]; then
+if [ "$keep_boot" = 1 ]; then
+    echo "   the kept gateway (process group $peer_pg), the island joined on this boot: no reset"
+elif [ "$target" = board ]; then
     # the gateway on the UART, then the reset (the board must be reset AFTER
     # the gateway listens; just/l3-demo.just).
     bg "$dir/l3-peer.stdout" just l3-peer "${L3_PEER_TTY:-/dev/serial/by-id/usb-FTDI_FT232R_USB_UART_B001UCTE-if00-port0}" \
@@ -330,6 +433,7 @@ if [ "$target" = board ]; then
     if [ "$dry" = 1 ]; then echo "   [dry-run] wait up to 60 s for the gateway on the serial line"
     else
         peer=${pids[-1]} t0=$SECONDS
+        peer_pg="$peer"; unset 'pids[-1]'
         until grep -qs "reached at: serial" "$dir/l3-peer-router.log"; do
             if ! kill -0 "$peer" 2>/dev/null; then
                 refuse "the gateway (just l3-peer) exited: $(grep -v '^\s*$' "$dir/l3-peer.stdout" | tail -n1)"
@@ -343,7 +447,8 @@ if [ "$target" = board ]; then
         done
         echo "   the gateway on the serial line after $(( SECONDS - t0 )) s"
     fi
-    run pyocd reset -t s32k344
+    if [ "$late_join" = 1 ]; then echo "   (no reset: late join, step 6b)"
+    else run pyocd reset -t s32k344; fi
 else
     # The board's topology, with a unix socket for the UART: the island
     # gateway (demo/l3/router/island-gateway.json5, its island face moved
@@ -367,9 +472,12 @@ else
         "cmd:socat - UNIX-CONNECT:$gws"
 fi
 
+join_island() {
+    wait_for "${RB_JOIN_TIMEOUT:-120}" "the island's first /system/mrm/emergency_stop/status sample" \
+        l3 "timeout 8 ros2 topic echo --once /system/mrm/emergency_stop/status" || { teardown; exit 1; }
+}
 step "4. wait for the island to join"
-wait_for "${RB_JOIN_TIMEOUT:-120}" "the island's first /system/mrm/emergency_stop/status sample" \
-    l3 "timeout 8 ros2 topic echo --once /system/mrm/emergency_stop/status" || { teardown; exit 1; }
+if [ "$late_join" = 1 ]; then echo "   (late join: after Autoware, step 6b)"; else join_island; fi
 
 step "5. Autoware (container)"
 # demo/l3/README.md's trap: play_launch can sit at "N composable(s) still
@@ -396,6 +504,13 @@ done
 step "6. the gate and the probe"
 bg "$dir/gate.stdout" l3 "exec $RB_GATE"; gate_pid="${pids[*]: -1}"
 bg "$dir/probe.stdout" l3 "exec $RB_PROBE"; probe_pid="${pids[*]: -1}"
+if [ "$late_join" = 1 ]; then
+    step "6b. the island joins late: reset"
+    [ "$dry" = 1 ] || sleep 5
+    [ "$dry" = 1 ] || echo "late_join_reset_mono_ns=$(python3 -c 'import time; print(time.monotonic_ns())')" >> "$out.meta"
+    run pyocd reset -t s32k344
+    join_island
+fi
 
 step "7. the act ($act), after ${settle} s"
 [ "$dry" = 1 ] || sleep "$settle"

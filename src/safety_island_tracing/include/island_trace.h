@@ -65,6 +65,26 @@
  * trigger: whichever comes first opens the window, and the TRIGGER record
  * names it.
  *
+ * phase9-W2: RE-ARMING. The window above opens once; a debugger re-arms it
+ * for the next act on the same boot by writing non-zero into
+ * island_trace_rearm (tools/timeline/readout.py --rearm-only). The next
+ * heartbeat tick (<= 100 ms) then, under the lock: resets the RAM backend
+ * (buffer zeroed, write position 0, not full: its own init), writes the
+ * provenance again, empties the pre-trigger ring and the record policy's
+ * state, clears the arm and the triggered flag, counts the re-arm
+ * (island_trace_rearms, island_trace_rearm_uptime_ms) and clears
+ * island_trace_rearm, the acknowledgement. A RE-ARMED window opens at the
+ * first take of the guarded input after the re-arm, whatever its arg (or at
+ * a stored violation, as before): the HPC's availability stream is back.
+ * That is the event the first window's opening stands for (the arming-time
+ * silence verdict, 500 ms after the handler armed the monitors on its inputs
+ * established), which does not recur: the monitors arm once per boot and the
+ * silence rule reports once until its input recovers. Re-arm with the HPC
+ * down (between acts, Autoware stopped); with the stream still flowing the
+ * window opens at its next sample. The heartbeat counter is not reset: each
+ * window's `complete` check is still "the last heartbeat emitted is in the
+ * buffer", with the heartbeats contiguous from the first one kept.
+ *
  * With the window off (native_sim's default) the stream is phase 7's: every
  * marker from boot.
  *
@@ -423,6 +443,26 @@ void island_trace_timer_bind(uint16_t every)
 }
 #endif
 
+/* The PROVENANCE record into the stream. The caller holds irq_lock. Header
+ * and string as two writes under the one lock (the lock nests): the backend
+ * appends them back to back, and no static staging copy of the string is
+ * needed (it cost 776 B of RAM, docs/tracing.md sec. 6). */
+static void island_trace_put_provenance(uint32_t ts)
+{
+	const island_trace_evid_t id = (island_trace_evid_t)ISLAND_TRACE_EV_PROVENANCE;
+	const uint16_t len = (uint16_t)(sizeof(island_trace_provenance) - 1u);
+	uint8_t hdr[sizeof(uint32_t) + sizeof(island_trace_evid_t) + sizeof(uint16_t)];
+	uint8_t *p = hdr;
+
+	memcpy(p, &ts, sizeof(ts));
+	p += sizeof(ts);
+	memcpy(p, &id, sizeof(id));
+	p += sizeof(id);
+	memcpy(p, &len, sizeof(len));
+	tracing_format_raw_data(hdr, sizeof(hdr));
+	tracing_format_raw_data((uint8_t *)island_trace_provenance, len);
+}
+
 /* One HEARTBEAT record into the stream. The caller holds irq_lock. */
 static void island_trace_put_heartbeat(uint32_t ts, uint32_t seq, uint32_t up)
 {
@@ -459,6 +499,15 @@ static void island_trace_put_heartbeat(uint32_t ts, uint32_t seq, uint32_t up)
 #define ISLAND_TRACE_MK_LEN (sizeof(uint32_t) + sizeof(island_trace_evid_t) + sizeof(uint16_t) + sizeof(uint32_t))
 #define ISLAND_TRACE_HB_LEN (sizeof(uint32_t) + sizeof(island_trace_evid_t) + 2 * sizeof(uint32_t))
 
+#include <tracing_backend.h> /* phase9-W2: the RAM backend's api, for the re-arm */
+#ifdef __cplusplus
+extern "C" {
+#endif
+extern const struct tracing_backend_api tracing_backend_ram_api;
+#ifdef __cplusplus
+}
+#endif
+
 static const uint8_t island_trace_policy[ISLAND_TRACE_MARKER_COUNT + 1] = ISLAND_TRACE_POLICY_TABLE;
 static uint8_t island_trace_pre[2][ISLAND_TRACE_HALF];
 static uint16_t island_trace_pre_len[2];
@@ -468,6 +517,7 @@ static uint8_t island_trace_seen[ISLAND_TRACE_MARKER_COUNT + 1]; /* CHANGE/SPIN:
 static uint8_t island_trace_skip[ISLAND_TRACE_MARKER_COUNT + 1]; /* SPIN_ENTRY: its EXIT is dropped */
 static uint16_t island_trace_spins[ISLAND_TRACE_MARKER_COUNT + 1]; /* SPIN_ENTRY: dropped since last kept */
 static bool island_trace_armed;
+static bool island_trace_reopen; /* phase9-W2: a re-armed window, opened by the first guarded take */
 
 /* Readable by name over SWD / the QEMU monitor (tools/timeline/readout.py). */
 #ifdef __cplusplus
@@ -478,6 +528,9 @@ volatile uint32_t island_trace_trigger_uptime_ms;
 volatile uint32_t island_trace_filtered;           /* markers the record policy dropped */
 volatile uint32_t island_trace_pre_lost;           /* pre-trigger records not flushed */
 volatile uint32_t island_trace_pre_n;              /* pre-trigger records written to the ring */
+volatile uint32_t island_trace_rearm;              /* phase9-W2: a debugger writes non-zero; 0 = done */
+volatile uint32_t island_trace_rearms;             /* re-arms done since boot (0: the first window) */
+volatile uint32_t island_trace_rearm_uptime_ms;    /* uptime of the last re-arm */
 #ifdef __cplusplus
 }
 #endif
@@ -639,7 +692,10 @@ void island_trace_marker_windowed(uint16_t marker, uint32_t arg)
 		/* phase9-W4: a stored contract violation opens the window too, so
 		 * its four records, and the callbacks it judged (the pre-trigger
 		 * history), are in the buffer whenever it happens. */
+		/* phase9-W2: a re-armed window opens at the HPC's return, the
+		 * first take of the guarded input after the re-arm. */
 		if ((island_trace_armed && marker == ISLAND_TRACE_TRIGGER_MARKER) ||
+		    (island_trace_reopen && marker == ISLAND_TRACE_ARM_MARKER) ||
 		    marker == ISLAND_MK_NROS_VIOLATION) {
 			island_trace_fire(ts, marker);
 		}
@@ -659,6 +715,33 @@ void island_trace_marker_windowed(uint16_t marker, uint32_t arg)
 #endif
 	irq_unlock(key);
 }
+
+/* phase9-W2: re-arm the window for the next act (the head of this file).
+ * Called from the heartbeat tick, under its lock, when a debugger has
+ * written island_trace_rearm. The RAM backend's own init zeroes the buffer
+ * (53,248 B on the board: a memset, once per act, between acts) and resets
+ * its static write position and full flag, which nothing else can reach. */
+static void island_trace_rearm_now(void)
+{
+	tracing_backend_ram_api.init();
+	island_trace_put_provenance(island_trace_ts());
+	island_trace_pre_len[0] = 0u;
+	island_trace_pre_len[1] = 0u;
+	island_trace_pre_cur = 0u;
+	memset(island_trace_seen, 0, sizeof(island_trace_seen));
+	memset(island_trace_spins, 0, sizeof(island_trace_spins));
+	memset(island_trace_skip, 0, sizeof(island_trace_skip));
+	island_trace_armed = false;
+	island_trace_reopen = true;
+	island_trace_pre_n = 0u;
+	island_trace_pre_lost = 0u;
+	island_trace_filtered = 0u;
+	island_trace_trigger_uptime_ms = 0u;
+	island_trace_rearms = island_trace_rearms + 1u;
+	island_trace_rearm_uptime_ms = k_uptime_get_32();
+	island_trace_triggered = 0u;
+	island_trace_rearm = 0u;
+}
 #endif /* ISLAND_TRACE_WINDOW */
 
 static void island_trace_heartbeat(struct k_timer *timer)
@@ -672,6 +755,9 @@ static void island_trace_heartbeat(struct k_timer *timer)
 	island_trace_hb_seq = seq + 1u;
 	island_trace_hb_last_uptime_ms = up;
 #if ISLAND_TRACE_WINDOW
+	if (island_trace_rearm != 0u) {
+		island_trace_rearm_now();
+	}
 	if (!island_trace_triggered) {
 		const island_trace_evid_t id = (island_trace_evid_t)ISLAND_TRACE_EV_HEARTBEAT;
 		uint8_t pkt[ISLAND_TRACE_HB_LEN];
@@ -691,23 +777,9 @@ static void island_trace_heartbeat(struct k_timer *timer)
 
 static int island_trace_start(void)
 {
-	const island_trace_evid_t id = (island_trace_evid_t)ISLAND_TRACE_EV_PROVENANCE;
-	const uint16_t len = (uint16_t)(sizeof(island_trace_provenance) - 1u);
-	uint8_t hdr[sizeof(uint32_t) + sizeof(island_trace_evid_t) + sizeof(uint16_t)];
 	const unsigned int key = irq_lock();
-	const uint32_t ts = island_trace_ts();
-	uint8_t *p = hdr;
 
-	/* Header and string as two writes under the one lock (the lock nests):
-	 * the backend appends them back to back, and no static staging copy of
-	 * the string is needed (it cost 776 B of RAM, docs/tracing.md sec. 6). */
-	memcpy(p, &ts, sizeof(ts));
-	p += sizeof(ts);
-	memcpy(p, &id, sizeof(id));
-	p += sizeof(id);
-	memcpy(p, &len, sizeof(len));
-	tracing_format_raw_data(hdr, sizeof(hdr));
-	tracing_format_raw_data((uint8_t *)island_trace_provenance, len);
+	island_trace_put_provenance(island_trace_ts());
 	irq_unlock(key);
 
 #if ISLAND_TRACE_SELF_COST
@@ -806,9 +878,9 @@ static void island_trace_dump(void)
 			island_trace_out);
 #if ISLAND_TRACE_WINDOW
 	nsi_print_trace("island_trace: window triggered=%u at uptime %u ms, pre-trigger records %u "
-			"(%u not flushed), policy dropped %u markers\n",
+			"(%u not flushed), policy dropped %u markers, re-arms %u\n",
 			island_trace_triggered, island_trace_trigger_uptime_ms, island_trace_pre_n,
-			island_trace_pre_lost, island_trace_filtered);
+			island_trace_pre_lost, island_trace_filtered, island_trace_rearms);
 #endif
 }
 NATIVE_TASK(island_trace_dump, ON_EXIT, 10);
