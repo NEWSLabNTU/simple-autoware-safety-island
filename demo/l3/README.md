@@ -18,7 +18,7 @@ the container on the host network and dials it; the island reaches it through
 the gateway router (W2, `just l3-peer`, on the host). RViz runs on the host.
 
 ```sh
-just l3-container                 # build the image (once; layers cached)
+just l3-container                 # build the image, sai-l3-autoware:1.5.0-c8 (once; layers cached)
 just l3-router                    # terminal 1: the stock router, 7447
 just l3-autoware                  # terminal 2: Autoware in the container
 just l3-takeover                  # terminal 3: the takeover nodes, same container
@@ -34,6 +34,11 @@ same scripts on the host under `env -i` (build the host copy of the overlay
 first: `just l3-host-ws`). `just l3-island-qemu <elf> <port> <secs> <host>`
 boots a QEMU island image into a router on the host. `just l3-check` is the CI
 job.
+
+Fresh machine, every setup step, and the recorded board path
+(`tools/timeline/run-board.sh`): docs/demo-runbook.md (validated 2026-10-13,
+phase9-W21). `L3_PEER_TTY` names the gateway's serial adapter on another
+machine.
 
 Order matters (see "Traps"): the island joins BEFORE Autoware is engaged.
 A healthy start prints `Startup complete ... composable 68/68` about 4 s

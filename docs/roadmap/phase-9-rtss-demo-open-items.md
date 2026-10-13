@@ -820,7 +820,7 @@ phases, this repository by fast-forward push.
   steps, with the 16 KiB buffer in the board conf. Violations are W4 (and
   NR474 D1); this unit is the log. Gate: on a fresh clone, one command
   prints a running board's log.
-- **W21 - the runbook, re-validated for the zenoh path.**
+- [x] **W21 - the runbook, re-validated for the zenoh path.**
   docs/demo-runbook.md:1-7 says the end-to-end run "has NOT been
   re-validated" since 2026-07-31; the path that ran 13 + 9 board acts is
   the `l3-*` recipes and run-board.sh, documented in demo/l3/README.md and
@@ -848,6 +848,51 @@ phases, this repository by fast-forward push.
     `l3-*` path (DX 6.3): say which is current, retire or label the other.
   Gate: the runbook followed from a clean shell to an act that passes, and
   the validation date in its header.
+  Status (2026-10-13, branch `phase9-w21-runbook`): done. docs/demo-runbook.md
+  rewritten for the zenoh board path and followed step by step from a fresh
+  worktree of main (`13ff8e5`, nano-ros `43fc1c2f7`) under
+  `scripts/ienv.sh`; header "Validated 2026-10-13 (phase9-W21)". Runbook
+  changes: (0) the clean-shell rule first: every step through
+  scripts/ienv.sh, every Autoware check under `env -i` with only ROS and
+  Autoware sourced (the 163/33/2 vs 169/34/4 shadow), and the zenoh path
+  needs neither `just setup` nor `demo-host-ws`; (1) prerequisites for
+  this path: rmw_zenoh_cpp 0.1.10 held from testing, Docker, GNU parallel
+  (the doctor fails without it), pyserial, pyocd and the MCU-Link, the
+  DCD-LZ adapter by id (`L3_PEER_TTY`), uv, the `:1` trap; (2) the clone
+  with the non-recursive nested submodules (play_launch, zenoh-pico), with
+  the clone time measured; (3) `setup-cli` and `setup-launch-resolve`, the
+  expected parser Cargo.lock warning (nano-ros 1863) and the locale trap
+  (nano-ros 1869); (4) play_launch 0.16.0 and what `just doctor` reports;
+  (5) `just board-setup` / `board-doctor` and the hand install of `anytree`
+  (nano-ros 1870); (6) `just sync` (the expected "no producer" lines) and
+  `just board-build` with the validated region table; (7) `l3-host-ws`,
+  `l3-container` at the c8 tag, `l3-check`; (8) real-time limits: the
+  limits.d lines, `ulimit -r` to verify, and that pam_limits runs only for
+  login/sshd/gdm here (not xrdp or the systemd user manager), with the
+  measured rounds all SCHED_OTHER; (9) run-board.sh for encore, a and b,
+  what each step does, the exit codes, the load ceiling; (10) the host
+  traps (`:1`, `--no-daemon`, Autoware's setup.bash exporting Cyclone, the
+  shared domain, `pkill -f`, the overlay shadow); the Cyclone `just
+  autoware` / `island` / `demo` path kept under "Legacy", labelled not
+  re-validated since 2026-07-31; the old "Phase 8" section folded in.
+  Fixed on the way: `just board-setup` died on every provisioned host
+  (`cd: .../zephyr-sdk-1.0.1/zephyr-sdk-1.0.1`: `nros sdk-path` now returns
+  the SDK root and the recipe appended it again; it now accepts both, as
+  board-env.sh already did); `just l3-container`, `l3-autoware` and
+  demo/l3/container/run.sh defaulted to the bare `sai-l3-autoware:1.5.0`
+  (W3's old image on this host) while run-board.sh ran `1.5.0-c8`, now
+  all c8; `L3_PEER_TTY` in just/l3-demo.just reads the environment, as
+  run-board.sh did; `just doctor` warns when `ulimit -r` is below 20; the
+  README's play_launch minimum (0.8.2 -> 0.16.0), its `NANO_ROS_ROOT`
+  export and its demo heading point at the runbook. Validation (image
+  `0ebd641254a98cf0...`, `sai-l3-autoware:1.5.0-c8` rebuilt fully cached,
+  `l3-check` 14/14, host gate SCHED_OTHER):
+  `SUMMARY w21-e1 encore: PASS; load 5.33 at act; table 8/8 PASS, total 3522.30 of 4909.67 ms; trace-check PASS; stored 1 (silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 66184 of 107008 B`,
+  `SUMMARY w21-a1 a: PASS; load 7.89 at act; table 6/6 PASS; trace-check PASS; stored 1 (silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 66184 of 107008 B`,
+  `SUMMARY w21-b1 b: PASS; load 7.94 at act; table 15/15 PASS, total 15350.55 of 20450.67 ms; trace-check PASS; stored 1 (silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 66232 of 107008 B`.
+  Not validated: the SCHED_FIFO gate (no session here gets the limit), the
+  presenter's manual `l3-*` terminals and RViz, a cold image build, and the
+  legacy Cyclone path.
 - **W22 - the cheap fixes.** Each under a day and one change in this
   repository (DX section 9, the SAI rows); one sitting, one commit each.
   - [x] DX 2.1, the doctor's play_launch minimum. `PLAY_LAUNCH_MIN :=

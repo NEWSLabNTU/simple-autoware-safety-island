@@ -67,7 +67,7 @@ docs/
   roadmap/                  phase doc — plan + acceptance
   topic-contract.md         island⇄Autoware topic contract (SSoT)
   porting-notes.md          rclcpp→nano-ros friction log (deliverable!)
-  demo-runbook.md           fresh-machine bring-up + what is still open
+  demo-runbook.md           fresh-machine bring-up of the board demo (start here)
   board-bringup-triage.md   MR-CANHUBK344 first-boot triage: symptom → knob
 ```
 
@@ -75,14 +75,15 @@ docs/
 
 - ROS 2 Humble (`.msg` parsing by the codegen, and the host-side demo tools).
 - Autoware 1.5.0 host install (`/opt/autoware/1.5.0`) for the demo.
-- nano-ros — pinned as the `third-party/nano-ros` submodule
-  (`git submodule update --init third-party/nano-ros`, then `nros setup`
-  inside it). A sibling `../nano-ros` developer checkout, or an explicit
-  `$NANO_ROS_ROOT`, takes precedence over the pin (resolution order in
-  `.envrc`). Provides the `nros` CLI and the cmake package.
+- nano-ros -- pinned as the `third-party/nano-ros` submodule, which wins
+  over a sibling checkout or an inherited `$NANO_ROS_ROOT` (resolution order
+  in `scripts/env.sh`; an override needs `NANO_ROS_ALLOW_EXTERNAL_ROOT=1`).
+  The submodule commands and the `setup-cli` / `setup-launch-resolve` steps
+  are in [docs/demo-runbook.md](docs/demo-runbook.md), sections 2-3.
+  Provides the `nros` CLI and the cmake package.
 - `just` (task runner), `direnv` (optional but assumed by `.envrc`).
 - play_launch — **installed by `just setup`**, not a manual prerequisite. It
-  runs Autoware for the demo; >= 0.8.2 is required. To install from a source
+  runs Autoware for the demo; >= 0.16.0 (the CI pin) is required. To install from a source
   checkout instead of the package index: `PLAY_LAUNCH_REPO=<path> just setup`.
 
 `direnv allow` sources ROS 2, Autoware, the demo overlay and nano-ros, and
@@ -90,8 +91,11 @@ reports anything missing; `just doctor` gives the same verdict on demand.
 
 ## Quick start (native island)
 
+The board demo (the RTSS path: the island on the MR-CANHUBK344, Autoware on
+zenoh in a container) is set up and run by [docs/demo-runbook.md](docs/demo-runbook.md).
+The native island below is the fast development loop.
+
 ```sh
-export NANO_ROS_ROOT=~/repos/nano-ros     # or let direnv/justfile default it
 just setup        # install play_launch, demo overlay, resolve the system model
 just build        # cmake configure + build (native)
 just run          # boot the island against the native board
@@ -108,7 +112,7 @@ link — open question, gates any non-bench deployment),
 takeover demo, on silicon), [phase-9](docs/roadmap/phase-9-rtss-demo-open-items.md)
 (what the RTSS demo left open).
 
-## The demo (validated: PASS, 3.90 → 0.00 m/s)
+## The legacy Cyclone demo (validated 2026-07-31: PASS, 3.90 -> 0.00 m/s; not re-validated since)
 
 Host Autoware 1.5.0 (`/opt/autoware/1.5.0`) + the island; stock MRM nodes are
 shadowed out, so the island is the ONLY MRM path.
@@ -140,7 +144,7 @@ down (`--termseq` TERM→KILL). Normal teardown is simply Ctrl-C;
 
 Variants: `just demo-all native` / `just island native` (native island
 instead of the Zephyr native_sim image). Autoware is launched with
-play_launch (>= 0.8.2 — older versions stall on the composable
+play_launch (>= 0.16.0, the CI pin; 0.5.x stalls on the composable
 containers); `just doctor` checks the environment.
 
 ### Demo sequence & timeline
