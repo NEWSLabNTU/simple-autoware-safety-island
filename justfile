@@ -246,7 +246,7 @@ build: sync
     #!/usr/bin/env bash
     set -e
     source /opt/ros/humble/setup.bash
-    env NROS_EXECUTOR_MAX_CBS=32 cmake -S . -B {{BUILD_DIR}} -DNANO_ROS_ROOT={{NROS_ROOT}} \
+    env NROS_EXECUTOR_MAX_CBS=32 cmake -S . -B {{BUILD_DIR}} -Dnano_ros_ROOT={{NROS_ROOT}} \
         -DCycloneDDS_DIR={{CYCLONEDDS_HOME}}/lib/cmake/CycloneDDS
     env NROS_EXECUTOR_MAX_CBS=32 cmake --build {{BUILD_DIR}} -j
 

@@ -3,12 +3,12 @@ cmake_minimum_required(VERSION 3.22)
 project(autoware_safety_island_example LANGUAGES C CXX)
 
 # nano-ros 3-role workspace (RFC-0048): vendored msg pkgs + ported Node pkgs
-# + bringup + entries. Resolve nano-ros via -DNANO_ROS_ROOT=<checkout>.
+# + bringup + entries. Resolve nano-ros via -Dnano_ros_ROOT=<checkout>.
 #
 # Workspace build:
-#     cmake -S . -B build -DNANO_ROS_ROOT=/path/to/nano-ros && cmake --build build
+#     cmake -S . -B build -Dnano_ros_ROOT=/path/to/nano-ros && cmake --build build
 # Standalone solo build of any subdir:
-#     cmake -S src/<pkg> -B build -DNANO_ROS_ROOT=/path/to/nano-ros
+#     cmake -S src/<pkg> -B build -Dnano_ros_ROOT=/path/to/nano-ros
 
 # Workspace-local msg pkgs (the vendored autoware_*/tier4_* subsets) resolve
 # through auto-emitted Find-stubs scanned from this path — must be set BEFORE
@@ -19,8 +19,8 @@ find_package(nano_ros REQUIRED COMPONENTS workspace)
 
 # One platform per configure. Default posix (native dev loop); the Zephyr
 # entry (phase 4) builds through west against the zephyr platform instead.
-if(NOT NANO_ROS_PLATFORM)
-    set(NANO_ROS_PLATFORM posix)
+if(NOT NROS_PLATFORM)
+    set(NROS_PLATFORM posix)
 endif()
 
 # NOTE: the vendored msg pkgs (src/autoware_*_msgs, src/tier4_system_msgs) are
@@ -39,7 +39,7 @@ set(_ws_subdirs
     src/autoware_mrm_handler                          # P3
 )
 
-if(NANO_ROS_PLATFORM STREQUAL "posix")
+if(NROS_PLATFORM STREQUAL "posix")
     list(APPEND _ws_subdirs
         src/native_entry)
 endif()
@@ -53,6 +53,6 @@ endif()
 # nano-ros phase-323 made capabilities come from the declaration.
 nano_ros_workspace(
     BACKEND  cyclonedds
-    PLATFORM "${NANO_ROS_PLATFORM}"
+    PLATFORM "${NROS_PLATFORM}"
     SYSTEM   safety_island_bringup
     SUBDIRS  ${_ws_subdirs})

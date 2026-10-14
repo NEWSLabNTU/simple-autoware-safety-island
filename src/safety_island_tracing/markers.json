@@ -1,7 +1,7 @@
 {
  "generator": "src/safety_island_tracing/gen_markers.py",
- "contract_sha256": "c11510013d602a539a73e3678ecb74c17f63bebe5c8da60079b7bee92e5e8240",
- "table_sha256": "6025ced37ad77b75a27584928b1918b6d1982d49b3bf090f5f02a683ac106665",
+ "contract_sha256": "c717f80bdd153889297f095ca6f59fc4c409aed35fc9b1ad71f166ac3f86f83b",
+ "table_sha256": "c3dfce2dda889f757d06d74aa1a7a0e3ee4ab48d4499d5a56aed1cbe0abf3ffa",
  "entities": {
   "pub": 8,
   "sub": 7,
@@ -30,12 +30,10 @@
   "CONFIG_NROS_CYCLONE_DOMAIN_ID",
   "CONFIG_NROS_DOMAIN_ID",
   "CONFIG_NROS_EXECUTOR_MAX_VIOLATIONS",
-  "CONFIG_NROS_GRAPH_CACHE_SIZE",
   "CONFIG_NROS_SNTP_TIMEOUT_MS",
   "CONFIG_NROS_TRACE_TIMER_EVERY",
   "CONFIG_NROS_ZENOH_SERIAL_RX_RING_BYTES",
   "CONFIG_NROS_ZENOH_SERIAL_TX_RING_BYTES",
-  "CONFIG_NROS_ZEPHYR_HEAP_SIZE",
   "CONFIG_NROS_ZEPHYR_TASK_SLOTS",
   "CONFIG_NROS_ZEPHYR_TASK_STACK_SIZE",
   "CONFIG_POSIX_THREAD_THREADS_MAX",
@@ -418,7 +416,8 @@
    "alive-supervision-runtime",
    "silence-runtime",
    "timer-overrun-runtime",
-   "release-jitter-runtime"
+   "release-jitter-runtime",
+   "route-latency-runtime"
   ],
   "endpoint_hashes": {
    "8a287f9b": "/mrm_comfortable_stop_operator/clear_velocity_limit",

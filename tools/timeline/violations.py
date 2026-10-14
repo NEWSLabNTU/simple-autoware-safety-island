@@ -24,6 +24,13 @@ tools/timeline/readout.py reads the same words inside its halted read at the
 end of every run-board.sh act and writes <run dir>/violations.txt with
 `report()` below, so every act's run directory has one.
 
+Two latency rules, two quantities (phase10-B3). `max-latency-runtime` is ONE
+dispatch that published the endpoint (callback entry to exit, ms).
+`route-latency-runtime` is an input-triggered path's route: from the take of
+its trigger input to the end of the dispatch that published the endpoint, the
+wait for the next tick included (ms; the contract's `call_mrm` 149 ms on the
+handler's mrm_state and takeover_request_state). Each slot line says which.
+
 `overrun N` writes N into `island_debug_overrun_ms` (CONFIG_ISLAND_DEBUG_OVERRUN,
 Kconfig.island_trace): the handler's next RUN tick busy-waits N ms, once.
 """
@@ -44,6 +51,11 @@ ARM_WORDS = ["island_monitors_armed_uptime_ms", "island_monitors_armed_via",
              "island_trace_hb_last_uptime_ms"]
 OVERRUN = "island_debug_overrun_ms"
 ARM_VIA = {0: "not armed", 1: "INIT_DONE", 2: "init failure cleared"}
+# phase10-B3: what `measured` is, for the rules whose name does not say it.
+RULE_NOTE = {
+    "max-latency-runtime": "one dispatch, ms",
+    "route-latency-runtime": "take of the trigger to the output, ms",
+}
 
 
 def nros_decoder():
@@ -112,8 +124,11 @@ def report(elf, blob, words=None):
             fqn = raw.decode("utf-8", "replace") if raw is not None else None
         if fqn is None:
             fqn = hashes.get(f"{s['fqn_hash']:08x}", f"fqn#{s['fqn_hash']:08x}")
-        lines.append(f"  #{seq}: {dec.rule_name(s['rule'])} {fqn} "
-                     f"measured={s['measured']} declared={s['declared']}")
+        rule = dec.rule_name(s["rule"]) or f"rule#{s['rule']}"
+        note = RULE_NOTE.get(rule)
+        lines.append(f"  #{seq}: {rule} {fqn} "
+                     f"measured={s['measured']} declared={s['declared']}"
+                     + (f" ({note})" if note else ""))
     return "\n".join(lines) + "\n"
 
 
