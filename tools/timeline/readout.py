@@ -68,6 +68,12 @@ cancels, exit 3). scenario.py starts it when the ego drives and sends the
 line a few seconds before the ODD exit, so the window opens at the act
 rather than a pyocd start-up (0.5 s warm, 5 s cold, far more under I/O
 load) after the instant asked for.
+
+CARLA demo C6 (the board's buttons, RB_TRIGGER=board): `--rearm-only
+--buttons` stays attached after the re-arm as the act's button bridge
+(tools/timeline/board_buttons.py): it prints a line per SW1/SW2 press the
+island records and takes `inject sw1|sw2 [ticks]` and `quit` on stdin, so
+the re-arm and the buttons share one pyocd session.
 """
 import argparse
 import json
@@ -305,13 +311,23 @@ def rearm(a, syms):
         n = dev.read32(syms["island_trace_rearms"][0])
         up = dev.read32(syms["island_trace_rearm_uptime_ms"][0])
         trig = dev.read32(syms["island_trace_triggered"][0])
+        if n != before + 1:
+            print(f"readout: REARM FAILED re-arm count {before} -> {n}")
+            return 1
+        print(f"readout: re-armed: window {n + 1} since boot (re-arm {n}) at uptime {up} ms, "
+              f"acknowledged after {took * 1000:.0f} ms; triggered={trig}", flush=True)
+        if a.buttons:
+            # CARLA demo C6: stay attached as the act's button bridge (one
+            # pyocd session holds the probe; board_buttons.py's module doc)
+            import board_buttons
+            if board_buttons.RECORD not in syms:
+                print(f"buttons: BRIDGE FAILED {a.elf} has no {board_buttons.RECORD} "
+                      f"(built without CONFIG_ISLAND_BUTTONS: the booth image has it)", flush=True)
+                return 1
+            return board_buttons.bridge(dev.t, *syms[board_buttons.RECORD],
+                                        out=lambda s: print(s, flush=True))
     finally:
         dev.close()
-    if n != before + 1:
-        print(f"readout: REARM FAILED re-arm count {before} -> {n}")
-        return 1
-    print(f"readout: re-armed: window {n + 1} since boot (re-arm {n}) at uptime {up} ms, "
-          f"acknowledged after {took * 1000:.0f} ms; triggered={trig}")
     return 0
 
 
@@ -336,9 +352,12 @@ def main():
     ap.add_argument("--wait-go", action="store_true",
                     help="with --rearm-only: attach, print `re-arm ready`, then write the re-arm word "
                          "only when a line arrives on stdin (EOF cancels)")
+    ap.add_argument("--buttons", action="store_true",
+                    help="with --rearm-only: after the re-arm, stay attached as the act's button bridge "
+                         "(board_buttons.py; CARLA demo C6) until `quit` or EOF on stdin")
     a = ap.parse_args()
     syms = symbols(a.elf, set(WORDS) | {BUFFER, violations.RECORD, SERIAL, BOOTREC, ASSERT} |
-                   set(violations.ARM_WORDS) | {REARM})
+                   set(violations.ARM_WORDS) | {REARM, "island_button_record"})
     if a.rearm_only:
         return rearm(a, syms)
     if a.assert_only:

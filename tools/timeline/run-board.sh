@@ -52,7 +52,17 @@
 #                         the scenario's CustomCommandAction runs
 #                         demo/carla/act_trigger.py (SAI_ACT_TRIGGER) at its
 #                         place, which tells the act over <dir>/act.sock.
-#                         RB_TRIGGER=button: C3's way, the act presses it
+#                         RB_TRIGGER=button: C3's way, the act presses it.
+#                         RB_TRIGGER=board (unit C6, a and encore, the booth
+#                         image): the board's buttons -- a, the ODD exit as
+#                         above and the driver's takeover from SW1; the
+#                         encore, the HPC loss from SW2. The re-arm helper
+#                         stays attached as the button bridge (readout.py
+#                         --buttons). RB_BUTTON_INJECT=1, nobody at the
+#                         board: the act injects the press through the
+#                         firmware's path (board_buttons.py), SW1
+#                         RESPOND_AFTER s into the takeover request, SW2 at
+#                         the encore scenario's place
 #   --dry-run             print every step, run none of them
 #
 # The sequence (each step prints `== <n>. <what>`):
@@ -209,7 +219,13 @@ if [ "$sim" = carla ]; then
     export SCENARIO_SIM=carla
     # C4: the scenario triggers the fault (scenario.py SCENARIO_TRIGGER)
     rb_trigger="${RB_TRIGGER:-scenario}"
-    case "$rb_trigger" in scenario|button) ;; *) echo "run-board: RB_TRIGGER is scenario or button" >&2; exit 2;; esac
+    case "$rb_trigger" in scenario|button|board) ;; *) echo "run-board: RB_TRIGGER is scenario, button or board" >&2; exit 2;; esac
+    if [ "$rb_trigger" = board ]; then
+        # C6: the visitor's buttons; b has none, and the bridge is SWD
+        [ "$act" = b ] && { echo "run-board: RB_TRIGGER=board is for a and encore (b has no button)" >&2; exit 2; }
+        [ "$target" = board ] || { echo "run-board: RB_TRIGGER=board needs --target board" >&2; exit 2; }
+        export SCENARIO_BUTTON_INJECT="${RB_BUTTON_INJECT:-0}"
+    fi
     export SCENARIO_TRIGGER="$rb_trigger"
     export SCENARIO_ACT_SOCKET="$(cd "$(dirname "$0")/../.." && pwd)/build/timeline/$id/act.sock"
     # the trace window opened at the island's arming, a minute or more before
@@ -217,7 +233,7 @@ if [ "$sim" = carla ]; then
     # ego drives, a and b a few seconds before the ODD exit (SCENARIO_ODD_FILE,
     # the polygon odd_monitor watches; C5 trace margin)
     [ "$target" = board ] && export SCENARIO_REARM="python3 tools/timeline/readout.py --target board --elf '$(readlink -f "$elf")' --out /dev/null --rearm-only"
-    [ "$rb_trigger" = scenario ] && [ "$act" != encore ] && export SCENARIO_ODD_FILE="$xosc"
+    [ "$rb_trigger" != button ] && [ "$act" != encore ] && export SCENARIO_ODD_FILE="$xosc"
 fi
 : "${RB_GATE:=python3 tools/timeline/scenario.py gate --log $dir/gate.jsonl}"
 : "${RB_PROBE:=python3 tools/timeline/probe.py --out $dir/probe.jsonl}"
@@ -262,6 +278,7 @@ l3() {
         SCENARIO_REARM="${SCENARIO_REARM:-}" SCENARIO_TRIGGER="${SCENARIO_TRIGGER:-button}" \
         SCENARIO_ACT_SOCKET="${SCENARIO_ACT_SOCKET:-}" TRIGGER_SECS="${TRIGGER_SECS:-180}" \
         SCENARIO_ODD_FILE="${SCENARIO_ODD_FILE:-}" SCENARIO_REARM_LEAD_S="${SCENARIO_REARM_LEAD_S:-4.0}" \
+        SCENARIO_BUTTON_INJECT="${SCENARIO_BUTTON_INJECT:-0}" \
         bash -c "cd '$repo'; source demo/l3/container/bin/l3-env >/dev/null 2>&1; $*"
 }
 export -f l3
@@ -357,7 +374,8 @@ if [ "$dry" = 0 ]; then
     : > "$out"
     just _trace-meta "$out" "$elf"
     { echo "target=$target"; echo "act=$act"; echo "sim=$sim"; echo "loadavg_start=$(cut -d' ' -f1-3 /proc/loadavg)"
-      [ "$sim" = carla ] && echo "trigger=$rb_trigger"; } >> "$out.meta"
+      [ "$sim" = carla ] && echo "trigger=$rb_trigger"
+      [ "$rb_trigger" = board ] && echo "button_inject=${SCENARIO_BUTTON_INJECT:-0}"; } >> "$out.meta"
 fi
 start=$SECONDS
 
@@ -638,7 +656,7 @@ fi
 step "6. the gate and the probe"
 bg "$dir/gate.stdout" l3 "exec $RB_GATE"; gate_pid="${pids[*]: -1}"
 bg "$dir/probe.stdout" l3 "exec $RB_PROBE"; probe_pid="${pids[*]: -1}"
-if [ "$sim" = carla ] && [ "$rb_trigger" = scenario ] && [ "$act" != encore ]; then
+if [ "$sim" = carla ] && [ "$rb_trigger" != button ] && [ "$act" != encore ]; then
     # C4: the ODD from the scenario (design 2.5); its ODD EXIT line is the act's trigger
     bg "$dir/odd_monitor.log" l3 "RCUTILS_LOGGING_BUFFERED_STREAM=0 exec ros2 run takeover_demo odd_monitor --ros-args -p scenario_file:='$xosc'"
 fi

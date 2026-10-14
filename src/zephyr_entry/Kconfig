@@ -56,4 +56,18 @@ config ISLAND_LED
 	  transitions for the SWD readout (tools/timeline/led_readout.py).
 	  Off by default: the gate image does not carry it.
 
+config ISLAND_BUTTONS
+	bool "Record the board's SW1/SW2 presses for the demo's acts"
+	depends on GPIO
+	help
+	  SW1 (alias sw0) is the driver's takeover, SW2 (alias sw1) the
+	  encore's HPC loss. Read from the MRM handler's own 10 Hz tick by the
+	  GPIO driver's port read (no CTF record, no ISR), debounced over two
+	  ticks, and recorded with the handler's state in island_button_record
+	  (src/island_buttons.c); the act on the host reads the record over
+	  SWD and does the rest (docs/design/carla-island-demo.md, section
+	  3.4, unit C6). A demo affordance, not a safety function: the island
+	  does not act on a press. Off by default: the gate image does not
+	  carry it.
+
 source "Kconfig.zephyr"

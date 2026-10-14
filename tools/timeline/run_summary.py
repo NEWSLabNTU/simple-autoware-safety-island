@@ -41,7 +41,9 @@ ack <ms> ms)` (a, b) or `re-armed when the ego drove` (the encore).
 CARLA demo C4 (the scenario's trigger, scenario.py SCENARIO_TRIGGER=scenario):
 the suffix adds `trigger <what>`: `ODD EXIT <odd_monitor's reason>, odd_monitor
 -> gate <ms>` for a and b, `hpc-loss at (<x>, <y>)` for the encore (the
-`trigger` event), `button` when the act pressed it itself (RB_TRIGGER=button,
+`trigger` event), `board SW1|SW2 (...)` under RB_TRIGGER=board (C6: the
+board's button, injected or pressed, the island's uptime of the press, and
+the host's latencies), `button` when the act pressed it itself (RB_TRIGGER=button,
 or a run from before C4), `none (the scenario's fault never fired)` when the
 scenario was to trigger it and nothing came, or `ODD EXIT (...) fired, but the
 act recorded no trigger` when odd_monitor fired and the act missed it; and `vlimit
@@ -147,9 +149,19 @@ def trigger(d, meta=""):
         if v.get("how") == "odd_monitor":
             hop = v.get("odd_to_gate_ms")
             s = f", trigger ODD EXIT {v.get('reason')}, odd_monitor -> gate {'-' if hop is None else hop} ms"
+        elif v.get("how") == "board":
+            x, y = v.get("x"), v.get("y")
+            s = f", trigger board {button_text(v)} at " + ("-" if x is None else f"({x:.1f}, {y:.1f})")
         else:
             x, y = v.get("x"), v.get("y")
             s = f", trigger {v.get('cmd')} at " + ("-" if x is None else f"({x:.1f}, {y:.1f})")
+    if mode == "board":
+        # C6: act a's SW1 (the driver's takeover; its trigger is the ODD exit above)
+        bt = events(d, "button")
+        if bt:
+            s = f", trigger board {button_text(bt[-1]['value'])}" + (f" after{s[len(', trigger'):]}" if t else "")
+        elif t and t[-1]["value"].get("how") != "board":
+            s = ", trigger board SW1 none (no accepted press recorded)" + s
     vl = events(d, "velocity_limit")
     if vl:
         v = vl[-1]["value"]
@@ -158,6 +170,18 @@ def trigger(d, meta=""):
         f = lambda x: "-" if x is None else f"{x:.2f}"  # noqa: E731
         s += f", vlimit {f(api)} m/s asked, {f(sel)} selected"
     return s
+
+
+def button_text(v):
+    """C6: one board press, as scenario.py's `button`/`trigger` event has it."""
+    if v.get("t_seen_ns") is None:
+        return f"{v.get('button')} none ({v.get('summary')})"
+    parts = ["injected" if v.get("injected") else "pressed", f"island uptime {v.get('island_uptime_ms')} ms"]
+    if v.get("inject_to_seen_ms") is not None:
+        parts.append(f"inject -> seen {v['inject_to_seen_ms']} ms")
+    if v.get("seen_to_press_ms") is not None:
+        parts.append(f"seen -> {'MANUAL request' if v.get('button') == 'SW1' else 'SIGSTOP'} {v['seen_to_press_ms']} ms")
+    return f"{v.get('button')} ({', '.join(parts)})"
 
 
 def table(d):

@@ -110,6 +110,24 @@ exit); if it was not (no go, the helper failed, or acknowledged after),
 the act ends FATAL: its record would miss its start. A `scenario` `rearm`
 event records either way, the latencies (attach, go -> acknowledged) and
 the lead.
+SCENARIO_TRIGGER=board (CARLA demo unit C6, a and encore, the booth image
+with CONFIG_ISLAND_BUTTONS): the board's buttons stand in for the act's own.
+The re-arm helper runs with --buttons and stays attached after the re-arm as
+the button bridge (readout.py, board_buttons.py): one line per press the
+island recorded, accepted or ignored, with its uptime and the handler's
+state. a: the ODD exit as under `scenario`; the driver's answer is the
+visitor's SW1, accepted by the island only while its takeover request is
+on, which the act turns into the same MANUAL request as the takeover
+button (the `inject` event, as before), and records a `button` event; no
+accepted SW1 within TAKEOVER_WINDOW_S (10) and the act reads as a b, a FAIL
+for a. encore: the fault is the visitor's SW2, accepted while the MRM state
+is NORMAL; the act SIGSTOPs the gate on it (the hpc-loss button, as before)
+and records the press as its `trigger` event. SCENARIO_BUTTON_INJECT=1
+(nobody at the board, the gate): the act writes the button's inject word
+through the bridge (the button reads pressed for SCENARIO_BUTTON_TICKS (3)
+handler ticks, from the pin read on the same firmware path), SW1
+RESPOND_AFTER s into the takeover request, SW2 when the encore scenario's
+datagram comes (its place, x 285).
 """
 import argparse
 import json
@@ -258,14 +276,19 @@ class Rearm:
     the act failed with "Resource busy"). wait_go: --wait-go, the word is
     written on go(); its stdout is read on a thread, each line stamped."""
 
-    def __init__(self, cmd, wait_go):
+    def __init__(self, cmd, wait_go, buttons=False):
         import subprocess
         import threading
-        self.wait_go = wait_go
+        self.wait_go, self.buttons = wait_go, buttons
         self.t_start, self.t_ready, self.t_go, self.t_done = tl.now_ns(), None, None, None
         self.rc, self.lines, self.stamped = None, [], []
-        self.pr = subprocess.Popen(cmd + (" --wait-go" if wait_go else ""), shell=True, text=True,
-                                   stdin=subprocess.PIPE if wait_go else subprocess.DEVNULL,
+        # C6 (SCENARIO_TRIGGER=board): after the re-arm the helper stays
+        # attached as the button bridge (readout.py --buttons): one line per
+        # press the island records, `inject`/`quit` on stdin
+        self.t_bridge, self.presses = None, []
+        self.pr = subprocess.Popen(cmd + (" --wait-go" if wait_go else "") + (" --buttons" if buttons else ""),
+                                   shell=True, text=True,
+                                   stdin=subprocess.PIPE if wait_go or buttons else subprocess.DEVNULL,
                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
         # wait_go: started with the act, minutes before the exit; attaching
         # has until SCENARIO_REARM_ATTACH_S, the write after go its 2 s
@@ -283,6 +306,10 @@ class Rearm:
                 self.t_ready = tl.now_ns()
             elif "re-armed:" in line:
                 self.t_done = tl.now_ns()
+            elif line.startswith("buttons: bridge ready"):
+                self.t_bridge = tl.now_ns()
+            elif line.startswith("buttons: press "):
+                self.presses.append((tl.now_ns(), line))
         self.rc = self.pr.wait()
 
     def ready(self):
@@ -292,14 +319,39 @@ class Rearm:
 
     def go(self):
         self.t_go = tl.now_ns()
-        try:
-            self.pr.stdin.write("go\n")
-            self.pr.stdin.flush()
-        except OSError:
-            pass
+        self.send("go")
         return self.t_go
 
+    def send(self, line):
+        try:
+            self.pr.stdin.write(line + "\n")
+            self.pr.stdin.flush()
+        except (OSError, ValueError, AttributeError):
+            pass
+        return tl.now_ns()
+
+    def ok(self):
+        """Re-armed: the helper exited 0, or (buttons) it acknowledged and bridges on."""
+        if self.t_done is None:
+            return False
+        return self.rc == 0 or (self.buttons and self.rc is None)
+
+    def close(self):
+        """The bridge: quit (pyocd closes its session), else killed whole."""
+        if self.pr.poll() is None:
+            self.send("quit")
+            self.th.join(3.0)
+        self.kill()
+
     def wait(self, secs):
+        if self.buttons:  # the helper bridges on: wait for the acknowledgement, not its exit
+            t0 = time.time()
+            while self.t_done is None and self.rc is None and time.time() - t0 < secs:
+                time.sleep(0.05)
+            if self.t_done is None:
+                self.kill()
+                self.th.join(5.0)
+            return
         self.th.join(secs)
         if self.th.is_alive():
             self.kill()
@@ -375,8 +427,20 @@ def run(act, log):
     from tier4_system_msgs.msg import MrmBehaviorStatus
 
     trigger = ENV("SCENARIO_TRIGGER", "button")
+    # C6: board = the scenario's trigger for the ODD exit, the board's buttons
+    # for the rest (SW1 the driver's takeover in a, SW2 the encore's HPC loss)
+    board = trigger == "board"
+    scen = trigger in ("scenario", "board")
+    if board and act not in ("a", "encore"):
+        sys.exit(f"scenario: SCENARIO_TRIGGER=board is for a and encore (b has no button), not {act}")
+    held = {}  # the re-arm helper (the button bridge under board), closed on every exit
+
+    def bye(code):
+        if held.get("r"):
+            held["r"].close()
+        os._exit(code)
     sock = None
-    if trigger == "scenario" and act == "encore":
+    if scen and act == "encore":
         # bound before anything else: the scenario may reach its trigger
         # while this act still waits for the ego (it never has, but a lost
         # datagram would be a silent no-act)
@@ -397,7 +461,7 @@ def run(act, log):
     # C5 trace margin: a and b re-arm the window just before the ODD exit
     # (module doc); the encore and the button trigger re-arm when the ego drives
     odd_poly = None
-    if carla and trigger == "scenario" and act in ("a", "b") and ENV("SCENARIO_ODD_FILE"):
+    if carla and scen and act in ("a", "b") and ENV("SCENARIO_ODD_FILE"):
         odd_poly = read_odd_polygon(ENV("SCENARIO_ODD_FILE"))
     rearm_at_exit = odd_poly is not None
     rearm_lead = float(ENV("SCENARIO_REARM_LEAD_S", "4.0"))
@@ -418,7 +482,7 @@ def run(act, log):
     node.create_subscription(ControlModeReport, "/vehicle/status/control_mode",
                              lambda m: st.update(ctrl=m.mode), q)
     node.create_subscription(RouteState, "/planning/route_state", lambda m: st.update(route=m.state), ql)
-    if trigger == "scenario":
+    if scen:
         from std_msgs.msg import Bool
         node.create_subscription(Bool, "/demo/odd/exit", lambda m: st.update(odd=m.data), q)
         try:
@@ -458,7 +522,7 @@ def run(act, log):
         # C5 trace margin: attach now (tm-b1: a helper started when the ego
         # drove had not attached 22 s later, at a 1-min load of 50), write a
         # few seconds before the exit
-        rearm = Rearm(ENV("SCENARIO_REARM"), wait_go=True)
+        rearm = held["r"] = Rearm(ENV("SCENARIO_REARM"), wait_go=True, buttons=board)
         say(f"trace window: re-arm attaching now, written {rearm_lead:.1f} s before the ODD exit "
             f"(time to the polygon's edge along the heading)")
     if carla:
@@ -466,41 +530,60 @@ def run(act, log):
         say(f"== 1-3. CARLA: the SSv2 scenario poses, routes and engages the ego (up to {engage:.0f} s) ==")
         if not spin_for(engage, lambda: (st["v"] or 0) > min_speed):
             say(f"FATAL: the vehicle did not reach {min_speed} m/s (v={st['v']}, route {st['route']})")
-            if rearm:
-                rearm.kill()
-            os._exit(2)
+            bye(2)
         cmd = ENV("SCENARIO_REARM", "")
         if cmd and not rearm_at_exit:
-            rearm = Rearm(cmd, wait_go=False)
+            rearm = held["r"] = Rearm(cmd, wait_go=False, buttons=board)
             rearm.wait(float(ENV("SCENARIO_REARM_TIMEOUT", "60")))
             say(f"trace window re-armed (exit {rearm.rc}): {rearm.done_line()}")
             b.w.write("scenario", "rearm", t_mono_ns=rearm.t_start, value=rearm.value())
+            if board and not rearm.ok():
+                say("FATAL: no button bridge (the re-arm helper did not re-arm and stay attached)")
+                bye(2)
     else:
         engage_planning(node, st, spin_for, say, sd, min_speed)
     log_dir = os.path.dirname(os.path.abspath(log))
-    if trigger == "scenario":
+    if board and (rearm is None or not rearm.buttons):
+        say("FATAL: SCENARIO_TRIGGER=board needs the button bridge (SCENARIO_REARM, the board)")
+        bye(2)
+    if scen:
         arm = dict(rearm=rearm, poly=odd_poly, lead=rearm_lead) if rearm_at_exit and rearm else None
-        trig = scenario_trigger(act, b, st, sock, spin_for, say, log_dir, arm)
+        if board and act == "encore":
+            trig = board_encore(b, st, rearm, sock, spin_for, say)
+        else:
+            trig = scenario_trigger(act, b, st, sock, spin_for, say, log_dir, arm)
         if trig is None:
-            if rearm:
-                rearm.kill()
-            os._exit(2)
+            bye(2)
     else:
         spin_for(drive)
     v0 = st["v"]
     say(f"== 4. driving at {v0:.2f} m/s; mrm {st['mrm']}, TOR {st['tor']}, control mode {st['ctrl']} ==")
-    if trigger == "scenario":
+    if scen:
         b.w.write("scenario", "velocity_limit", value=st["vlim"])
         say(f"velocity limit: {st['vlim'] or '- (none received)'}")
     ok, why = False, ""
     t_inject = time.time()
     c0 = (clock["sim"], clock["wall"])
     if act in ("a", "b"):
-        if trigger != "scenario":
+        if not scen:
             b.press("odd-exit")
         tor_on = spin_for(3.0, lambda: st["tor"] == 2)
         say(f"takeover request on: {tor_on}")
-        if act == "a":
+        if act == "a" and board:
+            # C6: the visitor's SW1 is the driver's answer (inside the window)
+            t_tor = time.time()
+            window = float(ENV("TAKEOVER_WINDOW_S", "10"))
+            say(f"== 5. the visitor's SW1 (board), up to {window:.0f} s ==")
+            p = board_press(rearm, "SW1", window, spin_for, say,
+                            inject_when=(lambda: time.time() - t_tor >= respond)
+                            if ENV("SCENARIO_BUTTON_INJECT") == "1" else None)
+            if p["t_seen_ns"] is not None:
+                t_press = tl.now_ns()
+                b.press("takeover")
+                p.update(t_press_ns=t_press, seen_to_press_ms=round((t_press - p["t_seen_ns"]) / 1e6, 2))
+            b.w.write("scenario", "button", t_mono_ns=p["t_seen_ns"] or tl.now_ns(), marker="takeover", value=p)
+            say(f"button: {p['summary']}")
+        elif act == "a":
             spin_for(respond)
             b.press("takeover")
             spin_for(8.0, lambda: st["tor"] == 1 and st["ctrl"] == ControlModeReport.MANUAL)
@@ -516,11 +599,11 @@ def run(act, log):
             why = f"TOR on {tor_on}, mrm {st['mrm']} (3 = COMFORTABLE_STOP), v {st['v']:.3f}"
         c1 = (clock["sim"], clock["wall"])
         spin_for(1.0 + hold)
-        if trigger != "scenario":  # odd_monitor's verdict is latched: it would set the flag again
+        if not scen:  # odd_monitor's verdict is latched: it would set the flag again
             b.press("odd-enter")
         spin_for(3.0)
     elif act == "encore":
-        if trigger != "scenario":  # scenario_trigger pressed it on the scenario's word
+        if not scen:  # scenario_trigger (board_encore) pressed it on the scenario's word (SW2)
             b.press("hpc-loss")
         spin_for(observe, lambda: st["mrm"] and st["mrm"][0] == MrmState.MRM_SUCCEEDED)
         spin_for(1.0)
@@ -546,7 +629,7 @@ def run(act, log):
             why += "; RTF - (no /clock)"
     say(f"VERDICT: {'PASS' if ok else 'FAIL'} {act}: v at the fault {v0:.2f} m/s; {why}")
     b.w.write("scenario", "verdict", marker=act, value=dict(ok=bool(ok), why=why, v0=v0, rtf=rtf))
-    os._exit(0 if ok else 1)
+    bye(0 if ok else 1)
 
 
 ODD_EXIT_LINE = re.compile(r"ODD EXIT \((.*)\) wall=([0-9.]+) mono=([0-9.]+)")
@@ -634,7 +717,7 @@ def scenario_trigger(act, b, st, sock, spin_for, say, log_dir, arm=None):
                    done_before_edge_ms=None if r.t_done is None else round((t_gate - r.t_done) / 1e6, 1),
                    go_before_edge_ms=None if go["t"] is None else round((t_gate - go["t"]) / 1e6, 1))
         b.w.write("scenario", "rearm", t_mono_ns=go["t"] or r.t_start, value=val)
-        if go["t"] is None or r.rc != 0 or r.t_done is None or r.t_done >= t_gate:
+        if go["t"] is None or not r.ok() or r.t_done >= t_gate:
             r.kill()
             say(f"FATAL: the trace window was not re-armed before the start edge (go {go}, exit {r.rc}, "
                 f"helper lines (ms after its start) {r.stamped}); the act's record would miss its start")
@@ -650,6 +733,81 @@ def scenario_trigger(act, b, st, sock, spin_for, say, log_dir, arm=None):
     b.w.write("scenario", "trigger", t_mono_ns=t_odd or t_gate, hazard="odd_exit", marker="odd_exit", value=val)
     say(f"trigger: ODD EXIT ({reason}); odd_monitor -> gate {hop} ms")
     return val
+
+
+PRESS_LINE = re.compile(r"press (SW[12]) (accepted|ignored \([^)]*\)) uptime_ms=(\d+) state=(\S+) n=(\d+)")
+
+
+def board_press(r, name, secs, spin_for, say, inject_when=None):
+    """C6 (SCENARIO_TRIGGER=board): wait up to `secs` for a press of `name`
+    (SW1|SW2) the island ACCEPTED, as the button bridge reports it
+    (board_buttons.py). Presses the island ignored are said and skipped.
+    inject_when: SCENARIO_BUTTON_INJECT=1, nobody at the board: the first
+    time it returns true the bridge writes the button's inject word, and
+    the press goes the firmware's whole way from the pin read on. Returns
+    the `button` event's value (t_seen_ns None: no accepted press)."""
+    ticks = int(ENV("SCENARIO_BUTTON_TICKS", "3"))
+    seen, got, inj = [len(r.presses)], {}, {}
+
+    def until():
+        if inject_when is not None and "t" not in inj and inject_when():
+            inj["t"] = r.send(f"inject {name.lower()} {ticks}")
+            say(f"button: {name} injected through the firmware path (its inject word, {ticks} ticks; "
+                f"nobody at the board)")
+        for t, line in r.presses[seen[0]:]:
+            seen[0] += 1
+            m = PRESS_LINE.search(line)
+            if m and m.group(1) == name and m.group(2) == "accepted":
+                got.update(t=t, uptime_ms=int(m.group(3)), state=m.group(4), n=int(m.group(5)))
+                return True
+            say(f"button: {line[len('buttons: press '):]} (not this act's press)")
+        return r.rc is not None  # the bridge is gone
+    spin_for(secs, until)
+    val = dict(how="board", button=name, injected="t" in inj, t_inject_ns=inj.get("t"),
+               t_seen_ns=got.get("t"), island_uptime_ms=got.get("uptime_ms"), island_state=got.get("state"),
+               presses=got.get("n"), bridge_rc=r.rc)
+    if got.get("t") is not None and inj.get("t") is not None:
+        val["inject_to_seen_ms"] = round((got["t"] - inj["t"]) / 1e6, 1)
+    if got.get("t") is None:
+        val["summary"] = (f"no accepted {name} press in {secs:.0f} s" +
+                          (f" (the bridge exited: {r.rc})" if r.rc is not None else ""))
+    else:
+        val["summary"] = (f"{name} accepted at island uptime {got['uptime_ms']} ms ({got['state']})" +
+                          (f", injected, inject -> seen {val['inject_to_seen_ms']} ms" if inj else ", pressed"))
+    return val
+
+
+def board_encore(b, st, r, sock, spin_for, say):
+    """C6: the encore's fault is the visitor's SW2. Under
+    SCENARIO_BUTTON_INJECT=1 the injection waits for the scenario's datagram
+    (its place, x 285, as C4's trigger), so the act runs where C4's did."""
+    wait = float(ENV("TRIGGER_SECS", "180"))
+    dg = {}
+
+    def datagram():
+        try:
+            dg["cmd"] = sock.recv(256).decode(errors="replace").strip()
+            dg["t"] = tl.now_ns()
+            dg["pose"] = (st["x"], st["y"], st["v"])
+        except (BlockingIOError, AttributeError):
+            pass
+        return "cmd" in dg
+    inject = ENV("SCENARIO_BUTTON_INJECT") == "1"
+    say(f"== 4. the visitor's SW2 (board){', injected at the scenario' + chr(39) + 's place' if inject else ''},"
+        f" up to {wait:.0f} s ==")
+    p = board_press(r, "SW2", wait, spin_for, say, inject_when=datagram if inject else None)
+    if p["t_seen_ns"] is None:
+        say(f"FATAL: {p['summary']} (v={st['v']}, pose {st['x']}, {st['y']})")
+        return None
+    pose = (st["x"], st["y"], st["v"])
+    t_press = tl.now_ns()
+    b.press("hpc-loss")
+    p.update(t_press_ns=t_press, seen_to_press_ms=round((t_press - p["t_seen_ns"]) / 1e6, 2),
+             x=pose[0], y=pose[1], v=pose[2], cmd="hpc-loss",
+             datagram=dg.get("cmd"), t_datagram_ns=dg.get("t"))
+    b.w.write("scenario", "trigger", t_mono_ns=p["t_seen_ns"], hazard="hpc_loss", marker="hpc_loss", value=p)
+    say(f"trigger: board SW2 -> hpc-loss at ({pose[0]:.1f}, {pose[1]:.1f}), {pose[2]:.2f} m/s; {p['summary']}")
+    return p
 
 
 def engage_planning(node, st, spin_for, say, sd, min_speed):

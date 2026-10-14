@@ -46,6 +46,11 @@ volatile uint32_t island_debug_overrun_ms;
 // called once per tick from onTimer().
 void island_led_update(uint32_t run, uint32_t state, uint32_t behavior, uint32_t takeover);
 #endif
+#if defined(CONFIG_ISLAND_BUTTONS)
+// The board's SW1/SW2 presses, recorded with this tick's state
+// (src/zephyr_entry/src/island_buttons.c), called once per tick from onTimer().
+void island_buttons_update(uint32_t run, uint32_t state, uint32_t behavior, uint32_t takeover);
+#endif
 }
 #endif
 
@@ -633,6 +638,9 @@ void MrmHandler::onTimer()
 #if defined(__ZEPHYR__) && defined(CONFIG_ISLAND_LED)
     island_led_update(0u, mrm_state_.state, mrm_state_.behavior, 0u);
 #endif
+#if defined(__ZEPHYR__) && defined(CONFIG_ISLAND_BUTTONS)
+    island_buttons_update(0u, mrm_state_.state, mrm_state_.behavior, 0u);
+#endif
     ISLAND_TRACE(ISLAND_MK_PATH_MRM_HANDLER_ON_TIMER_EXIT, 0);
     return;
   }
@@ -667,6 +675,9 @@ void MrmHandler::onTimer()
   publishHazardCmd();
 #if defined(__ZEPHYR__) && defined(CONFIG_ISLAND_LED)
   island_led_update(1u, mrm_state_.state, mrm_state_.behavior, is_takeover_requested_ ? 1u : 0u);
+#endif
+#if defined(__ZEPHYR__) && defined(CONFIG_ISLAND_BUTTONS)
+  island_buttons_update(1u, mrm_state_.state, mrm_state_.behavior, is_takeover_requested_ ? 1u : 0u);
 #endif
 #if defined(__ZEPHYR__) && defined(CONFIG_ISLAND_DEBUG_OVERRUN)
   // phase9-W4: the commanded overrun, after this tick's publishes so the

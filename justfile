@@ -732,12 +732,23 @@ board-build: sync
 
 # CARLA demo C5: the booth image, the gate image plus snippet island-booth
 # (src/zephyr_entry/snippets/island-booth: CONFIG_ISLAND_LED=y, the MRM state on
-# the board's RGB LED and a heartbeat on CAN LED0; docs/design/carla-island-demo.md
-# section 3), into build-board-booth. build-board, the gate image, is not touched.
+# the board's RGB LED and a heartbeat on CAN LED0; C6: CONFIG_ISLAND_BUTTONS=y,
+# SW1/SW2 recorded for the act; docs/design/carla-island-demo.md section 3),
+# into build-board-booth. build-board, the gate image, is not touched.
 #
-# Build the booth image (LEDs on) into build-board-booth.
+# Build the booth image (LEDs and buttons on) into build-board-booth.
 board-build-booth:
     ISLAND_BOARD_SNIPPETS="island-booth ${ISLAND_BOARD_SNIPPETS:-}" just BOARD_BUILD_DIR=build-board-booth board-build
+
+# CARLA demo C6: the on-site check of SW1/SW2 on a running booth image. Attaches
+# over SWD (no halt, no reflash) and prints every pad edge (PGPDI, no firmware
+# in between) and every press the island records (island_button_record, with
+# accepted/ignored and the handler's state), live, until Ctrl-C. Nothing else
+# may hold the probe (no act running).
+#
+# Watch SW1/SW2 live on the board running the booth image (Ctrl-C to stop).
+board-buttons elf="build-board-booth/zephyr/zephyr.elf":
+    python3 tools/timeline/board_buttons.py watch --elf {{elf}}
 
 # phase9-U3: the spin-latency diagnostic image (docs/tracing.md section 9,
 # experiments/spin-latency/README.md). Applies the two diag patches to the

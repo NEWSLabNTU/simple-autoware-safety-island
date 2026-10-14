@@ -251,6 +251,11 @@ if(CONFIG_ISLAND_LED)
     target_sources(app PRIVATE src/island_led.c)
 endif()
 
+# The visitor's SW1/SW2, recorded for the act (src/island_buttons.c, off by default).
+if(CONFIG_ISLAND_BUTTONS)
+    target_sources(app PRIVATE src/island_buttons.c)
+endif()
+
 # phase9 spin latency: the executor runs above the transport once registration
 # is done (src/spin_priority.c).
 if(CONFIG_ISLAND_SPIN_RAISE)

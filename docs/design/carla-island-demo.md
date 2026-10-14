@@ -539,24 +539,75 @@ Cost against the gate image (main `5057528`, `just board-build`):
 
 ### 3.4 Buttons
 
-SW1/SW2 as the visitor's buttons (the W1/W11 alternative to a screen UI):
+SW1/SW2 as the visitor's buttons (the W1/W11 alternative to a screen UI),
+built in unit C6 (`CONFIG_ISLAND_BUTTONS`, on in the booth image only):
 
 - **SW1 = take over.** The takeover is the HPC side's (a MANUAL control mode
-  from the vehicle), not the island's. The island would publish a new topic,
-  `/demo/driver/response` (std_msgs/Empty), which `takeover_hmi` already
-  consumes and turns into `/control/control_mode_request` MANUAL. Cost: one
-  publisher on the island (no receive buffer), a contract entry, and the
-  `gpio-keys` input subsystem or a polled read in the handler's tick (no
-  ISR: poll SW1 at 10 Hz, debounce two ticks).
+  from the vehicle), not the island's. A press the island accepts makes the
+  act on the host send `/control/control_mode_request` MANUAL, the request
+  the act's own takeover button sent before (acb `allow_manual`, C2). The
+  island accepts SW1 only while its takeover request is on; any other press
+  is recorded as ignored and does nothing.
 - **SW2 = HPC loss.** Pressing it must not make the island lie about its
-  inputs. It publishes `/demo/fault/inject` (Empty); a host helper SIGSTOPs
-  the gate, exactly the encore's mechanism. A local fault injection inside
-  the island (ignore the availability) would demonstrate nothing the
+  inputs. A press the island accepts (MRM state NORMAL) makes the act
+  SIGSTOP the availability gate, exactly the encore's mechanism: the stream
+  stops and the island detects the silence itself. A local fault injection
+  inside the island (ignore the availability) would demonstrate nothing the
   contract measures.
 
 Both buttons are a demo affordance, not a safety function: they are outside
-the island's contract's hazards and the trace marks them as injections like
-today's `press` edge.
+the island's contract's hazards, and the island does not act on a press.
+The host's act records each press as an injection like today's `press`
+edge.
+
+**How a press leaves the board: SWD, not a topic.** The island records the
+press; the act reads the record over the debug probe. Decided in C6:
+
+- *Read.* Once per MRM handler tick (`MrmHandler::onTimer`, 10 Hz, beside
+  the LED update), through the GPIO driver's `port_get_raw` (the SIUL2
+  PGPDI register), not `gpio_pin_get_dt()`. Zephyr 4.4's CTF backend
+  traces every GPIO API call (3.3): a poll through the API would add 2
+  records of 28 B per tick, 560 B/s, about as much as the whole act's
+  window rate (c5-b2 673 B/s). The direct read adds no trace record. An
+  interrupt was not chosen: an ISR and a debounce timer the timing analysis
+  would carry, for a button whose meaning is decided at the handler's tick
+  anyway.
+- *Debounce.* A level counts once two consecutive ticks read it. Contacts
+  bounce for milliseconds and ticks are 100 ms apart, so a press is seen
+  100-200 ms after it starts and has to last about 200 ms (hold it for
+  half a second).
+- *Record.* `island_button_record` (112 B, DTCM .bss): the sampled and
+  debounced levels, counts, and the last 8 presses with their uptime, the
+  button, accepted or why ignored, and the MRM state at that tick.
+- *To the host.* In `RB_TRIGGER=board` the trace window's re-arm helper
+  (`readout.py --rearm-only --buttons`) stays attached after the re-arm and
+  polls the record every 25 ms (`tools/timeline/board_buttons.py`): one
+  pyocd session holds the probe for the whole act. The act turns an
+  accepted press into the MANUAL request (SW1) or the SIGSTOP (SW2).
+- *Rejected: publishing `/demo/driver/response` and `/demo/fault/inject`
+  from the island* (this section's first plan). Two publishers are two
+  contract entries, and the contract is shared by every image: the gate
+  image's derived pools and its trace-marker table (whose digest each trace
+  carries) would change for a demo affordance, or the booth image would need
+  a contract of its own. With the record over SWD the booth image's ROS
+  interface, contract and marker table are the gate image's. The cost: the
+  booth needs the probe attached (it is, for the flash, the trace and the
+  LED readout), and a press reaches the host 25 ms after the tick at worst.
+- *Injection* (nobody at the board): a debugger writes N into the record's
+  `inject` word for a button; for the next N ticks the button reads pressed
+  (OR'ed with the pin) and the firmware counts the word down. The debounce,
+  the edge, the state check and the record are the path a real press takes;
+  only the pad itself is bypassed.
+
+What the operator still starts: `run-board.sh --sim carla` with
+`RB_TRIGGER=board` (the flash or `--keep-boot`, the router and the link,
+CARLA, the scenario side, the ego, the gate and the probe, and the SSv2
+scenario that poses, routes and engages the ego). The visitor drives the
+act from the board: in a, the ego leaves the scenario's ODD by itself, the
+LED blinks amber, and SW1 hands the car to the driver (no press: the window
+expires and the island stops the car, act b); in the encore, SW2 is the HPC
+loss and the island stops the car (red). On site, `just board-buttons`
+checks both buttons without a reflash.
 
 ## 4. Measurements and risks
 
