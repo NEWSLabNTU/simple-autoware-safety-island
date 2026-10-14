@@ -5,8 +5,8 @@
 checked by something, and the derived settling covers the vehicle's
 response, not only the braking profile.
 
-**Status (2026-10-15): B4, B5, B6 done; the timeline side of B2 and B8
-done;** the rest is planned.
+**Status (2026-10-15): B4, B5, B6, B9 done; the timeline side of B2 and
+B8 done;** the rest is planned.
 
 ## Why
 
@@ -175,6 +175,23 @@ with its evidence. Two were confirmed by experiment on 2026-10-15:
   a3 46.42, b1 29.05, b2 20.97, b3 20.77 (PASS); control_mode a1 32.11,
   a2 49.09, a3 95.63 (PASS, checked by the trace only). The encore runs
   have no row: the gate is stopped, so no host edge.
+
+### B9. The run's verdict says when a budget row fails (this repo) - done
+
+- What: `run_summary.py` printed the scenario's verdict, the safe state
+  reached, as the act's: b6-e2 read `encore: PASS; table 6/8 PASS, total
+  4957.25 of 4934.67 ms` with settle and total over budget and only
+  "within the FTTI" passing.
+- Gate: an act whose table has a FAIL row reads FAIL in its SUMMARY, with
+  the rows named and an FTTI-only success visible; the fr round stays PASS.
+- Status (2026-10-15): done. `run_summary.budget()`: a FAIL row turns PASS
+  into `FAIL (the act PASS; <n> table row(s) FAIL: <terms>; within the
+  FTTI PASS)` and is appended to a FAIL; VOID, INVALID and REFUSED are
+  kept. Exit codes unchanged (run-board.sh: 0/1 the scenario's verdict, 3
+  refused, 4 void; docs/tracing.md). Re-read offline: b6-e1 FAIL (settle),
+  b6-e2, b6-e3, b6-b1..3 FAIL (settle, total), all within the FTTI; fr-a1..3,
+  b1..3, e1..3 PASS. Open: whether run-board.sh's exit code should carry
+  the budget verdict too (cast.sh and callers read it as the act's).
 
 ## Not in this phase
 

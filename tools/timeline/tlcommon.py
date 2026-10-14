@@ -417,6 +417,8 @@ def selftest(path=os.path.join(HERE, "testdata/explain.txt")):
           end is not None and w.get("settle") is not None and cs.get("route") is not None
           and w["settle"] < end <= w["settle"] + cs["route"] + 0.005)
     analysis.selftest_rows(check)  # phase10-B8 link rows, phase10-B2 settle row
+    import run_summary
+    run_summary.selftest(check)  # phase10-B9 the verdict with the table
     print("selftest: " + ("OK" if not fails else f"{len(fails)} FAILED"))
     return 0 if not fails else 1
 

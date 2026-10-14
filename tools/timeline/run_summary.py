@@ -51,6 +51,14 @@ act recorded no trigger` when odd_monitor fired and the act missed it; and `vlim
 /api/autoware/set/velocity_limit (max_velocity_default) and what Autoware's
 selector made of it with its own max_vel (max_velocity), as the act read
 them (the `velocity_limit` event).
+
+phase10-B9: the verdict is the act's and the table's together. The
+scenario's verdict (the safe state reached, scenario.py) alone read PASS
+while settle and total were over budget (b6-e2: table 6/8). A table row
+that FAILs now turns PASS into `FAIL (the act PASS; <n> table row(s) FAIL:
+<terms>; within the FTTI PASS)` (budget()). Exit codes are unchanged:
+run-board.sh exits with the scenario's code (0 the act passed, 1 it
+failed), 3 refused, 4 void; the budget verdict is in this line only.
 """
 import json
 import os
@@ -184,12 +192,61 @@ def button_text(v):
     return f"{v.get('button')} ({', '.join(parts)})"
 
 
-def table(d):
+def table_rows(d):
     t = read(d, "table.md")
     if t is None:
-        return "table -"
-    rows = [[c.strip() for c in l.strip().strip("|").split("|")] for l in t.splitlines()
+        return None
+    return [[c.strip() for c in l.strip().strip("|").split("|")] for l in t.splitlines()
             if l.startswith("| ") and not l.startswith("| term")]
+
+
+def budget(d, v):
+    """phase10-B9: the act's verdict, honest about the table. The scenario's
+    verdict is the act's outcome (the safe state reached); a table row that
+    FAILs (a budget over, a wrong rung, ...) turns a PASS into
+    `FAIL (the act PASS; <n> table row(s) FAIL: <terms>; within the FTTI
+    PASS)`, the FTTI row named when it still passes, and is appended to a
+    FAIL. VOID, INVALID and REFUSED stay as they are: their terms are not
+    evidence."""
+    rows = table_rows(d) or []
+    bad = [r[0].split(" (")[0] for r in rows if len(r) > 3 and r[3] == "FAIL"]
+    if not bad or not (v == "PASS" or v.startswith("FAIL")):
+        return v
+    ftti = next((r for r in rows if r[0].startswith("within the FTTI") and len(r) > 3), None)
+    what = f"{len(bad)} table row{'s' if len(bad) > 1 else ''} FAIL: {', '.join(bad)}"
+    if ftti is not None and ftti[3] == "PASS":
+        what += "; within the FTTI PASS"
+    return f"FAIL (the act PASS; {what})" if v == "PASS" else f"{v}; {what}"
+
+
+def selftest(check):
+    """budget() on synthetic tables (tlcommon.py selftest, phase10-B9)."""
+    import tempfile
+    head = "| term | declared ms | observed ms | verdict | note |\n|---|---|---|---|---|\n"
+    ok_rows = "| settle (braking command -> standstill) | 4165.33 | 3000.00 | PASS |  |\n" \
+              "| within the FTTI | 10000.00 | 4900.00 | PASS |  |\n"
+    bad_rows = "| settle (braking command -> standstill) | 4165.33 | 4300.00 | FAIL |  |\n" \
+               "| total (last sample -> standstill) | 4934.67 | 4957.25 | FAIL |  |\n" \
+               "| within the FTTI | 10000.00 | 4957.25 | PASS |  |\n"
+    with tempfile.TemporaryDirectory() as d:
+        with open(os.path.join(d, "table.md"), "w") as f:
+            f.write(head + ok_rows)
+        check("budget: a clean table keeps PASS", budget(d, "PASS") == "PASS")
+        with open(os.path.join(d, "table.md"), "w") as f:
+            f.write(head + bad_rows)
+        got = budget(d, "PASS")
+        check(f"budget: rows over turn PASS into FAIL, the FTTI named: {got}",
+              got == "FAIL (the act PASS; 2 table rows FAIL: settle, total; within the FTTI PASS)")
+        check("budget: a VOID stays VOID", budget(d, "VOID (no probe)") == "VOID (no probe)")
+        check("budget: an INVALID stays INVALID", budget(d, "INVALID (RTF 0.5 < 0.95)").startswith("INVALID"))
+        check("budget: a FAIL gets the rows appended",
+              budget(d, "FAIL").startswith("FAIL; 2 table rows FAIL: settle, total"))
+
+
+def table(d):
+    rows = table_rows(d)
+    if rows is None:
+        return "table -"
     ok = sum(1 for r in rows if len(r) > 3 and r[3] == "PASS")
     # phase10-B2: a row stated for the record (the settle at the observed
     # speed while no response is declared) carries no verdict; it is counted
@@ -294,6 +351,7 @@ def main():
         print(f"SUMMARY {run}{act}: REFUSED {refused.strip()}")
         return 0
     v, carla = sim(d, meta, verdict(d))
+    v = budget(d, v)
     print(f"SUMMARY {run}{act}: {v}; {load(meta)}; {table(d)}; {trace_check(d)}; {stored(d)}; "
           f"{serial(d)}; {heap(d)}{asserted(d)}{carla}")
     return 0

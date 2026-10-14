@@ -692,6 +692,13 @@ instead of the scenario's verdict, keeps the reason in `void.txt`, reads
 island's behaviour under overload: a run that starts under it and still
 escalates reads FAIL (`d12-b3r`, load 189, escalated correctly).
 
+The SUMMARY's verdict is the act's and the table's together (phase10-B9):
+a table row that FAILs turns the scenario's PASS into `FAIL (the act PASS;
+<n> table row(s) FAIL: <terms>; within the FTTI PASS)` (the FTTI named when
+it still passes; b6-e2: settle and total over, inside the FTTI). The exit
+code is not changed by it: 0 or 1 is the scenario's verdict on the act
+(the safe state reached), 3 refused, 4 void.
+
 It flashes (board), starts the stock router, the island's link (the gateway
 on the UART and a reset; for QEMU the same gateway config on a unix socket),
 waits for the island's first operator status sample, starts Autoware in the
