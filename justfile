@@ -622,6 +622,12 @@ board-build: sync
             *) echo "board-build: ISLAND_BOARD_KCONFIG entry '$kv' is not CONFIG_<name>=<value>" >&2; exit 2;; esac
     done
     [ ${#EXTRA[@]} -gt 0 ] && echo "board-build: env overrides -> ${EXTRA[*]}"
+    # ISLAND_BOARD_SNIPPETS="island-booth": more snippets (src/zephyr_entry/snippets),
+    # after the RMW and the link; `just board-build-booth` sets it (with its own
+    # build dir). A normal build leaves it unset: the gate image.
+    SNIP=()
+    for sn in ${ISLAND_BOARD_SNIPPETS:-}; do SNIP+=(-S "$sn"); done
+    [ ${#SNIP[@]} -gt 0 ] && echo "board-build: extra snippets -> ${SNIP[*]}"
     # The image's capabilities (param_services), from system.toml through the
     # CLI's SSoT accessor. The Zephyr lane does not resolve them from the
     # entry's BRINGUP yet (nano-ros zephyr/CMakeLists.txt, "Follow-up: resolve
@@ -665,7 +671,7 @@ board-build: sync
     source "{{NROS_ROOT}}/scripts/lib/zephyr-module.sh"
     nros_module="$(nros_zephyr_module_root "{{NROS_ROOT}}")"
 
-    west build -b {{BOARD}} -S {{BOARD_RMW}} -S {{BOARD_LINK}} -d {{BOARD_BUILD_DIR}} $PWD/src/zephyr_entry -- \
+    west build -b {{BOARD}} -S {{BOARD_RMW}} -S {{BOARD_LINK}} "${SNIP[@]}" -d {{BOARD_BUILD_DIR}} $PWD/src/zephyr_entry -- \
         -C "$caps" \
         -Dnano_ros_ROOT={{NROS_ROOT}} \
         -DZEPHYR_EXTRA_MODULES="$nros_module;$hal_nxp" \
@@ -723,6 +729,15 @@ board-build: sync
     # build-board present that surfaced as `ninja: error: unknown target
     # 'rom_report'` -- an error about the report, from a directory nobody built.
     just BOARD_BUILD_DIR={{BOARD_BUILD_DIR}} board-size
+
+# CARLA demo C5: the booth image, the gate image plus snippet island-booth
+# (src/zephyr_entry/snippets/island-booth: CONFIG_ISLAND_LED=y, the MRM state on
+# the board's RGB LED and a heartbeat on CAN LED0; docs/design/carla-island-demo.md
+# section 3), into build-board-booth. build-board, the gate image, is not touched.
+#
+# Build the booth image (LEDs on) into build-board-booth.
+board-build-booth:
+    ISLAND_BOARD_SNIPPETS="island-booth ${ISLAND_BOARD_SNIPPETS:-}" just BOARD_BUILD_DIR=build-board-booth board-build
 
 # phase9-U3: the spin-latency diagnostic image (docs/tracing.md section 9,
 # experiments/spin-latency/README.md). Applies the two diag patches to the

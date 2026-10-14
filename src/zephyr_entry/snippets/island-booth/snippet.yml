@@ -1,0 +1,11 @@
+# The booth image: the gate image plus what a visitor sees on the board.
+#
+#   just board-build-booth          (= ISLAND_BOARD_SNIPPETS=island-booth, build-board-booth)
+#
+# A snippet of its own, not a line in boards/mr_canhubk3_s32k344.conf, so the
+# gate image (just board-build, build-board) stays exactly as measured: the
+# contract's figures were taken without it. docs/design/carla-island-demo.md,
+# section 3 and unit C5.
+name: island-booth
+append:
+  EXTRA_CONF_FILE: booth.conf
