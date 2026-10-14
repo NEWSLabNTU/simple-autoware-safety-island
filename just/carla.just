@@ -113,3 +113,26 @@ carla-rclcpp:
     strip --strip-debug $dir/install/rclcpp/lib/librclcpp.so
     echo "$ver" > $dir/version
     echo "carla-rclcpp: rclcpp $ver + $(basename "$patch") in $(( $(date +%s) - start )) s -> $dir/install/rclcpp/lib"
+
+# ---- C8: the proof cast ---------------------------------------------------------
+# One act on the board (run-board.sh --sim carla, args as there: [options] a|b|encore
+# <run-id>), the dashboard demo/carla/cast_dashboard.py on CAST_DISPLAY (:3, a
+# 1920x1080 TurboVNC display of its own; demo/carla/cast.sh says how to start one),
+# recorded with ffmpeg into CAST_DIR (/mnt/evo/aeon/casts) with stills. C8
+#
+# Record one act with the cast dashboard (needs the :3 display). C8
+carla-cast *args:
+    scripts/ienv.sh 'CAST_DISPLAY="{{env("CAST_DISPLAY", ":3")}}" CAST_DIR="{{env("CAST_DIR", "/mnt/evo/aeon/casts")}}" demo/carla/cast.sh {{args}}'
+
+# Start the cast's display: TurboVNC :3, 1920x1080, no desktop (only the dashboard draws). C8
+carla-cast-display:
+    #!/usr/bin/env bash
+    d="${CAST_DISPLAY:-:3}"
+    case "$d" in :1|:2|:9) echo "carla-cast-display: $d is not ours" >&2; exit 2;; esac
+    if [ -S "/tmp/.X11-unix/X${d#:}" ]; then echo "carla-cast-display: $d is up"; exit 0; fi
+    pid="$HOME/.vnc/$(hostname):${d#:}.pid"
+    if [ -f "$pid" ] && ! kill -0 "$(cat "$pid")" 2>/dev/null; then echo "carla-cast-display: removing the stale $pid"; rm -f "$pid"; fi
+    x="${CAST_DIR:-/mnt/evo/aeon/casts}/xstartup-bare.sh"
+    mkdir -p "$(dirname "$x")"
+    printf '#!/bin/sh\n# bare display for the island cast: no desktop, no window manager\nexec sleep infinity\n' > "$x"; chmod +x "$x"
+    /opt/TurboVNC/bin/vncserver "$d" -geometry 1920x1080 -xstartup "$x"

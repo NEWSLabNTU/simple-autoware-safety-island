@@ -74,8 +74,11 @@ class OddMonitor(Node):
     def fire(self, reason):
         if not self.exit_reason:
             self.exit_reason = reason
-            self.get_logger().warn(f'ODD EXIT ({reason}) {c.stamp()}')
+            stamp = c.stamp()
+            # publish first: the log line's write can block on a loaded disk
+            # (c5-b2: 572 ms between the stamp and the line)
             self.on_timer()
+            self.get_logger().warn(f'ODD EXIT ({reason}) {stamp}')
 
     def clear(self):
         if self.exit_reason:
