@@ -36,7 +36,10 @@ agree (design 2.3).
 CARLA demo C4 (the scenario's trigger, scenario.py SCENARIO_TRIGGER=scenario):
 the suffix adds `trigger <what>`: `ODD EXIT <odd_monitor's reason>, odd_monitor
 -> gate <ms>` for a and b, `hpc-loss at (<x>, <y>)` for the encore (the
-`trigger` event), or `button` when the act pressed it itself; and `vlimit
+`trigger` event), `button` when the act pressed it itself (RB_TRIGGER=button,
+or a run from before C4), `none (the scenario's fault never fired)` when the
+scenario was to trigger it and nothing came, or `ODD EXIT (...) fired, but the
+act recorded no trigger` when odd_monitor fired and the act missed it; and `vlimit
 <a> m/s asked, <s> selected`: the external velocity limit SSv2 set through
 /api/autoware/set/velocity_limit (max_velocity_default) and what Autoware's
 selector made of it with its own max_vel (max_velocity), as the act read
@@ -112,14 +115,28 @@ def sim(d, meta, v):
         v = f"FAIL (the island's verdict PASS, SSv2 junit {j})"
     if v in ("PASS", "FAIL") and (r is None or r < rmin):
         v = f"INVALID (RTF {'-' if r is None else f'{r:.3f}'} < {rmin}; the scenario said {v})"
-    return v, f"; sim carla, RTF {'-' if r is None else f'{r:.3f}'}, SSv2 junit {j}{trigger(d)}"
+    return v, f"; sim carla, RTF {'-' if r is None else f'{r:.3f}'}, SSv2 junit {j}{trigger(d, meta)}"
 
 
-def trigger(d):
-    """C4: what started the act, and the velocity limit Autoware ran under."""
+def trigger(d, meta=""):
+    """C4: what started the act, and the velocity limit Autoware ran under.
+
+    The mode is island.trace.meta's `trigger=` (run-board.sh RB_TRIGGER);
+    a run from before C4 has none and pressed the button. Under `scenario`
+    with no `trigger` event the fault was not recorded: odd_monitor's log
+    says whether the ODD exit fired at all."""
+    m = re.search(r"^trigger=(\S+)", meta or "", re.M)
+    mode = m.group(1) if m else "button"
     t = events(d, "trigger")
-    if not t:
+    if not t and mode == "button":
         s = ", trigger button"
+    elif not t:
+        o = read(d, "odd_monitor.log") or ""
+        x = re.search(r"ODD EXIT \((.*)\) wall=", o)
+        waited = "the scenario's trigger" in (read(d, "act.log") or "")
+        s = (f", trigger ODD EXIT ({x.group(1)}) fired, but the act recorded no trigger (act.log)" if x
+             else ", trigger none (the scenario's fault never fired)" if waited
+             else ", trigger none (the act ended before it waited for the scenario's fault; act.log)")
     else:
         v = t[-1]["value"]
         if v.get("how") == "odd_monitor":

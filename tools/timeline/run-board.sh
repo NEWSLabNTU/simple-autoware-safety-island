@@ -352,7 +352,8 @@ echo "run-board: act $act, run $id, target $target, image $elf, sim $sim"
 if [ "$dry" = 0 ]; then
     : > "$out"
     just _trace-meta "$out" "$elf"
-    { echo "target=$target"; echo "act=$act"; echo "sim=$sim"; echo "loadavg_start=$(cut -d' ' -f1-3 /proc/loadavg)"; } >> "$out.meta"
+    { echo "target=$target"; echo "act=$act"; echo "sim=$sim"; echo "loadavg_start=$(cut -d' ' -f1-3 /proc/loadavg)"
+      [ "$sim" = carla ] && echo "trigger=$rb_trigger"; } >> "$out.meta"
 fi
 start=$SECONDS
 
