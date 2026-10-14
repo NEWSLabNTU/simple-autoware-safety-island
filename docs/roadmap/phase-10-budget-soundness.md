@@ -5,7 +5,8 @@
 checked by something, and the derived settling covers the vehicle's
 response, not only the braking profile.
 
-**Status (2026-10-15): B4, B5, B6 done;** the rest is planned.
+**Status (2026-10-15): B4, B5, B6 done; the timeline side of B2 and B8
+done;** the rest is planned.
 
 ## Why
 
@@ -59,6 +60,18 @@ with its evidence. Two were confirmed by experiment on 2026-10-15:
   checker's totals include it; B6's runs fit the new settling terms; the
   timeline table's settle row shows `profile + response` and the observed
   difference.
+- Status (2026-10-15): the timeline side is done; the key, the checker and
+  the contract's values are open. `analysis.py` adds the row "settle at the
+  observed entry speed": the profile at the observed entry speed, the
+  observed settle, and their difference as the measured response delay.
+  With no `response` declared the row has no verdict (`run_summary.py`
+  counts it apart, `+1 n/a`). Once the settle-derived line or the
+  contract's `settle:` carries `response`, the row's bound is profile +
+  response and it gets a verdict; the selftest adds the response to the
+  profile when the checker prints it. fr round (observed - profile, ms):
+  e1 362.18, e2 488.91, e3 352.54 (braking command -> standstill); b1
+  608.65, b2 1796.30, b3 1781.04 (velocity limit -> standstill, so the
+  planner hop is included: 629.49 in b2).
 
 ### B3. A runtime check of the route, not only of the callback (nano-ros)
 
@@ -148,6 +161,20 @@ with its evidence. Two were confirmed by experiment on 2026-10-15:
   (checker sum, runtime monitor, trace check, or nothing).
 - Gate: the act tables carry the link rows; no stated budget is listed as
   checked by nothing without a note.
+- Status (2026-10-15): the timeline side is done; `--explain`'s list is
+  open (play_launch). `analysis.py` adds a row per declared
+  `max_transport` edge the trace observes: the declared value from the
+  run's own `--explain` (the route's `link`, or `declared-not-charged`),
+  the observed hop as the maximum over the run's edges (host stamp ->
+  island take on the host clock, as terms.py's `link`; over-stated by the
+  smallest out-link delay). Edges with a recorded host side: the guard
+  subscriber (gate publish) and `control_mode` (the probe's receipt, not
+  the publish). Every table row gets a `checked by` column: checker sum,
+  runtime monitor, or the trace only. fr round, against the 81 / 143 the
+  runs declared: link into operation_mode_availability a1 38.73, a2 33.66,
+  a3 46.42, b1 29.05, b2 20.97, b3 20.77 (PASS); control_mode a1 32.11,
+  a2 49.09, a3 95.63 (PASS, checked by the trace only). The encore runs
+  have no row: the gate is stopped, so no host edge.
 
 ## Not in this phase
 

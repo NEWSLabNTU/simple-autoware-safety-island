@@ -191,8 +191,12 @@ def table(d):
     rows = [[c.strip() for c in l.strip().strip("|").split("|")] for l in t.splitlines()
             if l.startswith("| ") and not l.startswith("| term")]
     ok = sum(1 for r in rows if len(r) > 3 and r[3] == "PASS")
+    # phase10-B2: a row stated for the record (the settle at the observed
+    # speed while no response is declared) carries no verdict; it is counted
+    # apart, so a clean table still reads n/n
+    na = sum(1 for r in rows if len(r) > 3 and r[3] == "n/a" and r[0].startswith("settle at the observed"))
     total = next((r for r in rows if r[0].startswith("total")), None)
-    s = f"table {ok}/{len(rows)} PASS"
+    s = f"table {ok}/{len(rows) - na} PASS" + (f" (+{na} n/a)" if na else "")
     if total:
         s += f", total {total[2]} of {total[1]} ms"
     return s

@@ -273,11 +273,13 @@ def render(run_dir, out, explain_path=None, title=None):
                       v["ok"]))
     yv = 0.90
     fig.text(0.74, yv, "Verdicts (ms)", fontsize=10, fontweight="bold", color=INK)
+    # 15 rows fit at the full step; more (phase10-B8's link rows) close up
+    k = min(1.0, 15 / max(len(lines), 1))
     for a_, b_, ok in lines:
-        yv -= 0.033
+        yv -= 0.033 * k
         fig.text(0.74, yv, a_, fontsize=7.8, color=(GOOD if ok else CRIT if ok is False else INK2),
                  family="DejaVu Sans Mono")
-        yv -= 0.024
+        yv -= 0.024 * k
         fig.text(0.74, yv, b_, fontsize=7.3, color=INK2, family="DejaVu Sans Mono")
     al = r.get("align") or {}
     yv -= 0.045
@@ -310,10 +312,13 @@ def render(run_dir, out, explain_path=None, title=None):
 
 
 def table(r):
-    out = ["| term | declared ms | observed ms | verdict | note |", "|---|---|---|---|---|"]
+    # `checked by` (phase10-B8): what checks the declared value besides this
+    # table; the last column, so readers of the first four keep their places
+    out = ["| term | declared ms | observed ms | verdict | note | checked by |", "|---|---|---|---|---|---|"]
     for v in r["verdicts"]:
         st = "PASS" if v["ok"] else ("FAIL" if v["ok"] is False else "n/a")
-        out.append(f"| {v['term']} | {an.fmt(v['declared'])} | {an.fmt(v['observed'])} | {st} | {v['note']} |")
+        out.append(f"| {v['term']} | {an.fmt(v['declared'])} | {an.fmt(v['observed'])} | {st} | {v['note']} "
+                   f"| {v.get('by', '')} |")
     return "\n".join(out)
 
 

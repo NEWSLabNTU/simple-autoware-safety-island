@@ -399,11 +399,14 @@ def selftest(path=os.path.join(HERE, "testdata/explain.txt")):
             check(f"{hz}/{rung}: DETECT+WINDOWS+ROUTE+SETTLE {s:.2f} = TOTAL {r['total']:.2f}",
                   abs(s - r["total"]) < 0.02)
     prof = analysis.settle_profiles(text)
+    resp = analysis.settle_responses(text, contract=False)  # phase10-B2: profile + response
     check(f"{len(prof)} settle-derived profiles parsed (want 3)", len(prof) == 3)
     for (hz, rung), (a, j, v0) in sorted(prof.items()):
         r = by.get((hz, rung))
-        mine = settle_s(v0, a, j) * 1000
-        check(f"{hz}/{rung}: settle_s({v0}, a {a}, j {j}) {mine:.2f} = checker {r and r['settle']}",
+        rs = resp.get((hz, rung), 0.0)
+        mine = settle_s(v0, a, j) * 1000 + rs
+        check(f"{hz}/{rung}: settle_s({v0}, a {a}, j {j}) + response {rs} {mine:.2f} = checker "
+              f"{r and r['settle']}",
               r is not None and abs(mine - r["settle"]) < 0.02)
     w = by.get(("odd_exit", "takeover_request"), {})
     check(f"odd_exit/takeover_request: a window of {w.get('settle')} ms", w.get("settle_kind") == "window")
@@ -413,6 +416,7 @@ def selftest(path=os.path.join(HERE, "testdata/explain.txt")):
           f"first hop (<= its route {cs.get('route')})",
           end is not None and w.get("settle") is not None and cs.get("route") is not None
           and w["settle"] < end <= w["settle"] + cs["route"] + 0.005)
+    analysis.selftest_rows(check)  # phase10-B8 link rows, phase10-B2 settle row
     print("selftest: " + ("OK" if not fails else f"{len(fails)} FAILED"))
     return 0 if not fails else 1
 
