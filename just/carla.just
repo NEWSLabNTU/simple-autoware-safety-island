@@ -17,6 +17,10 @@
 #   just carla-scenario <xosc>     6. one SSv2 scenario -> its junit
 #   just l3-nodes                  the domain-10 graph
 #
+# SAI_ACT_TRIGGER (C4) reaches the scenario: town01_island_encore.xosc runs
+# `$(env SAI_ACT_TRIGGER true) hpc-loss` at its place (run-board.sh sets it to
+# demo/carla/act_trigger.py and the act's socket; unset, `true`, a no-op).
+#
 # Every recipe runs under `env -i`: the login shell on this host carries
 # demo/host_ws/install ahead of /opt/autoware and the Cyclone env of .envrc.
 # ZENOH_RUNTIME as in the L3 image (demo/l3/README.md trap 2c): with zenoh's
@@ -46,6 +50,7 @@ _carla-env cmd:
         EGO_OVERLAY="$PWD/demo/carla/ego-overlay.bash" \
         EGO_LAUNCH_ARGS="operation_mode_availability_topic:=/system/operation_mode/availability_raw l3_diagnostic_graph_path:=$ws/{{CARLA_GRAPH}} ${CARLA_EGO_ARGS:-}" \
         LAUNCH_RVIZ="${LAUNCH_RVIZ:-false}" OUTPUT_DIR="${OUTPUT_DIR:-/tmp}" \
+        SAI_ACT_TRIGGER="${SAI_ACT_TRIGGER:-true}" \
         ZENOH_RUNTIME="(net: (worker_threads: 8))" \
         EGO_PLAY_LAUNCH_ARGS="-c $PWD/demo/carla/play_launch.yaml" \
         EGO_CONTAINER_MODE="${EGO_CONTAINER_MODE:-observable}" \

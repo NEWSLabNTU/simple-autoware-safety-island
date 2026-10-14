@@ -36,6 +36,12 @@
 			<ObjectController>
 				<Controller name="Autoware">
 					<Properties>
+						<!-- SSv2 sends the controller's maxSpeed, not Performance
+						     maxSpeed, to Autoware as its velocity limit
+						     (simulator_core.hpp applyAssignControllerAction ->
+						     /api/autoware/set/velocity_limit); without it the limit
+						     sent is DBL_MAX (unit C4). -->
+						<Property name="maxSpeed" value="7.0" />
 						<Property name="maxJerk" value="1.5" />
 						<Property name="minJerk" value="-1.5" />
 					</Properties>

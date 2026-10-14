@@ -20,7 +20,10 @@ parameter's; `segment_polygon` and a scenario polygon together are refused
 (two sources for one bound).
 
 Publishes /demo/odd/exit (std_msgs/Bool) and /demo/odd/reason
-(std_msgs/String) at `rate_hz` (10).
+(std_msgs/String) at `rate_hz` (10), and once more at the instant an exit
+fires, so the verdict leaves this node with the pose that caused it rather
+than up to one period later (CARLA demo C4: the gate's receipt of it starts
+the act's record).
 """
 import math
 
@@ -72,6 +75,7 @@ class OddMonitor(Node):
         if not self.exit_reason:
             self.exit_reason = reason
             self.get_logger().warn(f'ODD EXIT ({reason}) {c.stamp()}')
+            self.on_timer()
 
     def clear(self):
         if self.exit_reason:

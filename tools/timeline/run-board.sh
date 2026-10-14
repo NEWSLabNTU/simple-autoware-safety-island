@@ -37,13 +37,22 @@
 #                         carla-ego) instead of the container; at step 7 an
 #                         SSv2 scenario (RB_XOSC; default
 #                         demo/carla/scenarios/town01_island_takeover.xosc for
-#                         a, town01_island_odd.xosc for b and encore) poses,
+#                         a, town01_island_odd.xosc for b,
+#                         town01_island_encore.xosc for the encore) poses,
 #                         routes and engages the ego, the act
 #                         (SCENARIO_SIM=carla) waits for it to drive and
 #                         records the RTF; its junit is kept as
 #                         <dir>/result.junit.xml and the SUMMARY gains
 #                         `sim carla, RTF <r>, SSv2 junit <PASS|FAIL|->`. An act
-#                         below RB_RTF_MIN (0.95) reads INVALID, not PASS/FAIL
+#                         below RB_RTF_MIN (0.95) reads INVALID, not PASS/FAIL.
+#                         The fault is the scenario's (unit C4, RB_TRIGGER=
+#                         scenario, the default): a and b, odd_monitor (step
+#                         6, scenario_file:= the .xosc, <dir>/odd_monitor.log)
+#                         sees the ego leave the scenario's ODD; the encore,
+#                         the scenario's CustomCommandAction runs
+#                         demo/carla/act_trigger.py (SAI_ACT_TRIGGER) at its
+#                         place, which tells the act over <dir>/act.sock.
+#                         RB_TRIGGER=button: C3's way, the act presses it
 #   --dry-run             print every step, run none of them
 #
 # The sequence (each step prints `== <n>. <what>`):
@@ -98,7 +107,8 @@
 # --sim carla only: RB_XOSC (the scenario), RB_CARLA_TIMEOUT (360 s for
 # CARLA's RPC port), RB_SSV2_TIMEOUT (240 s for the scenario to end after the
 # act), RB_RTF_MIN (0.95), ENGAGE_SECS (300) and CARLA_HOLD_SECS (5)
-# (scenario.py's), CARLA_EGO_ARGS (more ego launch arguments; allow_manual:=true
+# and TRIGGER_SECS (180) (scenario.py's), RB_TRIGGER (scenario | button),
+# CARLA_EGO_ARGS (more ego launch arguments; allow_manual:=true
 # is always passed), CARLA_DIR / CSB_DIR (just/carla.just).
 #
 # Preflight (phase9-U5), after the lock, before anything is flashed. Each
@@ -190,11 +200,18 @@ gws="$repo/$dir/gw.sock"
 settle="${RB_SETTLE:-15}"
 xosc_default=demo/carla/scenarios/town01_island_odd.xosc
 [ "$act" = a ] && xosc_default=demo/carla/scenarios/town01_island_takeover.xosc
+[ "$act" = encore ] && xosc_default=demo/carla/scenarios/town01_island_encore.xosc
 xosc="$(readlink -f "${RB_XOSC:-$xosc_default}")"
 rtf_min="${RB_RTF_MIN:-0.95}"
 carla_pgs=() ssv2_pid=""
+rb_trigger=button
 if [ "$sim" = carla ]; then
     export SCENARIO_SIM=carla
+    # C4: the scenario triggers the fault (scenario.py SCENARIO_TRIGGER)
+    rb_trigger="${RB_TRIGGER:-scenario}"
+    case "$rb_trigger" in scenario|button) ;; *) echo "run-board: RB_TRIGGER is scenario or button" >&2; exit 2;; esac
+    export SCENARIO_TRIGGER="$rb_trigger"
+    export SCENARIO_ACT_SOCKET="$(cd "$(dirname "$0")/../.." && pwd)/build/timeline/$id/act.sock"
     # the trace window opened at the island's arming, a minute or more before
     # the act; scenario.py re-arms it once the ego drives (attach, no halt)
     [ "$target" = board ] && export SCENARIO_REARM="python3 tools/timeline/readout.py --target board --elf '$(readlink -f "$elf")' --out /dev/null --rearm-only"
@@ -239,7 +256,8 @@ l3() {
         ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-10}" L3_WS="$ws" \
         DRIVE_SECS="${DRIVE_SECS:-3}" OBSERVE_SECS="${OBSERVE_SECS:-30}" RESPOND_AFTER="${RESPOND_AFTER:-3}" \
         SCENARIO_SIM="${SCENARIO_SIM:-planning}" CARLA_HOLD_SECS="${CARLA_HOLD_SECS:-5}" ENGAGE_SECS="${ENGAGE_SECS:-300}" \
-        SCENARIO_REARM="${SCENARIO_REARM:-}" \
+        SCENARIO_REARM="${SCENARIO_REARM:-}" SCENARIO_TRIGGER="${SCENARIO_TRIGGER:-button}" \
+        SCENARIO_ACT_SOCKET="${SCENARIO_ACT_SOCKET:-}" TRIGGER_SECS="${TRIGGER_SECS:-180}" \
         bash -c "cd '$repo'; source demo/l3/container/bin/l3-env >/dev/null 2>&1; $*"
 }
 export -f l3
@@ -289,6 +307,7 @@ teardown() {
     [ "$sim" = carla ] && sleep 7
     for p in "${pids[@]}" "${link[@]}"; do kill -KILL -- "-$p" 2>/dev/null; done
     rm -f "$mon" "$gws"
+    [ "$sim" = carla ] && rm -f "${SCENARIO_ACT_SOCKET:-}"
     if [ "$sim" = carla ]; then
         # what outlived its process group (reparented to init), listed, not killed:
         # a name match could be another user's or another run's
@@ -471,7 +490,8 @@ if [ "$keep_boot" = 1 ]; then
     echo "   keep-boot: no reset; re-arming the trace window"
     if [ "$dry" = 1 ]; then echo "   [dry-run] python3 tools/timeline/readout.py --target board --elf $elf --out $out --rearm-only"
     else
-        r="$(python3 tools/timeline/readout.py --target board --elf "$elf" --out "$out" --rearm-only 2>&1)"; rc=$?
+        # bounded: a pyocd that never exits holds the probe (c4-e1, scenario.py's re-arm)
+        r="$(timeout -s KILL 90 python3 tools/timeline/readout.py --target board --elf "$elf" --out "$out" --rearm-only 2>&1)"; rc=$?
         echo "$r" | sed 's/^/   /'
         [ "$rc" = 0 ] || { refuse "the trace window was not re-armed: $(tail -n1 <<< "$r")"; finish_refused; }
         echo "rearm=$(grep -o 're-arm [0-9]* at uptime [0-9]* ms' <<< "$r")" >> "$out.meta"
@@ -613,6 +633,10 @@ fi
 step "6. the gate and the probe"
 bg "$dir/gate.stdout" l3 "exec $RB_GATE"; gate_pid="${pids[*]: -1}"
 bg "$dir/probe.stdout" l3 "exec $RB_PROBE"; probe_pid="${pids[*]: -1}"
+if [ "$sim" = carla ] && [ "$rb_trigger" = scenario ] && [ "$act" != encore ]; then
+    # C4: the ODD from the scenario (design 2.5); its ODD EXIT line is the act's trigger
+    bg "$dir/odd_monitor.log" l3 "RCUTILS_LOGGING_BUFFERED_STREAM=0 exec ros2 run takeover_demo odd_monitor --ros-args -p scenario_file:='$xosc'"
+fi
 if [ "$late_join" = 1 ]; then
     step "6b. the island joins late: reset"
     [ "$dry" = 1 ] || sleep 5
@@ -650,7 +674,9 @@ if [ "$sim" = carla ]; then
     if [ "$dry" = 1 ]; then echo "   [dry-run] OUTPUT_DIR=$dir/ssv2 just carla-scenario $xosc (background)"
     else
         mkdir -p "$dir/ssv2"
-        OUTPUT_DIR="$repo/$dir/ssv2" bgc "$dir/ssv2.log" just carla-scenario "$xosc"
+        # C4: the encore's CustomCommandAction runs $(env SAI_ACT_TRIGGER) hpc-loss
+        SAI_ACT_TRIGGER="python3 -I $repo/demo/carla/act_trigger.py $SCENARIO_ACT_SOCKET" \
+            OUTPUT_DIR="$repo/$dir/ssv2" bgc "$dir/ssv2.log" just carla-scenario "$xosc"
         ssv2_pid="${pids[-1]}"
         echo "xosc=$xosc" >> "$out.meta"
     fi

@@ -1,9 +1,11 @@
 <?xml version="1.0"?>
-<!-- Acts b and encore of the CARLA island demo (docs/design/carla-island-demo.md,
-     section 2 and "ODD from the scenario"). Run under SSv2 in unit C3 (run-board.sh,
-     sim carla) as the world of acts b and encore, with the fault injected by the
-     act daemon; the ODD declared here is read by odd_monitor only from unit C4.
-     Act a is town01_island_takeover.xosc (same road and route).
+<!-- Act b of the CARLA island demo (docs/design/carla-island-demo.md,
+     section 2 and "ODD from the scenario"). Since unit C4 the ODD declared
+     here is the act's trigger: run-board.sh (sim carla) starts odd_monitor
+     with scenario_file:= this file, and the ego leaving the polygon is the
+     ODD exit (in C3 the act daemon's button injected it, and this file was
+     also the encore's world). Act a is town01_island_takeover.xosc, the
+     encore town01_island_encore.xosc (same road and route).
 
      The ODD is data, in the ParameterDeclarations below; odd_monitor reads
      them from this file (takeover.launch.xml scenario_file:=<this file>).
@@ -24,10 +26,16 @@
      the goal of CSB's town01_ego_drive: the mission planner refused (110.0, -130.3)
      and (120.0, -130.3) with "Goal's footprint exceeds lane!".
 
-     Speed: Performance maxSpeed 7.0 m/s (25.2 km/h; SSv2 hands it to
-     Autoware as the velocity limit) keeps the ego under the 30 km/h ODD
-     bound with 4.8 km/h of margin for the EKF twist, so the polygon, not
-     the speed bound, is what ends the ODD. -->
+     Speed: the controller's Property maxSpeed 7.0 m/s (25.2 km/h) is what
+     SSv2 hands to Autoware as its external velocity limit (unit C4; the
+     Performance maxSpeed below only bounds SSv2's own model of the ego).
+     Autoware's planner caps the ego lower still, at its max_vel 4.17 m/s
+     (15 km/h, autoware_launch common.param.yaml): the ego cruises at about
+     4.1 m/s, under the 30 km/h ODD bound with a wide margin for the EKF
+     twist, so the polygon, not the speed bound, is what ends the ODD. At
+     4.17 m/s the stop comes nearer the boundary than the 7 m/s budget
+     above: 10 s x 4.17 + 1 s + 8.7 m (4.17 m/s at -1.0 m/s^2) = 55 m, near
+     x 185. -->
 <OpenSCENARIO>
 	<FileHeader author="simple-autoware-safety-island" date="2026-10-14T00:00:00+00:00" description="Town01: the ego leaves its ODD road segment; the island raises the takeover request" revMajor="1" revMinor="2" />
 	<ParameterDeclarations>
@@ -55,6 +63,12 @@
 			<ObjectController>
 				<Controller name="Autoware">
 					<Properties>
+						<!-- SSv2 sends the controller's maxSpeed, not Performance
+						     maxSpeed, to Autoware as its velocity limit
+						     (simulator_core.hpp applyAssignControllerAction ->
+						     /api/autoware/set/velocity_limit); without it the limit
+						     sent is DBL_MAX (unit C4). -->
+						<Property name="maxSpeed" value="7.0" />
 						<Property name="maxJerk" value="1.5" />
 						<Property name="minJerk" value="-1.5" />
 					</Properties>
@@ -92,7 +106,7 @@
 						<EntityRef entityRef="ego" />
 					</Actors>
 					<Maneuver name="end_conditions">
-						<!-- Acts b and encore: the island's stop. Success 60 s
+						<!-- Act b: the island's stop. Success 60 s
 						     (simulation) after an instant at which the ego was below
 						     0.1 m/s having moved 5 m from its start; conditions in one
 						     group are ANDed and each `delay` reads its condition 60 s
