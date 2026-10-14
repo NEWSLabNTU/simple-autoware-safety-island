@@ -5,8 +5,7 @@
 checked by something, and the derived settling covers the vehicle's
 response, not only the braking profile.
 
-**Status (2026-10-15): plan.** B4, B5 and B6's runs are in progress; nothing
-else is implemented.
+**Status (2026-10-15): B4, B5, B6 done;** the rest is planned.
 
 ## Why
 
@@ -106,7 +105,7 @@ with its evidence. Two were confirmed by experiment on 2026-10-15:
   main's contract (link 56): 30450.67 (20 s) and 30180.67 (65 km/h); with
   the link at 81: 30475.67 and 30205.67. `just l3-check` 16/16.
 
-### B6. Runs at the declared entry speed (this repo) - in progress
+### B6. Runs at the declared entry speed (this repo) - done
 
 - What: run the encore and act b three times each on the planning simulator
   with Autoware's velocity cap at the declared entry speed (8.33 m/s), so
@@ -116,6 +115,13 @@ with its evidence. Two were confirmed by experiment on 2026-10-15:
 - Gate: six runs with tables; their response delay feeds B2. A settle row
   that exceeds its term is a finding for B2, not a reason to raise the
   budget silently.
+- Status (2026-10-15): done. Six runs (b6-e1..3, b6-b1..3; image
+  df1bf38a, the fr round's explain.txt via `RB_EXPLAIN`; `max_vel` 8.3 via
+  `L3_PLANNING_COMMON=demo/l3/config/common-30kmh.param.yaml`; a 315 m
+  straight, `INIT` 3916.96 73771.77, `GOAL` 3649.19 73632.10), all acts
+  PASS at 8.30 m/s. Every settle row exceeds its term: the difference to
+  the profile at the entry speed is 204-213 ms (emergency) and 587-785 ms
+  (comfortable); totals 4890-4957 of 4934.67 and 20751-20948 of 20475.67.
 
 ### B7. Say where each budget comes from (rlm, play_launch)
 
