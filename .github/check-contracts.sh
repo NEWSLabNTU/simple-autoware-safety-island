@@ -21,7 +21,8 @@ PL="${PLAY_LAUNCH:-play_launch}"
 # listed must pass (0). An exit-1 row passes only when the output names its
 # rule as `error[<rule>]`: a contract can exit 1 for another reason, and a
 # play_launch too old to parse it exits 1 with `error[manifest-parse]`, which
-# is never an expected verdict (phase9-W22, DX 2.4).
+# is never an expected verdict (phase9-W22, DX 2.4). A rule ending in `!`
+# must be the ONLY error the output names (phase10-B5).
 declare -A EXPECT=(
     # docs/demo-l4/run.sh: each "B" run is a one-number change that the
     # checker must REJECT. A pass here would be the regression.
@@ -36,6 +37,13 @@ declare -A EXPECT=(
     # takeover keys, window-expiry).
     [demo/l3/contracts/l3_takeover_window20]=1:ladder-rung-budget   # 30776.67 ms
     [demo/l3/contracts/l3_takeover_65kmh]=1:ladder-rung-budget      # 30506.67 ms
+    # phase10-B5: the same two one-line variants of the island's OWN
+    # contract (docs/island-variants/), whose detection (100 ms) and
+    # comfortable-stop route (149 ms) are the island's, not the composed
+    # demo's; the 20 s one raises takeover_request_timeout with it, so the
+    # comfortable-stop rung is the only error.
+    [docs/island-variants/safety_island_window20]=1:ladder-rung-budget!  # 30450.67 ms
+    [docs/island-variants/safety_island_65kmh]=1:ladder-rung-budget!     # 30180.67 ms
 )
 
 echo "play_launch: $(command -v "$PL") ($("$PL" --version 2>/dev/null))"
@@ -46,6 +54,7 @@ while IFS= read -r c; do
     spec="${EXPECT[$stem]:-0}"
     want="${spec%%:*}" rule=""
     [ "$spec" != "$want" ] && rule="${spec#*:}"
+    only=0; [ "${rule%!}" != "$rule" ] && { only=1; rule="${rule%!}"; }
     n=$((n + 1))
     if [ ! -f "$launch" ]; then
         echo "FAIL $stem: no $launch beside the contract"; fail=1; continue
@@ -60,6 +69,9 @@ while IFS= read -r c; do
         why="exit $got, expected $want"
     elif [ -n "$rule" ] && ! printf '%s\n' "$out" | grep -qF "error[$rule]"; then
         why="exit $got as expected, but no error[$rule] in the output"
+    elif [ "$only" = 1 ]; then
+        others="$(printf '%s\n' "$out" | grep -oE 'error\[[a-z0-9-]+\]' | sort -u | grep -vxF "error[$rule]" | paste -sd' ' -)"
+        [ -z "$others" ] || why="error[$rule] as expected, but also $others"
     fi
     if [ -z "$why" ]; then
         echo "ok   $stem (exit $got${rule:+, error[$rule]}) $summary"

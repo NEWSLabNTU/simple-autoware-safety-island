@@ -90,7 +90,7 @@ with its evidence. Two were confirmed by experiment on 2026-10-15:
   velocity limit), call_mrm 149. W31 (9 runs): link 81 (67.02). fr
   (9 runs): link 56 (46.42), tick 102, work 2, call_mrm 104.
 
-### B5. Variants of the island contract in CI (this repo) - in progress
+### B5. Variants of the island contract in CI (this repo) - done
 
 - What: the rejected variants (a 20 s window; a 65 km/h entry speed) exist
   only for the demo's composed contract, whose detection (126 ms) and
@@ -101,6 +101,10 @@ with its evidence. Two were confirmed by experiment on 2026-10-15:
   `ladder-rung-budget` only (the 20 s variant raises the handler's
   `takeover_request_timeout` with it, so `window-param` stays quiet).
 - Gate: `just l3-check` lists both with the expected verdicts.
+- Status (2026-10-15): done. `docs/island-variants/`, expected
+  `ladder-rung-budget` as the only error (check-contracts `!`). Totals on
+  main's contract (link 56): 30450.67 (20 s) and 30180.67 (65 km/h); with
+  the link at 81: 30475.67 and 30205.67. `just l3-check` 16/16.
 
 ### B6. Runs at the declared entry speed (this repo) - in progress
 

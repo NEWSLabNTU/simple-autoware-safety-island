@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<!-- VARIANT of src/safety_island_bringup/launch/safety_island.launch.xml
+     (phase10-B5), the launch tree of safety_island_window20.contract.yaml: the
+     island's three nodes with their own parameter files, and the
+     takeover window raised to 20 s as the contract says (takeover_request_timeout). -->
+<launch>
+  <node pkg="autoware_mrm_emergency_stop_operator" exec="mrm_emergency_stop_operator" name="mrm_emergency_stop_operator">
+    <param from="$(dirname)/../../src/autoware_mrm_emergency_stop_operator/config/mrm_emergency_stop_operator.param.yaml"/>
+  </node>
+  <node pkg="autoware_mrm_comfortable_stop_operator" exec="mrm_comfortable_stop_operator" name="mrm_comfortable_stop_operator">
+    <param from="$(dirname)/../../src/autoware_mrm_comfortable_stop_operator/config/mrm_comfortable_stop_operator.param.yaml"/>
+  </node>
+  <node pkg="autoware_mrm_handler" exec="mrm_handler" name="mrm_handler">
+    <param from="$(dirname)/../../src/autoware_mrm_handler/config/mrm_handler.param.yaml"/>
+    <param name="takeover_request_timeout" value="20.0"/>
+  </node>
+</launch>
