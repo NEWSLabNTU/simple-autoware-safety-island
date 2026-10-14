@@ -13,7 +13,8 @@ submodule autoware_carla_bridge (acb).
 | `scenarios/town01_island_encore.xosc` | the encore: the same road, no ODD; at x 285 a CustomCommandAction tells the act "hpc-loss" | C4 |
 | `act_trigger.py` | what that CustomCommandAction runs (`$(env SAI_ACT_TRIGGER)`): one datagram to the act's socket | C4 |
 | `cast_dashboard.py`, `cast.sh` | the proof cast: a 1920x1080 dashboard (CARLA chase view, ODD, takeover request, island MRM with the LED mirrored, map, events) recorded with ffmpeg | C8 |
-| `../../src/zephyr_entry/snippets/island-booth` | the booth image's snippet: `CONFIG_ISLAND_LED=y` (`just board-build-booth`) | C5 |
+| `../../src/zephyr_entry/snippets/island-booth` | the booth image's snippet: `CONFIG_ISLAND_LED=y`, `CONFIG_ISLAND_BUTTONS=y` (`just board-build-booth`) | C5, C6 |
+| `../../tools/timeline/board_buttons.py` | SW1/SW2 over SWD: the on-site check (`just board-buttons`), injection, and the act's button bridge (`RB_TRIGGER=board`) | C6 |
 | `../../tools/timeline/run-board.sh --sim carla` | one act on the board with CARLA, the scenario side and the ego instead of the L3 container | C3 |
 | `ego-overlay.bash` | what CSB's `just ego-av` sources between Autoware and acb (`EGO_OVERLAY`): the island's overlay and the patched librclcpp | C1 |
 | `island_standin.py` | the island's two always-on outputs, for a run with no island | C1 |
@@ -262,6 +263,70 @@ halt; read it right after the act, before the next one adds transitions.
 `led_vs_trace.py` matches every mrm_state and takeover-request edge of the
 act's trace (island clock) with an LED transition and passes when each is
 within one handler tick (100 ms).
+
+## C6: the board's buttons (SW1 take over, SW2 HPC loss)
+
+The booth image (`just board-build-booth`) records the board's two user
+buttons (`CONFIG_ISLAND_BUTTONS`, `src/zephyr_entry/src/island_buttons.c`;
+design 3.4): SW1 is the driver's takeover, accepted only while the
+island's takeover request is on (amber blinking); SW2 is the encore's HPC
+loss, accepted while the MRM state is NORMAL (green). Hold a button about
+half a second: the island reads it once per 100 ms tick and wants two
+ticks in a row. The island does not act on a press; the act reads it over
+SWD and does what its own buttons did (MANUAL from the vehicle, SIGSTOP of
+the availability gate). A demo affordance, not a safety function.
+
+A visitor's act, with the operator starting the rest:
+
+```sh
+RB_TRIGGER=board tools/timeline/run-board.sh --sim carla --elf build-board-booth/zephyr/zephyr.elf a <id>
+RB_TRIGGER=board tools/timeline/run-board.sh --sim carla --elf build-board-booth/zephyr/zephyr.elf encore <id>
+```
+
+- **a**: the ego leaves the scenario's ODD by itself (odd_monitor, as in
+  C4) and the LED blinks amber; the visitor presses SW1 within the 10 s
+  window and the car is the driver's (MANUAL). No press: the island stops
+  the car, which is act b and a FAIL for a.
+- **encore**: the visitor presses SW2 while the car drives (LED green);
+  the island loses the availability stream and stops the car (red).
+- b has no button (`RB_TRIGGER=board` refuses it); run it with the
+  default trigger.
+
+The re-arm helper (`readout.py --rearm-only --buttons`) stays attached as
+the button bridge for the act, so the probe is busy during it. The SUMMARY
+reads `trigger board SW1 (pressed, island uptime <ms> ms, seen -> MANUAL
+request <ms> ms) after ODD EXIT ...` for a and `trigger board SW2 (...) at
+(<x>, <y>)` for the encore.
+
+With nobody at the board (the gate), `RB_BUTTON_INJECT=1` makes the act
+press through the firmware: it writes the record's inject word, the button
+reads pressed for 3 ticks (OR'ed with the pin), and the debounce, the edge,
+the state check and the record are the real path. SW1 is injected
+`RESPOND_AFTER` (3) s into the takeover request, SW2 when the encore
+scenario reaches x 285 (its C4 place). The SUMMARY then says `injected`
+instead of `pressed`.
+
+### On site: check the buttons (no reflash)
+
+With the booth image running on the board (any state; no act running,
+the check needs the probe):
+
+```sh
+just board-buttons          # Ctrl-C to stop
+```
+
+It prints every pad edge read straight from the SIUL2 input registers
+(`pad SW1 DOWN` / `up`): that is the check of the buttons themselves, and
+it needs nothing but the image running. With the island's link up (the
+handler ticks only once the island has joined; `just l3-router` and `just
+l3-peer`, or between acts of a `--keep-link` chain) it also prints the
+island's debounced level (`island SW1 down`) and each press the island
+records, with accepted/ignored and its state, e.g. `island press SW2
+ignored (not NORMAL) ... state=MRM_OPERATING/EMERGENCY_STOP` (with no
+Autoware the island sits in its init-timeout stop, so both buttons read
+ignored). `python3 tools/timeline/board_buttons.py inject sw1 --elf <elf>`
+presses through the firmware without a finger, to tell a dead pad from a
+dead firmware path.
 
 ## C8: the proof cast (re-recording it)
 

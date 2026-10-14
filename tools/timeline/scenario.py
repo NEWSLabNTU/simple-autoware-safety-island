@@ -586,6 +586,7 @@ def run(act, log):
         elif act == "a":
             spin_for(respond)
             b.press("takeover")
+        if act == "a":
             spin_for(8.0, lambda: st["tor"] == 1 and st["ctrl"] == ControlModeReport.MANUAL)
             spin_for(max(0.0, 14.0 - (time.time() - t_inject)))  # past the would-be expiry
             mrm_normal = st["mrm"] is not None and st["mrm"][0] == MrmState.NORMAL
