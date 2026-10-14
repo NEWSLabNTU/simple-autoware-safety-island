@@ -38,6 +38,13 @@
 #   L3_DEBUG=1          SYS_PTRACE, for gdb inside.
 #   L3_DIAG_GRAPH=stock the stock diagnostic graph instead of the overlay's
 #                       autoware-l3.yaml (phase9-C8; l3-autoware reads it).
+#   L3_PLANNING_COMMON=<file>
+#                       a host file mounted read-only over autoware_launch's
+#                       planning common.param.yaml (max_vel and the
+#                       normal/limit acceleration and jerk) for this
+#                       container only; the image is not changed. phase10-B6
+#                       runs at the declared entry speed with
+#                       demo/l3/config/common-30kmh.param.yaml.
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -67,6 +74,10 @@ args=(
 [ -n "${ZENOH_CONFIG_OVERRIDE:-}" ] && args+=(-e ZENOH_CONFIG_OVERRIDE="$ZENOH_CONFIG_OVERRIDE")
 [ -n "${GATE_RTPRIO:-}" ] && args+=(-e GATE_RTPRIO="$GATE_RTPRIO")
 [ -n "${L3_DIAG_GRAPH:-}" ] && args+=(-e L3_DIAG_GRAPH="$L3_DIAG_GRAPH")  # phase9-C8: stock | l3
+if [ -n "${L3_PLANNING_COMMON:-}" ]; then
+    [ -f "$L3_PLANNING_COMMON" ] || { echo "run.sh: L3_PLANNING_COMMON=$L3_PLANNING_COMMON does not exist" >&2; exit 1; }
+    args+=(-v "$(readlink -f "$L3_PLANNING_COMMON"):/opt/autoware/1.5.0/share/autoware_launch/config/planning/scenario_planning/common/common.param.yaml:ro")
+fi
 [ -t 0 ] && [ -t 1 ] && args+=(-it)
 
 if [ "${L3_X:-0}" = "1" ]; then

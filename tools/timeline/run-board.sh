@@ -108,10 +108,17 @@
 # C8's graph and W18's hazard relay. On this host the bare tag
 # sai-l3-autoware:1.5.0 is still W3's build without W11's rmw_zenoh 0.1.10
 # and rclcpp patch, and sat at 63-64/68 composables in 3 of 5 starts),
-# DRIVE_SECS / OBSERVE_SECS / RESPOND_AFTER (scenario.py's), SAI_DEMO_LOCK,
+# DRIVE_SECS / OBSERVE_SECS / RESPOND_AFTER / MIN_SPEED and the planning
+# simulator's pose and goal INIT_X/Y/QZ/QW, GOAL_X/Y/QZ/QW (scenario.py's;
+# default demo/scenario_driver.py's), L3_PLANNING_COMMON (a planning common
+# parameter file for Autoware, demo/l3/container/run.sh; phase10-B6 runs at
+# the declared entry speed with demo/l3/config/common-30kmh.param.yaml),
+# SAI_DEMO_LOCK,
 # RB_HOST_WS (the host overlay; default build/l3-host-ws/install, else
 # demo/host_ws/install), RB_LOAD_MAX (the 1-min load ceiling, 35),
-# RB_LOAD_WAIT (how long to wait for the load to drop, 180 s; 900 s with
+# RB_EXPLAIN (a saved `play_launch check --explain` output whose budgets the
+# table uses instead of this tree's contract's, phase10-B6; the current one
+# is kept as explain.current.txt), RB_LOAD_WAIT (how long to wait for the load to drop, 180 s; 900 s with
 # --sim carla), FUSER_TIMEOUT (10 s, the bound on `fuser` here and in just
 # l3-peer), RB_PYOCD_TIMEOUT (30 s, the bound on `pyocd list`).
 # --sim carla only: RB_XOSC (the scenario), RB_CARLA_TIMEOUT (360 s for
@@ -274,6 +281,9 @@ l3() {
     env -i HOME="$HOME" USER="$USER" PATH=/usr/bin:/bin:$HOME/.local/bin \
         ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-10}" L3_WS="$ws" \
         DRIVE_SECS="${DRIVE_SECS:-3}" OBSERVE_SECS="${OBSERVE_SECS:-30}" RESPOND_AFTER="${RESPOND_AFTER:-3}" \
+        MIN_SPEED="${MIN_SPEED:-1.0}" \
+        ${INIT_X:+INIT_X="$INIT_X"} ${INIT_Y:+INIT_Y="$INIT_Y"} ${INIT_QZ:+INIT_QZ="$INIT_QZ"} ${INIT_QW:+INIT_QW="$INIT_QW"} \
+        ${GOAL_X:+GOAL_X="$GOAL_X"} ${GOAL_Y:+GOAL_Y="$GOAL_Y"} ${GOAL_QZ:+GOAL_QZ="$GOAL_QZ"} ${GOAL_QW:+GOAL_QW="$GOAL_QW"} \
         SCENARIO_SIM="${SCENARIO_SIM:-planning}" CARLA_HOLD_SECS="${CARLA_HOLD_SECS:-5}" ENGAGE_SECS="${ENGAGE_SECS:-300}" \
         SCENARIO_REARM="${SCENARIO_REARM:-}" SCENARIO_TRIGGER="${SCENARIO_TRIGGER:-button}" \
         SCENARIO_ACT_SOCKET="${SCENARIO_ACT_SOCKET:-}" TRIGGER_SECS="${TRIGGER_SECS:-180}" \
@@ -375,6 +385,9 @@ if [ "$dry" = 0 ]; then
     just _trace-meta "$out" "$elf"
     { echo "target=$target"; echo "act=$act"; echo "sim=$sim"; echo "loadavg_start=$(cut -d' ' -f1-3 /proc/loadavg)"
       [ "$sim" = carla ] && echo "trigger=$rb_trigger"
+      echo "min_speed=${MIN_SPEED:-1.0} drive_secs=${DRIVE_SECS:-3}"
+      [ -n "${INIT_X:-}${GOAL_X:-}" ] && echo "init=${INIT_X:-} ${INIT_Y:-} ${INIT_QZ:-} ${INIT_QW:-} goal=${GOAL_X:-} ${GOAL_Y:-} ${GOAL_QZ:-} ${GOAL_QW:-}"
+      [ -n "${L3_PLANNING_COMMON:-}" ] && echo "planning_common=$(readlink -f "$L3_PLANNING_COMMON") sha256=$(sha256sum "$L3_PLANNING_COMMON" | cut -d' ' -f1) max_vel=$(sed -n 's/^ *max_vel: *\([0-9.]*\).*/\1/p' "$L3_PLANNING_COMMON")"
       [ "$rb_trigger" = board ] && echo "button_inject=${SCENARIO_BUTTON_INJECT:-0}"; } >> "$out.meta"
 fi
 start=$SECONDS
@@ -764,7 +777,17 @@ python3 src/safety_island_tracing/island_trace.py check "$out" > "$out.check.txt
 grep -E "^(ok|FAIL|info) +(window|violations)|trace-check" "$out.check.txt"
 # phase9-W4: the board's own record of runtime contract violations (SWD)
 [ -f "$dir/violations.txt" ] && sed 's/^/   /' "$dir/violations.txt"
+if [ -n "${RB_EXPLAIN:-}" ]; then
+    # phase10-B6: the declared budgets of a stated contract (another round's
+    # explain.txt), so the table compares with them; the current contract's
+    # output is kept beside it
+    python3 -c 'import sys; sys.path.insert(0,"tools/timeline"); import tlcommon as tl; open(sys.argv[1],"w").write(tl.explain_text())' "$dir/explain.current.txt"
+    cp "$RB_EXPLAIN" "$dir/explain.txt"
+    echo "   declared budgets from RB_EXPLAIN=$RB_EXPLAIN (this tree's contract: $dir/explain.current.txt)"
+    echo "explain=$(readlink -f "$RB_EXPLAIN") sha256=$(sha256sum "$RB_EXPLAIN" | cut -d' ' -f1)" >> "$out.meta"
+else
 python3 -c 'import sys; sys.path.insert(0,"tools/timeline"); import tlcommon as tl; open(sys.argv[1],"w").write(tl.explain_text())' "$dir/explain.txt"
+fi
 python3 tools/timeline/merge.py "$out" "$dir" || echo "merge failed: the plot has host events only"
 python3 tools/timeline/render.py "$dir" --table | tee "$dir/table.md"
 if [ -n "$void" ]; then
