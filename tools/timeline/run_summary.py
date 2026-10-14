@@ -23,6 +23,15 @@ phase9-W2: an act whose trace window was re-armed on the same boot reads
 `trace-check PASS (window <n> of the boot)`. Its `stored` count is the
 boot's: nano-ros's violation record is never drained, so it includes the
 verdicts of the acts before it on that boot.
+
+CARLA demo C3 (run-board.sh --sim carla, island.trace.meta `sim=carla`): the
+line gains `; sim carla, RTF <r>, SSv2 junit <PASS|FAIL|->` (the act's `rtf`
+event in scenario.jsonl; <dir>/result.junit.xml), and an act whose RTF is
+below RB_RTF_MIN (env, 0.95) or unknown reads `INVALID (RTF <r> < 0.95)` in
+place of PASS/FAIL: its wall-time and sim-time terms are not comparable
+(docs/design/carla-island-demo.md 4.2). A PASS whose SSv2 junit is not PASS
+reads FAIL: the act passes only when the island's verdict and the world's
+agree (design 2.3).
 """
 import json
 import os
@@ -51,6 +60,50 @@ def verdict(d):
         if e.get("kind") == "verdict":
             return "PASS" if e["value"]["ok"] else "FAIL"
     return "no verdict"
+
+
+def events(d, kind):
+    t = read(d, "scenario.jsonl") or ""
+    out = []
+    for line in t.splitlines():
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue
+        if e.get("kind") == kind:
+            out.append(e)
+    return out
+
+
+def rtf(d):
+    e = events(d, "rtf")
+    return e[-1]["value"].get("rtf") if e else None
+
+
+def junit(d):
+    t = read(d, "result.junit.xml")
+    if t is None:
+        return "-"
+    m = re.search(r"<testsuites[^>]*failures=\"(\d+)\"[^>]*errors=\"(\d+)\"[^>]*tests=\"(\d+)\"", t)
+    if not m:
+        return "?"
+    f, e, n = (int(x) for x in m.groups())
+    return "PASS" if f == 0 and e == 0 and n > 0 else f"FAIL ({f} failures, {e} errors)"
+
+
+def sim(d, meta, v):
+    """CARLA runs: (verdict, the suffix)."""
+    m = re.search(r"^sim=(\S+)", meta or "", re.M)
+    if not m or m.group(1) != "carla":
+        return v, ""
+    r = rtf(d)
+    rmin = float(os.environ.get("RB_RTF_MIN", "0.95"))
+    j = junit(d)
+    if v == "PASS" and j != "PASS":  # design 2.3: an act passes only when both verdicts agree
+        v = f"FAIL (the island's verdict PASS, SSv2 junit {j})"
+    if v in ("PASS", "FAIL") and (r is None or r < rmin):
+        v = f"INVALID (RTF {'-' if r is None else f'{r:.3f}'} < {rmin}; the scenario said {v})"
+    return v, f"; sim carla, RTF {'-' if r is None else f'{r:.3f}'}, SSv2 junit {j}"
 
 
 def table(d):
@@ -135,8 +188,9 @@ def main():
     if refused is not None:
         print(f"SUMMARY {run}{act}: REFUSED {refused.strip()}")
         return 0
-    print(f"SUMMARY {run}{act}: {verdict(d)}; {load(meta)}; {table(d)}; {trace_check(d)}; {stored(d)}; "
-          f"{serial(d)}; {heap(d)}{asserted(d)}")
+    v, carla = sim(d, meta, verdict(d))
+    print(f"SUMMARY {run}{act}: {v}; {load(meta)}; {table(d)}; {trace_check(d)}; {stored(d)}; "
+          f"{serial(d)}; {heap(d)}{asserted(d)}{carla}")
     return 0
 
 

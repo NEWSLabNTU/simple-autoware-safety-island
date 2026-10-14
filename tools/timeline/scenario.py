@@ -57,6 +57,17 @@ drive DRIVE_SECS past MIN_SPEED, then
 and prints one VERDICT line (exit 0 = PASS). Env: DRIVE_SECS (3),
 RESPOND_AFTER (3), OBSERVE_SECS (30), MIN_SPEED (1.0), INIT_*/GOAL_* as
 demo/scenario_driver.py.
+
+SCENARIO_SIM=carla (CARLA demo unit C3, run-board.sh --sim carla): the world
+is CARLA's and an SSv2 scenario, started beside this act, poses, routes and
+engages the ego, so steps 1-3 are skipped and the act waits up to
+ENGAGE_SECS (300) for the ego to move. The act also reads /clock and writes
+a `scenario` `rtf` event: simulated over wall seconds from the fault to the
+verdict (docs/design/carla-island-demo.md 4.2: the island's terms are wall
+time, the vehicle's sim time; an act below 0.95 is not judged), and holds
+CARLA_HOLD_SECS (5) before the restore buttons (odd-enter, hpc-restore), so
+the stop lasts long enough for the scenario's StandStillCondition (3 s of
+sim time) before Autoware may drive on.
 """
 import argparse
 import os
@@ -201,10 +212,8 @@ def run(act, log):
     sys.path.insert(0, os.path.join(tl.ROOT, "demo"))
     import scenario_driver as sd  # the demo's pose, goal and helpers
     from autoware_adapi_v1_msgs.msg import MrmState
-    from autoware_adapi_v1_msgs.srv import ChangeOperationMode
     from autoware_planning_msgs.msg import RouteState
     from autoware_vehicle_msgs.msg import ControlModeReport
-    from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
     from nav_msgs.msg import Odometry
     from rclpy.qos import DurabilityPolicy, QoSProfile
     from tier4_system_msgs.msg import MrmBehaviorStatus
@@ -213,6 +222,8 @@ def run(act, log):
     respond = float(ENV("RESPOND_AFTER", "3"))
     observe = float(ENV("OBSERVE_SECS", "30"))
     min_speed = float(ENV("MIN_SPEED", "1.0"))
+    carla = ENV("SCENARIO_SIM", "planning") == "carla"
+    hold = float(ENV("CARLA_HOLD_SECS", "5")) if carla else 0.0
     rclpy.init()
     node = rclpy.create_node("timeline_scenario")
     b = Buttons(log, node)
@@ -228,6 +239,14 @@ def run(act, log):
     node.create_subscription(ControlModeReport, "/vehicle/status/control_mode",
                              lambda m: st.update(ctrl=m.mode), q)
     node.create_subscription(RouteState, "/planning/route_state", lambda m: st.update(route=m.state), ql)
+    clock = dict(sim=None, wall=None)  # the latest /clock sample and the wall time it arrived
+    if carla:
+        from rclpy.qos import ReliabilityPolicy
+        from rosgraph_msgs.msg import Clock
+        node.create_subscription(
+            Clock, "/clock",
+            lambda m: clock.update(sim=m.clock.sec + m.clock.nanosec * 1e-9, wall=time.monotonic()),
+            QoSProfile(depth=10, reliability=ReliabilityPolicy.BEST_EFFORT))
 
     def spin_for(secs, until=None):
         t0 = time.time()
@@ -244,6 +263,76 @@ def run(act, log):
     if not spin_for(300, lambda: st["route"] is not None):
         say("FATAL: no /planning/route_state in 300 s"); os._exit(2)
     gate_pid()
+    if carla:
+        engage = float(ENV("ENGAGE_SECS", "300"))
+        say(f"== 1-3. CARLA: the SSv2 scenario poses, routes and engages the ego (up to {engage:.0f} s) ==")
+        if not spin_for(engage, lambda: (st["v"] or 0) > min_speed):
+            say(f"FATAL: the vehicle did not reach {min_speed} m/s (v={st['v']}, route {st['route']})"); os._exit(2)
+    else:
+        engage_planning(node, st, spin_for, say, sd, min_speed)
+    spin_for(drive)
+    v0 = st["v"]
+    say(f"== 4. driving at {v0:.2f} m/s; mrm {st['mrm']}, TOR {st['tor']}, control mode {st['ctrl']} ==")
+    ok, why = False, ""
+    t_inject = time.time()
+    c0 = (clock["sim"], clock["wall"])
+    if act in ("a", "b"):
+        b.press("odd-exit")
+        tor_on = spin_for(3.0, lambda: st["tor"] == 2)
+        say(f"takeover request on: {tor_on}")
+        if act == "a":
+            spin_for(respond)
+            b.press("takeover")
+            spin_for(8.0, lambda: st["tor"] == 1 and st["ctrl"] == ControlModeReport.MANUAL)
+            spin_for(max(0.0, 14.0 - (time.time() - t_inject)))  # past the would-be expiry
+            mrm_normal = st["mrm"] is not None and st["mrm"][0] == MrmState.NORMAL
+            ok = tor_on and st["tor"] == 1 and st["ctrl"] == ControlModeReport.MANUAL and mrm_normal
+            why = f"TOR on {tor_on}, TOR now {st['tor']}, control mode {st['ctrl']}, mrm {st['mrm']}"
+        else:
+            spin_for(observe, lambda: st["mrm"] and st["mrm"][0] == MrmState.MRM_SUCCEEDED)
+            spin_for(1.0)
+            ok = (tor_on and st["mrm"] is not None and st["mrm"][0] == MrmState.MRM_SUCCEEDED
+                  and st["mrm"][1] == 3 and st["v"] is not None and abs(st["v"]) < 0.01)
+            why = f"TOR on {tor_on}, mrm {st['mrm']} (3 = COMFORTABLE_STOP), v {st['v']:.3f}"
+        c1 = (clock["sim"], clock["wall"])
+        spin_for(1.0 + hold)
+        b.press("odd-enter")
+        spin_for(3.0)
+    elif act == "encore":
+        b.press("hpc-loss")
+        spin_for(observe, lambda: st["mrm"] and st["mrm"][0] == MrmState.MRM_SUCCEEDED)
+        spin_for(1.0)
+        ok = st["mrm"] is not None and st["mrm"][0] == MrmState.MRM_SUCCEEDED and st["mrm"][1] == 2 \
+            and st["v"] is not None and abs(st["v"]) < 0.01
+        why = f"mrm {st['mrm']} (2 = EMERGENCY_STOP), v {st['v']:.3f}"
+        c1 = (clock["sim"], clock["wall"])
+        spin_for(hold)
+        b.press("hpc-restore")
+        spin_for(5.0, lambda: st["mrm"] and st["mrm"][0] == MrmState.NORMAL)
+        why += f", after restore mrm {st['mrm']}"
+    else:
+        sys.exit(f"scenario: unknown act {act}")
+    rtf = None
+    if carla:
+        if None not in c0 and None not in c1 and c1[1] > c0[1]:
+            rtf = (c1[0] - c0[0]) / (c1[1] - c0[1])
+            b.w.write("scenario", "rtf", marker=act,
+                      value=dict(rtf=round(rtf, 4), sim_s=round(c1[0] - c0[0], 3), wall_s=round(c1[1] - c0[1], 3)))
+            why += f"; RTF {rtf:.3f} ({c1[0] - c0[0]:.2f} sim s over {c1[1] - c0[1]:.2f} wall s)"
+        else:
+            b.w.write("scenario", "rtf", marker=act, value=dict(rtf=None))
+            why += "; RTF - (no /clock)"
+    say(f"VERDICT: {'PASS' if ok else 'FAIL'} {act}: v at the fault {v0:.2f} m/s; {why}")
+    b.w.write("scenario", "verdict", marker=act, value=dict(ok=bool(ok), why=why, v0=v0, rtf=rtf))
+    os._exit(0 if ok else 1)
+
+
+def engage_planning(node, st, spin_for, say, sd, min_speed):
+    """Steps 1-3 on the planning simulator: initial pose, goal, engage."""
+    import rclpy
+    from autoware_adapi_v1_msgs.srv import ChangeOperationMode
+    from autoware_planning_msgs.msg import RouteState
+    from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
     say("== 1. initial pose ==")
     pub = node.create_publisher(PoseWithCovarianceStamped, "/initialpose", 1)
     m = PoseWithCovarianceStamped()
@@ -284,47 +373,6 @@ def run(act, log):
         spin_for(4.0)
     if not spin_for(60, lambda: (st["v"] or 0) > min_speed):
         say(f"FATAL: the vehicle did not reach {min_speed} m/s (v={st['v']})"); os._exit(2)
-    spin_for(drive)
-    v0 = st["v"]
-    say(f"== 4. driving at {v0:.2f} m/s; mrm {st['mrm']}, TOR {st['tor']}, control mode {st['ctrl']} ==")
-    ok, why = False, ""
-    t_inject = time.time()
-    if act in ("a", "b"):
-        b.press("odd-exit")
-        tor_on = spin_for(3.0, lambda: st["tor"] == 2)
-        say(f"takeover request on: {tor_on}")
-        if act == "a":
-            spin_for(respond)
-            b.press("takeover")
-            spin_for(8.0, lambda: st["tor"] == 1 and st["ctrl"] == ControlModeReport.MANUAL)
-            spin_for(max(0.0, 14.0 - (time.time() - t_inject)))  # past the would-be expiry
-            mrm_normal = st["mrm"] is not None and st["mrm"][0] == MrmState.NORMAL
-            ok = tor_on and st["tor"] == 1 and st["ctrl"] == ControlModeReport.MANUAL and mrm_normal
-            why = f"TOR on {tor_on}, TOR now {st['tor']}, control mode {st['ctrl']}, mrm {st['mrm']}"
-        else:
-            spin_for(observe, lambda: st["mrm"] and st["mrm"][0] == MrmState.MRM_SUCCEEDED)
-            spin_for(1.0)
-            ok = (tor_on and st["mrm"] is not None and st["mrm"][0] == MrmState.MRM_SUCCEEDED
-                  and st["mrm"][1] == 3 and st["v"] is not None and abs(st["v"]) < 0.01)
-            why = f"TOR on {tor_on}, mrm {st['mrm']} (3 = COMFORTABLE_STOP), v {st['v']:.3f}"
-        spin_for(1.0)
-        b.press("odd-enter")
-        spin_for(3.0)
-    elif act == "encore":
-        b.press("hpc-loss")
-        spin_for(observe, lambda: st["mrm"] and st["mrm"][0] == MrmState.MRM_SUCCEEDED)
-        spin_for(1.0)
-        ok = st["mrm"] is not None and st["mrm"][0] == MrmState.MRM_SUCCEEDED and st["mrm"][1] == 2 \
-            and st["v"] is not None and abs(st["v"]) < 0.01
-        why = f"mrm {st['mrm']} (2 = EMERGENCY_STOP), v {st['v']:.3f}"
-        b.press("hpc-restore")
-        spin_for(5.0, lambda: st["mrm"] and st["mrm"][0] == MrmState.NORMAL)
-        why += f", after restore mrm {st['mrm']}"
-    else:
-        sys.exit(f"scenario: unknown act {act}")
-    say(f"VERDICT: {'PASS' if ok else 'FAIL'} {act}: v at the fault {v0:.2f} m/s; {why}")
-    b.w.write("scenario", "verdict", marker=act, value=dict(ok=bool(ok), why=why, v0=v0))
-    os._exit(0 if ok else 1)
 
 
 def main():

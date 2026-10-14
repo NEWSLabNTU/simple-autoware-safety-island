@@ -72,7 +72,7 @@
 						<RoutingAction>
 							<AcquirePositionAction>
 								<Position>
-									<WorldPosition x="110.0" y="-130.3" z="0.0" h="3.14159" p="0" r="0" />
+									<WorldPosition x="120.0" y="-129.8" z="0.0" h="3.14159" p="0" r="0" />
 								</Position>
 							</AcquirePositionAction>
 						</RoutingAction>
@@ -87,11 +87,12 @@
 						<EntityRef entityRef="ego" />
 					</Actors>
 					<Maneuver name="end_conditions">
-						<!-- Act b: the island's comfortable stop. Standstill for 3 s
-						     after 20 s of simulation (the start's standstill does
-						     not count); conditions in one group are ANDed. Act a
-						     (MANUAL, the car keeps driving) is judged by the act
-						     daemon, which can see domain 10; SSv2 cannot. -->
+						<!-- Acts b and encore: the island's stop. Standstill for 3 s
+						     once the ego is more than 5 m from its start (the start's
+						     standstill does not count; simulation time starts at
+						     engage, so a time guard would not tell the two apart);
+						     conditions in one group are ANDed. Act a (MANUAL, the car
+						     keeps driving) is town01_island_takeover.xosc. -->
 						<Event name="success" priority="parallel">
 							<Action name="exit_success">
 								<UserDefinedAction>
@@ -100,10 +101,19 @@
 							</Action>
 							<StartTrigger>
 								<ConditionGroup>
-									<Condition name="after_start" delay="0" conditionEdge="none">
-										<ByValueCondition>
-											<SimulationTimeCondition value="20" rule="greaterThan" />
-										</ByValueCondition>
+									<Condition name="moved" delay="0" conditionEdge="none">
+										<ByEntityCondition>
+											<TriggeringEntities triggeringEntitiesRule="any">
+												<EntityRef entityRef="ego" />
+											</TriggeringEntities>
+											<EntityCondition>
+												<DistanceCondition freespace="false" rule="greaterThan" value="5.0" relativeDistanceType="euclidianDistance" coordinateSystem="entity" routingAlgorithm="undefined">
+													<Position>
+														<WorldPosition x="315.0" y="-130.3" z="0.0" h="0" p="0" r="0" />
+													</Position>
+												</DistanceCondition>
+											</EntityCondition>
+										</ByEntityCondition>
 									</Condition>
 									<Condition name="stopped" delay="0" conditionEdge="none">
 										<ByEntityCondition>

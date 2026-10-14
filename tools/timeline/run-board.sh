@@ -28,6 +28,22 @@
 #   --late-join           board: the island joins after Autoware (phase9-W12):
 #                         the core is held halted from step 1 until Autoware,
 #                         the gate and the probe are up, then reset (step 6b)
+#   --sim planning|carla  planning (default): Autoware's planning simulator in
+#                         the L3 container (just l3-autoware). carla (CARLA demo
+#                         unit C3, docs/design/carla-island-demo.md): CARLA
+#                         0.9.16 offscreen (just carla-server), the scenario
+#                         side (just carla-sim) and the CARLA ego on zenoh
+#                         domain 10 with acb allow_manual:=true (just
+#                         carla-ego) instead of the container; at step 7 an
+#                         SSv2 scenario (RB_XOSC; default
+#                         demo/carla/scenarios/town01_island_takeover.xosc for
+#                         a, town01_island_odd.xosc for b and encore) poses,
+#                         routes and engages the ego, the act
+#                         (SCENARIO_SIM=carla) waits for it to drive and
+#                         records the RTF; its junit is kept as
+#                         <dir>/result.junit.xml and the SUMMARY gains
+#                         `sim carla, RTF <r>, SSv2 junit <PASS|FAIL|->`. An act
+#                         below RB_RTF_MIN (0.95) reads INVALID, not PASS/FAIL
 #   --dry-run             print every step, run none of them
 #
 # The sequence (each step prints `== <n>. <what>`):
@@ -40,7 +56,8 @@
 #   4. wait for the island to join: a sample of /system/mrm/emergency_stop/status
 #      (the operator publishes it at 30 Hz from boot, Autoware or not)
 #   5. Autoware in the container (just l3-autoware), until play_launch says
-#      "Startup complete"
+#      "Startup complete"; --sim carla: CARLA, the scenario side, the ego
+#      (its "Startup complete")
 #   6. the availability gate ($RB_GATE), the probe ($RB_PROBE)
 #  6b. --late-join only: reset the held island now, then step 4's wait
 #   7. the act ($RB_ACT, after RB_SETTLE s): tools/timeline/scenario.py run
@@ -75,8 +92,14 @@
 # DRIVE_SECS / OBSERVE_SECS / RESPOND_AFTER (scenario.py's), SAI_DEMO_LOCK,
 # RB_HOST_WS (the host overlay; default build/l3-host-ws/install, else
 # demo/host_ws/install), RB_LOAD_MAX (the 1-min load ceiling, 35),
-# RB_LOAD_WAIT (how long to wait for the load to drop, 180 s), FUSER_TIMEOUT
-# (10 s, the bound on `fuser` here and in just l3-peer).
+# RB_LOAD_WAIT (how long to wait for the load to drop, 180 s; 900 s with
+# --sim carla), FUSER_TIMEOUT (10 s, the bound on `fuser` here and in just
+# l3-peer), RB_PYOCD_TIMEOUT (30 s, the bound on `pyocd list`).
+# --sim carla only: RB_XOSC (the scenario), RB_CARLA_TIMEOUT (360 s for
+# CARLA's RPC port), RB_SSV2_TIMEOUT (240 s for the scenario to end after the
+# act), RB_RTF_MIN (0.95), ENGAGE_SECS (300) and CARLA_HOLD_SECS (5)
+# (scenario.py's), CARLA_EGO_ARGS (more ego launch arguments; allow_manual:=true
+# is always passed), CARLA_DIR / CSB_DIR (just/carla.just).
 #
 # Preflight (phase9-U5), after the lock, before anything is flashed. Each
 # failure prints one line `run-board: REFUSED <reason>` (kept in
@@ -111,7 +134,7 @@ set -u
 # the image that starts; the same default as L3_IMAGE in just/l3-demo.just
 : "${L3_IMAGE:=sai-l3-autoware:1.5.0-c8}"
 export L3_IMAGE
-target=board elf="" flash=1 dry=0 keep_link=0 keep_boot=0 link_down=0 late_join=0
+target=board elf="" flash=1 dry=0 keep_link=0 keep_boot=0 link_down=0 late_join=0 sim=planning
 while [ $# -gt 0 ]; do
     case "$1" in
         --target) target="$2"; shift 2;;
@@ -121,6 +144,7 @@ while [ $# -gt 0 ]; do
         --keep-boot) keep_boot=1; flash=0; shift;;
         --link-down) link_down=1; shift;;
         --late-join) late_join=1; shift;;
+        --sim) sim="$2"; shift 2;;
         --dry-run) dry=1; shift;;
         -h|--help) sed -n '2,/^set -u/p' "$0" | sed '$d'; exit 0;;
         --*) echo "run-board: unknown option $1" >&2; exit 2;;
@@ -151,6 +175,7 @@ act="${1:?act: a|b|encore}"
 id="${2:?run id}"
 case "$act" in a|b|encore) ;; *) echo "run-board: act is a, b or encore" >&2; exit 2;; esac
 case "$target" in board|qemu) ;; *) echo "run-board: --target board|qemu" >&2; exit 2;; esac
+case "$sim" in planning|carla) ;; *) echo "run-board: --sim planning|carla" >&2; exit 2;; esac
 if [ "$target" != board ] && [ $((keep_link + keep_boot + late_join)) -gt 0 ]; then
     echo "run-board: --keep-link, --keep-boot and --late-join are board-only" >&2; exit 2
 fi
@@ -163,6 +188,12 @@ out="$dir/island.trace"
 mon="$repo/$dir/qemu-monitor.sock"
 gws="$repo/$dir/gw.sock"
 settle="${RB_SETTLE:-15}"
+xosc_default=demo/carla/scenarios/town01_island_odd.xosc
+[ "$act" = a ] && xosc_default=demo/carla/scenarios/town01_island_takeover.xosc
+xosc="$(readlink -f "${RB_XOSC:-$xosc_default}")"
+rtf_min="${RB_RTF_MIN:-0.95}"
+carla_pgs=() ssv2_pid=""
+if [ "$sim" = carla ]; then export SCENARIO_SIM=carla; fi
 : "${RB_GATE:=python3 tools/timeline/scenario.py gate --log $dir/gate.jsonl}"
 : "${RB_PROBE:=python3 tools/timeline/probe.py --out $dir/probe.jsonl}"
 : "${RB_ACT:=python3 tools/timeline/scenario.py run $act --log $dir/scenario.jsonl}"
@@ -202,6 +233,7 @@ l3() {
     env -i HOME="$HOME" USER="$USER" PATH=/usr/bin:/bin:$HOME/.local/bin \
         ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-10}" L3_WS="$ws" \
         DRIVE_SECS="${DRIVE_SECS:-3}" OBSERVE_SECS="${OBSERVE_SECS:-30}" RESPOND_AFTER="${RESPOND_AFTER:-3}" \
+        SCENARIO_SIM="${SCENARIO_SIM:-planning}" CARLA_HOLD_SECS="${CARLA_HOLD_SECS:-5}" ENGAGE_SECS="${ENGAGE_SECS:-300}" \
         bash -c "cd '$repo'; source demo/l3/container/bin/l3-env >/dev/null 2>&1; $*"
 }
 export -f l3
@@ -230,13 +262,33 @@ teardown() {
         [ -n "$peer_pg" ] && link+=("$peer_pg")
         [ -n "$router_pg" ] && link+=("$router_pg")
     fi
+    # --sim carla: the scenario, the ego and the scenario side first, with
+    # SIGINT (what C1's runs used: play_launch stops its tree on it), CARLA
+    # with the rest
+    if [ "$sim" = carla ]; then
+        for p in "${carla_pgs[@]}"; do kill -INT -- "-$p" 2>/dev/null; done
+        local t0=$SECONDS
+        while (( SECONDS - t0 < 20 )); do
+            local alive=0
+            for p in "${carla_pgs[@]}"; do kill -0 -- "-$p" 2>/dev/null && alive=1; done
+            [ "$alive" = 0 ] && break
+            sleep 1
+        done
+    fi
     for p in "${pids[@]}" "${link[@]}"; do kill -TERM -- "-$p" 2>/dev/null; done
     # only what this run started (its own process groups, its container):
     # never a pkill by name, another run may own a router on this host
-    docker stop -t 10 "${L3_NAME:-sai-l3}" > /dev/null 2>&1
+    [ "$sim" = planning ] && docker stop -t 10 "${L3_NAME:-sai-l3}" > /dev/null 2>&1
     sleep 3
+    [ "$sim" = carla ] && sleep 7
     for p in "${pids[@]}" "${link[@]}"; do kill -KILL -- "-$p" 2>/dev/null; done
     rm -f "$mon" "$gws"
+    if [ "$sim" = carla ]; then
+        # what outlived its process group (reparented to init), listed, not killed:
+        # a name match could be another user's or another run's
+        ps -eo pid,ppid,comm --no-headers | awk '$2 == 1 && ($3 ~ /^(component_|play_launch|acb_bridge|agent|relay|carla_scenario|CarlaUE4|scenario_test_r|openscenario_in|simple_sensor_s)/)' > "$dir/orphans.txt"
+        echo "   orphans: $(wc -l < "$dir/orphans.txt") ($dir/orphans.txt)"
+    fi
     if [ "$keep_link" = 1 ] && [ -n "$peer_pg" ] && kill -0 -- "-$peer_pg" 2>/dev/null; then
         { echo "peer_pgid=$peer_pg"; echo "router_pgid=$router_pg"; echo "elf=$(readlink -f "$elf")"
           echo "elf_sha256=$(sha256sum "$elf" | cut -d' ' -f1)"; echo "run=$id"; } > "$linkstate"
@@ -271,17 +323,19 @@ if [ "$dry" = 0 ]; then
     fi
 fi
 [ -f "$elf" ] || { echo "run-board: no $elf"; [ "$dry" = 1 ] || exit 1; }
-echo "run-board: act $act, run $id, target $target, image $elf"
+echo "run-board: act $act, run $id, target $target, image $elf, sim $sim"
 if [ "$dry" = 0 ]; then
     : > "$out"
     just _trace-meta "$out" "$elf"
-    { echo "target=$target"; echo "act=$act"; echo "loadavg_start=$(cut -d' ' -f1-3 /proc/loadavg)"; } >> "$out.meta"
+    { echo "target=$target"; echo "act=$act"; echo "sim=$sim"; echo "loadavg_start=$(cut -d' ' -f1-3 /proc/loadavg)"; } >> "$out.meta"
 fi
 start=$SECONDS
 
 # ---- phase9-U5 / C6: refuse what cannot run, with one line of reason ----
 load_max="${RB_LOAD_MAX:-35}"
-load_wait="${RB_LOAD_WAIT:-180}"
+# --sim carla: the ego's start (62 processes, 125 composables) drives the 1-min
+# load to 230 on this host and it decays for minutes (c3-a1: 108 after 180 s)
+load_wait="${RB_LOAD_WAIT:-$([ "$sim" = carla ] && echo 900 || echo 180)}"
 fuser_to="${FUSER_TIMEOUT:-10}"
 export FUSER_TIMEOUT="$fuser_to"
 tty="${L3_PEER_TTY:-/dev/serial/by-id/usb-FTDI_FT232R_USB_UART_B001UCTE-if00-port0}"
@@ -346,12 +400,23 @@ preflight() {
     c="$(grep -E "^(sai-l3|${L3_NAME:-sai-l3}$)" <<< "$c" | paste -sd' ' -)"
     [ -z "$c" ] || { refuse "container(s) running: $c -- another act or a leftover; \`docker stop $c\` if nothing uses it"; return 1; }
     echo "   no sai-l3 container running"
+    if [ "$sim" = carla ]; then
+        # this run starts CARLA, the scenario side and the ego: none may be up
+        local port
+        for port in "${CARLA_PORT:-2000}" 5560 8000; do
+            if ss -ltn | awk '{print $4}' | grep -qE "[:.]$port\$"; then
+                refuse "--sim carla: port $port is already listening (a CARLA, csb or Traffic Manager of another run)"; return 1
+            fi
+        done
+        [ -f "$xosc" ] || { refuse "--sim carla: no scenario $xosc"; return 1; }
+        echo "   CARLA ports free; scenario $xosc"
+    fi
     if [ "$target" = board ]; then
         local o
         o="$(others_pyocd)"
         [ -z "$o" ] || { refuse "the probe is in use by another process: $(head -n1 <<< "$o")$( [ "$(wc -l <<< "$o")" -gt 1 ] && echo " (+$(( $(wc -l <<< "$o") - 1 )) more)")"; return 1; }
-        o="$(timeout 30 pyocd list 2>&1)"; rc=$?
-        [ "$rc" != 124 ] || { refuse "\`pyocd list\` took over 30 s -- is the probe wedged? replug the MCU-Link"; return 1; }
+        o="$(timeout "${RB_PYOCD_TIMEOUT:-30}" pyocd list 2>&1)"; rc=$?
+        [ "$rc" != 124 ] || { refuse "\`pyocd list\` took over ${RB_PYOCD_TIMEOUT:-30} s (RB_PYOCD_TIMEOUT; under heavy I/O wait python alone can take that) -- is the probe wedged? replug the MCU-Link"; return 1; }
         grep -qiE 'mcu-?link|cmsis-dap' <<< "$o" || { refuse "no debug probe: \`pyocd list\` shows no MCU-Link (${o##*$'\n'})"; return 1; }
         echo "   probe: $(grep -iE 'mcu-?link|cmsis-dap' <<< "$o" | head -n1 | tr -s ' ' | cut -c1-80)"
         [ -e "$tty" ] || { refuse "the gateway tty $tty does not exist -- is the DCD-LZ cable plugged in?"; return 1; }
@@ -380,6 +445,12 @@ preflight() {
 }
 preflight || finish_refused
 trap 'teardown; exit 130' INT TERM
+
+# --sim carla: the 1-min load every 10 s for the whole run (load.log); the
+# CARLA stack's own start and other users' jobs both move it
+if [ "$sim" = carla ]; then
+    bg "$dir/load.log" bash -c 'while :; do echo "$(date +%T) $(cut -d" " -f1-3 /proc/loadavg)"; sleep 10; done'
+fi
 
 step "1. flash"
 if [ "$target" = board ] && [ "$flash" = 1 ]; then
@@ -479,6 +550,37 @@ join_island() {
 step "4. wait for the island to join"
 if [ "$late_join" = 1 ]; then echo "   (late join: after Autoware, step 6b)"; else join_island; fi
 
+if [ "$sim" = carla ]; then
+step "5. CARLA, the scenario side, the ego (--sim carla)"
+# just/carla.just; each in its own process group (bg), kept in carla_pgs for
+# the SIGINT teardown. CARLA first and alone: its RPC port, then 20 s for
+# the world to load (C1's start.sh)
+bgc() { bg "$@"; [ "$dry" = 1 ] || carla_pgs+=("${pids[-1]}"); }
+bgc "$dir/carla.log" just carla-server
+wait_for "${RB_CARLA_TIMEOUT:-360}" "CARLA's RPC port ${CARLA_PORT:-2000}" \
+    bash -c "(exec 3<>/dev/tcp/127.0.0.1/${CARLA_PORT:-2000}) 2>/dev/null" || { teardown; exit 1; }
+[ "$dry" = 1 ] || sleep 20
+bgc "$dir/csb.log" just carla-sim
+[ "$dry" = 1 ] || sleep 10
+aw_ok=0
+for attempt in 1 2; do
+    CARLA_EGO_ARGS="allow_manual:=true ${CARLA_EGO_ARGS:-}" bgc "$dir/autoware.log" just carla-ego
+    ego_pid="${pids[-1]:-}"
+    # stop waiting when the ego's recipe has exited (gone or a zombie) without it
+    if wait_for "${RB_AW_TIMEOUT:-300}" "the CARLA ego (Startup complete, or its recipe gone), attempt $attempt" \
+            bash -c "grep -qa 'Startup complete' '$dir/autoware.log' || { s=\$(ps -o stat= -p ${ego_pid:-0}); [ -z \"\$s\" ] || [[ \$s == Z* ]]; }" \
+            && grep -qa "Startup complete" "$dir/autoware.log"; then
+        if ! grep -qsaE 'Startup complete with failures|"ok":false' "$dir/autoware.log"; then aw_ok=1; break; fi
+        echo "   REFUSED: a short start, $(grep -aoE 'composable [0-9]+/[0-9]+ loaded' "$dir/autoware.log" | head -n1); stopping it"
+    elif [ "$dry" != 1 ] && ! grep -qa "Startup complete" "$dir/autoware.log"; then
+        echo "   the ego did not start: $(grep -av '^\s*$' "$dir/autoware.log" | tail -n1 | cut -c1-200)"
+    fi
+    [ "$dry" = 1 ] && { aw_ok=1; break; }
+    kill -INT -- "-${pids[-1]}" 2>/dev/null; sleep 20; kill -KILL -- "-${pids[-1]}" 2>/dev/null
+    mv "$dir/autoware.log" "$dir/autoware.attempt$attempt.log"; sleep 10
+done
+[ "$aw_ok" = 1 ] || { teardown; exit 1; }
+else
 step "5. Autoware (container)"
 # demo/l3/README.md's trap: play_launch can sit at "N composable(s) still
 # constructing"; the cure is to stop it, wait out the zenoh lease, start again.
@@ -500,6 +602,7 @@ for attempt in 1 2; do
     mv "$dir/autoware.log" "$dir/autoware.attempt$attempt.log"; sleep 10
 done
 [ "$aw_ok" = 1 ] || { teardown; exit 1; }
+fi
 
 step "6. the gate and the probe"
 bg "$dir/gate.stdout" l3 "exec $RB_GATE"; gate_pid="${pids[*]: -1}"
@@ -536,6 +639,16 @@ if [ "$target" = board ] && [ "$dry" != 1 ]; then
     python3 tools/timeline/readout.py --target board --elf "$elf" --out "$dir/serial-pre" --serial-only \
         2>&1 | sed 's/^/   /'
 fi
+if [ "$sim" = carla ]; then
+    # the world: SSv2 poses, routes and engages the ego; the act waits for it to drive
+    if [ "$dry" = 1 ]; then echo "   [dry-run] OUTPUT_DIR=$dir/ssv2 just carla-scenario $xosc (background)"
+    else
+        mkdir -p "$dir/ssv2"
+        OUTPUT_DIR="$repo/$dir/ssv2" bgc "$dir/ssv2.log" just carla-scenario "$xosc"
+        ssv2_pid="${pids[-1]}"
+        echo "xosc=$xosc" >> "$out.meta"
+    fi
+fi
 if [ "$dry" = 1 ]; then echo "   [dry-run] $RB_ACT"; rc=0; else
     l3 "$RB_ACT" 2>&1 | tee "$dir/act.log"; rc=${PIPESTATUS[0]}; fi
 # phase9-U5: were the probe and the gate still up when the act ended?
@@ -557,6 +670,16 @@ else
     run python3 tools/timeline/readout.py --target qemu --elf "$elf" --out "$out" --monitor "$mon"
 fi
 trc_read=$?
+
+if [ "$sim" = carla ] && [ "$dry" != 1 ] && [ -n "$ssv2_pid" ]; then
+    step "8b. the SSv2 scenario's verdict (up to ${RB_SSV2_TIMEOUT:-240} s)"
+    # ended = gone or a zombie (this script's child until reaped; kill -0 still answers)
+    wait_for "${RB_SSV2_TIMEOUT:-240}" "the SSv2 scenario to end" \
+        bash -c "s=\$(ps -o stat= -p $ssv2_pid); [ -z \"\$s\" ] || [[ \$s == Z* ]]"
+    j="$dir/ssv2/scenario_test_runner/result.junit.xml"
+    if [ -f "$j" ]; then cp "$j" "$dir/result.junit.xml"; grep -o '<testsuites[^>]*>' "$j" | sed 's/^/   /'
+    else echo "   no junit ($j)"; fi
+fi
 
 teardown
 trap - INT TERM
