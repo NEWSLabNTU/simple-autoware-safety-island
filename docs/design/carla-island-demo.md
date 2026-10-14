@@ -10,7 +10,9 @@ carla`: encore, a and b PASS at RTF 1.000 with SSv2 junit PASS), unit C4,
 each act triggered by its scenario at its place (encore, a, b back to back
 on one boot; every ODD exit `segment` at x 239.8-240.0), unit C5, the booth
 image with the LEDs (its record matches the trace within a tick), and unit
-C8, the proof casts of acts b and a (`just carla-cast`). The island keeps today's serial link
+C8, the proof casts of acts b and a (`just carla-cast`), and unit C6, the
+board's SW1/SW2 driving acts a and encore (`RB_TRIGGER=board`, section
+3.4). The island keeps today's serial link
 and gateway (1.1); a direct island-Autoware link is recorded as future work
 (1.5), not chosen. Two repositories are named throughout:
 
@@ -48,6 +50,7 @@ contract checks stay exactly as they are.
 | C3, the board on the CARLA ego (G2) | `SUMMARY c3-e2 encore: PASS ... table 8/8`, `c3-b5 b: PASS ... table 15/15`, `c3-a7 a: PASS ... table 6/6`; each `sim carla, RTF 1.000, SSv2 junit PASS` (section 5, C3 row) |
 | C4, the scenario triggers the act | one boot: `c4-e3 encore: PASS ... 8/8 ... trigger hpc-loss at (285.1, -129.4)`, `c4-a2 a: PASS ... 6/6 ... trigger ODD EXIT segment (239.9, -129.4)`, `c4-b2 b: PASS ... 15/15`; each RTF 1.000, junit PASS; `vlimit 7.00 m/s asked, 4.17 selected` (section 5, C4) |
 | C5, the booth image | `c5-e3`, `c5-a1`, `c5-b2` PASS; `led_vs_trace.py`: every edge within 0.7 ms of the trace (section 5, C5) |
+| C6, the board's buttons | `c6-a2` a PASS 6/6 (`trigger board SW1`), `c6-e1` encore PASS 8/8 (`trigger board SW2`), each press injected through the firmware path; act b on the same image still to run (section 5, C6). The physical press is not verified (nobody at the board) |
 | C8, the proof cast | /mnt/evo/aeon/casts/cast-b1.mp4 (act b: ODD exit -> takeover request -> island MRM -> stop) and cast-a1.mp4 (act a: MANUAL, no MRM), with stills (section 5, C8) |
 
 ## 1. Architecture
@@ -678,7 +681,7 @@ Each unit ends in a gate that is a run, not a review.
 | C3 | the island attached: run-board.sh `--sim carla` (CARLA + scenario + ego instead of the container), RTF recorded per act | G2: encore, a, b each PASS with SUMMARY rows unchanged in meaning, RTF >= 0.95, SSv2 junit PASS | **[x] done 2026-10-14** (below) |
 | C4 | the scenarios: `town01_island_encore.xosc` (CustomCommandAction -> act daemon), `town01_island_odd.xosc` (written; ODD declared, 2.5) with `scenario_file:=` the same path; confirm SSv2 applies `Performance maxSpeed` as Autoware's velocity limit | each act triggered by the scenario at its place, three times back to back without a reflash (W2's re-arm); act a/b's `ODD EXIT` reason is `segment`, between x 239 and 241 | **[x] done 2026-10-14** (below) |
 | C5 | LEDs on by default for the booth image (`CONFIG_ISLAND_LED=y` in a booth conf, not the gate image) | the LED record shows the act's transitions with uptimes matching the trace's `mrm_operating` / `mrm_succeeded` edges within one tick | **[x] done 2026-10-14** (below) |
-| C6 | buttons: SW1 take over, SW2 HPC loss (3.4) | a visitor runs acts a and encore from the board alone | |
+| C6 | buttons: SW1 take over, SW2 HPC loss (3.4) | a visitor runs acts a and encore from the board alone | **[ ] gate passed 2026-10-15 for a and encore** (below; the press injected, the physical buttons not pressed); open: act b on the booth image with buttons (no-regression run) |
 | C7 | the container (phase 2, also W10) | C3's gate with Autoware + acb in the image | |
 | C8 | proof cast: a screencast of one act run end to end. A new 1920x1080 TurboVNC display `:3` (`/opt/TurboVNC/bin/vncserver :3 -geometry 1920x1080`; `:1`/`:2` are the user's 1240x900 desktops and `:9` another user's: never touched), recorded with `ffmpeg -f x11grab` from `:3`. On screen and readable at 1080p: the CARLA chase view of the hero; a map panel with the ODD polygon (2.5), the ego pose and a marker where the ODD exit fired; the takeover request (`/system/operation_mode/availability`, the operation mode, `/system/takeover_request/state`); the island's MRM state with its LED colour mirrored on screen (section 3.2's mapping, from `/system/fail_safe/mrm_state`; the host has no webcam for the board itself); wall-clock and simulation timestamps | one cast in which ODD exit -> takeover request -> island MRM -> stop are visible in that order | **[x] done 2026-10-14** (below) |
 | L1-L3 | direct link, future (1.5): D0 one router on serial, then D1 Ethernet after a media converter | 1.5's gates | |
@@ -1005,6 +1008,90 @@ act attached in 0.4-0.7 s); the re-arm at the exit with
 `RB_TRIGGER=button` (it keeps the first-drive re-arm) or with an ODD exit
 other than the polygon (the speed bound: the act would end FATAL, not
 re-armed, unless the polygon's lead came first).
+
+**C6 status (2026-10-15, evidence; act b on the booth image still to run).** Island `ec2b96c`, `ef312f6`,
+`dcf8425`: the booth image records SW1/SW2 (`CONFIG_ISLAND_BUTTONS`,
+`src/zephyr_entry/src/island_buttons.c`, section 3.4) and
+`run-board.sh --sim carla` takes `RB_TRIGGER=board` for a and the encore
+(demo/carla/README.md, "C6"). What a visitor does and what the operator
+starts:
+
+| | the operator | the visitor, at the board |
+|---|---|---|
+| a | `RB_TRIGGER=board run-board.sh --sim carla --elf <booth> a <id>` (flash or `--keep-boot`, the link, CARLA, the scenario side, the ego, the gate, the probe, the SSv2 scenario) | waits for the amber blink (the ODD exit, the scenario's), presses SW1 within the 10 s window: MANUAL |
+| encore | the same with `encore` | presses SW2 while the car drives (green): the HPC is lost, the island stops the car |
+
+The semantics, decided here (section 3.4 has the read, the debounce and
+why SWD rather than a topic):
+
+- **SW1** is accepted only while the island's takeover request is on;
+  the act then sends the MANUAL request its takeover button sent (the
+  `inject` event the a table measures from, as before) and records a
+  `button` event. A press outside the request is recorded as ignored
+  (`no takeover request`) and does nothing. No accepted SW1 within the
+  window: the island's ladder runs as in act b, and act a reads FAIL.
+- **SW2** is accepted only while the MRM state is NORMAL; the act then
+  SIGSTOPs the availability gate (the encore's hpc-loss, the table's
+  start edge, as before) and records the press as its `trigger` event. The
+  island learns of the loss only from the silence, as in every encore.
+- b has no button: `RB_TRIGGER=board` refuses it.
+
+The gate, with nobody at the board: `RB_BUTTON_INJECT=1`. The act writes
+the button's `inject` word through the bridge (the button reads pressed
+for 3 handler ticks, OR'ed with the pin), SW1 `RESPOND_AFTER` (3) s into
+the takeover request, SW2 when the encore scenario's datagram arrives
+(x 285, C4's place). The debounce, the edge, the state check, the record,
+the bridge and the act's reaction are the path a real press takes. Acts on
+the booth image (FLASH 583,356, RAM 276,056, DTCM 117,744 (13,328 B free;
+the 8 KiB guard holds), ITCM 13,068; against C5's booth image +744, 0,
++120, +40; the gate image, rebuilt, unchanged at 581,868 / 276,056 /
+117,536 / 12,996, `# CONFIG_ISLAND_BUTTONS is not set`); build/timeline in
+the island-led worktree:
+
+| act | run | SUMMARY | table | trigger (SUMMARY) | trace window | RTF | junit | LED vs trace (LED - trace) |
+|---|---|---|---|---|---|---|---|---|
+| a | c6-a2 | PASS | 6/6 (detect 28.44 of 100; driver answered 3233.51; exit route 81.58 of 149; no MRM) | `board SW1 (injected, island uptime 204873 ms, inject -> seen 189.0 ms, seen -> MANUAL request 3.06 ms) after ODD EXIT segment (240.0, -129.4) ..., odd_monitor -> gate 0.28 ms` | 20,540 of 53,248 B over 28.6 s, re-armed 4.00 s before the exit (go -> ack 53.5 ms) | 1.000 | PASS | tor_on -0.3 ms, tor_off +0.4 |
+| encore | c6-e1 | PASS | 8/8, total 3003.63 of 4909.67 ms (detect + route 553.49 of 744.33; settle 2450.14 of 4165.33; entry 4.08 m/s) | `board SW2 (injected, island uptime 209777 ms, inject -> seen 132.9 ms, seen -> SIGSTOP 8.22 ms) at (286.6, -129.4)` | 9,768 B over 15.6 s, re-armed when the ego drove | 1.000 | PASS | mrm_operating +0.2, mrm_succeeded +0.6, normal +0.2; operating -> succeeded LED 2600 ms, trace 2599.6 |
+
+Each `trace-check PASS (window 2 of the boot)`, `stored 1
+(silence-runtime x1)`, serial 0/0 in the act, `orphans: 0`. The button
+record read after each act (`board_buttons.py show`): c6-a2 one press, SW1
+accepted at 204.873 s; c6-e1 one press, SW2 accepted at 209.777 s;
+`gpio_errors 0`. The rows are the same terms and bounds as C5's runs
+(tm-a2, tm-e1): the button only moves who starts the edge.
+
+Trace cost of the buttons: none measurable. The pins are read by the
+driver's port read, which the CTF backend does not see, and the bridge's
+SWD reads are not traced. The window filled at 718 B/s in c6-a2 (tm-a2
+717 B/s) and 626 B/s in c6-e1 (tm-e1 593 B/s over a window 4.4 s longer). Through `gpio_pin_get_dt()` the poll would have added 2
+records of 28 B per tick, 560 B/s (3.3).
+
+Latencies (host side): inject written -> the bridge's line 133-189 ms (the
+debounce's 2 ticks, 100-200 ms, plus the 25 ms poll); the bridge's line ->
+the MANUAL request or the SIGSTOP 3-8 ms. With a finger the first is the
+same less the tick phase, from the moment the contact closes.
+
+What it took:
+
+| run | what failed | fix |
+|---|---|---|
+| bench | `just l3-peer` refused: `fuser` on the gateway tty ran over 10 min. A `find /` left running (orphaned) had walked into the sshfs NAS and held about 1,900 directory fds there; fuser stat()s every open file | `scripts/tty-holders.sh` (readlink of /proc/<pid>/fd, 0.03 s with that walk running) in l3-peer, board-peer and run-board's preflight (demo/carla/README.md trap 19) |
+| c6-a1 | FAIL with no reason, though the table was 6/6, MANUAL reached and the junit PASS: the board branch of act a skipped the verdict | the MANUAL check runs after either branch (`dcf8425`); c6-a1's SUMMARY otherwise as c6-a2 (`board SW1 (injected, ..., inject -> seen 160.2 ms, seen -> MANUAL request 7.32 ms)`, trace 14,042 B over 19.8 s) |
+| c6-b1 | no verdict: Autoware never left INITIALIZING (load 33 at the act, trap 16) | rerun; c6-b2 was stopped at step 5 (SIGINT, teardown, orphans 0) when the board was handed to the paper's experiments |
+
+c6-a1 also stored 3 `timer-overrun-runtime timer` violations (measured 29,
+9, 9 periods) outside its trace window (none in the window; the island
+armed at 172 s, the window opened at 250.5 s), where no earlier CARLA run
+stored any; c6-a2 and c6-e1 stored none. The bridge was not
+attached before the window (it starts at the re-arm), so it is not the
+cause; the cause is not known.
+
+Not verified in C6: **act b on the booth image with the buttons on** (the no-regression run; c6-b1 never drove, c6-b2 stopped before CARLA came up); **a physical press** (nobody was at the board; the pad
+is the one part of the path the injection bypasses; `just board-buttons`
+is the on-site check, README "On site"); a person's reaction time against
+the 10 s window and the 200 ms hold the debounce needs; presses on a
+`--keep-boot` chain (each act here ran on its own boot); the booth image
+under the planning simulator; the cause of c6-a1's timer overruns.
 
 **C8 status (2026-10-14, evidence).** `just carla-cast [run-board options]
 a|b|encore <id>` (`demo/carla/cast.sh`, `demo/carla/cast_dashboard.py`;

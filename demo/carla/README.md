@@ -328,6 +328,19 @@ ignored). `python3 tools/timeline/board_buttons.py inject sw1 --elf <elf>`
 presses through the firmware without a finger, to tell a dead pad from a
 dead firmware path.
 
+### Traps found in C6 (2026-10-15)
+
+19. **fuser hangs behind a filesystem walk.** A `find /` that had walked
+    into the sshfs NAS held about 1,900 directory fds there; fuser stat()s
+    every open file of every process, and on the gateway tty it ran over
+    10 minutes, so `just l3-peer` (and run-board's preflight) refused.
+    `scripts/tty-holders.sh` finds the tty's holders with readlink on
+    /proc/<pid>/fd only (0.03 s with the walk running); l3-peer,
+    board-peer and run-board use it.
+20. **A press must last about 200 ms.** The island reads the buttons once
+    per 100 ms tick and wants two ticks in a row; a tap shorter than a
+    tick can be missed. Hold each button for half a second.
+
 ## C8: the proof cast (re-recording it)
 
 ```sh
