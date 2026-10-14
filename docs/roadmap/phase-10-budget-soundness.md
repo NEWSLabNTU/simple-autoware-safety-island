@@ -6,7 +6,10 @@ checked by something, and the derived settling covers the vehicle's
 response, not only the braking profile.
 
 **Status (2026-10-15): B4, B5, B6, B9 done; the timeline side of B2 and
-B8 done;** the rest is planned.
+B8 done; the checker side of B1, B2, B7 and B8 done (rlm main, play_launch
+branch `phase10-budget-checks`), waiting for the rlm v0.1.58 tag and a
+play_launch release before the island contract can use the keys;** B3 is
+in nano-ros.
 
 ## Why
 
@@ -48,6 +51,20 @@ with its evidence. Two were confirmed by experiment on 2026-10-15:
   contract states `param:` on every timer and checks clean; a contract
   fixture for each case in rlm and play_launch tests.
 - Owner: rlm (schema), play_launch (rule), this repo (contract keys).
+- Status (2026-10-15): the checker is done; the contract keys wait for a
+  release. rlm main 6211471: `trigger: { timer: { rate_hz, param } }` (a
+  rate, Hz) or `period_param` (seconds), and `max_age: { duration, param }`
+  (`max_age` was not bound before). play_launch `phase10-budget-checks`
+  0cd1f5b9: `timer-param` and `max-age-param`, resolved from the launch
+  tree's parameter files like `window-param`. Reproduced first: the
+  contract's handler timer at `rate_hz: 20` over `update_rate: 10` checks
+  clean on 0.16.0; with `param: update_rate` the local build fails it with
+  `error[timer-param]: ... /mrm_handler/on_timer ticks at 20 Hz, bound to
+  `param: update_rate`, and 'update_rate' resolves to 10 Hz`. Fixture
+  `tests/fixtures/contract_param_bind` in play_launch, parse tests in rlm.
+  The island contract with `param:` on every timer and on `max_age` is on
+  branch `phase10-contract-keys`: it checks clean on the local build and
+  is refused (`manifest-parse`) by the pinned 0.16.0, so it waits.
 
 ### B2. The vehicle's response in the settling (rlm, play_launch, this repo)
 
@@ -60,8 +77,17 @@ with its evidence. Two were confirmed by experiment on 2026-10-15:
   checker's totals include it; B6's runs fit the new settling terms; the
   timeline table's settle row shows `profile + response` and the observed
   difference.
-- Status (2026-10-15): the timeline side is done; the key, the checker and
-  the contract's values are open. `analysis.py` adds the row "settle at the
+- Status (2026-10-15): the timeline side, the key and the checker are done;
+  the contract's values are on branch `phase10-contract-keys`, waiting for
+  the release (B1's status). rlm: `settle: { decel, jerk, response }`;
+  play_launch 69942daa: the settle is profile + response, `settle-derived`
+  prints both parts ("... = 4165.33ms; + response 256.00ms (written) =
+  settle 4421.33ms"), the totals include it and `--explain` notes
+  `settle = profile + response` per row. Values from B6 at the declared
+  entry speed, by the measurement rule: emergency 256 ms (213.11 x 1.2),
+  comfortable 943 ms (785.43 x 1.2, the planner's hop included). With them
+  the island's totals are hpc_loss 5165.67 (slack 4834.33), odd_exit
+  comfortable_stop 21393.67 (slack 8606.33), odd_exit floor 14914.67. `analysis.py` adds the row "settle at the
   observed entry speed": the profile at the observed entry speed, the
   observed settle, and their difference as the measured response delay.
   With no `response` declared the row has no verdict (`run_summary.py`
@@ -149,6 +175,20 @@ with its evidence. Two were confirmed by experiment on 2026-10-15:
 - Gate: the island contract states the source of every budget; `--explain`
   prints it per row; a contract whose measured term's stated maximum and
   margin do not reproduce the budget fails (`budget-rule`).
+- Status (2026-10-15): the checker is done; the contract waits for the
+  release (B1's status). rlm: every budget key takes the map form
+  `{ duration, source }` (and a window takes `source`), `source:
+  requirement | measured | derived | analysed`, and a measured one may
+  state `{ measured: { max, n, margin } }` or several `terms` (a timer
+  tick's `period` takes no margin). play_launch a1e34f6d: `budget-rule`
+  (error), a SOURCES column per row, every total with a measured term
+  noted "measured, not a bound", and a "Stated budgets" table with each
+  budget's source and the rule's arithmetic. On branch
+  `phase10-contract-keys` every budget of the island contract states its
+  source, the measured ones with the maxima from its comments (link 56 =
+  46.42 x 1.2; `call_mrm` and `driver_exit` 149 = tick 100 + 14.84 x 1.2
+  -> 118 + work 25.04 x 1.2 -> 31; the timers' jitter 18 and 6; the
+  `control_mode` link 143); every hazard's total is measured, not a bound.
 
 ### B8. Every stated budget is checked by something (this repo, play_launch)
 
@@ -162,7 +202,14 @@ with its evidence. Two were confirmed by experiment on 2026-10-15:
 - Gate: the act tables carry the link rows; no stated budget is listed as
   checked by nothing without a note.
 - Status (2026-10-15): the timeline side is done; `--explain`'s list is
-  open (play_launch). `analysis.py` adds a row per declared
+  done in play_launch a1e34f6d (released with B1): per stated budget, what
+  checks it (the fault-reaction sum with the hazards, a rule such as
+  `scope-budget`, `reaction-within`, `window-param`, `max-age-param`,
+  `window-expiry`, a runtime monitor, or nothing), and
+  `declared-not-charged` reads the same table, so it now says of
+  `control_mode`'s 143 ms that nothing else in the checker checks it;
+  the contract's comment notes that the trace check does. On the island
+  contract that is the one budget listed as checked by nothing. `analysis.py` adds a row per declared
   `max_transport` edge the trace observes: the declared value from the
   run's own `--explain` (the route's `link`, or `declared-not-charged`),
   the observed hop as the maximum over the run's edges (host stamp ->

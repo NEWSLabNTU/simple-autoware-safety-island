@@ -242,6 +242,10 @@ def sub_transport_ms(node, sub, contract=None):
 
 
 def duration_ms(v):
+    """A contract duration in ms: `500ms`, `10s`, a number of seconds, or a
+    budget's map form `{ duration: 149ms, source: ... }` (phase10-B7)."""
+    if isinstance(v, dict):
+        v = v.get("duration")
     if v is None:
         return None
     if isinstance(v, (int, float)):
@@ -393,6 +397,9 @@ def selftest(path=os.path.join(HERE, "testdata/explain.txt")):
         if not ok:
             fails.append(what)
     check(f"{len(rows)} budget rows parsed (want 6)", len(rows) == 6)
+    check("duration_ms reads a budget's map form (phase10-B7)",
+          duration_ms({"duration": "149ms", "source": "derived"}) == 149.0
+          and duration_ms("10s") == 10000.0)
     for (hz, rung), r in sorted(by.items()):
         if r["role"] in ("rung", "floor"):
             s = r["detect"] + r["windows"] + r["route"] + r["settle"]
