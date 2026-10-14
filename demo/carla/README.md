@@ -8,7 +8,9 @@ submodule autoware_carla_bridge (acb).
 
 | path | what | unit |
 |---|---|---|
-| `scenarios/` | OpenSCENARIO files for the acts (the ODD declared in the file, design 2.5) | C4 |
+| `scenarios/town01_island_odd.xosc` | acts b and encore: the Town01 straight, the ODD declared in the file (design 2.5, read by odd_monitor from C4), success 60 s after the stop | C3, C4 |
+| `scenarios/town01_island_takeover.xosc` | act a: the same road, success at the route's goal under the driver | C3 |
+| `../../tools/timeline/run-board.sh --sim carla` | one act on the board with CARLA, the scenario side and the ego instead of the L3 container | C3 |
 | `ego-overlay.bash` | what CSB's `just ego-av` sources between Autoware and acb (`EGO_OVERLAY`): the island's overlay and the patched librclcpp | C1 |
 | `island_standin.py` | the island's two always-on outputs, for a run with no island | C1 |
 | `play_launch.yaml` | the ego's play_launch runtime config: startup pacing, a wedged composable reloaded | C1 |
@@ -112,3 +114,67 @@ without the router. Extra launch arguments for the ego go in
    link from `/autoware/map` and keeps the vector map's; the unit stays
    defined, visible in the graph dump. The mechanism (a startup race or a
    dropped large message under rmw_zenoh) was not established.
+
+## C2: a driver's takeover in acb (`allow_manual`)
+
+acb (CSB's submodule, `9ec6343`) takes `allow_manual:=true` (default
+false): `/control/control_mode_request` accepts MANUAL,
+`/vehicle/status/control_mode` reports it, Autoware's control command is
+no longer applied, and a scripted driver holds the lane at the takeover
+speed (pure pursuit on CARLA's lane waypoints) until AUTONOMOUS is asked
+for or the next vehicle session starts. `honor_emergency_cmd` (default
+false) is a launch argument too: false is what the design called
+`emergency_full_brake:=false`, the MRM operator's command through the
+pedal maps. By hand: `CARLA_EGO_ARGS="allow_manual:=true" just carla-ego`;
+run-board.sh `--sim carla` always passes it.
+
+## C3: an act on the board with CARLA
+
+```sh
+# once, as for C1 (just l3-host-ws, just carla-rclcpp, CSB built), and the board image
+tools/timeline/run-board.sh --sim carla --elf <zephyr.elf> encore <run-id>
+tools/timeline/run-board.sh --sim carla --elf <zephyr.elf> b <run-id>
+tools/timeline/run-board.sh --sim carla --elf <zephyr.elf> a <run-id>
+```
+
+Nothing else may be up: no CARLA (2000), csb (5560), Traffic Manager
+(8000), router or gateway; preflight refuses otherwise. Do not run
+`just carla-standin` beside the board. One act takes 8-10 minutes, most
+of it CARLA's start (up to 270 s) and the scenario's localization and engage
+(60-90 s). The SUMMARY line ends with `sim carla, RTF <r>, SSv2 junit
+<v>`; the run directory adds `carla.log`, `csb.log`, `ssv2.log`,
+`ssv2/`, `result.junit.xml`, `load.log` and `orphans.txt`. Env knobs are
+in the script's header (`RB_XOSC`, `RB_RTF_MIN`, `RB_SSV2_TIMEOUT`,
+`RB_PYOCD_TIMEOUT`, `CARLA_HOLD_SECS`, `ENGAGE_SECS`).
+
+### Traps found in C2/C3 (2026-10-14)
+
+6. **A goal the mission planner refuses.** (110.0, -130.3) and (120.0,
+   -130.3) on the Town01 straight: "Goal's footprint exceeds lane!", and the
+   agent fails `set_route_points` five times. (120.0, -129.8), the goal of
+   CSB's `town01_ego_drive`, is accepted.
+7. **StandStillCondition never fires for the CARLA ego**: SSv2 counts
+   standstill only at a speed of exactly 0. Use `SpeedCondition` below 0.1
+   m/s, guarded by a `DistanceCondition` from the start (simulation time
+   starts at engage, so a time guard does not exclude the start).
+8. **The scenario's end is an HPC loss.** csb pauses the world when a
+   scenario ends; the availability converter runs on sim time, the gate
+   goes silent 1 s later and the island takes an EMERGENCY_STOP. The
+   scenarios end well after the act (b and encore 60 s after the stop, a
+   at a goal 195 m away) and run-board stops the probe before it waits for
+   the scenario, so that stop is in no act's record.
+9. **The trace window opens at arming, a minute before the act.** The
+   scenario poses, localizes and engages first; scenario.py re-arms the
+   window when the ego drives (`readout.py --rearm-only`, attach, no halt).
+10. **The agent's localization timeout.** NDT's align took 9.4 s on a
+    loaded host and the agent gave up at 8 s five times: acb `b463171`
+    waits 30 s.
+11. **Host load.** The ego's start drives the 1-min load to 230; other
+    users' jobs held it above 35 (with up to 68% I/O wait) for long
+    stretches. run-board waits up to 900 s with `--sim carla`; under
+    heavy I/O wait `pyocd list` alone can exceed 30 s
+    (`RB_PYOCD_TIMEOUT=90`), and one run (load 234) never localized.
+12. **A wedged ros2 daemon.** The ros2 CLI starts a daemon (domain 10,
+    rmw_zenoh_cpp) that outlives the run; one sent SIGTERM by hand hung
+    and the next run's join check (`ros2 topic echo`) never answered.
+    Leave it, or kill it with SIGKILL.

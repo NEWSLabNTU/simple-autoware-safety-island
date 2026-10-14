@@ -3,8 +3,12 @@
 Status: design, 2026-10-14. Not built except the LED prototype (section 3,
 `CONFIG_ISLAND_LED`, measured on the board), the scenario-declared ODD
 (section 2.5: odd_monitor reads it from the `.xosc`, unit-tested; the
-scenario itself not yet run under SSv2) and unit C1, the CARLA ego on the
-island's domain (section 5, G1 passed; runbook demo/carla/README.md). The island keeps today's serial link
+scenario itself not yet run with odd_monitor), unit C1, the CARLA ego on the
+island's domain (section 5, G1 passed; runbook demo/carla/README.md), unit
+C2, acb's `allow_manual` (MANUAL accepted and reported, a scripted driver
+holds the lane) and unit C3, the board attached to the CARLA ego, G2
+passed (`run-board.sh --sim carla`: encore, a and b PASS at RTF 1.000 with
+SSv2 junit PASS). The island keeps today's serial link
 and gateway (1.1); a direct island-Autoware link is recorded as future work
 (1.5), not chosen. Two repositories are named throughout:
 
@@ -38,6 +42,8 @@ contract checks stay exactly as they are.
 | direct-link board builds (1.5), configure only, not flashed | zenoh + `island-ethernet`: refused by Kconfig (`NROS_ZENOH_GRAPH_DISCOVERY ... is not directly user-configurable`); Cyclone: refused by nano-ros (`system.toml [image.zephyr] has rmw = "zenoh"`) |
 | host Ethernet toward the board | none: no media converter for the board's 100BASE-T1 PHY; no spare host NIC (1.5) |
 | C1, the ego on rmw_zenoh_cpp domain 10 with the island's overlay, no island (G1) | five starts: `Startup complete ... composable 125/125` each, no MRM node on the graph, availability 10.0 Hz from `availability_gate`, `town01_ego_drive` failures=0 errors=0 each (section 5, C1 row) |
+| C2, acb `allow_manual` (acb `9ec6343`, CSB `3883f86`) | acb `just check` clean, `just test` 223 passed (5 new); on the board, act a reads control mode 4 (MANUAL) on `/vehicle/status/control_mode` and the scripted driver reaches the route's goal (junit failures=0 errors=0; c3-a5, c3-a7) |
+| C3, the board on the CARLA ego (G2) | `SUMMARY c3-e2 encore: PASS ... table 8/8`, `c3-b5 b: PASS ... table 15/15`, `c3-a7 a: PASS ... table 6/6`; each `sim carla, RTF 1.000, SSv2 junit PASS` (section 5, C3 row) |
 
 ## 1. Architecture
 
@@ -226,11 +232,20 @@ CARLA_MAPS)/Town01` like CSB's):
 - `town01_island_encore.xosc`: CSB's `basic/town01_ego_drive.xosc` route,
   one `ReachPositionCondition` at a straight -> CustomCommandAction
   `hpc-loss`; success = ego standstill (`StandStillCondition`) within 15 s
-  of the trigger, no collision; failure = timeout.
-- `town01_island_odd.xosc` (written, not yet run): its own route on the
-  long Town01 straight, the ODD declared in its ParameterDeclarations (2.5);
-  success = standstill for 3 s after 20 s (act b) or the ego still moving
-  with control mode MANUAL (act a; read by the act daemon, SSv2 cannot see
+  of the trigger, no collision; failure = timeout. (C3: StandStillCondition
+  never fires for the CARLA ego, see below.)
+- `town01_island_odd.xosc` (run in C3 as the world of acts b and encore):
+  its own route on the long Town01 straight, the ODD declared in its
+  ParameterDeclarations (2.5); success = 60 s (simulation) after the ego
+  was below 0.1 m/s having moved 5 m. SSv2's StandStillCondition counts
+  only a speed of exactly 0, which the stopped CARLA ego never reported
+  (c3-b1), and the 60 s keep the world running past the act's readout:
+  the scenario's end pauses the world, and the island then raises an HPC
+  loss that belongs to no act.
+- `town01_island_takeover.xosc` (C3, act a): the same road and route;
+  success = the ego at the route's goal, which only a car still driven
+  after the takeover reaches; failure = below 0.1 m/s once moved, or the
+  timeout. MANUAL itself is read by the act daemon (SSv2 cannot see
   domain 10).
 
 ### 2.2 Driver takeover in CARLA (acb change)
@@ -246,6 +261,17 @@ so act a cannot pass without:
 - while MANUAL, the car is driven by a scripted driver: hold the lane at the
   current speed with CARLA's own controller (`set_autopilot` on the hero,
   or acb's `carla_manual_control` for a person at the booth).
+
+Built in C2 (acb `9ec6343`): `allow_manual:=true` as planned, but the
+scripted driver is acb's own (`VehicleControlBridge::drive_manual`: pure
+pursuit on CARLA's lane waypoints, a proportional speed hold through the
+pedal maps), not `set_autopilot`. In synchronous mode LibCarla ticks the
+Traffic Manager only inside the process that calls `world.tick()`
+(`Simulator::SynchronizeFrame` -> `TrafficManager::Tick()`), which is csb,
+and csb creates its Traffic Manager only for a `simulator_autopilot`
+entity; acb registering the hero would create an unticked one in its own
+process. `carla_manual_control` for a person at the booth is unchanged and
+untried with it.
 
 ### 2.3 The verdicts combined
 
@@ -274,6 +300,15 @@ agree.
   pedal maps; then CARLA physics (tyres, load transfer, the brake map)
   makes the settle a real measurement with an error against the derived
   value, which is a better demo than the ideal model.
+  Found in C2: that option already exists and is the default. acb acts on
+  `emergency_cmd` only with `honor_emergency_cmd:=true` (default false,
+  acb docs/issues/021: the flag was set in 29% of driving samples while
+  Autoware commanded acceleration), so in an MRM the vehicle follows the
+  control command, i.e. the MRM operator's ramp through vehicle_cmd_gate,
+  through the pedal maps. C2 exposed it as a launch argument (still
+  false) instead of adding `emergency_full_brake`. Measured in C3: encore
+  settle 2350 ms against 4165 derived (entry 2.30 m/s, c3-e2); b settle
+  5641-7319 ms against 9997.
 - **Entry speed.** Measured from CARLA, through the EKF: localization was
   0.95 m median from GNSS in section 0's run, so a speed derived from pose
   has noise the planning simulator never had; the table reads the
@@ -321,7 +356,9 @@ with `/localization/kinematic_state`'s position, which is in `map`.
 y -136.4..-132.3; one lanelet each, so no junction between): both lanes plus
 1.6 m / 2.3 m of margin for the EKF's lateral noise (0.95 m median in
 section 0's run), from x 330 to x 240. The ego is teleported to (315.0,
--130.3) heading west, routed to (110.0, -130.3), and leaves the ODD at
+-130.3) heading west, routed to (120.0, -129.8) (C3: the mission planner
+refused (110.0, -130.3) with "Goal's footprint exceeds lane!"; this is CSB's
+town01_ego_drive goal), and leaves the ODD at
 x 240, 75 m after the start. West of the boundary the 101.5 m budget of 2.4
 puts the comfortable stop near x 138, 37 m before the junction.
 
@@ -519,7 +556,7 @@ today's `press` edge.
 | today | with CARLA |
 |---|---|
 | detect (last sample -> reaction tick), route, `call_mrm`, takeover window dwell | unchanged, on the island's clock; contract-checked |
-| settle (braking command -> standstill), the planning simulator's model | CARLA physics; a measurement against the derived profile only with acb's `emergency_full_brake:=false` (2.4); otherwise qualitative (it stops sooner) |
+| settle (braking command -> standstill), the planning simulator's model | CARLA physics through acb's pedal maps following the MRM operator's command (`honor_emergency_cmd:=false`, the default; 2.4), so a measurement against the derived profile (C3: shorter, inside the bound) |
 | entry speed | EKF twist on CARLA sensors; measured, noisier |
 | hazard lights reach the vehicle (W9) | visible as CARLA blinkers; the `hazard_lights_on` row stays `-` until W9's stamp is fixed (it read `-` in `led-e3` too) |
 | the car is safe | new: SSv2 verdict (standstill, no collision) |
@@ -562,7 +599,8 @@ today's `press` edge.
    island fault (the availability never establishes, INIT -> emergency). G1
    counts it.
 5. **Emergency brake in acb is full brake** (2.4): an act passes while the
-   contract's settle row no longer tests what it says.
+   contract's settle row no longer tests what it says. Closed in C2: full
+   brake is only with `honor_emergency_cmd:=true`, which defaults to false.
 6. **The stock MRM nodes come back** if the overlay is not first on the
    path for `tier4_system_launch`: the same shadowing trap as demo-runbook
    section 0, inverted. G1 checks the node list (`/system/mrm_handler`
@@ -576,12 +614,13 @@ Each unit ends in a gate that is a run, not a review.
 | unit | what | gate | status |
 |---|---|---|---|
 | C1 | the ego on zenoh: `just ego-av` with `RMW_IMPLEMENTATION=rmw_zenoh_cpp`, `ROS_DOMAIN_ID=10`, the stock router, the island's overlay sourced between Autoware and acb, `operation_mode_availability_topic:=.../availability_raw`, a merged `autoware-carla-l3.yaml` graph | G1: five starts, each `Startup complete` with every composable; `/system/mrm_handler` not on the host graph; `town01_ego_drive` passes with no island attached (availability flows through the gate) | **[x] done 2026-10-14** (below) |
-| C2 | acb options: `allow_manual` (MANUAL accepted, reported, Autoware's commands not applied, CARLA autopilot holds the lane) and `emergency_full_brake:=false` | acb unit tests; act a in CARLA reports MANUAL on `/vehicle/status/control_mode` | |
-| C3 | the island attached: run-board.sh `--sim carla` (CARLA + scenario + ego instead of the container), RTF recorded per act | G2: encore, a, b each PASS with SUMMARY rows unchanged in meaning, RTF >= 0.95, SSv2 junit PASS | |
+| C2 | acb options: `allow_manual` (MANUAL accepted, reported, Autoware's commands not applied, CARLA autopilot holds the lane) and `emergency_full_brake:=false` | acb unit tests; act a in CARLA reports MANUAL on `/vehicle/status/control_mode` | **[x] done 2026-10-14** (below) |
+| C3 | the island attached: run-board.sh `--sim carla` (CARLA + scenario + ego instead of the container), RTF recorded per act | G2: encore, a, b each PASS with SUMMARY rows unchanged in meaning, RTF >= 0.95, SSv2 junit PASS | **[x] done 2026-10-14** (below) |
 | C4 | the scenarios: `town01_island_encore.xosc` (CustomCommandAction -> act daemon), `town01_island_odd.xosc` (written; ODD declared, 2.5) with `scenario_file:=` the same path; confirm SSv2 applies `Performance maxSpeed` as Autoware's velocity limit | each act triggered by the scenario at its place, three times back to back without a reflash (W2's re-arm); act a/b's `ODD EXIT` reason is `segment`, between x 239 and 241 | |
 | C5 | LEDs on by default for the booth image (`CONFIG_ISLAND_LED=y` in a booth conf, not the gate image) | the LED record shows the act's transitions with uptimes matching the trace's `mrm_operating` / `mrm_succeeded` edges within one tick | |
 | C6 | buttons: SW1 take over, SW2 HPC loss (3.4) | a visitor runs acts a and encore from the board alone | |
 | C7 | the container (phase 2, also W10) | C3's gate with Autoware + acb in the image | |
+| C8 | proof cast: a screencast of one act run end to end. A new 1920x1080 TurboVNC display `:3` (`/opt/TurboVNC/bin/vncserver :3 -geometry 1920x1080`; `:1`/`:2` are the user's 1240x900 desktops and `:9` another user's: never touched), recorded with `ffmpeg -f x11grab` from `:3`. On screen and readable at 1080p: the CARLA chase view of the hero; a map panel with the ODD polygon (2.5), the ego pose and a marker where the ODD exit fired; the takeover request (`/system/operation_mode/availability`, the operation mode, `/system/takeover_request/state`); the island's MRM state with its LED colour mirrored on screen (section 3.2's mapping, from `/system/fail_safe/mrm_state`; the host has no webcam for the board itself); wall-clock and simulation timestamps | one cast in which ODD exit -> takeover request -> island MRM -> stop are visible in that order | design only |
 | L1-L3 | direct link, future (1.5): D0 one router on serial, then D1 Ethernet after a media converter | 1.5's gates | |
 
 **C1 status (2026-10-14, evidence).** Glue: `just/carla.just` (`carla-server`,
@@ -635,3 +674,95 @@ Not verified in C1: the island attached (C3); the patched rclcpp over many
 re-routes on CARLA (one route per scenario here); container mode
 `observable` against CSB's reason for isolated (reloading one crashed
 behavior_path_planner, autoware_universe#12460), which no G1 run hit.
+
+**C2 status (2026-10-14, evidence).** acb `9ec6343` (CSB gitlink
+`3883f86`): `allow_manual` (default false) on acb_bridge, its launch file
+and `carla_simulator.launch.xml`. With it, `/control/control_mode_request`
+accepts MANUAL (AUTONOMOUS still, everything else refused), the mode is
+shared with the per-session bridge, `/vehicle/status/control_mode` reports
+it, the control-command callback returns before applying anything while
+MANUAL, and `drive_manual` (called once per frame by the main loop) holds
+the lane at the speed it had at the takeover. A new vehicle session starts
+AUTONOMOUS. `honor_emergency_cmd` became a launch argument (default false)
+in place of `emergency_full_brake` (2.4). `just carla-ego` is started with
+`allow_manual:=true` by run-board.sh (`CARLA_EGO_ARGS`).
+
+| check | result |
+|---|---|
+| acb `just check` (fmt, clippy `-D warnings`) | clean |
+| acb `just test` | 223 passed (218 before; new: `allow_manual_accepts_manual_only`, `control_mode_reports_what_was_accepted`, `pursuit_steers_toward_the_target`, `lookahead_and_speed_hold`, `heading_difference_wraps`) |
+| the ego's acb_bridge parameters (play_log) | `allow_manual: true`, `honor_emergency_cmd: false` |
+| act a on the board, c3-a5 and c3-a7 | the takeover button's MANUAL request answered; scenario.py reads control mode 4 (MANUAL) on `/vehicle/status/control_mode` with the TOR cleared and mrm NORMAL; the scripted driver takes the car on to the route's goal 195 m from the start (`town01_island_takeover` junit failures=0 errors=0) |
+
+Not verified in C2: the scripted driver through a junction (c3-a6, with
+the goal delayed 15 s, drove past the goal and fell below 0.1 m/s 227 m
+from the start; not investigated); its lateral error (no ground-truth
+trace kept); `carla_manual_control` beside `allow_manual`.
+
+**C3 status (2026-10-14, evidence).** `tools/timeline/run-board.sh --sim
+carla` (island `613c17f`, `36506e2`): steps 1-4 as today (flash, router,
+gateway, the island joins), step 5 starts CARLA, csb and the CARLA ego
+(each its own process group, SIGINT first at teardown), step 7 starts the
+SSv2 scenario beside the act, scenario.py (`SCENARIO_SIM=carla`) waits for
+the ego to drive, re-arms the trace window, injects the fault and writes
+an `rtf` event; after the readout the probe stops, the run waits for the
+scenario and keeps its junit; run_summary.py adds `sim carla, RTF, SSv2
+junit`, reads INVALID below RTF 0.95 and FAIL when the junit disagrees
+with a PASS. Image: the gate image, `CONFIG_ISLAND_LED` off (built
+2026-10-14 01:11 in the island-led worktree,
+`/mnt/evo/aeon/worktrees/island-led/build-board/zephyr/zephyr.elf`, the default image the LED
+commit `f0c8adf` leaves size-identical to `5057528`). G2, the last
+run of each act with the final tooling (`build/timeline/c3-*`):
+
+| act | run | SUMMARY | table | RTF (fault -> verdict) | SSv2 junit | load at act |
+|---|---|---|---|---|---|---|
+| encore | c3-e2 | PASS | 8/8, total 2910.37 of 4909.67 ms (detect + route 559.92 of 744.33; settle 2350.45 of 4165.33; entry 2.30 m/s) | 1.000 (4.10 sim s / 4.10 wall s) | PASS | 34.38 |
+| b | c3-b5 | PASS | 15/15, total 15903.77 of 20450.67 ms (window dwell 10100 ms; rung COMFORTABLE_STOP) | 1.000 (17.00 / 17.00) | PASS | 33.50 |
+| a | c3-a7 | PASS | 6/6 (driver answered 3014 ms; exit route 98.87 of 149 ms; no MRM) | 1.000 (14.00 / 13.99) | PASS | 21.55 |
+
+Rows: the same terms and declared bounds as the planning-simulator acts
+(base-e1 encore 8/8, led-a1 a 6/6, w21-b1 b 15/15), each `trace-check PASS (window 2 of
+the boot)` and `stored 1 (silence-runtime x1)`, which the planning
+simulator's runs store too (the availability's silence right after the
+island arms). Also PASS with earlier tooling: c3-a5 (a, 6/6) and c3-e1
+(encore, 8/8).
+
+The availability upstream of the island (C1 saw raw gaps up to 661 ms):
+over the nine runs that drove, the gate's largest raw gap was 125-364 ms,
+its largest publish gap 104-140 ms, never a publish gap over 150 ms, and
+the probe's longest availability gap in an act (the a/b tables' `HPC
+alive` row) 103-135 ms, except c3-b1
+(1427 ms): there every stream the probe records (availability,
+control_cmd, kinematic_state, the island's emergency control_cmd) paused
+together for 1.4 s while the island's own take record shows availability
+every 110 ms or less over the whole act; the probe process stalled, not
+the stream. One run went past both: c3-a4, at load 234 and 68% I/O wait
+from other jobs, never localized, and its gate saw a raw gap of 1845 ms and
+a publish gap of 996 ms before any act. Serial: 1 overrun and 1 bad frame
+in the act window of c3-a2, c3-a5, c3-b3 and c3-b5, 0/0 in the others.
+
+What it took (failed runs, in order):
+
+| run | what failed | fix |
+|---|---|---|
+| c3-a1 | refused: the main checkout's SystemModel stale; then no patched librclcpp in the checkout; then the 1-min load (230 after the ego's start, 108 after 180 s) | `just sync`; build/l3-host-rclcpp and build/l3-host-ws are now links to builds under /mnt/evo; RB_LOAD_WAIT 900 s with `--sim carla` |
+| c3-a1 | acb's agent: `/api/localization/initialize: no response in 8.0 s` five times (NDT align 9.4 s on a loaded host) | acb `b463171`: 30 s |
+| c3-a2, c3-a3 | `set_route_points` refused 5 times, "Goal's footprint exceeds lane!" for (110.0, -130.3) and (120.0, -130.3) | goal (120.0, -129.8), town01_ego_drive's |
+| c3-a4 | localization never reached the teleported pose (load 234, 68% I/O wait from other jobs) | none; rerun at a lower load |
+| c3-b1 | junit timeout: StandStillCondition never true (SSv2 needs a speed of exactly 0); the trace window, opened at arming, full 15 s before the act's end | speed < 0.1 m/s once moved 5 m, read 60 s back with `delay`; scenario.py re-arms the window when the ego drives |
+| c3-b2 | the island never answered the join check: a ros2 daemon left by an earlier run, sent SIGTERM by hand, was wedged | SIGKILL; the daemon each run's ros2 CLI starts is left running between runs and killed at the end |
+| c3-b3, c3-b4 | rung EMERGENCY_STOP: the scenario's end paused the world, the availability went silent, the island raised an HPC loss after the act, and the probe (still running while the run waited for SSv2) recorded it | the probe stops before the wait; b/encore succeed 60 s after the stop |
+| c3-a6 | junit failure: with the goal delayed 15 s the scripted driver went past it and slowed below 0.1 m/s | act a's goal not delayed |
+
+Teardown: `orphans: 0` after every run (ps, reparented component
+containers, play_launch, acb, csb, CARLA, SSv2), GPU back to 349 MiB / 0 %.
+
+Not verified in C3: three back-to-back acts on one boot (C4's
+`--keep-boot`); act a/b triggered by odd_monitor from the scenario's ODD
+(C4; here the act daemon's button, as on the planning simulator); RTF
+below 1 (every act ran at 0.999-1.001; the INVALID path is unit-tested on
+a fixture, not on a run); the LED image under CARLA (C5); the container
+(C7). The host load stayed above RB_LOAD_MAX for long stretches from other
+users' jobs; runs waited for it, and "load at act" is the load before
+the scenario started: the 1-min load over a whole run peaked at 23-177
+(load.log; 177 in c3-e2).
