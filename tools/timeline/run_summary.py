@@ -33,6 +33,11 @@ place of PASS/FAIL: its wall-time and sim-time terms are not comparable
 reads FAIL: the act passes only when the island's verdict and the world's
 agree (design 2.3).
 
+CARLA demo C5 trace margin: the trace-check field adds `trace <used> of
+<buffer> B over <s> s` (the window after its trigger, from the check) and
+where scenario.py re-armed it: `re-armed <s> s before the ODD exit (go ->
+ack <ms> ms)` (a, b) or `re-armed when the ego drove` (the encore).
+
 CARLA demo C4 (the scenario's trigger, scenario.py SCENARIO_TRIGGER=scenario):
 the suffix adds `trigger <what>`: `ODD EXIT <odd_monitor's reason>, odd_monitor
 -> gate <ms>` for a and b, `hpc-loss at (<x>, <y>)` for the encore (the
@@ -172,7 +177,30 @@ def table(d):
 def trace_check(d):
     t = read(d, "island.trace.check.txt")
     m = re.search(r"trace-check: (\w+)", t or "")
-    return f"trace-check {m.group(1) if m else '-'}{window(d)}"
+    return f"trace-check {m.group(1) if m else '-'}{window(d)}{trace_use(d, t)}"
+
+
+def trace_use(d, t):
+    """C5 trace margin: the bytes the act's window used of the buffer, over
+    how long, and where it was re-armed (the `rearm` event, scenario.py)."""
+    m = re.search(r"window: \d+ records over ([0-9.]+) s after the trigger, \d+ B here, (\d+) B in the board", t or "")
+    if not m:
+        return ""
+    try:
+        size = json.loads(read(d, "island.trace.readout.json"))["buffer_size"]
+    except (TypeError, ValueError, KeyError):
+        size = None
+    s = f", trace {int(m.group(2)):,} of {'-' if size is None else f'{size:,}'} B over {float(m.group(1)):.1f} s"
+    r = events(d, "rearm")
+    if r:
+        v = r[-1]["value"] or {}
+        if v.get("how") == "at the ODD exit":
+            ok = (v.get("done_before_edge_ms") or 0) > 0 and v.get("go_before_edge_ms") is not None
+            s += (f", re-armed {v['go_before_edge_ms'] / 1000:.2f} s before the ODD exit"
+                  f" (go -> ack {v.get('go_to_done_ms')} ms)" if ok else ", NOT re-armed before the ODD exit")
+        else:
+            s += ", re-armed when the ego drove"
+    return s
 
 
 def window(d):

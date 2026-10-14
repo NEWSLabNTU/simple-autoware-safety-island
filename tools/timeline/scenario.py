@@ -90,12 +90,26 @@ TRIGGER_SECS (180) after the ego drives. The act also records Autoware's
 external velocity limit (/planning/scenario_planning/max_velocity_default,
 what SSv2's setVelocityLimit reaches, and the selector's
 /planning/scenario_planning/max_velocity) in a `velocity_limit` event.
-SCENARIO_REARM (run-board.sh --sim carla, board): a command run once the ego
-drives, before DRIVE_SECS, that re-arms the island's trace window
-(readout.py --rearm-only, attach, no halt): with CARLA the scenario takes a
-minute or more from the island's arming to the act, longer than the window
-holds (c3-b1 filled it 15 s before the act's end), so the window is opened
-at the act as on a --keep-boot act. A `scenario` `rearm` event records it.
+SCENARIO_REARM (run-board.sh --sim carla, board): the command that re-arms
+the island's trace window (readout.py --rearm-only, attach, no halt): with
+CARLA the scenario takes a minute or more from the island's arming to the
+act, longer than the window holds (c3-b1 filled it 15 s before the act's
+end), so the window is opened at the act as on a --keep-boot act. The
+encore (and RB_TRIGGER=button) runs it once the ego drives, before
+DRIVE_SECS: its fault comes about 11 s later (c5-e3: 11,884 B over 20 s).
+a and b (SCENARIO_ODD_FILE, the scenario's .xosc) re-arm at the ODD exit
+instead: from the first drive their window ran past the stop to the
+readout and c5-b2 used 50,410 of 53,248 B over 74.9 s. The command starts
+with --wait-go when the ego drives (the ELF's symbols, pyocd's probe and
+session: 0.5 s warm, 5 s cold, far longer under I/O load) and the act
+sends go when the ego, at its speed and heading, is SCENARIO_REARM_LEAD_S
+(4.0) from the polygon's edge: the timeline plots 2 s before the start
+edge and the table's earliest island edge is 50 ms before it. The window
+must be acknowledged before the start edge (the gate's receipt of the
+exit); if it was not (no go, the helper failed, or acknowledged after),
+the act ends FATAL: its record would miss its start. A `scenario` `rearm`
+event records either way, the latencies (attach, go -> acknowledged) and
+the lead.
 """
 import argparse
 import json
@@ -237,6 +251,117 @@ def buttons_window(log):
     app.exec_()
 
 
+# ------------------------------------------------------ the trace window ----
+class Rearm:
+    """readout.py --rearm-only in its own session, killed whole on a timeout
+    (c4-e1: a re-arm that never exited kept the probe and the readout after
+    the act failed with "Resource busy"). wait_go: --wait-go, the word is
+    written on go(); its stdout is read on a thread, each line stamped."""
+
+    def __init__(self, cmd, wait_go):
+        import subprocess
+        import threading
+        self.wait_go = wait_go
+        self.t_start, self.t_ready, self.t_go, self.t_done = tl.now_ns(), None, None, None
+        self.rc, self.lines, self.stamped = None, [], []
+        self.pr = subprocess.Popen(cmd + (" --wait-go" if wait_go else ""), shell=True, text=True,
+                                   stdin=subprocess.PIPE if wait_go else subprocess.DEVNULL,
+                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
+        # wait_go: started with the act, minutes before the exit; attaching
+        # has until SCENARIO_REARM_ATTACH_S, the write after go its 2 s
+        self.limit = float(ENV("SCENARIO_REARM_ATTACH_S" if wait_go else "SCENARIO_REARM_TIMEOUT",
+                               "180" if wait_go else "60"))
+        self.th = threading.Thread(target=self._read, daemon=True)
+        self.th.start()
+
+    def _read(self):
+        for line in self.pr.stdout:
+            line = line.rstrip()
+            self.lines.append(line)
+            self.stamped.append((round((tl.now_ns() - self.t_start) / 1e6), line))
+            if "re-arm ready" in line:
+                self.t_ready = tl.now_ns()
+            elif "re-armed:" in line:
+                self.t_done = tl.now_ns()
+        self.rc = self.pr.wait()
+
+    def ready(self):
+        if self.t_ready is None and self.rc is None and (tl.now_ns() - self.t_start) / 1e9 > self.limit:
+            self.kill()  # never attached: the exit will find it not re-armed
+        return self.t_ready is not None and self.rc is None
+
+    def go(self):
+        self.t_go = tl.now_ns()
+        try:
+            self.pr.stdin.write("go\n")
+            self.pr.stdin.flush()
+        except OSError:
+            pass
+        return self.t_go
+
+    def wait(self, secs):
+        self.th.join(secs)
+        if self.th.is_alive():
+            self.kill()
+            self.th.join(5.0)
+
+    def kill(self):
+        if self.pr.poll() is None:
+            try:
+                os.killpg(self.pr.pid, signal.SIGKILL)
+            except OSError:
+                pass
+            self.rc = "killed"
+
+    def done_line(self):
+        return next((ln for ln in self.lines if "re-armed:" in ln), self.lines[-1] if self.lines else "")
+
+    def value(self):
+        ms = lambda a, b: None if a is None or b is None else round((b - a) / 1e6, 1)  # noqa: E731
+        return dict(rc=self.rc, out=self.done_line(), t_start_ns=self.t_start, t_ready_ns=self.t_ready,
+                    t_done_ns=self.t_done, start_to_ready_ms=ms(self.t_start, self.t_ready),
+                    go_to_done_ms=ms(self.t_go, self.t_done), start_to_done_ms=ms(self.t_start, self.t_done),
+                    lines_ms=self.stamped[-6:])
+
+
+def read_odd_polygon(path):
+    """The scenario's ODD polygon, read as odd_monitor reads it."""
+    sys.path.insert(0, os.path.join(tl.ROOT, "demo/l3/takeover_demo/takeover_demo"))
+    import odd_scenario  # noqa: E402 (no rclpy in it)
+    try:
+        text, _ = odd_scenario.read_scenario_odd(path)
+    except (OSError, ValueError) as e:  # odd_monitor refuses it too; the act re-arms at the drive
+        print(f"scenario: no ODD polygon for the re-arm ({e})", flush=True)
+        return None
+    return odd_scenario.parse_polygon(text) if text else None
+
+
+def yaw_of(q):
+    import math
+    return math.atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z))
+
+
+def time_to_exit(poly, st):
+    """Seconds until the ego, held at its speed and heading, leaves `poly`:
+    the nearest crossing of a polygon edge by the ray from its pose."""
+    import math
+    if None in (st["x"], st["y"], st["yaw"], st["v"]) or st["v"] < 0.5:
+        return None
+    px, py = st["x"], st["y"]
+    dx, dy = math.cos(st["yaw"]), math.sin(st["yaw"])
+    best = None
+    for (ax, ay), (bx, by) in zip(poly, poly[1:] + poly[:1]):
+        ex, ey = bx - ax, by - ay
+        den = dx * ey - dy * ex
+        if abs(den) < 1e-9:
+            continue
+        t = ((ax - px) * ey - (ay - py) * ex) / den  # along the ray
+        u = ((ax - px) * dy - (ay - py) * dx) / den  # along the edge
+        if t > 0 and 0.0 <= u <= 1.0 and (best is None or t < best):
+            best = t
+    return None if best is None else best / st["v"]
+
+
 # ------------------------------------------------------------- the acts ----
 def run(act, log):
     import rclpy
@@ -269,15 +394,23 @@ def run(act, log):
     min_speed = float(ENV("MIN_SPEED", "1.0"))
     carla = ENV("SCENARIO_SIM", "planning") == "carla"
     hold = float(ENV("CARLA_HOLD_SECS", "5")) if carla else 0.0
+    # C5 trace margin: a and b re-arm the window just before the ODD exit
+    # (module doc); the encore and the button trigger re-arm when the ego drives
+    odd_poly = None
+    if carla and trigger == "scenario" and act in ("a", "b") and ENV("SCENARIO_ODD_FILE"):
+        odd_poly = read_odd_polygon(ENV("SCENARIO_ODD_FILE"))
+    rearm_at_exit = odd_poly is not None
+    rearm_lead = float(ENV("SCENARIO_REARM_LEAD_S", "4.0"))
+    rearm = None
     rclpy.init()
     node = rclpy.create_node("timeline_scenario")
     b = Buttons(log, node)
-    st = dict(v=None, mrm=None, tor=None, ctrl=None, route=None, x=None, y=None, odd=None, vlim={})
+    st = dict(v=None, mrm=None, tor=None, ctrl=None, route=None, x=None, y=None, yaw=None, odd=None, vlim={})
     q = QoSProfile(depth=5)
     ql = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
     node.create_subscription(Odometry, "/localization/kinematic_state",
                              lambda m: st.update(v=m.twist.twist.linear.x, x=m.pose.pose.position.x,
-                                                 y=m.pose.pose.position.y), q)
+                                                 y=m.pose.pose.position.y, yaw=yaw_of(m.pose.pose.orientation)), q)
     node.create_subscription(MrmState, "/system/fail_safe/mrm_state",
                              lambda m: st.update(mrm=(m.state, m.behavior)), q)
     node.create_subscription(MrmBehaviorStatus, "/system/takeover_request/state",
@@ -321,39 +454,36 @@ def run(act, log):
     if not spin_for(300, lambda: st["route"] is not None):
         say("FATAL: no /planning/route_state in 300 s"); os._exit(2)
     gate_pid()
+    if carla and rearm_at_exit and ENV("SCENARIO_REARM"):
+        # C5 trace margin: attach now (tm-b1: a helper started when the ego
+        # drove had not attached 22 s later, at a 1-min load of 50), write a
+        # few seconds before the exit
+        rearm = Rearm(ENV("SCENARIO_REARM"), wait_go=True)
+        say(f"trace window: re-arm attaching now, written {rearm_lead:.1f} s before the ODD exit "
+            f"(time to the polygon's edge along the heading)")
     if carla:
         engage = float(ENV("ENGAGE_SECS", "300"))
         say(f"== 1-3. CARLA: the SSv2 scenario poses, routes and engages the ego (up to {engage:.0f} s) ==")
         if not spin_for(engage, lambda: (st["v"] or 0) > min_speed):
-            say(f"FATAL: the vehicle did not reach {min_speed} m/s (v={st['v']}, route {st['route']})"); os._exit(2)
-        rearm = ENV("SCENARIO_REARM", "")
-        if rearm:
-            import subprocess
-            t = tl.now_ns()
-            # its own session, killed whole on a timeout: c4-e1's re-arm wrote
-            # the word (the window counted it) and then never exited under a
-            # 1-min load of 54; subprocess.run's timeout killed the shell, the
-            # pyocd process kept the probe and the readout after the act
-            # failed with "Resource busy"
-            pr = subprocess.Popen(rearm, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                  text=True, start_new_session=True)
-            try:
-                o, _ = pr.communicate(timeout=float(ENV("SCENARIO_REARM_TIMEOUT", "60")))
-                rc = pr.returncode
-            except subprocess.TimeoutExpired:
-                os.killpg(pr.pid, signal.SIGKILL)
-                o, _ = pr.communicate()
-                rc = "timeout"
-            out = (o or "").strip().splitlines()
-            done = next((l for l in out if "re-armed:" in l), out[-1] if out else "")
-            say(f"trace window re-armed (exit {rc}): {done}")
-            b.w.write("scenario", "rearm", t_mono_ns=t, value=dict(rc=rc, out=done))
+            say(f"FATAL: the vehicle did not reach {min_speed} m/s (v={st['v']}, route {st['route']})")
+            if rearm:
+                rearm.kill()
+            os._exit(2)
+        cmd = ENV("SCENARIO_REARM", "")
+        if cmd and not rearm_at_exit:
+            rearm = Rearm(cmd, wait_go=False)
+            rearm.wait(float(ENV("SCENARIO_REARM_TIMEOUT", "60")))
+            say(f"trace window re-armed (exit {rearm.rc}): {rearm.done_line()}")
+            b.w.write("scenario", "rearm", t_mono_ns=rearm.t_start, value=rearm.value())
     else:
         engage_planning(node, st, spin_for, say, sd, min_speed)
     log_dir = os.path.dirname(os.path.abspath(log))
     if trigger == "scenario":
-        trig = scenario_trigger(act, b, st, sock, spin_for, say, log_dir)
+        arm = dict(rearm=rearm, poly=odd_poly, lead=rearm_lead) if rearm_at_exit and rearm else None
+        trig = scenario_trigger(act, b, st, sock, spin_for, say, log_dir, arm)
         if trig is None:
+            if rearm:
+                rearm.kill()
             os._exit(2)
     else:
         spin_for(drive)
@@ -422,7 +552,7 @@ def run(act, log):
 ODD_EXIT_LINE = re.compile(r"ODD EXIT \((.*)\) wall=([0-9.]+) mono=([0-9.]+)")
 
 
-def scenario_trigger(act, b, st, sock, spin_for, say, log_dir):
+def scenario_trigger(act, b, st, sock, spin_for, say, log_dir, arm=None):
     """SCENARIO_TRIGGER=scenario: wait for the scenario's fault (module doc).
 
     encore: the scenario's `hpc-loss` datagram, then the press. a/b: the
@@ -454,7 +584,16 @@ def scenario_trigger(act, b, st, sock, spin_for, say, log_dir):
         b.w.write("scenario", "trigger", t_mono_ns=got["t"], hazard="hpc_loss", marker="hpc_loss", value=val)
         say(f"trigger: hpc-loss from the scenario at ({pose[0]:.1f}, {pose[1]:.1f}), {pose[2]:.2f} m/s")
         return val
-    if not spin_for(wait, lambda: st["odd"] is True):
+    go = dict(t=None, x=None, tte=None)
+
+    def until():
+        r = arm and arm["rearm"]
+        if r and go["t"] is None and r.ready() and st["odd"] is not True:
+            tte = time_to_exit(arm["poly"], st)
+            if tte is not None and tte <= arm["lead"]:
+                go.update(t=r.go(), x=st["x"], tte=round(tte, 3))
+        return st["odd"] is True
+    if not spin_for(wait, until):
         say(f"FATAL: no ODD exit in {wait:.0f} s (v={st['v']}, pose {st['x']}, {st['y']})")
         return None
     pose = (st["x"], st["y"], st["v"])
@@ -485,6 +624,24 @@ def scenario_trigger(act, b, st, sock, spin_for, say, log_dir):
     if t_gate is None:
         say(f"FATAL: odd_exit seen on /demo/odd/exit but no `odd` event in {gate_log}")
         return None
+    if arm:
+        r = arm["rearm"]
+        if go["t"] is not None:
+            spin_for(2.0, lambda: r.t_done is not None)  # normally long done: the go came seconds before
+        val = r.value()
+        val.update(how="at the ODD exit", lead_s=arm["lead"], x_go=go["x"], time_to_exit_go_s=go["tte"],
+                   t_go_ns=go["t"], t_edge_ns=t_gate,
+                   done_before_edge_ms=None if r.t_done is None else round((t_gate - r.t_done) / 1e6, 1),
+                   go_before_edge_ms=None if go["t"] is None else round((t_gate - go["t"]) / 1e6, 1))
+        b.w.write("scenario", "rearm", t_mono_ns=go["t"] or r.t_start, value=val)
+        if go["t"] is None or r.rc != 0 or r.t_done is None or r.t_done >= t_gate:
+            r.kill()
+            say(f"FATAL: the trace window was not re-armed before the start edge (go {go}, exit {r.rc}, "
+                f"helper lines (ms after its start) {r.stamped}); the act's record would miss its start")
+            return None
+        say(f"trace window re-armed {val['go_before_edge_ms'] / 1000:.2f} s before the start edge "
+            f"(at x {go['x']:.1f}, {go['tte']:.2f} s to the polygon's edge; go -> acknowledged "
+            f"{val['go_to_done_ms']} ms; attached {val['start_to_ready_ms']} ms after the act started): {r.done_line()}")
     b.w.write("scenario", "inject", t_mono_ns=t_gate, hazard="odd_exit", marker="odd_exit",
               value=dict(how="odd_monitor's /demo/odd/exit, received by the gate", reason=reason))
     hop = None if t_odd is None else round((t_gate - t_odd) / 1e6, 2)

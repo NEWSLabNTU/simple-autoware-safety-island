@@ -61,6 +61,13 @@ so re-arm with the HPC down, after the previous act's readout and teardown
 (tools/timeline/run-board.sh --keep-boot does it at its start). Every full
 read also reports the window's re-arm count (`rearms`, 0 = the first window
 since boot) and the uptime of the last re-arm.
+
+CARLA demo (C5 trace margin): `--rearm-only --wait-go` attaches, prints
+`re-arm ready` and writes the word only when a line arrives on stdin (EOF
+cancels, exit 3). scenario.py starts it when the ego drives and sends the
+line a few seconds before the ODD exit, so the window opens at the act
+rather than a pyocd start-up (0.5 s warm, 5 s cold, far more under I/O
+load) after the instant asked for.
 """
 import argparse
 import json
@@ -272,9 +279,20 @@ def rearm(a, syms):
     if a.dry_run:
         print(f"readout: write32 {REARM} @ {syms[REARM][0]:#010x} = 1, wait for 0")
         return 0
+    if a.wait_go:
+        print("readout: re-arm attaching (symbols read)", flush=True)
     dev = Board()
     try:
         before = dev.read32(syms["island_trace_rearms"][0])
+        if a.wait_go:
+            # CARLA demo: attach early, write late. The slow part (the ELF's
+            # symbols, pyocd's probe and session) is done; the write waits
+            # for the act's word on stdin, so the window opens at a chosen
+            # instant, not a pyocd start-up after it
+            print("readout: re-arm ready (attached; waiting for go on stdin)", flush=True)
+            if not sys.stdin.readline().strip():
+                print("readout: REARM CANCELLED no go on stdin (the act ended or gave up)")
+                return 3
         dev.write32(syms[REARM][0], 1)
         t0 = time.monotonic()
         while dev.read32(syms[REARM][0]) != 0:
@@ -315,6 +333,9 @@ def main():
     ap.add_argument("--rearm-only", action="store_true",
                     help="board: re-arm the trace window for the next act (attach, no halt); "
                          "--out is not written")
+    ap.add_argument("--wait-go", action="store_true",
+                    help="with --rearm-only: attach, print `re-arm ready`, then write the re-arm word "
+                         "only when a line arrives on stdin (EOF cancels)")
     a = ap.parse_args()
     syms = symbols(a.elf, set(WORDS) | {BUFFER, violations.RECORD, SERIAL, BOOTREC, ASSERT} |
                    set(violations.ARM_WORDS) | {REARM})

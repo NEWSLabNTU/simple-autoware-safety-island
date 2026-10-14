@@ -169,7 +169,8 @@ in the script's header (`RB_XOSC`, `RB_RTF_MIN`, `RB_SSV2_TIMEOUT`,
    the scenario, so that stop is in no act's record.
 9. **The trace window opens at arming, a minute before the act.** The
    scenario poses, localizes and engages first; scenario.py re-arms the
-   window when the ego drives (`readout.py --rearm-only`, attach, no halt).
+   window (`readout.py --rearm-only`, attach, no halt): the encore when
+   the ego drives, a and b 4 s before the ODD exit (trap 18).
 10. **The agent's localization timeout.** NDT's align took 9.4 s on a
     loaded host and the agent gave up at 8 s five times: acb `b463171`
     waits 30 s.
@@ -312,3 +313,17 @@ camera the dashboard attaches to the CARLA vehicle whose role_name is
     EXIT` stamp and the line, on a loaded disk; the exit was published
     after it. odd_monitor now publishes first. The act's start edge, the
     gate's receipt, did not move.
+18. **A/b's trace window from the first drive nearly filled.** c5-b2 used
+    50,410 of 53,248 B over 74.9 s (first drive to readout). scenario.py
+    now re-arms a and b at `SCENARIO_REARM_LEAD_S` (4.0) s before the ego,
+    at its speed and heading, reaches the edge of the scenario's ODD
+    polygon (`SCENARIO_ODD_FILE`, set by run-board to the act's `.xosc`):
+    tm-b2 21,256 B over 29.5 s, tm-a2 19,936 B over 27.8 s. The re-arm is
+    split because pyocd's start-up is slow and unbounded under load
+    (tm-b1: nothing from it in 22 s): `readout.py --rearm-only --wait-go`
+    starts with the act, attaches, prints `re-arm ready`, and writes the
+    word when the act sends `go` (65-108 ms to the acknowledgement). An
+    acknowledgement after the start edge, or none, ends the act FATAL;
+    the SUMMARY reads `trace <used> of <buffer> B over <s> s, re-armed <s>
+    s before the ODD exit (go -> ack <ms> ms)`. The encore keeps the
+    first-drive re-arm (its fault is the trigger itself; 20 s, 12 KB).

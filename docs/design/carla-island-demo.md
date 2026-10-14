@@ -866,14 +866,72 @@ ms; the LED is set in the tick that publishes the state). Each run
 
 The trace margin: the LED driver writes a pin only on a level change (3.3),
 and the window fills at the gate image's rate (c5-b2 673 B/s, c4-b2 680
-B/s). But b's window is long on CARLA: it opens when the ego first drives
-(C3's re-arm) and runs past the stop to the readout, 47-75 s, and c5-b2
-used 50,410 of the buffer's 53,248 B (2,838 B left) over 74.9 s, against
-31,874 B over 46.9 s for c4-b2. A b act whose readout comes about 4 s later
-than c5-b2's would fill the buffer; trace-check says so (`it filled at`)
-rather than passing silently. Not changed here: re-arming at the ODD
-exit, or a larger buffer, is a choice for the booth image's DTCM (13,448 B
-left).
+B/s). Until this note, b's window opened when the ego first drove (C3's
+re-arm) and ran past the stop to the readout, 47-75 s: c5-b2 used 50,410
+of the buffer's 53,248 B (2,838 B left) over 74.9 s, and a readout about 4
+s later would have filled it.
+
+**Re-armed at the ODD exit (acts a and b).** scenario.py now re-arms a/b's
+window a fixed lead before the exit instead of at the first drive:
+
+- **Where.** The ego, held at its speed and heading, is
+  `SCENARIO_REARM_LEAD_S` (4.0 s) from the edge of the scenario's own ODD
+  polygon (the `.xosc` odd_monitor watches, `SCENARIO_ODD_FILE`): a ray
+  from the pose along the heading to the nearest polygon edge, over the
+  speed. On Town01 that is x 256.5, 16.5 m east of the boundary at 4.15
+  m/s. A deterministic place on the road, not a time after an event.
+- **The lead.** No table row needs island events from before the start
+  edge: the a/b edges are all taken from 50 ms before it (analysis.py,
+  `island_take`, `tor_on`), the clock alignment's anchors are after it
+  (merge.py), and the `HPC alive` row is the host probe's, not the trace.
+  The timeline plot starts 2 s before the edge, and the window keeps 1.5 s
+  of history before its trigger; 4 s covers both with 2 s to spare.
+- **The re-arm cost.** pyocd's start-up is the slow part (the ELF's
+  symbols, the probe, the session): 0.4-0.7 s warm, 5.1 s cold at a 1-min
+  load of 13, and tm-b1 (the first try, the helper started when the ego
+  drove, load 50 from the run itself) had not attached 22 s later, so its
+  exit came first. The re-arm is therefore split: `readout.py --rearm-only
+  --wait-go` starts with the act (minutes before the exit, while SSv2
+  poses and engages), attaches, prints `re-arm ready` and writes the word
+  only when the act sends `go`. Go -> acknowledged (the island clears the
+  word in its next heartbeat tick) measured 56-57 ms on the bench and
+  65.3 ms (tm-b2) and 108.4 ms (tm-a2) in the acts; the attach took 444
+  and 429 ms after the act started.
+- **It cannot miss silently.** The act requires the acknowledgement
+  before the start edge (the gate's receipt of `/demo/odd/exit`); without
+  a go, a failed helper, or an acknowledgement after the edge, the act
+  ends FATAL (no verdict) rather than a table without its start, as tm-b1
+  did. The `scenario` `rearm` event keeps the latencies, the lead and the
+  pose; the SUMMARY's trace-check field reads `trace <used> of <buffer> B
+  over <s> s, re-armed <s> s before the ODD exit (go -> ack <ms> ms)`.
+- **The encore keeps the first drive.** Its fault is the scenario's
+  datagram, the edge itself, about 11 s after the first drive (x 285), so
+  a re-arm at the trigger would land after the edge; its table also needs
+  the island's last availability take before the SIGSTOP and the gate's
+  last sample (up to 2 s before). Its window is short already: c5-e3
+  11,884 B over 20.0 s.
+- led_vs_trace.py: the window's first NORMAL mrm_state and first
+  request-off are the level at the re-arm, not edges (with the window 4 s
+  before the exit, merge.py's 5 s now includes them); the C5/C8 runs read
+  the same with the change.
+
+| act | run | SUMMARY | table | trace window used | re-armed before the start edge | RTF | junit | LED vs trace (LED - trace) |
+|---|---|---|---|---|---|---|---|---|
+| b | tm-b2 | PASS | 15/15, total 14595.77 of 20450.67 ms (settle 4484.22; rung COMFORTABLE_STOP) | 21,256 of 53,248 B over 29.5 s (was 50,410 over 74.9 s in c5-b2) | 4.06 s, go -> ack 65.3 ms | 0.966 | PASS | tor_on +0.4 ms, mrm_operating +0.1, tor_off -0.1, mrm_succeeded +0.6; LED 4600 ms, trace 4599.5, host 4592.9 |
+| a | tm-a2 | PASS | 6/6 (driver answered 3056.24 ms; exit route 51.11 of 149; no MRM) | 19,936 of 53,248 B over 27.8 s (was 28,908 over 45.6 s in c5-a1) | 4.00 s, go -> ack 108.4 ms | 1.000 | PASS | tor_on +0.4, tor_off +0.4 |
+
+The encore through the refactored first-drive path: tm-e1 PASS, 8/8,
+total 3002.38 of 4909.67 ms, 11,860 B over 20.0 s, RTF 1.004, junit PASS,
+LED vs trace PASS (operating -> succeeded LED 2500 ms, trace 2499.6).
+All three on the booth image, `trace-check PASS (window 2 of the boot)`,
+`stored 1 (silence-runtime x1)`, `orphans: 0`. The rows are the same terms
+and bounds as before. tm-b2's `route, island clock` read 1.12 ms where
+c5-b2 read 101.60: the window's expiry fell in the same handler tick as
+its deadline rather than the next (dwell 10000.48 against 10100.96; the
+sum, `windows + route`, 10064.53 against 10196.19); not the re-arm. The
+remaining window is the act plus the readout: from the exit, about 25 s to
+the act's end (the stop, 1 s, the 5 s hold, 3 s) and the readout's start.
+A b act now has about 32 KB (44 s at 720 B/s) of headroom.
 
 What it took:
 
@@ -884,11 +942,18 @@ What it took:
 | c5-b1 | no verdict: Autoware never left INITIALIZING (SSv2: "waited for the Autoware state to transition to WAITING_FOR_ROUTE, but time is up") at a 1-min load of 220-290 (another session's cargo builds); the ego never drove, so the ODD exit could not fire | rerun (c5-b2) when the load fell |
 | c5-e2 | no verdict: SSv2 "The simulator reported a failed frame" after its main loop was unresponsive for 30 s (load 105 falling); the ego never drove | rerun (c5-e3) |
 | c5-b2 | PASS, but odd_monitor -> gate read 571.54 ms: odd_monitor published after its `ODD EXIT` log line, whose write blocked on the loaded disk | odd_monitor publishes before it logs (the table's start edge, the gate's receipt, was not affected) |
+| tm-b1 | no verdict (FATAL, by design): the re-arm helper, started when the ego drove at a 1-min load of 50, printed nothing in the 22 s to the exit; the act refused to go on without the window | the helper starts with the act and attaches while SSv2 engages (tm-b2: 444 ms); why the first attach stalled is not known |
+| tm-a1 | REFUSED: 1-min load 72 after 900 s (other sessions' rustc and clippy) | rerun (tm-a2) at a load under 25 |
 
 Not verified in C5: the LED seen by a person (the record and the pads'
 output registers are read, not the light); the booth image under the
 planning simulator since this commit (3.3's led-e3/led-a1 were); a b act
-whose trace window overflows (the margin above).
+whose trace window overflows (now 32 KB away); why tm-b1's re-arm helper
+had not attached after 22 s (no line from it; the bench and every later
+act attached in 0.4-0.7 s); the re-arm at the exit with
+`RB_TRIGGER=button` (it keeps the first-drive re-arm) or with an ODD exit
+other than the polygon (the speed bound: the act would end FATAL, not
+re-armed, unless the polygon's lead came first).
 
 **C8 status (2026-10-14, evidence).** `just carla-cast [run-board options]
 a|b|encore <id>` (`demo/carla/cast.sh`, `demo/carla/cast_dashboard.py`;

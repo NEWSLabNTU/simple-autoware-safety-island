@@ -213,8 +213,11 @@ if [ "$sim" = carla ]; then
     export SCENARIO_TRIGGER="$rb_trigger"
     export SCENARIO_ACT_SOCKET="$(cd "$(dirname "$0")/../.." && pwd)/build/timeline/$id/act.sock"
     # the trace window opened at the island's arming, a minute or more before
-    # the act; scenario.py re-arms it once the ego drives (attach, no halt)
+    # the act; scenario.py re-arms it (attach, no halt): the encore once the
+    # ego drives, a and b a few seconds before the ODD exit (SCENARIO_ODD_FILE,
+    # the polygon odd_monitor watches; C5 trace margin)
     [ "$target" = board ] && export SCENARIO_REARM="python3 tools/timeline/readout.py --target board --elf '$(readlink -f "$elf")' --out /dev/null --rearm-only"
+    [ "$rb_trigger" = scenario ] && [ "$act" != encore ] && export SCENARIO_ODD_FILE="$xosc"
 fi
 : "${RB_GATE:=python3 tools/timeline/scenario.py gate --log $dir/gate.jsonl}"
 : "${RB_PROBE:=python3 tools/timeline/probe.py --out $dir/probe.jsonl}"
@@ -258,6 +261,7 @@ l3() {
         SCENARIO_SIM="${SCENARIO_SIM:-planning}" CARLA_HOLD_SECS="${CARLA_HOLD_SECS:-5}" ENGAGE_SECS="${ENGAGE_SECS:-300}" \
         SCENARIO_REARM="${SCENARIO_REARM:-}" SCENARIO_TRIGGER="${SCENARIO_TRIGGER:-button}" \
         SCENARIO_ACT_SOCKET="${SCENARIO_ACT_SOCKET:-}" TRIGGER_SECS="${TRIGGER_SECS:-180}" \
+        SCENARIO_ODD_FILE="${SCENARIO_ODD_FILE:-}" SCENARIO_REARM_LEAD_S="${SCENARIO_REARM_LEAD_S:-4.0}" \
         bash -c "cd '$repo'; source demo/l3/container/bin/l3-env >/dev/null 2>&1; $*"
 }
 export -f l3

@@ -54,13 +54,16 @@ def trace_edges(run):
         ms = e["island_ns"] / 1e6
         if e["marker"] == "PUB_MRM_HANDLER_MRM_STATE":
             v = (e["value"] >> 16, e["value"] & 0xFFFF)
-            if v != last_mrm:  # the trace keeps a publish only on a change (filtered)
+            # the trace keeps a publish only on a change (filtered); the
+            # window's first NORMAL is the level at its re-arm, not an edge
+            # (tm-b2: re-armed 4 s before the ODD exit, within merge.py's 5 s)
+            if v != last_mrm and not (last_mrm is None and v[0] == 1):
                 name = {2: "mrm_operating", 3: "mrm_succeeded", 1: "normal", 4: "mrm_failed"}.get(v[0], str(v))
                 edges.append(dict(edge=name, ms=ms, state=v[0], beh=v[1]))
             last_mrm = v
         else:
             on = e["value"] == 2
-            if on != last_tor:
+            if on != last_tor and not (last_tor is None and not on):
                 edges.append(dict(edge="tor_on" if on else "tor_off", ms=ms, tor=on))
             last_tor = on
     return edges
