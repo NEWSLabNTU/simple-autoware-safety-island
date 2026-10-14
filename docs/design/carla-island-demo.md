@@ -1,14 +1,16 @@
 # CARLA + Autoware + the island on the board, with LEDs
 
-Status: design, 2026-10-14. Not built except the LED prototype (section 3,
+Status: design, 2026-10-14. Built: the LED prototype (section 3,
 `CONFIG_ISLAND_LED`, measured on the board), the scenario-declared ODD
-(section 2.5: odd_monitor reads it from the `.xosc`, unit-tested; the
-scenario itself not yet run with odd_monitor), unit C1, the CARLA ego on the
-island's domain (section 5, G1 passed; runbook demo/carla/README.md), unit
-C2, acb's `allow_manual` (MANUAL accepted and reported, a scripted driver
-holds the lane) and unit C3, the board attached to the CARLA ego, G2
-passed (`run-board.sh --sim carla`: encore, a and b PASS at RTF 1.000 with
-SSv2 junit PASS). The island keeps today's serial link
+(section 2.5), unit C1, the CARLA ego on the island's domain (section 5, G1
+passed; runbook demo/carla/README.md), unit C2, acb's `allow_manual`
+(MANUAL accepted and reported, a scripted driver holds the lane), unit C3,
+the board attached to the CARLA ego, G2 passed (`run-board.sh --sim
+carla`: encore, a and b PASS at RTF 1.000 with SSv2 junit PASS), unit C4,
+each act triggered by its scenario at its place (encore, a, b back to back
+on one boot; every ODD exit `segment` at x 239.8-240.0), unit C5, the booth
+image with the LEDs (its record matches the trace within a tick), and unit
+C8, the proof casts of acts b and a (`just carla-cast`). The island keeps today's serial link
 and gateway (1.1); a direct island-Autoware link is recorded as future work
 (1.5), not chosen. Two repositories are named throughout:
 
@@ -44,6 +46,9 @@ contract checks stay exactly as they are.
 | C1, the ego on rmw_zenoh_cpp domain 10 with the island's overlay, no island (G1) | five starts: `Startup complete ... composable 125/125` each, no MRM node on the graph, availability 10.0 Hz from `availability_gate`, `town01_ego_drive` failures=0 errors=0 each (section 5, C1 row) |
 | C2, acb `allow_manual` (acb `9ec6343`, CSB `3883f86`) | acb `just check` clean, `just test` 223 passed (5 new); on the board, act a reads control mode 4 (MANUAL) on `/vehicle/status/control_mode` and the scripted driver reaches the route's goal (junit failures=0 errors=0; c3-a5, c3-a7) |
 | C3, the board on the CARLA ego (G2) | `SUMMARY c3-e2 encore: PASS ... table 8/8`, `c3-b5 b: PASS ... table 15/15`, `c3-a7 a: PASS ... table 6/6`; each `sim carla, RTF 1.000, SSv2 junit PASS` (section 5, C3 row) |
+| C4, the scenario triggers the act | one boot: `c4-e3 encore: PASS ... 8/8 ... trigger hpc-loss at (285.1, -129.4)`, `c4-a2 a: PASS ... 6/6 ... trigger ODD EXIT segment (239.9, -129.4)`, `c4-b2 b: PASS ... 15/15`; each RTF 1.000, junit PASS; `vlimit 7.00 m/s asked, 4.17 selected` (section 5, C4) |
+| C5, the booth image | `c5-e3`, `c5-a1`, `c5-b2` PASS; `led_vs_trace.py`: every edge within 0.7 ms of the trace (section 5, C5) |
+| C8, the proof cast | /mnt/evo/aeon/casts/cast-b1.mp4 (act b: ODD exit -> takeover request -> island MRM -> stop) and cast-a1.mp4 (act a: MANUAL, no MRM), with stills (section 5, C8) |
 
 ## 1. Architecture
 
@@ -233,8 +238,9 @@ CARLA_MAPS)/Town01` like CSB's):
   one `ReachPositionCondition` at a straight -> CustomCommandAction
   `hpc-loss`; success = ego standstill (`StandStillCondition`) within 15 s
   of the trigger, no collision; failure = timeout. (C3: StandStillCondition
-  never fires for the CARLA ego, see below.)
-- `town01_island_odd.xosc` (run in C3 as the world of acts b and encore):
+  never fires for the CARLA ego, see below. Built in C4: the trigger at
+  x 285 on the odd scenario's straight, its success the odd scenario's.)
+- `town01_island_odd.xosc` (act b; in C3 also the encore's world):
   its own route on the long Town01 straight, the ODD declared in its
   ParameterDeclarations (2.5); success = 60 s (simulation) after the ego
   was below 0.1 m/s having moved 5 m. SSv2's StandStillCondition counts
@@ -364,10 +370,13 @@ puts the comfortable stop near x 138, 37 m before the junction.
 
 **The speed bound vs the speed cap.** The lanelets carry no `speed_limit`,
 so Autoware would cruise above 30 km/h and the speed bound, not the polygon,
-would end the ODD. The scenario caps the ego with `Performance maxSpeed
-7.0` (m/s, 25.2 km/h), which SSv2 hands to Autoware as its velocity limit
-(to be confirmed in C4); that leaves 4.8 km/h of margin over EKF twist
-noise. An act on the speed bound is the same file with the cap above 30 km/h.
+would end the ODD. The scenario caps the ego at 7.0 m/s (25.2 km/h),
+leaving 4.8 km/h of margin over EKF twist noise. C4 found that SSv2 hands
+Autoware the Controller's `Property maxSpeed`, not `Performance maxSpeed`
+(which it sent as DBL_MAX); the scenarios now declare the property, and
+Autoware's own `max_vel` (4.17 m/s) caps the cruise lower still (section
+5, C4). An act on the speed bound is the same file with the cap above 30
+km/h and Autoware's `max_vel` raised.
 
 **How the values reach odd_monitor.** `odd_monitor` takes `scenario_file`
 (launch arg of `takeover.launch.xml`) and reads the two declarations itself
@@ -616,11 +625,11 @@ Each unit ends in a gate that is a run, not a review.
 | C1 | the ego on zenoh: `just ego-av` with `RMW_IMPLEMENTATION=rmw_zenoh_cpp`, `ROS_DOMAIN_ID=10`, the stock router, the island's overlay sourced between Autoware and acb, `operation_mode_availability_topic:=.../availability_raw`, a merged `autoware-carla-l3.yaml` graph | G1: five starts, each `Startup complete` with every composable; `/system/mrm_handler` not on the host graph; `town01_ego_drive` passes with no island attached (availability flows through the gate) | **[x] done 2026-10-14** (below) |
 | C2 | acb options: `allow_manual` (MANUAL accepted, reported, Autoware's commands not applied, CARLA autopilot holds the lane) and `emergency_full_brake:=false` | acb unit tests; act a in CARLA reports MANUAL on `/vehicle/status/control_mode` | **[x] done 2026-10-14** (below) |
 | C3 | the island attached: run-board.sh `--sim carla` (CARLA + scenario + ego instead of the container), RTF recorded per act | G2: encore, a, b each PASS with SUMMARY rows unchanged in meaning, RTF >= 0.95, SSv2 junit PASS | **[x] done 2026-10-14** (below) |
-| C4 | the scenarios: `town01_island_encore.xosc` (CustomCommandAction -> act daemon), `town01_island_odd.xosc` (written; ODD declared, 2.5) with `scenario_file:=` the same path; confirm SSv2 applies `Performance maxSpeed` as Autoware's velocity limit | each act triggered by the scenario at its place, three times back to back without a reflash (W2's re-arm); act a/b's `ODD EXIT` reason is `segment`, between x 239 and 241 | |
-| C5 | LEDs on by default for the booth image (`CONFIG_ISLAND_LED=y` in a booth conf, not the gate image) | the LED record shows the act's transitions with uptimes matching the trace's `mrm_operating` / `mrm_succeeded` edges within one tick | |
+| C4 | the scenarios: `town01_island_encore.xosc` (CustomCommandAction -> act daemon), `town01_island_odd.xosc` (written; ODD declared, 2.5) with `scenario_file:=` the same path; confirm SSv2 applies `Performance maxSpeed` as Autoware's velocity limit | each act triggered by the scenario at its place, three times back to back without a reflash (W2's re-arm); act a/b's `ODD EXIT` reason is `segment`, between x 239 and 241 | **[x] done 2026-10-14** (below) |
+| C5 | LEDs on by default for the booth image (`CONFIG_ISLAND_LED=y` in a booth conf, not the gate image) | the LED record shows the act's transitions with uptimes matching the trace's `mrm_operating` / `mrm_succeeded` edges within one tick | **[x] done 2026-10-14** (below) |
 | C6 | buttons: SW1 take over, SW2 HPC loss (3.4) | a visitor runs acts a and encore from the board alone | |
 | C7 | the container (phase 2, also W10) | C3's gate with Autoware + acb in the image | |
-| C8 | proof cast: a screencast of one act run end to end. A new 1920x1080 TurboVNC display `:3` (`/opt/TurboVNC/bin/vncserver :3 -geometry 1920x1080`; `:1`/`:2` are the user's 1240x900 desktops and `:9` another user's: never touched), recorded with `ffmpeg -f x11grab` from `:3`. On screen and readable at 1080p: the CARLA chase view of the hero; a map panel with the ODD polygon (2.5), the ego pose and a marker where the ODD exit fired; the takeover request (`/system/operation_mode/availability`, the operation mode, `/system/takeover_request/state`); the island's MRM state with its LED colour mirrored on screen (section 3.2's mapping, from `/system/fail_safe/mrm_state`; the host has no webcam for the board itself); wall-clock and simulation timestamps | one cast in which ODD exit -> takeover request -> island MRM -> stop are visible in that order | design only |
+| C8 | proof cast: a screencast of one act run end to end. A new 1920x1080 TurboVNC display `:3` (`/opt/TurboVNC/bin/vncserver :3 -geometry 1920x1080`; `:1`/`:2` are the user's 1240x900 desktops and `:9` another user's: never touched), recorded with `ffmpeg -f x11grab` from `:3`. On screen and readable at 1080p: the CARLA chase view of the hero; a map panel with the ODD polygon (2.5), the ego pose and a marker where the ODD exit fired; the takeover request (`/system/operation_mode/availability`, the operation mode, `/system/takeover_request/state`); the island's MRM state with its LED colour mirrored on screen (section 3.2's mapping, from `/system/fail_safe/mrm_state`; the host has no webcam for the board itself); wall-clock and simulation timestamps | one cast in which ODD exit -> takeover request -> island MRM -> stop are visible in that order | **[x] done 2026-10-14** (below) |
 | L1-L3 | direct link, future (1.5): D0 one router on serial, then D1 Ethernet after a media converter | 1.5's gates | |
 
 **C1 status (2026-10-14, evidence).** Glue: `just/carla.just` (`carla-server`,
@@ -766,3 +775,164 @@ a fixture, not on a run); the LED image under CARLA (C5); the container
 users' jobs; runs waited for it, and "load at act" is the load before
 the scenario started: the 1-min load over a whole run peaked at 23-177
 (load.log; 177 in c3-e2).
+
+**C4 status (2026-10-14, evidence).** Island `6d1f7ed`, `42ae329` (the
+SUMMARY names the trigger mode): the scenario
+triggers each act at its place (demo/carla/README.md, "C4"). The encore's
+`town01_island_encore.xosc` runs a CustomCommandAction at x 285 whose type
+is `$(env SAI_ACT_TRIGGER true) hpc-loss`; run-board.sh sets the variable
+to `demo/carla/act_trigger.py` and the run's socket, the script sends one
+datagram and exits (SSv2 `waitpid()`s it), and the act presses hpc-loss on
+it. Acts a and b get no press: run-board.sh starts `odd_monitor` with
+`scenario_file:=` the act's own `.xosc`, and the ego leaving the declared
+polygon is the ODD exit. Chain 2, three acts back to back on one boot
+(`--keep-link`, `--keep-boot`, the gate image, no reflash; build/timeline/c4-*):
+
+| act | run | SUMMARY | table | trigger | RTF | SSv2 junit | load at act |
+|---|---|---|---|---|---|---|---|
+| encore | c4-e3 | PASS | 8/8, total 3022.51 of 4909.67 ms (detect + route 582.50 of 744.33; settle 2440.02 of 4165.33; entry 4.08 m/s) | the scenario's datagram with the ego at (285.1, -129.4) | 1.000 | PASS | 31.62 |
+| a | c4-a2 | PASS | 6/6 (detect 70.66 of 100; driver answered 3035.96; exit route 98.51 of 149; no MRM) | `ODD EXIT (segment (239.9, -129.4) outside the ODD polygon)`, odd_monitor -> gate 1.41 ms | 1.000 | PASS | 34.77 |
+| b | c4-b2 | PASS | 15/15, total 14738.55 of 20450.67 ms (detect 86.16 of 100; window dwell 10100.49; settle 4411.48 of 9996.67; rung COMFORTABLE_STOP) | `ODD EXIT (segment (239.9, -129.4) ...)`, 3.24 ms | 1.000 | PASS | 33.79 |
+
+Chain 1 on its own boot: c4-e1 (encore) had no verdict (below), c4-e2
+encore PASS 8/8 (trigger at (287.3, -129.4), RTF 1.003), c4-a1 a PASS 6/6
+(`ODD EXIT (segment (239.9, -129.4) ...)`, 0.33 ms), c4-b1 b no verdict
+(below). Also on the booth image (C5, C8): c5-a1, c5-b2, cast-a1, cast-b1. Every
+ODD exit's reason was `segment`, at x 239.8-240.0, with the ego at about
+4.15 m/s. Each run `trace-check PASS (window <n> of the boot)`,
+`orphans: 0`.
+
+- **The start edge of a and b** is the gate's receipt of
+  `/demo/odd/exit` (its `odd` event in gate.jsonl), not odd_monitor's
+  `ODD EXIT` stamp as 2.5 planned: the contract's odd_exit detection
+  (126 ms) is the gate's timer and starts where the gate learns the
+  verdict, as it started at SIGUSR1 before. odd_monitor's stamp, reason
+  and hop to the gate (0.33-3.24 ms) are in the act's `trigger` event and
+  the SUMMARY (`trigger ODD EXIT ..., odd_monitor -> gate <ms>`).
+  odd_monitor now publishes the moment an exit fires as well as on its
+  10 Hz timer, so the hop is a transport, not up to a period.
+- **The velocity limit.** SSv2 does not send `Performance maxSpeed`: the
+  limit it sets through `/api/autoware/set/velocity_limit` is the
+  Controller's `Property maxSpeed` (`simulator_core.hpp`
+  `applyAssignControllerAction`), DBL_MAX when absent, which C3's
+  scenarios sent. The scenarios now declare `maxSpeed` 7.0 on the
+  controller. The act reads it back (`vlimit 7.00 m/s asked, 4.17
+  selected` in every C4 SUMMARY): `max_velocity_default` 7.0, the
+  selector's `max_velocity` 4.17, which is Autoware's own `max_vel`
+  (autoware_launch common.param.yaml). So the ego cruises at about 4.1
+  m/s whatever the scenario asks above that, the 30 km/h speed bound is
+  never near, and 2.4's 7 m/s budget is an upper bound: the ODD exit at
+  x 240 leaves 55 m to the comfortable stop at 4.17 m/s.
+
+What it took:
+
+| run | what failed | fix |
+|---|---|---|
+| c4-e1 | no verdict: the act's re-arm (`readout.py --rearm-only`) re-armed the window and never exited (1-min load 54); `subprocess.run`'s 30 s timeout killed the shell, not pyocd, the act died, and the readout after it failed `USBError: [Errno 16] Resource busy` | the re-arm runs in its own session, killed whole after 60 s; `--keep-boot`'s re-arm bounded at 90 s |
+| c4-b1 | no verdict: `FATAL: odd_exit seen on /demo/odd/exit but no odd event in gate.jsonl`: the act took the topic sample 1 ms before the gate logged its receipt, and the act looked for a flip before its own | the act takes the gate's first flip of the run |
+
+Not verified in C4: the encore's place against the planning simulator
+(only CARLA); a scenario with the cap above 30 km/h (the speed bound as
+the exit; 2.5), which needs Autoware's `max_vel` raised too; each act
+three times on one boot (the chain ran each act once per boot, as W2's
+chain; scenario-triggered passes across C4, C5 and C8: encore 3 (c4-e2,
+c4-e3, c5-e3), a 4 (c4-a1, c4-a2, c5-a1, cast-a1), b 3 (c4-b2, c5-b2,
+cast-b1)).
+
+**C5 status (2026-10-14, evidence).** Island `cde2f40`: the booth image is
+the gate image plus the snippet `island-booth`
+(`src/zephyr_entry/snippets/island-booth/booth.conf`: `CONFIG_ISLAND_LED=y`),
+built by `just board-build-booth` into build-board-booth; `just
+board-build` (the gate image) is unchanged (its `.config`: `#
+CONFIG_ISLAND_LED is not set`). The booth build (2026-10-14, island-led
+worktree at main + the snippet) is the size of 3.3's LED build: FLASH
+582,612, RAM 276,056, DTCM 117,624, ITCM 13,028. `tools/timeline/led_vs_trace.py`
+matches each `mrm_state` and takeover-request edge of an act's trace
+(island clock) with a transition of the LED record (`led_readout.py`, read
+right after the act; island uptime) and passes when each is within one
+handler tick (100 ms). The C3/C4 acts on the booth image, scenario-triggered:
+
+| act | run | SUMMARY | table | RTF | junit | LED vs trace (LED - trace) | trace window used |
+|---|---|---|---|---|---|---|---|
+| encore | c5-e3 | PASS | 8/8, total 3025.25 of 4909.67 ms | 1.006 | PASS | mrm_operating +0.1 ms, mrm_succeeded +0.6, normal +0.2; operating -> succeeded LED 2600 ms, trace 2599.5, host probe 2607.8 | 11,884 B over 20.0 s |
+| a | c5-a1 | PASS | 6/6 (driver answered 3039.68 ms; no MRM) | 1.000 | PASS | tor_on -0.3 ms (RG blink), tor_off -0.3 (G) | 28,908 B over 45.6 s |
+| b | c5-b2 | PASS | 15/15, total 14730.23 of 20450.67 ms (settle 4444.42) | 1.000 | PASS | tor_on +0.4 (RG blink), mrm_operating +0.7 (RG), tor_off +0.4, mrm_succeeded +0.5 (R); LED 4499 ms, trace 4499.1, host 4540.3 | 50,410 B over 74.9 s |
+| a (cast) | cast-a1 | PASS | 6/6 | 1.000 | PASS | tor_on +0.4, tor_off +0.4 | - |
+| b (cast) | cast-b1 | PASS | 15/15, total 14757.06 | 1.000 | PASS | tor_on +0.4, mrm_operating +0.2, tor_off -0.1, mrm_succeeded -0.0; LED 4699 ms, trace 4699.2, host 4685.7 | - |
+
+Every edge lands in the same tick on both records (|LED - trace| <= 0.7
+ms; the LED is set in the tick that publishes the state). Each run
+`trace-check PASS`, `orphans: 0`.
+
+The trace margin: the LED driver writes a pin only on a level change (3.3),
+and the window fills at the gate image's rate (c5-b2 673 B/s, c4-b2 680
+B/s). But b's window is long on CARLA: it opens when the ego first drives
+(C3's re-arm) and runs past the stop to the readout, 47-75 s, and c5-b2
+used 50,410 of the buffer's 53,248 B (2,838 B left) over 74.9 s, against
+31,874 B over 46.9 s for c4-b2. A b act whose readout comes about 4 s later
+than c5-b2's would fill the buffer; trace-check says so (`it filled at`)
+rather than passing silently. Not changed here: re-arming at the ODD
+exit, or a larger buffer, is a choice for the booth image's DTCM (13,448 B
+left).
+
+What it took:
+
+| run | what failed | fix |
+|---|---|---|
+| c5-e1 (first try) | REFUSED: `pyocd list` took over 30 s (heavy I/O wait) | `RB_PYOCD_TIMEOUT=90` (trap 11) |
+| c5-e1 | INVALID (RTF 0.098): the host stalled 44 s (load.log has no sample from 13:45:34 to 13:46:18; 60% I/O wait, other jobs); the island's verdict said PASS, run_summary said INVALID, as 4.2 asks | none; the INVALID path, unit-tested in C3, read right on a real run |
+| c5-b1 | no verdict: Autoware never left INITIALIZING (SSv2: "waited for the Autoware state to transition to WAITING_FOR_ROUTE, but time is up") at a 1-min load of 220-290 (another session's cargo builds); the ego never drove, so the ODD exit could not fire | rerun (c5-b2) when the load fell |
+| c5-e2 | no verdict: SSv2 "The simulator reported a failed frame" after its main loop was unresponsive for 30 s (load 105 falling); the ego never drove | rerun (c5-e3) |
+| c5-b2 | PASS, but odd_monitor -> gate read 571.54 ms: odd_monitor published after its `ODD EXIT` log line, whose write blocked on the loaded disk | odd_monitor publishes before it logs (the table's start edge, the gate's receipt, was not affected) |
+
+Not verified in C5: the LED seen by a person (the record and the pads'
+output registers are read, not the light); the booth image under the
+planning simulator since this commit (3.3's led-e3/led-a1 were); a b act
+whose trace window overflows (the margin above).
+
+**C8 status (2026-10-14, evidence).** `just carla-cast [run-board options]
+a|b|encore <id>` (`demo/carla/cast.sh`, `demo/carla/cast_dashboard.py`;
+demo/carla/README.md, "C8") runs one act with run-board.sh `--sim carla`,
+starts the dashboard on the TurboVNC display `:3` (1920x1080, no desktop:
+`just carla-cast-display`) at run-board's step 6, records it with ffmpeg
+x11grab (h264_nvenc, 30 fps) from step 7 (the scenario starts) to 8 s
+after step 8 (the readout), and cuts a still at each transition the act is
+about. The dashboard, one window, one clock (the host's wall clock and
+`/clock` in the banner and on every event line): the state in a banner
+(AUTONOMOUS / TAKEOVER REQUESTED with the window's countdown / ISLAND MRM:
+COMFORTABLE STOP / STOPPED SAFELY / DRIVER IN CONTROL), the CARLA chase view
+(an RGB camera the dashboard attaches to the hero, 1066x600), the ODD panel
+(odd_monitor's verdict and reason, speed, x), the takeover request
+(`/system/operation_mode/availability` autonomous, `/api/operation_mode/state`,
+`/vehicle/status/control_mode`, `/system/takeover_request/state`), the
+island (`/system/fail_safe/mrm_state`, the LED mirrored with 3.2's
+mapping), the map (the Town01 straight from the Lanelet2 map, the
+scenario's polygon, the track, the ego, a cross where the ODD exit fired,
+a square where it stopped) and the last four transitions. Casts, booth
+image, in /mnt/evo/aeon/casts:
+
+| take | act | file | length | in order on screen (wall clock) | the act |
+|---|---|---|---|---|---|
+| cast-b1 | b | cast-b1.mp4 (H.264, 1920x1080, 30 fps) | 141.7 s | ODD EXIT segment (239.8, -129.4) 15:07:14.420 -> autonomous available NO .458 -> TAKEOVER REQUESTED .512 -> request off and island MRM_OPERATING / COMFORTABLE_STOP 15:07:24.613 -> STANDSTILL at x 187.0 15:07:29.175 -> MRM_SUCCEEDED / COMFORTABLE_STOP 15:07:29.304 | PASS, 15/15, RTF 1.000, junit PASS, LED vs trace PASS |
+| cast-a1 | a | cast-a1.mp4 | 140.3 s | ODD EXIT segment (240.0, -129.4) 15:11:55.398 -> autonomous NO .494 -> TAKEOVER REQUESTED .515 -> control mode MANUAL 15:11:58.601 -> request off .715; mrm NORMAL throughout | PASS, 6/6, no MRM, RTF 1.000, junit PASS, LED vs trace PASS |
+
+Stills (each viewed, legible at 1080p): cast-b1-01-odd-exit.png,
+-02-takeover-request.png, -03-mrm-operating.png, -04-standstill.png,
+-05-mrm-succeeded.png; cast-a1-01-odd-exit.png, -02-takeover-request.png,
+-03-manual.png. The dashboard's camera is one more CARLA client and sensor
+on the hero during the act: the acts it recorded kept RTF 1.000 and passed
+their tables.
+
+Three cosmetic flaws of cast-b1, fixed in the dashboard after it was
+recorded (cast-a1 has the fixes): the banner's last words cut off
+("STOPPED - ISLAND MRM SUCCEEDED (COMFOR"; now "STOPPED SAFELY - ISLAND
+MRM SUCCEEDED"), the mirrored LED's words cut off ("driver, take ov"), and
+the ODD-exit label over the polygon's label on the map. A re-take of b
+(cast-b2) never drove: Autoware stayed INITIALIZING at a 1-min load of 220
+from other jobs; the next (cast-b3) was refused at load 47 after 900 s.
+
+Not verified in C8: the encore on cast (not asked; the recipe takes it);
+the physical LED on camera (no camera on the host; the LED on screen is
+mirrored from the topic, and led_vs_trace shows the board's LED changed in
+the same tick); a person's takeover at the booth (the act's scripted
+button presses MANUAL); the cast on a display other than TurboVNC.

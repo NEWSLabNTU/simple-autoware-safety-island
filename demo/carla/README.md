@@ -1,6 +1,6 @@
 # demo/carla - the island demo on CARLA
 
-Design and plan: `docs/design/carla-island-demo.md` (units C1-C7). Recipes:
+Design and plan: `docs/design/carla-island-demo.md` (units C1-C8). Recipes:
 `just/carla.just`. The CARLA side is carla-scenario-bridge (CSB,
 `NEWSLabNTU/carla-scenario-bridge`, default checkout
 `/mnt/evo/aeon/repos/carla-scenario-bridge`, override with `CSB_DIR`) and its
@@ -8,8 +8,12 @@ submodule autoware_carla_bridge (acb).
 
 | path | what | unit |
 |---|---|---|
-| `scenarios/town01_island_odd.xosc` | acts b and encore: the Town01 straight, the ODD declared in the file (design 2.5, read by odd_monitor from C4), success 60 s after the stop | C3, C4 |
-| `scenarios/town01_island_takeover.xosc` | act a: the same road, success at the route's goal under the driver | C3 |
+| `scenarios/town01_island_odd.xosc` | act b: the Town01 straight, the ODD declared in the file (design 2.5) and read by odd_monitor, which ends it at x 240; success 60 s after the stop | C3, C4 |
+| `scenarios/town01_island_takeover.xosc` | act a: the same road and ODD, success at the route's goal under the driver | C3, C4 |
+| `scenarios/town01_island_encore.xosc` | the encore: the same road, no ODD; at x 285 a CustomCommandAction tells the act "hpc-loss" | C4 |
+| `act_trigger.py` | what that CustomCommandAction runs (`$(env SAI_ACT_TRIGGER)`): one datagram to the act's socket | C4 |
+| `cast_dashboard.py`, `cast.sh` | the proof cast: a 1920x1080 dashboard (CARLA chase view, ODD, takeover request, island MRM with the LED mirrored, map, events) recorded with ffmpeg | C8 |
+| `../../src/zephyr_entry/snippets/island-booth` | the booth image's snippet: `CONFIG_ISLAND_LED=y` (`just board-build-booth`) | C5 |
 | `../../tools/timeline/run-board.sh --sim carla` | one act on the board with CARLA, the scenario side and the ego instead of the L3 container | C3 |
 | `ego-overlay.bash` | what CSB's `just ego-av` sources between Autoware and acb (`EGO_OVERLAY`): the island's overlay and the patched librclcpp | C1 |
 | `island_standin.py` | the island's two always-on outputs, for a run with no island | C1 |
@@ -178,3 +182,133 @@ in the script's header (`RB_XOSC`, `RB_RTF_MIN`, `RB_SSV2_TIMEOUT`,
     rmw_zenoh_cpp) that outlives the run; one sent SIGTERM by hand hung
     and the next run's join check (`ros2 topic echo`) never answered.
     Leave it, or kill it with SIGKILL.
+
+## C4: the scenario triggers the act
+
+`run-board.sh --sim carla` (with `RB_TRIGGER=scenario`, the default) lets
+the scenario decide when the fault comes, at its place on the road:
+
+- **encore** (`town01_island_encore.xosc`): at x 285 a CustomCommandAction
+  with the type `$(env SAI_ACT_TRIGGER true) hpc-loss` runs. SSv2
+  fork-execs an unknown type as a command line and `waitpid()`s it, so the
+  command must return at once: `act_trigger.py` sends one datagram to the
+  act's socket (`build/timeline/<id>/act.sock`) and exits; the act
+  (`scenario.py`, `SCENARIO_TRIGGER=scenario`) presses hpc-loss on it. The
+  datagram's arrival and the ego's pose are its `trigger` event. Without
+  `SAI_ACT_TRIGGER` the action runs `true hpc-loss`, a no-op.
+- **a, b** (`town01_island_takeover.xosc`, `town01_island_odd.xosc`): no
+  press. run-board starts `odd_monitor` with `scenario_file:=` the act's
+  scenario (`<dir>/odd_monitor.log`); the ego leaving the declared polygon
+  at x 240 is the ODD exit. The act's start edge is the gate's receipt of
+  `/demo/odd/exit` (its `odd` event in `gate.jsonl`): the contract's odd_exit
+  detection is the gate's timer and starts there. odd_monitor's own `ODD
+  EXIT (...)` line and its hop to the gate are in the SUMMARY:
+  `trigger ODD EXIT segment (239.9, -129.4) outside the ODD polygon,
+  odd_monitor -> gate 0.33 ms`.
+
+Several acts on one boot, as phase9-W2 (the booth):
+
+```sh
+scripts/ienv.sh 'tools/timeline/run-board.sh --sim carla --keep-link --elf <elf> encore <id1>'
+scripts/ienv.sh 'tools/timeline/run-board.sh --sim carla --keep-boot --keep-link --elf <elf> a <id2>'
+scripts/ienv.sh 'tools/timeline/run-board.sh --sim carla --keep-boot --elf <elf> b <id3>'
+```
+
+Each act still starts its own CARLA, scenario side and ego; only the
+island's boot and link are kept. `RB_TRIGGER=button` is C3's way (the act
+presses the button itself, after `DRIVE_SECS`).
+
+### Traps found in C4 (2026-10-14)
+
+13. **SSv2 does not send `Performance maxSpeed` to Autoware.** The velocity
+    limit SSv2 sets through `/api/autoware/set/velocity_limit` is the
+    Controller's `Property maxSpeed` (`simulator_core.hpp`
+    `applyAssignControllerAction`); without it SSv2 sends DBL_MAX. The
+    scenarios declare `<Property name="maxSpeed" value="7.0"/>`; the act
+    reads `max_velocity_default` 7.00 and the selector's `max_velocity`
+    4.17: Autoware's own `max_vel` (4.17 m/s, autoware_launch
+    common.param.yaml) caps the cruise, so the ego drives at 4.1 m/s.
+14. **A re-arm that never exits holds the probe.** c4-e1: the act's
+    re-arm (`readout.py --rearm-only`, attach, no halt) wrote the word, the
+    window counted it, and the process never exited under a 1-min load of
+    54; `subprocess.run`'s timeout killed the shell only, and the readout
+    after the act failed with `USBError: [Errno 16] Resource busy`. The
+    re-arm now runs in its own session and is killed whole after
+    `SCENARIO_REARM_TIMEOUT` (60 s); `--keep-boot`'s re-arm is bounded at
+    90 s.
+15. **The act can see `/demo/odd/exit` before the gate does.** c4-b1: the
+    act's sample arrived 1 ms before the gate logged its receipt, and a
+    filter "the gate's flip before the act saw it" found nothing. The act
+    takes the gate's first flip to true of the run.
+
+## C5: the booth image (LEDs on)
+
+```sh
+just board-build-booth     # snippet island-booth (CONFIG_ISLAND_LED=y) -> build-board-booth
+tools/timeline/run-board.sh --sim carla --elf build-board-booth/zephyr/zephyr.elf <act> <id>
+python3 tools/timeline/led_readout.py --elf build-board-booth/zephyr/zephyr.elf > build/timeline/<id>/led.txt
+python3 tools/timeline/led_vs_trace.py build/timeline/<id>
+```
+
+The gate image (`just board-build`, build-board) has no LED code; the booth
+image adds the snippet `src/zephyr_entry/snippets/island-booth` and nothing
+else (FLASH +744 B, DTCM +88 B, ITCM +32 B, SRAM 0; design 3.3). The RGB LED
+follows design 3.2 (green NORMAL, amber blinking takeover requested, amber
+COMFORTABLE_STOP, red blinking EMERGENCY_STOP, red stopped), CAN LED0 is the
+handler's 1 Hz heartbeat. `led_readout.py` reads the LED record (the last 8
+transitions with the island's uptime) and the pins over SWD, attach, no
+halt; read it right after the act, before the next one adds transitions.
+`led_vs_trace.py` matches every mrm_state and takeover-request edge of the
+act's trace (island clock) with an LED transition and passes when each is
+within one handler tick (100 ms).
+
+## C8: the proof cast (re-recording it)
+
+```sh
+just carla-cast-display        # once: TurboVNC :3, 1920x1080, no desktop (removes a stale ~/.vnc pid file)
+just carla-cast --no-flash --elf <booth or gate elf> b cast-b<N>   # one act, recorded
+just carla-cast --no-flash --elf <elf> a cast-a<N>
+/opt/TurboVNC/bin/vncserver -kill :3                             # when done
+```
+
+`carla-cast` runs `demo/carla/cast.sh` under `scripts/ienv.sh`. It starts
+`tools/timeline/run-board.sh --sim carla` with the arguments given, the
+dashboard (`cast_dashboard.py`) on the display at run-board's step 6, and
+`ffmpeg -f x11grab` from step 7 (the scenario starts) to `CAST_TAIL` (8) s
+after step 8 (the readout). Everything else is the act as always: same
+preflight, same record in `build/timeline/<id>/`, same SUMMARY. Out, in
+`CAST_DIR` (/mnt/evo/aeon/casts): `<id>.mp4` (h264_nvenc, 30 fps;
+`CAST_CODEC=libx264` without the GPU encoder), `<id>.events.jsonl` (each
+transition the dashboard saw, wall and sim time), `<id>.meta`, and a still
+per transition the act is about (`<id>-NN-odd-exit.png`, `-takeover-request`,
+`-mrm-operating`, `-standstill`, `-mrm-succeeded`, `-manual`), cut
+`CAST_STILL_AFTER` (1.0) s after it. With a booth image it also writes
+`led.txt` and `led_vs_trace.md` into the run directory.
+
+The dashboard alone, e.g. to check the layout: `DISPLAY=:3 python3
+demo/carla/cast_dashboard.py --no-ros --no-camera`. Its chase view is a
+camera the dashboard attaches to the CARLA vehicle whose role_name is
+`hero`; it is destroyed when the dashboard exits.
+
+- `CAST_DISPLAY` refuses `:1`, `:2` and `:9` (the user's desktops and
+  another user's). Nothing else may draw on the cast's display.
+- The LED on screen is mirrored from `/system/fail_safe/mrm_state` and
+  the takeover request with design 3.2's mapping; the board's own LED is
+  checked against the trace by `led_vs_trace.py`, not filmed.
+- A take is an act: under a high host load it waits or is refused like
+  any run (traps 11 and 16), and a take whose act did not run (no verdict)
+  has no stills worth keeping; record it again.
+
+### Traps found in C5/C8 (2026-10-14)
+
+16. **Other jobs on the host stall the whole run.** c5-e1: no load.log
+    sample for 44 s at 60% I/O wait; the act read RTF 0.098 and the
+    SUMMARY said INVALID, as it should. c5-b1, cast-b2: at a 1-min load of
+    220-290 Autoware never left INITIALIZING and the ego never drove; c5-e2:
+    SSv2 "The simulator reported a failed frame". None is the island's;
+    wait for the load (the cast recipes can be started behind `until awk
+    '{exit !($1 < 25)}' /proc/loadavg; do sleep 30; done`).
+17. **odd_monitor's log line can block.** c5-b2: 572 ms between the `ODD
+    EXIT` stamp and the line, on a loaded disk; the exit was published
+    after it. odd_monitor now publishes first. The act's start edge, the
+    gate's receipt, did not move.
