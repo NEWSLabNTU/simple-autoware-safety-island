@@ -433,7 +433,7 @@ preflight() {
     step "0. preflight"
     if [ "$dry" = 1 ]; then
         echo "   [dry-run] host overlay, model freshness, no sai-l3 container, the probe free," \
-             "the tty free (fuser, ${fuser_to} s bound), 1-min load <= $load_max (wait ${load_wait} s)"
+             "the tty free (scripts/tty-holders.sh, ${fuser_to} s bound), 1-min load <= $load_max (wait ${load_wait} s)"
         return 0
     fi
     local ws; ws="$(host_ws)" || { refuse "no host overlay: $ws/setup.bash missing -- run \`just l3-host-ws\`"; return 1; }
@@ -469,8 +469,10 @@ preflight() {
         echo "   probe: $(grep -iE 'mcu-?link|cmsis-dap' <<< "$o" | head -n1 | tr -s ' ' | cut -c1-80)"
         [ -e "$tty" ] || { refuse "the gateway tty $tty does not exist -- is the DCD-LZ cable plugged in?"; return 1; }
         local h
-        h="$(timeout "$fuser_to" fuser "$tty" 2>/dev/null)"; rc=$?
-        [ "$rc" != 124 ] || { refuse "fuser on $tty took over ${fuser_to} s (host /proc busy: a filesystem walk?)"; return 1; }
+        # not fuser: it stat()s every open file and hung over 10 min behind a
+        # filesystem walk on the sshfs NAS (C6, demo/carla/README.md trap 19)
+        h="$(timeout "$fuser_to" scripts/tty-holders.sh "$tty")"; rc=$?
+        [ "$rc" != 124 ] || { refuse "the holder check on $tty took over ${fuser_to} s (host /proc busy?)"; return 1; }
         if [ "$keep_boot" = 1 ]; then
             # phase9-W2: the tty is the kept gateway's, and only its
             link_alive || { refuse "no kept link ($linkstate missing or its gateway gone): run the previous act with --keep-link"; return 1; }
