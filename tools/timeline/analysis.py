@@ -208,6 +208,10 @@ def standstill(ev, after):
     return e["t_mono_ns"] if e else None
 
 
+# The serial link whose hop bounds the host-side window dwell's slack.
+DWELL_LINK_TOPIC = "/mrm_handler/operation_mode_availability"
+
+
 def analyze(ev, rows, explain="", windows=None, entry_speed=None):
     """Everything the plots and tables need, or None before the first injection."""
     act = act_of(ev)
@@ -332,7 +336,8 @@ def analyze(ev, rows, explain="", windows=None, entry_speed=None):
     bound = entry_speed.get(hazard)
     # phase10-B8: every declared max_transport edge the trace observes
     links = []
-    for topic, (decl, charged) in declared_transports(explain).items():
+    transports = declared_transports(explain)
+    for topic, (decl, charged) in transports.items():
         if topic not in LINK_EDGES or not have_island:
             continue
         marker, host, what, horizon = LINK_EDGES[topic]
@@ -346,6 +351,7 @@ def analyze(ev, rows, explain="", windows=None, entry_speed=None):
                entry_speed_exceeded=(v_entry is not None and bound is not None and v_entry > bound),
                settle_at_observed_speed_ms=decl_settle_at_obs,
                settle_response_ms=settle_responses(explain).get((hazard, rung)), links=links,
+               dwell_link=transports.get(DWELL_LINK_TOPIC),
                align=align, have_island=have_island, notes=notes)
     # The rung the run ENDED on: the behavior of MRM_SUCCEEDED (or the last
     # one operated). A comfortable stop that the island escalates part way
@@ -415,7 +421,15 @@ def verdicts(r):
             # link: on 9,993.00-9,999.87 ms in c8-b2/b4, c8f-b1/b2 with the
             # island's own dwell >= 10,000 (phase9-C9). The island-clock row
             # is the check of the window itself.
-            link = tl.sub_transport_ms("mrm_handler", "operation_mode_availability") or 0.0
+            # The link the run declared (its own --explain), not the contract
+            # as it is now: a run sized at link 81 is read against 81 even
+            # after the contract moves to 56.
+            dl = r.get("dwell_link")
+            if dl is not None:
+                link, src = dl[0], ("the run's --explain" if dl[1] is not None else "the contract now")
+            else:
+                link, src = tl.sub_transport_ms("mrm_handler", "operation_mode_availability") or 0.0, \
+                    "the contract now"
             for term, key, slack in (("window dwell, island clock (request on -> off)", "dwell", 0.0),
                                      ("window dwell, host (request on -> off as received)", "dwell_host", link)):
                 dw = o.get(key)
@@ -424,7 +438,7 @@ def verdicts(r):
                                 declared=f"[{lo:.2f}, {hi:.2f}]" if hi is not None else f">= {lo:.2f}",
                                 ok=None if dw is None else (lo <= dw and (hi is None or dw <= hi)),
                                 note="at least the window; ends within the checker's `ends within`"
-                                     + (f"; +- the link {link:.0f} ms, two receipts" if slack else ""),
+                                     + (f"; +- the link {link:.0f} ms ({src}), two receipts" if slack else ""),
                                 by="checker (window-expiry), trace"))
             cs = dr.get("comfortable_stop", {})
             add("windows (verdict -> deadline = request on + window)", o.get("windows"), cs.get("windows"),
@@ -555,6 +569,16 @@ def selftest_rows(check):
                             "from /mrm_emergency_stop_operator's braking profile, a = 2.5, response 250ms, "
                             "v0 = entry_speed 8.33 m/s: t = 4165.33ms", contract=False)
     check(f"settle_responses from the settle-derived line {resp}", resp == {("hpc_loss", "emergency_stop"): 250.0})
+    # The host dwell's slack is the link the run declared, not the contract's now.
+    b = dict(base, act="b", observed=dict(dwell=10000.5, dwell_host=9925.0),
+             declared=dict(takeover_request=dict(window_end=10081.0)), dwell_link=(81.0, True))
+    dh = {v["term"].split(" (")[0]: v for v in verdicts(b)}.get("window dwell, host")
+    check("window dwell, host: slack from the run's --explain link (81), PASS",
+          dh is not None and dh["declared"] == "[9919.00, 10162.00]" and dh["ok"] is True
+          and "the run's --explain" in dh["note"])
+    dh = {v["term"].split(" (")[0]: v for v in verdicts(dict(b, dwell_link=(40.0, True)))}.get("window dwell, host")
+    check("window dwell, host: a run that declared link 40 FAILs a 75 ms short dwell",
+          dh is not None and dh["declared"] == "[9960.00, 10121.00]" and dh["ok"] is False)
 
 
 def fmt(v, nd=2):
