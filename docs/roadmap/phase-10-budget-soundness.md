@@ -77,7 +77,7 @@ with its evidence. Two were confirmed by experiment on 2026-10-15:
   readout updated. nano-ros PR, then the pin.
 - Also in this repo (`docs/dx-ux-gaps-2026-10.md` section 5.3).
 
-### B4. The tool applies the measurement rule (this repo) - in progress
+### B4. The tool applies the measurement rule (this repo) - done
 
 - What: the rule for a measured term is its observed maximum plus 20 %,
   rounded up to the next ms; a timer period takes no margin (tick = period
@@ -85,6 +85,10 @@ with its evidence. Two were confirmed by experiment on 2026-10-15:
   applied by hand. It prints the proposed budget per term.
 - Gate: on the W8 runs it reproduces tick 118 and work 31; on the W31 runs,
   link 81 from a 67.02 ms maximum.
+- Status (2026-10-15): done. `tools/timeline/terms.py --propose`. W8
+  (13 runs): tick 118 (lateness 14.84), work 31 (25.04, tick to the
+  velocity limit), call_mrm 149. W31 (9 runs): link 81 (67.02). fr
+  (9 runs): link 56 (46.42), tick 102, work 2, call_mrm 104.
 
 ### B5. Variants of the island contract in CI (this repo) - in progress
 
