@@ -193,7 +193,12 @@ xosc_default=demo/carla/scenarios/town01_island_odd.xosc
 xosc="$(readlink -f "${RB_XOSC:-$xosc_default}")"
 rtf_min="${RB_RTF_MIN:-0.95}"
 carla_pgs=() ssv2_pid=""
-if [ "$sim" = carla ]; then export SCENARIO_SIM=carla; fi
+if [ "$sim" = carla ]; then
+    export SCENARIO_SIM=carla
+    # the trace window opened at the island's arming, a minute or more before
+    # the act; scenario.py re-arms it once the ego drives (attach, no halt)
+    [ "$target" = board ] && export SCENARIO_REARM="python3 tools/timeline/readout.py --target board --elf '$(readlink -f "$elf")' --out /dev/null --rearm-only"
+fi
 : "${RB_GATE:=python3 tools/timeline/scenario.py gate --log $dir/gate.jsonl}"
 : "${RB_PROBE:=python3 tools/timeline/probe.py --out $dir/probe.jsonl}"
 : "${RB_ACT:=python3 tools/timeline/scenario.py run $act --log $dir/scenario.jsonl}"
@@ -234,6 +239,7 @@ l3() {
         ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-10}" L3_WS="$ws" \
         DRIVE_SECS="${DRIVE_SECS:-3}" OBSERVE_SECS="${OBSERVE_SECS:-30}" RESPOND_AFTER="${RESPOND_AFTER:-3}" \
         SCENARIO_SIM="${SCENARIO_SIM:-planning}" CARLA_HOLD_SECS="${CARLA_HOLD_SECS:-5}" ENGAGE_SECS="${ENGAGE_SECS:-300}" \
+        SCENARIO_REARM="${SCENARIO_REARM:-}" \
         bash -c "cd '$repo'; source demo/l3/container/bin/l3-env >/dev/null 2>&1; $*"
 }
 export -f l3
@@ -673,6 +679,12 @@ trc_read=$?
 
 if [ "$sim" = carla ] && [ "$dry" != 1 ] && [ -n "$ssv2_pid" ]; then
     step "8b. the SSv2 scenario's verdict (up to ${RB_SSV2_TIMEOUT:-240} s)"
+    # the probe stops first, as at teardown: the scenario's end pauses the
+    # world, the availability goes silent and the island raises an HPC loss
+    # that belongs to no act (c3-b4: the rung row read that EMERGENCY_STOP,
+    # 78 s after the button, from the probe's mrm_state samples)
+    kill -TERM -- "-$probe_pid" 2>/dev/null
+    echo "   the probe stopped (the act's record ends here)"
     # ended = gone or a zombie (this script's child until reaped; kill -0 still answers)
     wait_for "${RB_SSV2_TIMEOUT:-240}" "the SSv2 scenario to end" \
         bash -c "s=\$(ps -o stat= -p $ssv2_pid); [ -z \"\$s\" ] || [[ \$s == Z* ]]"

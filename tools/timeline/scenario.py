@@ -68,6 +68,12 @@ time, the vehicle's sim time; an act below 0.95 is not judged), and holds
 CARLA_HOLD_SECS (5) before the restore buttons (odd-enter, hpc-restore), so
 the stop lasts long enough for the scenario's StandStillCondition (3 s of
 sim time) before Autoware may drive on.
+SCENARIO_REARM (run-board.sh --sim carla, board): a command run once the ego
+drives, before DRIVE_SECS, that re-arms the island's trace window
+(readout.py --rearm-only, attach, no halt): with CARLA the scenario takes a
+minute or more from the island's arming to the act, longer than the window
+holds (c3-b1 filled it 15 s before the act's end), so the window is opened
+at the act as on a --keep-boot act. A `scenario` `rearm` event records it.
 """
 import argparse
 import os
@@ -268,6 +274,14 @@ def run(act, log):
         say(f"== 1-3. CARLA: the SSv2 scenario poses, routes and engages the ego (up to {engage:.0f} s) ==")
         if not spin_for(engage, lambda: (st["v"] or 0) > min_speed):
             say(f"FATAL: the vehicle did not reach {min_speed} m/s (v={st['v']}, route {st['route']})"); os._exit(2)
+        rearm = ENV("SCENARIO_REARM", "")
+        if rearm:
+            import subprocess
+            t = tl.now_ns()
+            r = subprocess.run(rearm, shell=True, capture_output=True, text=True, timeout=30)
+            out = (r.stdout + r.stderr).strip().splitlines()
+            say(f"trace window re-armed (exit {r.returncode}): {out[-1] if out else ''}")
+            b.w.write("scenario", "rearm", t_mono_ns=t, value=dict(rc=r.returncode, out=out[-1] if out else ""))
     else:
         engage_planning(node, st, spin_for, say, sd, min_speed)
     spin_for(drive)

@@ -74,7 +74,13 @@
 					</Actors>
 					<Maneuver name="end_conditions">
 						<!-- Success: the ego at the route's goal (x 120), which only a
-						     car still driven after the takeover reaches. -->
+						     car still driven after the takeover reaches. 195 m from the
+						     start at the ego's 1-4 m/s, it comes well after the act and
+						     its readout, so the scenario's end (which pauses the world,
+						     and the island then raises an HPC loss that belongs to no
+						     act) does not reach the record. Not delayed: with 15 s of
+						     delay the scripted driver drove on past the goal and fell
+						     below 0.1 m/s 227 m from the start, failing the run (c3-a6). -->
 						<Event name="success" priority="parallel">
 							<Action name="exit_success">
 								<UserDefinedAction>
@@ -100,8 +106,9 @@
 								</ConditionGroup>
 							</StartTrigger>
 						</Event>
-						<!-- Failure: a stop once moving (the takeover not taken, an
-						     MRM), or the timeout below. -->
+						<!-- Failure: below 0.1 m/s once moved 5 m (the takeover not
+						     taken, an MRM; not StandStillCondition, which needs a speed
+						     of exactly 0), or the timeout below. -->
 						<Event name="stopped" priority="parallel">
 							<Action name="exit_failure_stopped">
 								<UserDefinedAction>
@@ -130,7 +137,7 @@
 												<EntityRef entityRef="ego" />
 											</TriggeringEntities>
 											<EntityCondition>
-												<StandStillCondition duration="3.0" />
+												<SpeedCondition value="0.1" rule="lessThan" />
 											</EntityCondition>
 										</ByEntityCondition>
 									</Condition>
@@ -147,7 +154,7 @@
 								<ConditionGroup>
 									<Condition name="timeout_condition" delay="0" conditionEdge="none">
 										<ByValueCondition>
-											<SimulationTimeCondition value="120" rule="greaterThan" />
+											<SimulationTimeCondition value="240" rule="greaterThan" />
 										</ByValueCondition>
 									</Condition>
 								</ConditionGroup>
