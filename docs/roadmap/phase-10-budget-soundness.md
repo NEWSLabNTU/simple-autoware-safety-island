@@ -8,8 +8,8 @@ response, not only the braking profile.
 **Status (2026-10-15): B4, B5, B6, B9 done; the timeline side of B2 and
 B8 done; the checker side of B1, B2, B7 and B8 done (rlm main, play_launch
 branch `phase10-budget-checks`), waiting for the rlm v0.1.58 tag and a
-play_launch release before the island contract can use the keys;** B3 is
-in nano-ros.
+play_launch release before the island contract can use the keys;** B3
+done in nano-ros and pinned, its board check pending.
 
 ## Why
 
@@ -99,7 +99,7 @@ with its evidence. Two were confirmed by experiment on 2026-10-15:
   608.65, b2 1796.30, b3 1781.04 (velocity limit -> standstill, so the
   planner hop is included: 629.49 in b2).
 
-### B3. A runtime check of the route, not only of the callback (nano-ros)
+### B3. A runtime check of the route, not only of the callback (nano-ros) - done, board check pending
 
 - What: the island's `max-latency-runtime` monitor bounds one dispatch
   (the longest was 24.93 ms), while a route budget such as `call_mrm`
@@ -114,6 +114,46 @@ with its evidence. Two were confirmed by experiment on 2026-10-15:
   the board; the island's acts record none; violation-record layout and
   readout updated. nano-ros PR, then the pin.
 - Also in this repo (`docs/dx-ux-gaps-2026-10.md` section 5.3).
+- Status (2026-10-15): done in nano-ros (PR #2221, merged as `67e29e9fa`), pinned
+  here; the board check is pending (below). The executor stamps the
+  dispatch that takes a route's trigger input (the earliest take not yet
+  answered) and, at the end of a dispatch that published one of the path's
+  outputs, judges take to dispatch end against the path's `max_latency`:
+  `route-latency-runtime`, rule code 10, record only, reported once until
+  a route is within budget again. The violation record's layout is
+  unchanged (v1: the rule is a code); `tools/timeline/violations.py` says
+  which quantity each latency rule measured. The timer sweep judges it as
+  the drains do (the sweep's blind spot for `max-latency-runtime` was
+  closed by nano-ros phase-474 I6 before this). Codegen gives the route to
+  the outputs of the tightest input-triggered path: on this image
+  `mrm_state` and `takeover_request_state` carry `call_mrm`'s 149 ms from
+  the take of `/system/operation_mode/availability` (hazard lights stays a
+  100 ms callback-only row). Board image: RAM 276,152 B and DTCM 116,624 B
+  unchanged (the row storage stays 6 x 64 B), FLASH +1,528 B, against
+  the same tree on the PR's base; at the pin, with the other changes it
+  brings, RAM 276,152 B, DTCM 116,632 B of 131,072, FLASH 559,108 B. Fixtures in
+  nano-ros: a host executor test (three on-time routes record nothing; a
+  take followed by a 260 ms late tick records one verdict while the tick's
+  own dispatch stays inside its callback budget) and the violation-cpp
+  image on native_sim (two late routes, `measured=250 declared=180`, none
+  on time). The pin refuses a knob stated as an `env` row or a Kconfig
+  line and the retired `NANO_ROS_*` cmake names (nano-ros phase-484 W8), so
+  the board image's three knobs move to knob tables in
+  `src/zephyr_entry/system.toml`, the native_sim image's ring depth to
+  `src/native_sim_entry/system.toml`, and the posix workspace build says
+  `nano_ros_ROOT` and `NROS_PLATFORM`. Built on this pin: the board image
+  and the native_sim image. Not built: the QEMU image (its board conf still
+  states the heap and the graph cache as Kconfig lines, and its snippets
+  more) and the posix workspace build (`nros ws board-facts` finds four
+  system.toml bringups and asks for one); both are left as they were.
+- Board check (pending): flash this pin's image and run `encore` as
+  usual; `violations.txt` and the trace's violation list carry no
+  `route-latency-runtime`. Then, as in the phase9-W4 gate,
+  `violations.py overrun 250` on an armed island: beside the three
+  `max-latency-runtime` verdicts the trace shows
+  `route-latency-runtime /mrm_handler/mrm_state` and
+  `/mrm_handler/takeover_request_state`, `declared=149`, measured at least
+  250.
 
 ### B4. The tool applies the measurement rule (this repo) - done
 

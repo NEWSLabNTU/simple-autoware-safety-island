@@ -616,6 +616,11 @@ checkout is itself gap 3.1.
   to spare." The static and runtime halves state different quantities.
 - Evidence: NR474 D3 (118-136); PL85 D4 (82-86); TT:1161-1166.
 - Sev: HOURS, structural. Owner: NR, PL. Tracked: NR474 D3, PL85 D4.
+- Status (2026-10-15): the runtime half is closed by phase10-B3: nano-ros
+  PR #2221 (`route-latency-runtime`) judges an input-triggered path from
+  the take of its input to its output, so `call_mrm` 149 ms is now checked
+  on the board as the route it budgets; the board check is pending
+  (docs/roadmap/phase-10-budget-soundness.md, B3).
 
 ### 5.4 No board time source: hazard lights and the clock merge
 

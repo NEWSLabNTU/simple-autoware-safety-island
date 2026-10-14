@@ -1407,7 +1407,9 @@ PASS, merge and table as before.
 - **max-latency-runtime is blind to timer callbacks fired in the trigger
   sweep** (nano-ros; phase-474 D3 is the route-level question, this is the
   callback-level rule not running at all). Until then (b) cannot show the
-  rule the contract's 206 ms rows name.
+  rule the contract's 206 ms rows name. (Closed: phase-474 I6, the gate
+  below; the route-level question is phase10-B3's `route-latency-runtime`,
+  at the end of this section.)
 - **The /diagnostics reporter runs on the spin thread**: 15-20 ms per
   verdict over serial, its own release-jitter and timer-overrun verdicts,
   and a 512 B stack buffer that overflowed a 16 KiB main stack (nano-ros,
@@ -1586,6 +1588,24 @@ not established here; like the rate rule's margin, the 10 ms bound is a
 contract question. The gate as written (none during the act) passes.
 
 Runs: `build/timeline/w4-gate-{ab,encore}/` in the W4 worktree.
+
+### The route rule (phase10-B3, 2026-10-15)
+
+`max-latency-runtime` times one dispatch; `call_mrm` 149 ms is a route,
+from the take of the availability to the reaction's outputs, the wait for
+the next tick included. Since the pin of phase10-B3 (nano-ros PR #2221) the
+executor judges that route on the board: it stamps the dispatch that takes
+`/system/operation_mode/availability` (the earliest take not yet answered)
+and, when a dispatch publishes `mrm_state` or `takeover_request_state`,
+compares take to the end of that dispatch with 149 ms. Over budget is
+stored as `route-latency-runtime` (rule code 10; record layout v1
+unchanged), reported once until a route is within budget again, with no
+action. On time a route is one tick wait plus the work, at most about
+115 + 25 ms by the W8 terms. The overrun of (b) is one: a take waits for
+the tick, which then busy-waits 250 ms, so beside the three
+`max-latency-runtime` verdicts the next gate run should show two
+`route-latency-runtime` verdicts (`mrm_state`, `takeover_request_state`,
+`declared=149`, measured at least 250). That board run is pending.
 
 ## 13. The budgets after F1 (phase9-W5, play_launch 0.14.0, 2026-10-10)
 
