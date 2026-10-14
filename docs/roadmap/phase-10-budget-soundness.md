@@ -142,7 +142,11 @@ with its evidence. Two were confirmed by experiment on 2026-10-15:
 - Status (2026-10-15): done. `docs/island-variants/`, expected
   `ladder-rung-budget` as the only error (check-contracts `!`). Totals on
   main's contract (link 56): 30450.67 (20 s) and 30180.67 (65 km/h); with
-  the link at 81: 30475.67 and 30205.67. `just l3-check` 16/16.
+  the link at 81: 30475.67 and 30205.67. `just l3-check` 16/16. With
+  the phase10-B1/B2/B7 keys (branch `phase10-contract-keys`, both variants
+  regenerated from the island contract), the settle carries the 943 ms
+  response: 31393.67 (20 s) and 31123.67 (65 km/h), still
+  `ladder-rung-budget` only.
 
 ### B6. Runs at the declared entry speed (this repo) - done
 
