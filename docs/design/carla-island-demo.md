@@ -979,6 +979,7 @@ image, in /mnt/evo/aeon/casts:
 | take | act | file | length | in order on screen (wall clock) | the act |
 |---|---|---|---|---|---|
 | cast-b1 | b | cast-b1.mp4 (H.264, 1920x1080, 30 fps) | 141.7 s | ODD EXIT segment (239.8, -129.4) 15:07:14.420 -> autonomous available NO .458 -> TAKEOVER REQUESTED .512 -> request off and island MRM_OPERATING / COMFORTABLE_STOP 15:07:24.613 -> STANDSTILL at x 187.0 15:07:29.175 -> MRM_SUCCEEDED / COMFORTABLE_STOP 15:07:29.304 | PASS, 15/15, RTF 1.000, junit PASS, LED vs trace PASS |
+| cast-b5 | b | cast-b5.mp4 (H.264, 1920x1080, 30 fps) | 157.8 s | ODD EXIT segment (239.9, -129.4) 20:21:39.746 -> autonomous available NO .748 -> TAKEOVER REQUESTED .844 -> request off and island MRM_OPERATING / COMFORTABLE_STOP 20:21:49.958 -> STANDSTILL at x 187.1 20:21:54.449 -> MRM_SUCCEEDED / COMFORTABLE_STOP 20:21:54.539 | PASS, 15/15, total 14704.67 ms, RTF 1.000, junit PASS, LED vs trace PASS (tor_on +0.3 ms, mrm_operating +0.0, tor_off -0.2, mrm_succeeded -0.3), trace 21,696 B over 30.0 s, re-armed 4.00 s before the exit |
 | cast-a1 | a | cast-a1.mp4 | 140.3 s | ODD EXIT segment (240.0, -129.4) 15:11:55.398 -> autonomous NO .494 -> TAKEOVER REQUESTED .515 -> control mode MANUAL 15:11:58.601 -> request off .715; mrm NORMAL throughout | PASS, 6/6, no MRM, RTF 1.000, junit PASS, LED vs trace PASS |
 
 Stills (each viewed, legible at 1080p): cast-b1-01-odd-exit.png,
@@ -987,6 +988,18 @@ Stills (each viewed, legible at 1080p): cast-b1-01-odd-exit.png,
 -03-manual.png. The dashboard's camera is one more CARLA client and sensor
 on the hero during the act: the acts it recorded kept RTF 1.000 and passed
 their tables.
+
+cast-b5 is the b take with the fixed dashboard (stills
+cast-b5-01-odd-exit.png ... -05-mrm-succeeded.png, each viewed: no text
+cut off, no label over another). Two changes for it: during the island's
+MRM the takeover panel adds one line, "island MRM overrides control;
+Autoware's modes stay AUTONOMOUS" (the operation mode and control mode
+rows read AUTONOMOUS while the island brakes, which a viewer could take
+for Autoware driving on), and the ODD-exit label sits west of its cross,
+clear of the polygon's outline. cast-a1's frames (no MRM, MANUAL) were
+re-rendered offscreen with the new code, not re-recorded; the note does
+not appear there. cast-b4 was refused at a 1-min load of 217 and its
+files deleted; cast-b1 is kept.
 
 Three cosmetic flaws of cast-b1, fixed in the dashboard after it was
 recorded (cast-a1 has the fixes): the banner's last words cut off

@@ -390,8 +390,13 @@ class Dash(QtWidgets.QWidget):
                     ("/system/takeover_request/state", TOR_STATE.get(s.tor, "-"),
                      C["amber"] if s.tor == 2 else C["ink"])]
             for i, (k, v, c) in enumerate(rows):
-                self.text(p, (rx + 16, 338 + i * 38, 470, 36), k, "mid", C["dim"])
-                self.text(p, (rx + 480, 338 + i * 38, rw - 496, 36), v, "mid", c)
+                self.text(p, (rx + 16, 336 + i * 34, 470, 34), k, "mid", C["dim"])
+                self.text(p, (rx + 480, 336 + i * 34, rw - 496, 34), v, "mid", c)
+            if s.mrm and s.mrm[0] in (2, 3):
+                # the island's MRM acts below Autoware's operation mode: the
+                # modes above still read AUTONOMOUS, which is not the driver
+                self.text(p, (rx + 16, 470, rw - 32, 26),
+                          "island MRM overrides control; Autoware's modes stay AUTONOMOUS", "small", C["amber"])
 
             self.panel(p, (rx, 506, rw, 198), "SAFETY ISLAND  (NXP S32K344, /system/fail_safe/mrm_state)")
             lc, hz, lw = self.led(s)
@@ -450,8 +455,9 @@ class Dash(QtWidgets.QWidget):
             p.setPen(QtGui.QPen(QtGui.QColor(C["amber"]), 5))
             p.drawLine(q + QtCore.QPointF(-14, -14), q + QtCore.QPointF(14, 14))
             p.drawLine(q + QtCore.QPointF(-14, 14), q + QtCore.QPointF(14, -14))
-            self.text(p, (q.x() - 150, q.y() + 18, 300, 26), f"ODD exit x {s.odd_mark[0]:.1f}", "small", C["amber"],
-                      QtCore.Qt.AlignCenter)
+            # west of the cross, clear of the polygon's outline
+            self.text(p, (q.x() - 320, q.y() + 14, 300, 26), f"ODD exit x {s.odd_mark[0]:.1f}", "small", C["amber"],
+                      QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
         if s.stop_mark:
             q = P(*s.stop_mark)
             p.setPen(QtGui.QPen(QtGui.QColor(C["red"]), 4))

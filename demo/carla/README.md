@@ -293,6 +293,10 @@ camera the dashboard attaches to the CARLA vehicle whose role_name is
 
 - `CAST_DISPLAY` refuses `:1`, `:2` and `:9` (the user's desktops and
   another user's). Nothing else may draw on the cast's display.
+- During the island's MRM, the takeover panel's operation mode and
+  control mode still read AUTONOMOUS (Autoware's modes; the island acts
+  below them), and the panel says so in one line: "island MRM overrides
+  control; Autoware's modes stay AUTONOMOUS".
 - The LED on screen is mirrored from `/system/fail_safe/mrm_state` and
   the takeover request with design 3.2's mapping; the board's own LED is
   checked against the trace by `led_vs_trace.py`, not filmed.
