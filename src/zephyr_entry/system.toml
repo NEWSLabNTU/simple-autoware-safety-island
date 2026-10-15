@@ -37,5 +37,16 @@ board = "zephyr"
 entry = "zephyr_entry"
 # nano-ros knobs (RFC-0103 D2a, phase-484 W5b): these three were Kconfig lines
 # in boards/mr_canhubk3_s32k344.conf, which states why each has its value; the
-# pin of 2026-10-13 refuses them there. The values are unchanged.
-env = { NROS_ZEPHYR_HEAP_SIZE = "106496", NROS_ZENOH_GRAPH_CACHE_SIZE = "4096", NROS_EXECUTOR_MAX_VIOLATIONS = "8" }
+# pin of 2026-10-13 refuses them there. They were `env` rows of this block
+# until the pin of phase10-B3, which refuses an env row naming a knob
+# (nano-ros phase-484 W8) and takes them as knob tables. The values are
+# unchanged.
+
+[image.zephyr.knobs.zephyr]
+heap_size = 106496
+
+[image.zephyr.knobs.zenoh]
+graph_cache_size = 4096
+
+[image.zephyr.knobs.executor]
+max_violations = 8

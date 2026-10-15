@@ -6,10 +6,12 @@ checked by something, and the derived settling covers the vehicle's
 response, not only the braking profile.
 
 **Status (2026-10-15): B4, B5, B6, B9 done; the timeline side of B2 and
-B8 done; the checker side of B1, B2, B7 and B8 done (rlm main, play_launch
-branch `phase10-budget-checks`), waiting for the rlm v0.1.58 tag and a
-play_launch release before the island contract can use the keys;** B3 is
-in nano-ros.
+B8 done; the checker side of B1, B2, B7 and B8 done and released in rlm
+v0.1.58, on play_launch main (c0a6a2e6, pinning v0.1.58) and pinned
+through nano-ros (f496a8b68a, this repo's pin). The island contract's keys
+(branch `phase10-contract-keys-rebased`) wait for play_launch 0.17.0 on
+PyPI, which CI installs by version;** B3 done in nano-ros and pinned, its
+board check pending.
 
 ## Why
 
@@ -51,11 +53,11 @@ with its evidence. Two were confirmed by experiment on 2026-10-15:
   contract states `param:` on every timer and checks clean; a contract
   fixture for each case in rlm and play_launch tests.
 - Owner: rlm (schema), play_launch (rule), this repo (contract keys).
-- Status (2026-10-15): the checker is done; the contract keys wait for a
-  release. rlm main 6211471: `trigger: { timer: { rate_hz, param } }` (a
+- Status (2026-10-15): the checker is done and released (rlm v0.1.58,
+  play_launch main c0a6a2e6); the contract keys wait for play_launch 0.17.0
+  on PyPI. rlm 6211471 (in v0.1.58): `trigger: { timer: { rate_hz, param } }` (a
   rate, Hz) or `period_param` (seconds), and `max_age: { duration, param }`
-  (`max_age` was not bound before). play_launch `phase10-budget-checks`
-  0cd1f5b9: `timer-param` and `max-age-param`, resolved from the launch
+  (`max_age` was not bound before). play_launch 7576ec46: `timer-param` and `max-age-param`, resolved from the launch
   tree's parameter files like `window-param`. Reproduced first: the
   contract's handler timer at `rate_hz: 20` over `update_rate: 10` checks
   clean on 0.16.0; with `param: update_rate` the local build fails it with
@@ -63,7 +65,7 @@ with its evidence. Two were confirmed by experiment on 2026-10-15:
   `param: update_rate`, and 'update_rate' resolves to 10 Hz`. Fixture
   `tests/fixtures/contract_param_bind` in play_launch, parse tests in rlm.
   The island contract with `param:` on every timer and on `max_age` is on
-  branch `phase10-contract-keys`: it checks clean on the local build and
+  branch `phase10-contract-keys-rebased`: it checks clean on the local build and
   is refused (`manifest-parse`) by the pinned 0.16.0, so it waits.
 
 ### B2. The vehicle's response in the settling (rlm, play_launch, this repo)
@@ -78,9 +80,9 @@ with its evidence. Two were confirmed by experiment on 2026-10-15:
   timeline table's settle row shows `profile + response` and the observed
   difference.
 - Status (2026-10-15): the timeline side, the key and the checker are done;
-  the contract's values are on branch `phase10-contract-keys`, waiting for
-  the release (B1's status). rlm: `settle: { decel, jerk, response }`;
-  play_launch 69942daa: the settle is profile + response, `settle-derived`
+  the contract's values are on branch `phase10-contract-keys-rebased`,
+  waiting for play_launch 0.17.0 (B1's status). rlm: `settle: { decel, jerk, response }`;
+  play_launch 7e10a661: the settle is profile + response, `settle-derived`
   prints both parts ("... = 4165.33ms; + response 256.00ms (written) =
   settle 4421.33ms"), the totals include it and `--explain` notes
   `settle = profile + response` per row. Values from B6 at the declared
@@ -99,7 +101,7 @@ with its evidence. Two were confirmed by experiment on 2026-10-15:
   608.65, b2 1796.30, b3 1781.04 (velocity limit -> standstill, so the
   planner hop is included: 629.49 in b2).
 
-### B3. A runtime check of the route, not only of the callback (nano-ros)
+### B3. A runtime check of the route, not only of the callback (nano-ros) - done, board check pending
 
 - What: the island's `max-latency-runtime` monitor bounds one dispatch
   (the longest was 24.93 ms), while a route budget such as `call_mrm`
@@ -114,6 +116,46 @@ with its evidence. Two were confirmed by experiment on 2026-10-15:
   the board; the island's acts record none; violation-record layout and
   readout updated. nano-ros PR, then the pin.
 - Also in this repo (`docs/dx-ux-gaps-2026-10.md` section 5.3).
+- Status (2026-10-15): done in nano-ros (PR #2221, merged as `67e29e9fa`), pinned
+  here; the board check is pending (below). The executor stamps the
+  dispatch that takes a route's trigger input (the earliest take not yet
+  answered) and, at the end of a dispatch that published one of the path's
+  outputs, judges take to dispatch end against the path's `max_latency`:
+  `route-latency-runtime`, rule code 10, record only, reported once until
+  a route is within budget again. The violation record's layout is
+  unchanged (v1: the rule is a code); `tools/timeline/violations.py` says
+  which quantity each latency rule measured. The timer sweep judges it as
+  the drains do (the sweep's blind spot for `max-latency-runtime` was
+  closed by nano-ros phase-474 I6 before this). Codegen gives the route to
+  the outputs of the tightest input-triggered path: on this image
+  `mrm_state` and `takeover_request_state` carry `call_mrm`'s 149 ms from
+  the take of `/system/operation_mode/availability` (hazard lights stays a
+  100 ms callback-only row). Board image: RAM 276,152 B and DTCM 116,624 B
+  unchanged (the row storage stays 6 x 64 B), FLASH +1,528 B, against
+  the same tree on the PR's base; at the pin, with the other changes it
+  brings, RAM 276,152 B, DTCM 116,632 B of 131,072, FLASH 559,108 B. Fixtures in
+  nano-ros: a host executor test (three on-time routes record nothing; a
+  take followed by a 260 ms late tick records one verdict while the tick's
+  own dispatch stays inside its callback budget) and the violation-cpp
+  image on native_sim (two late routes, `measured=250 declared=180`, none
+  on time). The pin refuses a knob stated as an `env` row or a Kconfig
+  line and the retired `NANO_ROS_*` cmake names (nano-ros phase-484 W8), so
+  the board image's three knobs move to knob tables in
+  `src/zephyr_entry/system.toml`, the native_sim image's ring depth to
+  `src/native_sim_entry/system.toml`, and the posix workspace build says
+  `nano_ros_ROOT` and `NROS_PLATFORM`. Built on this pin: the board image
+  and the native_sim image. Not built: the QEMU image (its board conf still
+  states the heap and the graph cache as Kconfig lines, and its snippets
+  more) and the posix workspace build (`nros ws board-facts` finds four
+  system.toml bringups and asks for one); both are left as they were.
+- Board check (pending): flash this pin's image and run `encore` as
+  usual; `violations.txt` and the trace's violation list carry no
+  `route-latency-runtime`. Then, as in the phase9-W4 gate,
+  `violations.py overrun 250` on an armed island: beside the three
+  `max-latency-runtime` verdicts the trace shows
+  `route-latency-runtime /mrm_handler/mrm_state` and
+  `/mrm_handler/takeover_request_state`, `declared=149`, measured at least
+  250.
 
 ### B4. The tool applies the measurement rule (this repo) - done
 
@@ -184,11 +226,11 @@ with its evidence. Two were confirmed by experiment on 2026-10-15:
   `{ duration, source }` (and a window takes `source`), `source:
   requirement | measured | derived | analysed`, and a measured one may
   state `{ measured: { max, n, margin } }` or several `terms` (a timer
-  tick's `period` takes no margin). play_launch a1e34f6d: `budget-rule`
+  tick's `period` takes no margin). play_launch b31fbeb9: `budget-rule`
   (error), a SOURCES column per row, every total with a measured term
   noted "measured, not a bound", and a "Stated budgets" table with each
   budget's source and the rule's arithmetic. On branch
-  `phase10-contract-keys` every budget of the island contract states its
+  `phase10-contract-keys-rebased` every budget of the island contract states its
   source, the measured ones with the maxima from its comments (link 56 =
   46.42 x 1.2; `call_mrm` and `driver_exit` 149 = tick 100 + 14.84 x 1.2
   -> 118 + work 25.04 x 1.2 -> 31; the timers' jitter 18 and 6; the
@@ -206,7 +248,7 @@ with its evidence. Two were confirmed by experiment on 2026-10-15:
 - Gate: the act tables carry the link rows; no stated budget is listed as
   checked by nothing without a note.
 - Status (2026-10-15): the timeline side is done; `--explain`'s list is
-  done in play_launch a1e34f6d (released with B1): per stated budget, what
+  done in play_launch b31fbeb9 (released with B1): per stated budget, what
   checks it (the fault-reaction sum with the hazards, a rule such as
   `scope-budget`, `reaction-within`, `window-param`, `max-age-param`,
   `window-expiry`, a runtime monitor, or nothing), and

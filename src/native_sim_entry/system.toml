@@ -30,3 +30,8 @@ conf = ["prj-cyclonedds.conf"]
 # image id gives the same answer; naming it keeps src/zephyr_entry from ever
 # being a candidate for this block.
 entry = "native_sim_entry"
+
+# phase10-B3: the violation ring depth, a Kconfig line in prj.conf until the
+# nano-ros pin of phase10-B3 refused it there (RFC-0103 D2a). Value unchanged.
+[image.native_sim.knobs.executor]
+max_violations = 8
