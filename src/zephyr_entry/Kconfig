@@ -70,4 +70,81 @@ config ISLAND_BUTTONS
 	  does not act on a press. Off by default: the gate image does not
 	  carry it.
 
+config ISLAND_SUPERVISOR
+	bool "Supervised deadlines: a timer and a thread outside the executor (phase11-S4)"
+	depends on GPIO
+	help
+	  The rung that does not need the executor (docs/roadmap/
+	  phase-11-supervised-budgets.md, S4; src/island_supervisor.c). A
+	  k_timer is re-armed to the earliest due time of the supervised
+	  routes; its expiry (ISR) wakes a reaction thread above the spin
+	  thread's priority, which records a trace marker and drives the
+	  safe-state output (CAN LED1, PTE5, standing in for a brake line). The
+	  thread never touches the executor or the zenoh session, neither of
+	  which is thread-safe. Until nano-ros carries a deadline-armed route
+	  monitor (phase-11 S3), the MRM handler arms the route itself: each
+	  take of the availability sets the due of the hpc_loss reaction
+	  (take + max_age + call_mrm), and the call_mrm EXIT of a tick that
+	  saw the loss clears it. The output latches until reset.
+
+if ISLAND_SUPERVISOR
+
+config ISLAND_SUPERVISOR_THREAD_PRIORITY
+	int "Reaction thread priority"
+	default 2
+	help
+	  Above (numerically below) the spin thread's priority: the executor
+	  is what may be stuck. Checked at build time against
+	  ISLAND_SPIN_THREAD_PRIORITY (or MAIN_THREAD_PRIORITY without the
+	  spin raise).
+
+config ISLAND_SUPERVISOR_CALL_MRM_MS
+	int "call_mrm's supervised budget (ms)"
+	default 149
+	help
+	  The contract's mrm_handler/call_mrm max_latency (149 ms on the
+	  board: tick 118 + work 31). The handler adds it to the
+	  availability's max_age (its own timeout_operation_mode_availability
+	  parameter) for the hpc_loss reaction's due from the last take.
+	  tools/timeline/analysis.py reads the due back from the trace and
+	  compares it with the contract's.
+
+config ISLAND_SUPERVISOR_SWT
+	bool "Feed SWT0 once per spin; its first timeout drives the same output"
+	depends on WATCHDOG
+	default y
+	help
+	  The S32K344's software watchdog (Zephyr wdt_nxp_s32, swt0, left
+	  disabled at boot) is installed and started at the first spin, after
+	  registration, and fed at the start of every spin. Its first timeout
+	  raises an interrupt whose callback wakes the reaction thread: a hung
+	  executor is caught even when no supervised route is pending. The
+	  second consecutive timeout resets the MCU, so once the output is
+	  latched the reaction thread feeds SWT0 itself: the reset is left for
+	  a reaction thread that cannot run. Paused while a debugger halts the
+	  core.
+
+config ISLAND_SUPERVISOR_SWT_MS
+	int "SWT0 timeout (ms)"
+	depends on ISLAND_SUPERVISOR_SWT
+	default 300
+	help
+	  Above the longest spin. island_supervisor_record.spin_gap_max_us is
+	  the longest feed-to-feed gap seen since SWT0 started. The executor's
+	  park ends at the next timer (33 ms, the emergency operator) and the
+	  longest callback is the handler's tick (25.04 ms on the board,
+	  phase9-W5).
+
+config ISLAND_DEBUG_SPIN_STALL
+	bool "Debug hook: stall the spin thread on command (test only)"
+	help
+	  Compiles in island_debug_spin_stall, a volatile u32 read at the
+	  start of every spin. A debugger writing non-zero into it makes the
+	  next spin busy-wait forever before feeding SWT0: the bench check of
+	  the watchdog rung with no route pending (tools/timeline/
+	  violations.py spin-stall). Inert while the word is 0, as it is
+	  from boot: only a debugger writes it.
+
+endif
+
 source "Kconfig.zephyr"

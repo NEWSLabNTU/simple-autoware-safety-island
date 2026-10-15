@@ -230,6 +230,16 @@ def path_latency_ms(node, path, contract=None):
     return duration_ms(v)
 
 
+def sub_max_age_ms(node, sub, contract=None):
+    """A subscriber's declared `max_age` in ms (the availability's 500 ms on
+    the island's guard subscriber), read from the island's contract sidecar."""
+    p = contract or LAUNCH.replace(".launch.xml", ".contract.yaml")
+    with open(p) as f:
+        c = yaml.load(f, Loader=YamlLoader)
+    v = (((c.get("nodes") or {}).get(node) or {}).get("sub") or {}).get(sub, {})
+    return duration_ms(v.get("max_age") if isinstance(v, dict) else None)
+
+
 def sub_transport_ms(node, sub, contract=None):
     """A subscriber's declared `max_transport` in ms (the serial link on the
     island's guard subscriber, phase8-W30), read from the island's contract
@@ -239,6 +249,31 @@ def sub_transport_ms(node, sub, contract=None):
         c = yaml.load(f, Loader=YamlLoader)
     v = (((c.get("nodes") or {}).get(node) or {}).get("sub") or {}).get(sub, {})
     return duration_ms(v.get("max_transport") if isinstance(v, dict) else None)
+
+
+# phase11-S4: the platform terms of a `timer` supervision's detection delay
+# when the contract states none (rlm phase 93's top-level `supervision: {
+# tick, switch }`). tick: the kernel tick the k_timer expires on
+# (CONFIG_SYS_CLOCK_TICKS_PER_SEC 1000 on the board); switch: the expiry ISR
+# plus the switch into the reaction thread, stated, measured on the board by
+# the supervised rows of analysis.py.
+SUPERVISION_DEFAULT = dict(tick=1.0, switch=1.0)
+
+
+def supervision_ms(contract=None):
+    """(tick, switch, where from): the contract's top-level `supervision:`
+    when it states one, else SUPERVISION_DEFAULT."""
+    p = contract or LAUNCH.replace(".launch.xml", ".contract.yaml")
+    try:
+        with open(p) as f:
+            c = yaml.load(f, Loader=YamlLoader) or {}
+    except OSError:
+        c = {}
+    sv = c.get("supervision") or {}
+    tick, switch = duration_ms(sv.get("tick")), duration_ms(sv.get("switch"))
+    if tick is not None and switch is not None:
+        return tick, switch, "the contract's supervision:"
+    return SUPERVISION_DEFAULT["tick"], SUPERVISION_DEFAULT["switch"], "tlcommon.SUPERVISION_DEFAULT"
 
 
 def duration_ms(v):
@@ -424,6 +459,7 @@ def selftest(path=os.path.join(HERE, "testdata/explain.txt")):
           end is not None and w.get("settle") is not None and cs.get("route") is not None
           and w["settle"] < end <= w["settle"] + cs["route"] + 0.005)
     analysis.selftest_rows(check)  # phase10-B8 link rows, phase10-B2 settle row
+    analysis.selftest_supervised(check)  # phase11-S7 supervised rows, HPC alive from the island
     import run_summary
     run_summary.selftest(check)  # phase10-B9 the verdict with the table
     print("selftest: " + ("OK" if not fails else f"{len(fails)} FAILED"))

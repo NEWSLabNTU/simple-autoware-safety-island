@@ -1,7 +1,7 @@
 {
  "generator": "src/safety_island_tracing/gen_markers.py",
- "contract_sha256": "c717f80bdd153889297f095ca6f59fc4c409aed35fc9b1ad71f166ac3f86f83b",
- "table_sha256": "c3dfce2dda889f757d06d74aa1a7a0e3ee4ab48d4499d5a56aed1cbe0abf3ffa",
+ "contract_sha256": "98e46e3964dcc35a2a24e7d8135600407c85b9ab86c293029b20461e6665288a",
+ "table_sha256": "bdaac4e043b17cd3b62089feffd32bf3545983defdd09c6992dec1f5815a1e99",
  "entities": {
   "pub": 8,
   "sub": 7,
@@ -340,6 +340,30 @@
    "element": "/mrm_handler/init",
    "node": "mrm_handler",
    "record": "every"
+  },
+  {
+   "id": 32,
+   "name": "SUPERVISOR_DEADLINE",
+   "kind": "supervisor_deadline",
+   "element": "/mrm_handler/call_mrm",
+   "node": "mrm_handler",
+   "record": "every"
+  },
+  {
+   "id": 33,
+   "name": "SUPERVISOR_SAFE_STATE",
+   "kind": "supervisor_safe_state",
+   "element": "/mrm_handler/call_mrm",
+   "node": "mrm_handler",
+   "record": "every"
+  },
+  {
+   "id": 34,
+   "name": "SUPERVISOR_INJECT",
+   "kind": "supervisor_inject",
+   "element": "/mrm_handler/call_mrm",
+   "node": "mrm_handler",
+   "record": "every"
   }
  ],
  "nros": {
@@ -419,7 +443,8 @@
    "silence-runtime",
    "timer-overrun-runtime",
    "release-jitter-runtime",
-   "route-latency-runtime"
+   "route-latency-runtime",
+   "route-deadline-runtime"
   ],
   "endpoint_hashes": {
    "8a287f9b": "/mrm_comfortable_stop_operator/clear_velocity_limit",

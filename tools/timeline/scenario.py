@@ -56,7 +56,10 @@ drive DRIVE_SECS past MIN_SPEED, then
   encore  hpc-loss, observe to standstill, hpc-restore
 and prints one VERDICT line (exit 0 = PASS). Env: DRIVE_SECS (3),
 RESPOND_AFTER (3), OBSERVE_SECS (30), MIN_SPEED (1.0), INIT_*/GOAL_* as
-demo/scenario_driver.py.
+demo/scenario_driver.py. SCENARIO_FAULT_CMD (encore, phase11-S7): a command
+run once the vehicle drives, before the fault, that arms the handler's
+fault-tick overrun (run-board.sh RB_OVERRUN); an `overrun_armed` event
+records it.
 
 SCENARIO_SIM=carla (CARLA demo unit C3, run-board.sh --sim carla): the world
 is CARLA's and an SSv2 scenario, started beside this act, poses, routes and
@@ -135,6 +138,7 @@ import os
 import re
 import signal
 import socket
+import subprocess
 import sys
 import time
 
@@ -556,6 +560,21 @@ def run(act, log):
             bye(2)
     else:
         spin_for(drive)
+    # phase11-S7: the fault tick's overrun, armed before the fault
+    # (SCENARIO_FAULT_CMD, run-board.sh RB_OVERRUN: violations.py
+    # fault-overrun <ms>|stall over SWD, attach, no halt). The handler takes
+    # it on its next call_mrm tick, the first one after the HPC loss.
+    inject = ENV("SCENARIO_FAULT_CMD", "")
+    if inject and act == "encore":
+        say(f"== 3b. fault-tick overrun armed: {inject} ==")
+        t_inj = time.monotonic_ns()
+        rc_inj = subprocess.run(inject, shell=True).returncode
+        b.w.write("scenario", "overrun_armed", t_mono_ns=t_inj,
+                  value=dict(cmd=inject, rc=rc_inj, took_s=round((time.monotonic_ns() - t_inj) / 1e9, 3)))
+        if rc_inj != 0:
+            say(f"FATAL: the overrun could not be armed (exit {rc_inj})")
+            bye(2)
+        spin_for(1.0)
     v0 = st["v"]
     say(f"== 4. driving at {v0:.2f} m/s; mrm {st['mrm']}, TOR {st['tor']}, control mode {st['ctrl']} ==")
     if scen:

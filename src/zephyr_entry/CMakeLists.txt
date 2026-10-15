@@ -258,7 +258,14 @@ endif()
 
 # phase9 spin latency: the executor runs above the transport once registration
 # is done (src/spin_priority.c).
-if(CONFIG_ISLAND_SPIN_RAISE)
+if(CONFIG_ISLAND_SPIN_RAISE OR CONFIG_ISLAND_SUPERVISOR)
     target_sources(app PRIVATE src/spin_priority.c)
     zephyr_ld_options(-Wl,--wrap=nros_cpp_spin_once)
+endif()
+
+# phase11-S4: the supervised deadline's timer, reaction thread and SWT0
+# (src/island_supervisor.c). The handler arms its route through
+# island_supervisor.h.
+if(CONFIG_ISLAND_SUPERVISOR)
+    target_sources(app PRIVATE src/island_supervisor.c)
 endif()

@@ -125,8 +125,12 @@ def align(mk, ev):
         gaps = [(a, b) for a, b in zip(takes, takes[1:]) if b - a > 500e6]
         host_av = [e["t_mono_ns"] for e in ev if e["source"] == "probe" and e.get("marker") == "availability"
                    and e["t_mono_ns"] <= t_inj]
+        # phase11-S7: a stalled island takes nothing after the loss, not even
+        # after the restore; its silence runs to the end of the trace
+        if not gaps and takes and takes[-1] < mk[-1]["t_ns"] - 500e6:
+            gaps = [(takes[-1], None)]
         if gaps and host_av:
-            a, _ = max(gaps, key=lambda g: g[1] - g[0])
+            a, _ = max(gaps, key=lambda g: (g[1] if g[1] is not None else float("inf")) - g[0])
             res["anchor2"] = dict(what="last availability sample before the gate stopped",
                                   island_ns=a, host_ns=host_av[-1])
     for k in ("anchor1", "anchor2"):

@@ -241,6 +241,22 @@ def selftest(check):
         check("budget: an INVALID stays INVALID", budget(d, "INVALID (RTF 0.5 < 0.95)").startswith("INVALID"))
         check("budget: a FAIL gets the rows appended",
               budget(d, "FAIL").startswith("FAIL; 2 table rows FAIL: settle, total"))
+        with open(os.path.join(d, "table.md"), "w") as f:
+            f.write(head + "| detect (last sample -> reaction tick) | - | 949.00 | n/a | the fault tick overran "
+                    "(300 ms, injected): judged by the supervised rows |\n"
+                    "| supervised: due -> fallback start (safe-state output) | 2.00 | 0.50 | PASS |  |\n"
+                    "| supervised: within the FTTI | 10000.00 | 3600.00 | PASS |  |\n")
+        got = table(d)
+        check(f"table: an overrun act counts its unsupervised rows apart and the supervised rows: {got}",
+              got == "table 2/2 PASS (+1 n/a), supervised 2/2 PASS")
+        with open(os.path.join(d, "supervisor.txt"), "w") as f:
+            f.write("supervisor record (island_supervisor_record):\n"
+                    "  safe-state output LATCHED by route deadline at uptime 1549.512 ms\n"
+                    "  SWT0 running, timeout 300 ms; first-timeout callbacks 1 (first at uptime 1800.000 ms)\n"
+                    "  spins=10; longest feed-to-feed gap 34.100 ms (ended at uptime 1 ms)\n")
+        got = supervisor(d)
+        check(f"supervisor: the record in one line: {got}",
+              got == "; supervisor latched (route deadline), SWT0 fires 1, spin gap max 34.100 ms")
 
 
 def table(d):
@@ -251,11 +267,38 @@ def table(d):
     # phase10-B2: a row stated for the record (the settle at the observed
     # speed while no response is declared) carries no verdict; it is counted
     # apart, so a clean table still reads n/n
-    na = sum(1 for r in rows if len(r) > 3 and r[3] == "n/a" and r[0].startswith("settle at the observed"))
+    # phase11-S7: so are the rows an injected overrun puts out of reach on
+    # purpose (the unsupervised rows of an overrun act, the standstill of a
+    # stall with no brake line); the supervised rows judge that act
+    def apart(r):
+        note = r[4] if len(r) > 4 else ""
+        return len(r) > 3 and r[3] == "n/a" and (
+            r[0].startswith("settle at the observed") or "judged by the supervised rows" in note
+            or "wired to no brake" in note or "the island's ladder cannot run" in note)
+    na = sum(1 for r in rows if apart(r))
     total = next((r for r in rows if r[0].startswith("total")), None)
     s = f"table {ok}/{len(rows) - na} PASS" + (f" (+{na} n/a)" if na else "")
     if total:
         s += f", total {total[2]} of {total[1]} ms"
+    sup = [r for r in rows if r[0].startswith("supervised:") and len(r) > 3 and r[3] in ("PASS", "FAIL")]
+    if sup:
+        s += f", supervised {sum(1 for r in sup if r[3] == 'PASS')}/{len(sup)} PASS"
+    return s
+
+
+def supervisor(d):
+    """phase11-S4: the supervisor record's one line (supervisor.txt, readout.py)."""
+    t = read(d, "supervisor.txt")
+    if t is None:
+        return ""
+    m = re.search(r"LATCHED by (.+?) at uptime ([0-9.]+) ms", t)
+    swt = re.search(r"first-timeout callbacks (\d+)", t)
+    gap = re.search(r"longest feed-to-feed gap ([0-9.]+) ms", t)
+    s = f"; supervisor {'latched (' + m.group(1) + ')' if m else 'not driven'}"
+    if swt:
+        s += f", SWT0 fires {swt.group(1)}"
+    if gap:
+        s += f", spin gap max {gap.group(1)} ms"
     return s
 
 
@@ -353,7 +396,7 @@ def main():
     v, carla = sim(d, meta, verdict(d))
     v = budget(d, v)
     print(f"SUMMARY {run}{act}: {v}; {load(meta)}; {table(d)}; {trace_check(d)}; {stored(d)}; "
-          f"{serial(d)}; {heap(d)}{asserted(d)}{carla}")
+          f"{serial(d)}; {heap(d)}{asserted(d)}{supervisor(d)}{carla}")
     return 0
 
 

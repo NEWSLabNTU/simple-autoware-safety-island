@@ -40,6 +40,17 @@ volatile uint32_t island_monitors_armed_via;
 // once. Read and cleared only by onTimer(). By name over SWD:
 // tools/timeline/violations.py overrun N.
 volatile uint32_t island_debug_overrun_ms;
+// phase11-S7: the same hook, armed for the FAULT tick: a debugger writes N > 0
+// and the next tick that runs call_mrm busy-waits N ms right after its ENTRY,
+// before the reaction (so the route itself is late), once; 0xffffffff never
+// ends. tools/timeline/violations.py fault-overrun N|stall.
+volatile uint32_t island_debug_fault_overrun_ms;
+#endif
+#if defined(CONFIG_ISLAND_SUPERVISOR)
+// phase11-S4 (src/zephyr_entry/src/island_supervisor.h): the board's
+// supervised-deadline rung. Route 0 is the hpc_loss reaction.
+void island_supervisor_arm(uint32_t route, int64_t due_ms);
+void island_supervisor_done(uint32_t route);
 #endif
 #if defined(CONFIG_ISLAND_LED)
 // The MRM state on the board's LEDs (src/zephyr_entry/src/island_led.c),
@@ -243,6 +254,21 @@ void MrmHandler::onOperationModeAvailability(
 {
   ISLAND_TRACE(ISLAND_MK_TAKE_MRM_HANDLER_OPERATION_MODE_AVAILABILITY, msg.autonomous);
   stamp_operation_mode_availability_ = now_sec();
+#if defined(__ZEPHYR__) && defined(CONFIG_ISLAND_SUPERVISOR)
+  // phase11-S4, until nano-ros arms route deadlines itself (phase-11 S3):
+  // were this the last sample, the loss is seen on the first tick past
+  // max_age and the reaction (call_mrm) must be out within its budget, so the
+  // hpc_loss reaction is due at take + max_age + call_mrm. Each take moves the
+  // due on; the call_mrm EXIT of a tick that saw the loss clears it
+  // (onTimer). Only once the monitors are armed: the start-up wait is the
+  // handler's own fault (INIT), not a deadline.
+  if (island_monitors_armed_uptime_ms != 0u) {
+    island_supervisor_arm(
+      0u, k_uptime_get() +
+            static_cast<int64_t>(param_.timeout_operation_mode_availability * 1000.0) +
+            CONFIG_ISLAND_SUPERVISOR_CALL_MRM_MS);
+  }
+#endif
   arrivals_operation_mode_availability_.note(stamp_operation_mode_availability_);
   operation_mode_availability_ = msg;
   has_operation_mode_availability_ = true;
@@ -652,6 +678,21 @@ void MrmHandler::onTimer()
   const bool is_fault = is_operation_mode_availability_timeout || !isAvailableCurrentOperationMode();
   if (is_fault) {
     ISLAND_TRACE(ISLAND_MK_PATH_MRM_HANDLER_CALL_MRM_ENTRY, mrm_state_.state);
+#if defined(__ZEPHYR__) && defined(CONFIG_ISLAND_DEBUG_OVERRUN)
+    // phase11-S7: the commanded overrun of the fault tick, before the
+    // reaction, so call_mrm itself is late (the supervised case).
+    if (island_debug_fault_overrun_ms != 0u) {
+      const uint32_t ms = island_debug_fault_overrun_ms;
+      island_debug_fault_overrun_ms = 0u;
+      ISLAND_TRACE(ISLAND_MK_SUPERVISOR_INJECT, ms);
+      if (ms == 0xFFFFFFFFu) {
+        for (;;) {
+          k_busy_wait(1000000u);
+        }
+      }
+      k_busy_wait(ms * 1000u);
+    }
+#endif
   }
   const bool was_takeover_requested = is_takeover_requested_;
   updateMrmState();
@@ -671,6 +712,13 @@ void MrmHandler::onTimer()
   }
   if (is_fault) {
     ISLAND_TRACE(ISLAND_MK_PATH_MRM_HANDLER_CALL_MRM_EXIT, mrm_state_.state);
+#if defined(__ZEPHYR__) && defined(CONFIG_ISLAND_SUPERVISOR)
+    // phase11-S4: the hpc_loss reaction is out (mrm_state published, the
+    // emergency operator called): its due is met.
+    if (is_operation_mode_availability_timeout) {
+      island_supervisor_done(0u);
+    }
+#endif
   }
   publishHazardCmd();
 #if defined(__ZEPHYR__) && defined(CONFIG_ISLAND_LED)
