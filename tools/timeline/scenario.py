@@ -565,7 +565,7 @@ def run(act, log):
     # fault-overrun <ms>|stall over SWD, attach, no halt). The handler takes
     # it on its next call_mrm tick, the first one after the HPC loss.
     inject = ENV("SCENARIO_FAULT_CMD", "")
-    if inject and act == "encore":
+    if inject and act in ("encore", "b"):
         say(f"== 3b. fault-tick overrun armed: {inject} ==")
         t_inj = time.monotonic_ns()
         rc_inj = subprocess.run(inject, shell=True).returncode
