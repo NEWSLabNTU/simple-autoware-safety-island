@@ -253,7 +253,12 @@ if [ -n "${RB_OVERRUN:-}" ]; then
     [ "$act" = encore ] && [ "$target" = board ] || { echo "run-board: RB_OVERRUN is for the encore on the board" >&2; exit 2; }
     case "$RB_OVERRUN" in stall|[1-9]|[1-9][0-9]|[1-9][0-9][0-9]|[1-9][0-9][0-9][0-9]) ;;
         *) echo "run-board: RB_OVERRUN is <ms> (1..2000) or stall" >&2; exit 2;; esac
-    export SCENARIO_FAULT_CMD="python3 tools/timeline/violations.py fault-overrun --elf '$(readlink -f "$elf")' $RB_OVERRUN"
+    # The trace window is re-armed first (readout.py --rearm-only, attach, no
+    # halt): opened at the arming silence after boot, it is full before an
+    # act that waited for the host's load (p11-ov1: full ~166 s before exit,
+    # no island marker of the act). The re-armed window opens at the next
+    # availability take, a few seconds before the fault.
+    export SCENARIO_FAULT_CMD="python3 tools/timeline/readout.py --target board --elf '$(readlink -f "$elf")' --out /dev/null --rearm-only && python3 tools/timeline/violations.py fault-overrun --elf '$(readlink -f "$elf")' $RB_OVERRUN"
 fi
 : "${RB_GATE:=python3 tools/timeline/scenario.py gate --log $dir/gate.jsonl}"
 : "${RB_PROBE:=python3 tools/timeline/probe.py --out $dir/probe.jsonl}"
