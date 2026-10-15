@@ -5,15 +5,16 @@
 checked by something, and the derived settling covers the vehicle's
 response, not only the braking profile.
 
-**Status (2026-10-15): B4, B5, B6, B9 done; the timeline side of B2 and
-B8 done, B2's response terms confirmed on eight independent runs; the checker side of B1, B2, B7 and B8 done and released in rlm
-v0.1.58 and shipped in play_launch 0.17.0 (rlm v0.1.59); the island
-contract carries the keys (branch `phase10-contract-keys-rebased`, merged
-2026-10-15), in the phase-90 spellings (`enters:`, `holds:`), checked by
-CI with 0.17.0 (from the GitHub release's assets while its
-per-distribution PyPI projects are pending) and pinned through nano-ros
-79583587cf (rlm v0.1.59, play_launch 0.17.0);** B3 done in nano-ros,
-pinned and checked on the board.
+**Status (2026-10-16): done.** B1-B9 are done. The checker side of B1,
+B2, B7 and B8 is in rlm v0.1.58 and play_launch 0.17.0 (rlm v0.1.59),
+pinned through nano-ros 79583587cf. The island contract carries the keys
+in the phase-90 spellings (`enters:`, `holds:`). B2's response terms are
+confirmed on eight independent runs. B3 is done in nano-ros (#2221),
+pinned and checked on the board. play_launch 0.17.0 is yanked on PyPI
+(its per-distribution projects never reached it); CI installs it from the
+GitHub release's assets until play_launch ships one PyPI package (its
+phase 92). Still open: whether run-board.sh's exit code carries the
+budget verdict (B9), and what "Not in this phase" lists.
 
 ## Why
 
@@ -397,7 +398,21 @@ with its evidence. Two were confirmed by experiment on 2026-10-15:
 
 ## Not in this phase
 
-- Deriving thread priorities and timer periods from the contract. They
-  stay hand-set; B1 only makes the period agree with its parameter.
 - Analysed (not measured) route bounds for the serial link and the
-  executor. B7 makes the difference visible; the analysis is later work.
+  executor. B7 makes the difference visible: every hazard's total still
+  contains a measured term and reads "measured, not a bound".
+- Where a timer's period and a thread's priority come from. B1 binds the
+  period to its parameter, so the two cannot disagree, but the parameter's
+  value is still chosen by hand (the 10 Hz `update_rate` is upstream's
+  default), and so are the Zephyr thread priorities.
+- A runtime check of `control_mode`'s `max_transport` (143 ms). The hop
+  runs from a host stamp to an island take, and the two sides share no
+  clock: the trace check moves the island's stamps onto the host clock
+  after the run, by the smallest publish->receipt pair. A runtime monitor
+  needs a shared clock (e.g. gPTP over an Ethernet link); on the serial
+  link it stays checked by the trace only.
+- The host probe's stalls under load: b3-b1 and b3-b2 read FAIL on the
+  `HPC alive` row (1086.91 and 556.21 ms) while the stream did not stop
+  (B3's status). The row is measured by a host process that stalls with
+  the host; the fix (a probe at real-time priority, or the row taken from
+  the island's takes) is not done.

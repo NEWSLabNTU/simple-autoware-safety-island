@@ -5,7 +5,15 @@ acts on the S32K344 the way the proposal describes them (a visitor
 triggers each act and reads the trace against the contract) and every
 number the demo shows is one the contract states and the board can report.
 
-**Status (2026-10-01): plan. Nothing here is implemented.** The RTSS@Work
+**Status (2026-10-16): mostly done.** Done: W1-W6, W8, W11, W12, W14 (as
+C7), W18, W19, W21, W22 (7 of 8), C1-C10, U1-U6. Dropped: W7. Superseded:
+W13 (by C7). Open: W9 (the board's hazard command still does not reach
+the simulator: `hazard_lights_on -` in the final round), W10 (the Orin
+container), W15 and W16 (the soaks), W17 (hygiene), W20 (the board-log
+recipe), W23 (the ACL re-measured), DX 3.12 (`nros-sdk.lock`). Each unit's
+own status line has the detail.
+
+Original status (2026-10-01): plan, nothing implemented. The RTSS@Work
 2026 demo proposal was submitted on 2026-09-30. Phase 8
 (`docs/roadmap/phase-8-rtss-work-demo.md`) ended with the three acts
 passing on silicon: 13 of 13 runs in W8 and 9 of 9 fresh runs in W31
