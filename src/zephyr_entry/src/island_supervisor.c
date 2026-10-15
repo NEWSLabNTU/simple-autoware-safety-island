@@ -54,7 +54,8 @@
  * latch.
  *
  * Route 2 (phase11-S6, decision 4): the comfortable stop's standstill. Its
- * due is the comfortable call + settle + response at the entry speed; at
+ * due is the comfortable call + settle + response at the entry speed + how
+ * late the island sees a standstill (a kinematic_state period + the link); at
  * the due the thread judges the speed the handler last noted from
  * kinematic_state (island_supervisor_note_speed): fresh and below 1 mm/s is
  * standstill and the route is met; otherwise the comfortable stop failed

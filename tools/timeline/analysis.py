@@ -44,6 +44,11 @@ import tlcommon as tl
 TICK_MS = 118.0
 CROSS = "island vs host clock"  # the note on a cross-clock row (module doc)
 HPC_TIMEOUT_MS = 500.0  # mrm_handler timeout_operation_mode_availability: hpc_loss
+# phase11-S6: how late the island sees a standstill, added to route 2's due:
+# one kinematic_state period (10 Hz) + the serial link (the availability's
+# max_transport 56, the same gateway). CONFIG_ISLAND_SUPERVISOR_STANDSTILL_
+# OBSERVE_MS on the board; the contract states it in a comment only.
+STANDSTILL_OBSERVE_MS = 156.0
 # What checks a row's declared value besides this trace check (phase10-B8):
 # the checker's fault-reaction sum (a term of a total held to the FTTI), the
 # island's runtime monitor (a deadline or max_age compiled into the image),
@@ -428,7 +433,9 @@ def analyze(ev, rows, explain="", windows=None, entry_speed=None):
         obs["sup_offset"] = sup_offset
         rung = "emergency_stop"
     # the entry speed and the settle it implies
-    t_cmd = E.get("safe_cmd")
+    # phase11-S6: on a supervised run the direct path's first braking
+    # command is the safe command when the operator's own never came first
+    t_cmd = E.get("safe_cmd") or E.get("sup_direct_cmd")
     v_entry = velocity_at(ev, t_cmd) if t_cmd else None
     # The overrun rows (play_launch 0.18.0) share their rung's name: kept
     # apart, by the supervised budget they name.
@@ -719,9 +726,10 @@ def escalation_rows(add, out, r):
     if route == 2:
         sr = cs.get("settle")
         add("escalation: comfortable call -> standstill due", o.get("sup_call_to_due"),
-            None if sr is None else float(math.ceil(sr)),
-            "the comfortable settle + response at the entry speed bound, rounded up to the kernel's ms "
-            "(CONFIG_ISLAND_SUPERVISOR_COMFORTABLE_MS)", by=by)
+            None if sr is None else float(math.ceil(sr)) + STANDSTILL_OBSERVE_MS,
+            "the comfortable settle + response at the entry speed bound, rounded up to the kernel's ms, "
+            f"+ {STANDSTILL_OBSERVE_MS:g} for the island to see the standstill (a kinematic_state period "
+            "+ the link)", by=by)
     note = f"{what}; detection delay = tick {tick:g} + switch {switch:g} ({src})"
     add("escalation: due -> deadline verdict", o.get("sup_due_to_verdict"), det, note, by=by)
     add("escalation: due -> emergency command (direct path)", o.get("sup_due_to_direct"), det, note, by=by)
@@ -732,8 +740,9 @@ def escalation_rows(add, out, r):
         # so the overrun case is the comfortable rung's total + detection +
         # the emergency route and settle, as the contract states it
         parts = [cs.get("total"), em.get("route"), em.get("settle")]
-        tot = None if None in parts else parts[0] + det + parts[1] + parts[2]
-        how = "the comfortable rung's total + detection + the emergency route and settle (contract comment)"
+        tot = None if None in parts else parts[0] + STANDSTILL_OBSERVE_MS + det + parts[1] + parts[2]
+        how = ("the comfortable rung's total + the standstill's observation + detection + the emergency "
+               "route and settle (contract comment)")
     else:
         ov = (r.get("overrun") or {}).get(("emergency_stop", "nodes.mrm_handler.paths.call_mrm.max_latency"))
         tot = ov.get("total") if ov else None
@@ -911,9 +920,9 @@ def selftest_supervised(check):
            vel(-10, 8.3), isl2(150, take, 0), isl2(200, "PUB_MRM_HANDLER_TAKEOVER_REQUEST_STATE", 2),
            isl2(10300, "PUB_MRM_HANDLER_TAKEOVER_REQUEST_STATE", 1),
            isl2(10301, "CALL_MRM_HANDLER_COMFORTABLE_STOP_OPERATE", 1), isl2(10302, "SUPERVISOR_INJECT", 0xFFFFFFFD),
-           vel(15000, 8.3), isl2(21241.4, "SUPERVISOR_DEADLINE", (2 << 28) | 21241),
-           isl2(21241.45, "SUPERVISOR_SAFE_STATE", 1), isl2(21241.5, "SUPERVISOR_DIRECT", 1 << 28),
-           isl2(21300, "SUPERVISOR_HANDOVER", 1), vel(25000, 0.0)]
+           vel(15000, 8.3), isl2(21397.4, "SUPERVISOR_DEADLINE", (2 << 28) | 21397),
+           isl2(21397.45, "SUPERVISOR_SAFE_STATE", 1), isl2(21397.5, "SUPERVISOR_DIRECT", 1 << 28),
+           isl2(21450, "SUPERVISOR_HANDOVER", 1), vel(25000, 0.0)]
     rc = [dict(hazard="odd_exit", rung="comfortable_stop", role="rung", detect=100.0, windows=10205.0, route=149.0,
                settle=10939.67, total=21393.67, ftti=30000.0),
           dict(hazard="odd_exit", rung="emergency_stop", role="floor", detect=100.0, windows=10205.0,
@@ -921,11 +930,11 @@ def selftest_supervised(check):
     r3 = analyze(sorted(evc, key=lambda e: e["t_mono_ns"]), rc)
     by3 = {v["term"]: v for v in r3["verdicts"]}
     cd = by3.get("escalation: comfortable call -> standstill due")
-    check(f"escalation: call -> due {cd and cd['observed']} against settle + response 10939.67 -> 10940",
-          cd is not None and abs(cd["observed"] - 10940.0) < 1e-6 and cd["ok"] is True)
+    check(f"escalation: call -> due {cd and cd['observed']} against settle + response 10939.67 -> 10940 + 156",
+          cd is not None and abs(cd["observed"] - 11096.0) < 1e-6 and cd["ok"] is True)
     tt = by3.get("escalation: total (fault -> standstill)")
-    check(f"escalation: total {tt and tt['observed']} against {tt and tt['declared']} (21393.67 + 2 + 188.33 "
-          f"+ 4421.33), PASS", tt is not None and abs(tt["declared"] - 26005.33) < 1e-6 and tt["ok"] is True)
+    check(f"escalation: total {tt and tt['observed']} against {tt and tt['declared']} (21393.67 + 156 + 2 + "
+          f"188.33 + 4421.33), PASS", tt is not None and abs(tt["declared"] - 26161.33) < 1e-6 and tt["ok"] is True)
     rr = by3.get("rung reached")
     check("escalation: the rung expected is EMERGENCY_STOP", rr is not None and rr["declared"] == "EMERGENCY_STOP")
     # HPC alive from the island's takes, not the host probe

@@ -540,11 +540,15 @@ nodes:
             # (island_supervisor.c) is armed at the comfortable call with
             # due = call + this settle at the entry speed (profile 9996.67 +
             # response 943 = 10939.67, CONFIG_ISLAND_SUPERVISOR_COMFORTABLE_MS
-            # 10940); at the due a vehicle not at standstill by the latest
-            # kinematic_state escalates to the emergency stop, timer
-            # mechanism. The overrun case is the comfortable rung's total
-            # 21393.67 + detection 2 + the emergency route 188.33 + its
-            # settle 4421.33 = 26005.33 ms of the 30 s FTTI. play_launch
+            # 10940) + how late the island sees the standstill (156: one
+            # kinematic_state period 100 + the link 56, the availability's
+            # max_transport on the same gateway; CONFIG_ISLAND_SUPERVISOR_
+            # STANDSTILL_OBSERVE_MS); at the due a vehicle not at standstill
+            # by the latest kinematic_state escalates to the emergency stop,
+            # timer mechanism. The overrun case is the comfortable rung's
+            # total 21393.67 + observation 156 + detection 2 + the emergency
+            # route 188.33 + its settle 4421.33 = 26161.33 ms of the 30 s
+            # FTTI. play_launch
             # 0.18.0 lowers only a node path's `max_latency` to a monitor
             # (`supervised-unlowered` on a settle's response), and charges a
             # supervised response alone, not the settle it ends; until it

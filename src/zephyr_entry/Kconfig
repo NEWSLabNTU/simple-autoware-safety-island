@@ -137,6 +137,18 @@ config ISLAND_SUPERVISOR_COMFORTABLE_MS
 	  rounded up to the next ms. Not at standstill by then, the comfortable
 	  stop has failed and the supervisor commands the emergency stop.
 
+config ISLAND_SUPERVISOR_STANDSTILL_OBSERVE_MS
+	int "How late the island sees a standstill (ms)"
+	default 156
+	help
+	  Added to route 2's due: the island judges the standstill from its
+	  latest kinematic_state take, which comes up to one sample period
+	  (10 Hz, 100 ms) plus the serial link after the vehicle stopped. The
+	  link is the availability's max_transport (56 ms, the same gateway
+	  and UART; kinematic_state states none of its own). Without it a stop
+	  inside the settle was judged late on the board (s6-b8-1: standstill
+	  52 ms before the due, not yet seen on the island).
+
 config ISLAND_SUPERVISOR_SWT
 	bool "Feed SWT0 once per spin; its first timeout drives the same output"
 	depends on WATCHDOG

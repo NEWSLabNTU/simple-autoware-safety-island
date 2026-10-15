@@ -534,12 +534,16 @@ bool MrmHandler::requestMrmBehavior(uint16_t mrm_behavior, RequestType request_t
 #if defined(__ZEPHYR__) && defined(CONFIG_ISLAND_SUPERVISOR)
   // phase11-S6 (decision 4): the comfortable stop is supervised to
   // standstill. Due = this call + the comfortable settle at the entry speed
-  // + its response (CONFIG_ISLAND_SUPERVISOR_COMFORTABLE_MS); cancelled with
+  // + its response (CONFIG_ISLAND_SUPERVISOR_COMFORTABLE_MS) + how late the
+  // island sees a standstill (CONFIG_ISLAND_SUPERVISOR_STANDSTILL_OBSERVE_MS:
+  // a kinematic_state period + the link); cancelled with
   // the stop. The handler clears it itself when it sees the standstill
   // (updateMrmState), the reaction thread judges it at the due otherwise.
   if (mrm_behavior == MrmState::COMFORTABLE_STOP) {
     if (request.operate) {
-      island_supervisor_arm(2u, k_uptime_get() + CONFIG_ISLAND_SUPERVISOR_COMFORTABLE_MS);
+      island_supervisor_arm(
+        2u, k_uptime_get() + CONFIG_ISLAND_SUPERVISOR_COMFORTABLE_MS +
+              CONFIG_ISLAND_SUPERVISOR_STANDSTILL_OBSERVE_MS);
     } else {
       island_supervisor_done(2u);
     }

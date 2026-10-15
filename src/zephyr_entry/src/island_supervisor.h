@@ -19,7 +19,9 @@
 /* 2: the comfortable stop's standstill (phase11-S6, decision 4): armed by the
  * handler when it calls the comfortable stop, due = call + the comfortable
  * settle at the entry speed + its response (CONFIG_ISLAND_SUPERVISOR_
- * COMFORTABLE_MS). At the due the reaction thread judges the vehicle's last
+ * COMFORTABLE_MS) + how late the island sees a standstill (one
+ * kinematic_state period + the link, CONFIG_ISLAND_SUPERVISOR_STANDSTILL_
+ * OBSERVE_MS). At the due the reaction thread judges the vehicle's last
  * reported speed (island_supervisor_note_speed): at standstill the route is
  * met; otherwise the comfortable stop has failed and the emergency stop is
  * commanded. The handler clears it when it sees the standstill itself or
