@@ -10,8 +10,8 @@ B8 done; the checker side of B1, B2, B7 and B8 done and released in rlm
 v0.1.58, on play_launch main (c0a6a2e6, pinning v0.1.58) and pinned
 through nano-ros (f496a8b68a, this repo's pin). The island contract's keys
 (branch `phase10-contract-keys-rebased`) wait for play_launch 0.17.0 on
-PyPI, which CI installs by version;** B3 done in nano-ros and pinned, its
-board check pending.
+PyPI, which CI installs by version;** B3 done in nano-ros, pinned and
+checked on the board.
 
 ## Why
 
@@ -101,7 +101,7 @@ with its evidence. Two were confirmed by experiment on 2026-10-15:
   608.65, b2 1796.30, b3 1781.04 (velocity limit -> standstill, so the
   planner hop is included: 629.49 in b2).
 
-### B3. A runtime check of the route, not only of the callback (nano-ros) - done, board check pending
+### B3. A runtime check of the route, not only of the callback (nano-ros) - done
 
 - What: the island's `max-latency-runtime` monitor bounds one dispatch
   (the longest was 24.93 ms), while a route budget such as `call_mrm`
@@ -117,7 +117,7 @@ with its evidence. Two were confirmed by experiment on 2026-10-15:
   readout updated. nano-ros PR, then the pin.
 - Also in this repo (`docs/dx-ux-gaps-2026-10.md` section 5.3).
 - Status (2026-10-15): done in nano-ros (PR #2221, merged as `67e29e9fa`), pinned
-  here; the board check is pending (below). The executor stamps the
+  here; checked on the board (below). The executor stamps the
   dispatch that takes a route's trigger input (the earliest take not yet
   answered) and, at the end of a dispatch that published one of the path's
   outputs, judges take to dispatch end against the path's `max_latency`:
@@ -148,14 +148,33 @@ with its evidence. Two were confirmed by experiment on 2026-10-15:
   states the heap and the graph cache as Kconfig lines, and its snippets
   more) and the posix workspace build (`nros ws board-facts` finds four
   system.toml bringups and asks for one); both are left as they were.
-- Board check (pending): flash this pin's image and run `encore` as
-  usual; `violations.txt` and the trace's violation list carry no
-  `route-latency-runtime`. Then, as in the phase9-W4 gate,
-  `violations.py overrun 250` on an armed island: beside the three
-  `max-latency-runtime` verdicts the trace shows
-  `route-latency-runtime /mrm_handler/mrm_state` and
-  `/mrm_handler/takeover_request_state`, `declared=149`, measured at least
-  250.
+- Board check (2026-10-15, done): image sha256 `3a41bdcf...` (`just
+  board-build` at e55a63b), flashed by run-board.sh.
+  - `b3-e2`, encore: `SUMMARY b3-e2 encore: PASS; load 31.35 at act; table
+    8/8 PASS (+1 n/a), total 3484.19 of 4909.67 ms; trace-check PASS, trace
+    18,588 of 53,248 B over 37.8 s; stored 1 (silence-runtime x1)`. The
+    record and the trace's list hold only the arming `silence-runtime`: no
+    `route-latency-runtime`.
+  - `b3-ov2`, the phase9-W4 overrun gate (encore with the act replaced by
+    `violations.py read`, `violations.py overrun 250`, 5 s, `read`): the
+    trace lists, 0.5 ms apart, `route-latency-runtime
+    /mrm_handler/mrm_state measured=332 declared=149` and the same on
+    `/mrm_handler/takeover_request_state`, then the three
+    `max-latency-runtime` verdicts (hazard lights 250/100, MRM state and TOR
+    state 250/149), three `timer-overrun-runtime` and one
+    `release-jitter-runtime` (241,845 us). The route is 332 ms because its
+    take (34389.48 ms) waited 82 ms for the tick that then busy-waited 250
+    ms (verdict at 34721.57 ms). The 8-slot record kept #3-#10 (`dropped=2`:
+    the arming silence and the `mrm_state` route); the trace keeps all ten.
+  - `b3-b1` and `b3-b2`, act b (the comfortable stop after the window's
+    expiry): the record and the trace hold only the arming silence; no
+    route verdict on the expiry path (route on the island clock 2.04 ms in
+    b3-b1). Both read `FAIL` on one table row only, `HPC alive: longest
+    availability gap (host)`, 1086.91 and 556.21 ms at load 30.6 and 25.5,
+    while the gate's own largest publish gap was 106.54 and 102.87 ms and
+    the island stored no silence: the probe's receipt stalled on the
+    loaded host (the same row as runs b3 and b4 in section 3 of
+    docs/takeover-trace.md), not the stream and not B3.
 
 ### B4. The tool applies the measurement rule (this repo) - done
 

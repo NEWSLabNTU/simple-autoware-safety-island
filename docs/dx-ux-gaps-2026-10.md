@@ -619,7 +619,9 @@ checkout is itself gap 3.1.
 - Status (2026-10-15): the runtime half is closed by phase10-B3: nano-ros
   PR #2221 (`route-latency-runtime`) judges an input-triggered path from
   the take of its input to its output, so `call_mrm` 149 ms is now checked
-  on the board as the route it budgets; the board check is pending
+  on the board as the route it budgets. Board check 2026-10-15: no verdict
+  in the encore or act b; a commanded 250 ms overrun stores
+  `route-latency-runtime` on both outputs, measured 332, declared 149
   (docs/roadmap/phase-10-budget-soundness.md, B3).
 
 ### 5.4 No board time source: hazard lights and the clock merge

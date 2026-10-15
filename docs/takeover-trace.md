@@ -1605,7 +1605,29 @@ action. On time a route is one tick wait plus the work, at most about
 the tick, which then busy-waits 250 ms, so beside the three
 `max-latency-runtime` verdicts the next gate run should show two
 `route-latency-runtime` verdicts (`mrm_state`, `takeover_request_state`,
-`declared=149`, measured at least 250). That board run is pending.
+`declared=149`, measured at least 250).
+
+On the board (2026-10-15, image `3a41bdcf...`): the encore `b3-e2` stores
+no route verdict (only the arming silence). The overrun gate `b3-ov2`
+(encore, act replaced by `violations.py read`, `overrun 250`, `read`):
+
+```
+   34389.477 ms  TAKE_MRM_HANDLER_OPERATION_MODE_AVAILABILITY             arg=0
+   34721.574 ms  NROS_VIOLATION   #2: route-latency-runtime /mrm_handler/mrm_state measured=332 declared=149
+   34721.665 ms  NROS_VIOLATION   #3: route-latency-runtime /mrm_handler/takeover_request_state measured=332 declared=149
+   34722.056 ms  NROS_VIOLATION   #4: max-latency-runtime /mrm_handler/hazard_lights_cmd measured=250 declared=100
+   34722.143 ms  NROS_VIOLATION   #5: max-latency-runtime /mrm_handler/mrm_state measured=250 declared=149
+   34722.231 ms  NROS_VIOLATION   #6: max-latency-runtime /mrm_handler/takeover_request_state measured=250 declared=149
+   34723.964 ms  NROS_VIOLATION   #7: timer-overrun-runtime timer measured=6 declared=0
+   34724.070 ms  NROS_VIOLATION   #8: timer-overrun-runtime timer measured=1 declared=0
+   34724.174 ms  NROS_VIOLATION   #9: timer-overrun-runtime timer measured=1 declared=0
+   34724.282 ms  NROS_VIOLATION   #10: release-jitter-runtime spin measured=241845 declared=10000
+```
+
+The route is the take's 82 ms wait for the tick plus the 250 ms the tick
+busy-waited; the dispatch itself is the 250 of `max-latency-runtime`. The
+8-slot record kept #3-#10 (`total=10 dropped=2`), the trace all ten. Act b
+(`b3-b1`, `b3-b2`): no route verdict on the expiry path.
 
 ## 13. The budgets after F1 (phase9-W5, play_launch 0.14.0, 2026-10-10)
 
