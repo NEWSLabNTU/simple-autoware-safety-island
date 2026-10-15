@@ -543,7 +543,11 @@ def verdicts(r):
                 out.append(dict(term=term, observed=o.get(key), declared=None, ok=None, note=nv, by=TRACE))
         supervised_rows(add, out, r, fl)
     exp = {"b": "COMFORTABLE_STOP", "encore": "EMERGENCY_STOP"}.get(r["act"])
-    if exp:
+    if exp and o.get("sup_inject_ms") == 0xFFFFFFFF:
+        out.append(dict(term="rung reached", observed=r.get("behavior") or "none", declared=exp, ok=None,
+                        note="the stall never ends: the island's ladder cannot run; its safe state is the "
+                        "supervisor's output (the supervised rows)", by=TRACE))
+    elif exp:
         got = r.get("behavior")
         seq = r.get("behaviors") or []
         note = "escalated from " + ", ".join(b for _, b in seq[:-1]) if len(seq) > 1 else ""
@@ -601,16 +605,23 @@ def supervised_rows(add, out, r, fl):
     add("supervised: due -> fallback start (safe-state output)", o.get("sup_due_to_safe"), det,
         note + (f"; cause {cause}" if cause else ""), by=by)
     stall = o.get("sup_inject_ms") == 0xFFFFFFFF
-    if stall and o.get("sup_safe_to_standstill") is None:
-        out.append(dict(term="supervised: fallback start -> standstill", observed=None, declared=fl.get("settle"),
-                        ok=None, note="the stall never ends: the island's emergency stop never runs, and the "
-                        "safe-state output (an LED) is wired to no brake in the simulator", by=by))
+    if stall:
+        # the island's emergency stop never runs and the safe-state output (an
+        # LED) is wired to no brake: a standstill the probe sees is the host's
+        # own doing (p11-st1: the speed steps from 4.17 to 0.0 m/s ~1.1 s after
+        # the fault, no island output), so no verdict on it
+        nb = ("the stall never ends: the island's emergency stop never runs, and the safe-state output "
+              "(an LED) is wired to no brake in the simulator; a standstill seen is not the island's")
+        out.append(dict(term="supervised: fallback start -> standstill", observed=o.get("sup_safe_to_standstill"),
+                        declared=fl.get("settle"), ok=None, note=nb, by=by))
+        out.append(dict(term="supervised: total (last sample -> standstill)", observed=o.get("total"),
+                        declared=None if fl.get("total") is None else fl["total"] + det, ok=None, note=nb, by=by))
     else:
         add("supervised: fallback start -> standstill", o.get("sup_safe_to_standstill"), fl.get("settle"),
             "the emergency settle; the vehicle brakes on the late reaction, the safe-state output being an LED",
             by=by)
     tot = None if fl.get("total") is None else fl["total"] + det
-    if not stall or o.get("total") is not None:
+    if not stall:
         add("supervised: total (last sample -> standstill)", o.get("total"), tot,
             "the overrun case: the rung's total + the detection delay", by=by)
         add("supervised: within the FTTI", o.get("total"), fl.get("ftti"), by=by)

@@ -274,7 +274,7 @@ def table(d):
         note = r[4] if len(r) > 4 else ""
         return len(r) > 3 and r[3] == "n/a" and (
             r[0].startswith("settle at the observed") or "judged by the supervised rows" in note
-            or "wired to no brake" in note)
+            or "wired to no brake" in note or "the island's ladder cannot run" in note)
     na = sum(1 for r in rows if apart(r))
     total = next((r for r in rows if r[0].startswith("total")), None)
     s = f"table {ok}/{len(rows) - na} PASS" + (f" (+{na} n/a)" if na else "")
