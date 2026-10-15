@@ -250,7 +250,8 @@ fi
 # the reaction, `stall` never ends. The supervised deadline (island_supervisor.c)
 # is what is checked: analysis.py's supervised rows.
 if [ -n "${RB_OVERRUN:-}" ]; then
-    [ "$act" = encore ] && [ "$target" = board ] || { echo "run-board: RB_OVERRUN is for the encore on the board" >&2; exit 2; }
+    case "$act" in encore|b) ;; *) echo "run-board: RB_OVERRUN is for the encore or b on the board" >&2; exit 2;; esac
+    [ "$target" = board ] || { echo "run-board: RB_OVERRUN is for the board" >&2; exit 2; }
     case "$RB_OVERRUN" in stall|[1-9]|[1-9][0-9]|[1-9][0-9][0-9]|[1-9][0-9][0-9][0-9]) ;;
         *) echo "run-board: RB_OVERRUN is <ms> (1..2000) or stall" >&2; exit 2;; esac
     # The trace window is re-armed first (readout.py --rearm-only, attach, no
