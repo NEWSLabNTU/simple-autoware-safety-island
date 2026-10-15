@@ -412,6 +412,15 @@ version: 1
 # reference to a named scale rather than a string nobody validates.
 severity_levels: [QM, ASIL_A, ASIL_B, ASIL_C, ASIL_D]
 
+# phase11-S6: the platform terms of a supervision's detection delay (rlm
+# 0.1.61's `supervision:`). tick: the kernel tick the board's k_timer expires
+# on (CONFIG_SYS_CLOCK_TICKS_PER_SEC 1000). switch: the expiry ISR plus the
+# switch into the reaction thread (src/zephyr_entry/src/island_supervisor.c),
+# measured on the board: SUPERVISOR_SAFE_STATE after the due (phase-11 S7).
+supervision:
+  tick: 1ms
+  switch: 1ms
+
 # What each rung needs from outside the island. A function is lost by
 # silence on its topics, and, with `when:`, also by value: `when:` names the
 # predicate that LOSES it (ros-launch-manifest v0.1.46).
@@ -708,6 +717,13 @@ nodes:
               terms:
                 tick: { period: 100ms, max: 14.84ms, n: 1641 }
                 work: { max: 25.04ms, n: 13 }
+          # phase11-S6: supervised by the board's timer rung
+          # (CONFIG_ISLAND_SUPERVISOR): a k_timer at take + max_age + 149 and
+          # a thread above the executor that drives the safe-state output.
+          # That output is a GPIO (an LED standing in for a brake line), not
+          # a ROS path, so the fallback named here is the emergency stop
+          # mode the brake line stands for.
+          supervise: { enters: emergency_stop, mechanism: timer }
         # The client calls to the operators are named in `output` so the
         # reaction walk can follow the service edges (phase 82). The safe
         # states are declared on the operators, whose outputs command the
