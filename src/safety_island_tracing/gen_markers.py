@@ -14,6 +14,8 @@ marker is emitted per contract element that executes:
   publisher        PUB_<node>_<endpoint>                 every contracted `pub:`
   lifecycle        <node>_INIT_DONE / _INIT_TIMEOUT      the handler's start-up
                                                          (LIFECYCLE below)
+  supervision      SUPERVISOR_*                          the board's deadline
+                                                         rung (SUPERVISION below)
 
 Ids are assigned in that order, sorted by contract name inside each group,
 starting at 1 (0 is never a marker). The lifecycle group is the one group
@@ -65,6 +67,7 @@ COMPONENT_DIRS = [
     "src/autoware_mrm_handler",
     "src/autoware_mrm_emergency_stop_operator",
     "src/autoware_mrm_comfortable_stop_operator",
+    "src/zephyr_entry/src",
 ]
 # Integer Kconfig values stated in these files are the knobs that size the
 # image; the provenance record carries the value each one had in the BUILD
@@ -98,6 +101,26 @@ KNOB_REGISTRY = "third-party/nano-ros/cmake/NanoRosKnobRegistry.cmake"
 LIFECYCLE = [
     ("/mrm_handler/init", "MRM_HANDLER_INIT_DONE", "lifecycle_done"),
     ("/mrm_handler/init", "MRM_HANDLER_INIT_TIMEOUT", "lifecycle_timeout"),
+]
+
+# phase11-S4/S7: the supervised deadline (CONFIG_ISLAND_SUPERVISOR,
+# src/zephyr_entry/src/island_supervisor.c). Not contract elements either: the
+# supervisor is the board's own rung below the executor. After LIFECYCLE, so
+# no id above moves.
+#   SUPERVISOR_DEADLINE    the reaction thread's verdict that a supervised
+#                          route is past its due: arg route << 28 | due's
+#                          uptime ms (low 28 bits); route 0 = the hpc_loss
+#                          reaction (mrm_handler/call_mrm)
+#   SUPERVISOR_SAFE_STATE  the fallback's start: the safe-state output
+#                          driven; arg the cause, 1 a route deadline, 2 the
+#                          SWT0 first timeout
+#   SUPERVISOR_INJECT      a commanded fault-tick overrun begins (the debug
+#                          hook, mrm_handler_core.cpp): arg its ms,
+#                          0xffffffff a stall that never ends
+SUPERVISION = [
+    ("/mrm_handler/call_mrm", "SUPERVISOR_DEADLINE", "supervisor_deadline"),
+    ("/mrm_handler/call_mrm", "SUPERVISOR_SAFE_STATE", "supervisor_safe_state"),
+    ("/mrm_handler/call_mrm", "SUPERVISOR_INJECT", "supervisor_inject"),
 ]
 
 # phase9-W4: nano-ros's own trace markers, forwarded into the island's stream
@@ -287,7 +310,7 @@ def build_table(model):
     for ep in sorted(c.get("pub_endpoints", {})):
         node, name = split_endpoint(ep)
         add(f"PUB_{c_ident(node)}_{c_ident(name)}", "publish", ep, node=node, topic=topics_by_pub.get(ep))
-    for element, name, kind in LIFECYCLE:
+    for element, name, kind in LIFECYCLE + SUPERVISION:
         add(name, kind, element, node=split_endpoint(element)[0])
     return markers
 

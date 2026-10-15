@@ -12,20 +12,32 @@
  * The first spin is after registration (nros_cpp_spin_once is the executor's
  * single entry point, as native_sim's sim_clock_catch_up.c relies on), so
  * this raises the spin thread there, once.
+ *
+ * phase11-S4: the same entry point feeds the supervisor's SWT0, once per
+ * spin (island_supervisor.c), so this wrapper is linked when either option
+ * is on.
  */
 #include <stdbool.h>
 #include <stdint.h>
 #include <zephyr/kernel.h>
+#if defined(CONFIG_ISLAND_SUPERVISOR)
+#include "island_supervisor.h"
+#endif
 
 int __real_nros_cpp_spin_once(void *handle, int32_t timeout_ms);
 
 int __wrap_nros_cpp_spin_once(void *handle, int32_t timeout_ms)
 {
+#if defined(CONFIG_ISLAND_SPIN_RAISE)
 	static bool raised;
 
 	if (!raised) {
 		raised = true;
 		k_thread_priority_set(k_current_get(), CONFIG_ISLAND_SPIN_THREAD_PRIORITY);
 	}
+#endif
+#if defined(CONFIG_ISLAND_SUPERVISOR)
+	island_supervisor_spin();
+#endif
 	return __real_nros_cpp_spin_once(handle, timeout_ms);
 }

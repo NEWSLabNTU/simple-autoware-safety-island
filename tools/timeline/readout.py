@@ -356,7 +356,7 @@ def main():
                     help="with --rearm-only: after the re-arm, stay attached as the act's button bridge "
                          "(board_buttons.py; CARLA demo C6) until `quit` or EOF on stdin")
     a = ap.parse_args()
-    syms = symbols(a.elf, set(WORDS) | {BUFFER, violations.RECORD, SERIAL, BOOTREC, ASSERT} |
+    syms = symbols(a.elf, set(WORDS) | {BUFFER, violations.RECORD, SERIAL, BOOTREC, ASSERT, violations.SUPERVISOR} |
                    set(violations.ARM_WORDS) | {REARM, "island_button_record"})
     if a.rearm_only:
         return rearm(a, syms)
@@ -406,7 +406,7 @@ def main():
     if violations.RECORD in syms:
         plan += [f"read {violations.RECORD} @ {syms[violations.RECORD][0]:#010x}, {syms[violations.RECORD][1]} B"] + \
             [f"read32 {n} @ {syms[n][0]:#010x}" for n in violations.ARM_WORDS if n in syms and n not in WORDS]
-    for n in (SERIAL, BOOTREC, ASSERT):
+    for n in (SERIAL, BOOTREC, ASSERT, violations.SUPERVISOR):
         if n in syms:
             plan.append(f"read {n} @ {syms[n][0]:#010x}, {syms[n][1]} B")
     print(f"readout: {a.target}, {a.elf}")
@@ -437,7 +437,8 @@ def main():
             for n in violations.ARM_WORDS:
                 if n in syms and n not in vals:
                     vals[n] = dev.read32(syms[n][0])
-        for n, fname in ((SERIAL, "serial.bin"), (BOOTREC, "bootrec.bin"), (ASSERT, "assert.bin")):
+        for n, fname in ((SERIAL, "serial.bin"), (BOOTREC, "bootrec.bin"), (ASSERT, "assert.bin"),
+                         (violations.SUPERVISOR, "supervisor.bin")):
             if n in syms:
                 extra[n] = dev.read_block(syms[n][0], syms[n][1], os.path.join(vdir, fname))
     finally:
@@ -481,6 +482,10 @@ def main():
         if atext is not None:
             open(os.path.join(vdir, "assert.txt"), "w").write(atext)
             print("readout: " + atext.rstrip().replace("\n", "\nreadout: "))
+    if violations.SUPERVISOR in extra:
+        sutext = violations.supervisor_report(extra[violations.SUPERVISOR])
+        open(os.path.join(vdir, "supervisor.txt"), "w").write(sutext)
+        print("readout: " + sutext.rstrip().replace("\n", "\nreadout: "))
     island_trace.wrap(raw, a.out, a.zephyr, vals.get("island_trace_hb_seq", 0),
                       vals.get("island_trace_hb_last_uptime_ms", 0))
     if "island_trace_triggered" in vals and not vals["island_trace_triggered"]:

@@ -98,6 +98,8 @@
 # "<pid> <count path>", phase8-W16; needs just l3-host-ws or just
 # demo-host-ws), RB_PROBE,
 # RB_ROUTER_TIMEOUT (90 s),
+# RB_OVERRUN (phase11-S7, encore on the board: <ms> or stall, the handler's
+# fault tick overruns; see below),
 # RB_ACT (the act command, $act and $dir expanded), RB_SETTLE (15 s after
 # Startup complete), RB_JOIN_TIMEOUT (120 s), RB_AW_TIMEOUT (300 s),
 # RB_QEMU_SECS (900, QEMU's own bound), L3_PEER_TTY (the gateway's tty),
@@ -242,6 +244,17 @@ if [ "$sim" = carla ]; then
     [ "$target" = board ] && export SCENARIO_REARM="python3 tools/timeline/readout.py --target board --elf '$(readlink -f "$elf")' --out /dev/null --rearm-only"
     [ "$rb_trigger" != button ] && [ "$act" != encore ] && export SCENARIO_ODD_FILE="$xosc"
 fi
+# phase11-S7: RB_OVERRUN=<ms>|stall, the encore with the handler's fault tick
+# overrunning (violations.py fault-overrun, written by the act over SWD once
+# the vehicle drives, before the HPC loss): <ms> busy-waits that long before
+# the reaction, `stall` never ends. The supervised deadline (island_supervisor.c)
+# is what is checked: analysis.py's supervised rows.
+if [ -n "${RB_OVERRUN:-}" ]; then
+    [ "$act" = encore ] && [ "$target" = board ] || { echo "run-board: RB_OVERRUN is for the encore on the board" >&2; exit 2; }
+    case "$RB_OVERRUN" in stall|[1-9]|[1-9][0-9]|[1-9][0-9][0-9]|[1-9][0-9][0-9][0-9]) ;;
+        *) echo "run-board: RB_OVERRUN is <ms> (1..2000) or stall" >&2; exit 2;; esac
+    export SCENARIO_FAULT_CMD="python3 tools/timeline/violations.py fault-overrun --elf '$(readlink -f "$elf")' $RB_OVERRUN"
+fi
 : "${RB_GATE:=python3 tools/timeline/scenario.py gate --log $dir/gate.jsonl}"
 : "${RB_PROBE:=python3 tools/timeline/probe.py --out $dir/probe.jsonl}"
 : "${RB_ACT:=python3 tools/timeline/scenario.py run $act --log $dir/scenario.jsonl}"
@@ -288,7 +301,7 @@ l3() {
         SCENARIO_REARM="${SCENARIO_REARM:-}" SCENARIO_TRIGGER="${SCENARIO_TRIGGER:-button}" \
         SCENARIO_ACT_SOCKET="${SCENARIO_ACT_SOCKET:-}" TRIGGER_SECS="${TRIGGER_SECS:-180}" \
         SCENARIO_ODD_FILE="${SCENARIO_ODD_FILE:-}" SCENARIO_REARM_LEAD_S="${SCENARIO_REARM_LEAD_S:-4.0}" \
-        SCENARIO_BUTTON_INJECT="${SCENARIO_BUTTON_INJECT:-0}" \
+        SCENARIO_BUTTON_INJECT="${SCENARIO_BUTTON_INJECT:-0}" SCENARIO_FAULT_CMD="${SCENARIO_FAULT_CMD:-}" \
         bash -c "cd '$repo'; source demo/l3/container/bin/l3-env >/dev/null 2>&1; $*"
 }
 export -f l3
@@ -388,7 +401,8 @@ if [ "$dry" = 0 ]; then
       echo "min_speed=${MIN_SPEED:-1.0} drive_secs=${DRIVE_SECS:-3}"
       [ -n "${INIT_X:-}${GOAL_X:-}" ] && echo "init=${INIT_X:-} ${INIT_Y:-} ${INIT_QZ:-} ${INIT_QW:-} goal=${GOAL_X:-} ${GOAL_Y:-} ${GOAL_QZ:-} ${GOAL_QW:-}"
       [ -n "${L3_PLANNING_COMMON:-}" ] && echo "planning_common=$(readlink -f "$L3_PLANNING_COMMON") sha256=$(sha256sum "$L3_PLANNING_COMMON" | cut -d' ' -f1) max_vel=$(sed -n 's/^ *max_vel: *\([0-9.]*\).*/\1/p' "$L3_PLANNING_COMMON")"
-      [ "$rb_trigger" = board ] && echo "button_inject=${SCENARIO_BUTTON_INJECT:-0}"; } >> "$out.meta"
+      [ "$rb_trigger" = board ] && echo "button_inject=${SCENARIO_BUTTON_INJECT:-0}"
+      [ -n "${RB_OVERRUN:-}" ] && echo "overrun=$RB_OVERRUN"; } >> "$out.meta"
 fi
 start=$SECONDS
 

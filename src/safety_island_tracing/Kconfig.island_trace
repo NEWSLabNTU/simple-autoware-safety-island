@@ -80,6 +80,10 @@ config ISLAND_DEBUG_OVERRUN
 	  It is the board's end-to-end test of the violation channel
 	  (docs/takeover-trace.md section 12). No link entity, no parameter
 	  service, no contract change: only a debugger can command it.
+	  phase11-S7 adds `island_debug_fault_overrun_ms`, the same for the
+	  FAULT tick: the next tick that runs call_mrm busy-waits N ms right
+	  after its ENTRY, before the reaction, so the route itself is late;
+	  0xffffffff never ends (violations.py fault-overrun N|stall).
 
 config ISLAND_APP_CONSOLE
 	bool "The application's own console prints (ISLAND_PRINTF)"
