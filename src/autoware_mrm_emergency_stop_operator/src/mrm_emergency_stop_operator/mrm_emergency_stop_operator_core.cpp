@@ -170,7 +170,12 @@ MrmEmergencyStopOperator::MrmEmergencyStopOperator(::rclcpp::NodeHandle handle)
   //   ~/output/mrm/emergency_stop/status      → /system/mrm/emergency_stop/status
   //   ~/output/mrm/emergency_stop/control_cmd → /system/emergency/control_cmd
   pub_status_ = create_publisher_in<MrmBehaviorStatus>("/system/mrm/emergency_stop/status");
-  pub_control_cmd_ = create_publisher_in<Control>("/system/emergency/control_cmd");
+  // phase11-S6: express, as the handler's mrm_state: the supervisor's direct
+  // path publishes the braking command on it from its own thread, and a
+  // batched sample would wait for a flush a stalled spin thread starves.
+  ::rclcpp::QoS express = ::rclcpp::QoS::default_profile();
+  express.tx_express(true);
+  pub_control_cmd_ = create_publisher_in<Control>("/system/emergency/control_cmd", express);
 
   // Timer
   NROS_CREATE_WALL_TIMER(static_cast<uint64_t>(1000 / params_.update_rate), onTimer);

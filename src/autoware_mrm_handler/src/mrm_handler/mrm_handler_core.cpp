@@ -258,10 +258,18 @@ MrmHandler::MrmHandler(::rclcpp::NodeHandle handle)
 
   // Publisher (phase8-W8a: turn indicators, gear and emergency holding
   // dropped for the demo image; see the header).
+  // phase11-S6: express (tx_express: past zenoh-pico's tx batch, sent at the
+  // publish). The supervisor's direct emergency path publishes on these two
+  // from its own thread; batched, its samples waited for a flush that the
+  // flush thread, below a stalled spin thread, never ran (s6-st3: the
+  // direct path's mrm_state reached the host in bursts of six, every
+  // ~200 ms, when the batch buffer filled).
+  ::rclcpp::QoS express = ::rclcpp::QoS::default_profile();
+  express.tx_express(true);
   pub_hazard_cmd_ = create_publisher_in<autoware_vehicle_msgs::msg::HazardLightsCommand>(
-    "/system/emergency/hazard_lights_cmd");
-  pub_mrm_state_ =
-    create_publisher_in<autoware_adapi_v1_msgs::msg::MrmState>("/system/fail_safe/mrm_state");
+    "/system/emergency/hazard_lights_cmd", express);
+  pub_mrm_state_ = create_publisher_in<autoware_adapi_v1_msgs::msg::MrmState>(
+    "/system/fail_safe/mrm_state", express);
   pub_takeover_request_state_ = create_publisher_in<tier4_system_msgs::msg::MrmBehaviorStatus>(
     "/system/takeover_request/state");
 
