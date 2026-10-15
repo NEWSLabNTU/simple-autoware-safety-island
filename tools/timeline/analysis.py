@@ -332,7 +332,8 @@ def analyze(ev, rows, explain="", windows=None, entry_speed=None):
         # A fault-tick overrun (SUPERVISOR_INJECT) makes call_mrm late; the
         # supervisor's verdict and the safe-state output are its fallback.
         E["sup_inject"] = t_of(_first(ev, isl("SUPERVISOR_INJECT"), after=base))
-        E["sup_verdict"] = t_of(_first(ev, isl("SUPERVISOR_DEADLINE"), after=base))
+        dle = _first(ev, isl("SUPERVISOR_DEADLINE"), after=base)
+        E["sup_verdict"] = t_of(dle)
         sse = _first(ev, isl("SUPERVISOR_SAFE_STATE"), after=base)
         E["sup_safe_state"] = t_of(sse)
         sup_offset = None
@@ -342,6 +343,19 @@ def analyze(ev, rows, explain="", windows=None, entry_speed=None):
             if max_age is not None and call_mrm is not None:
                 sup_offset = max_age + call_mrm
                 E["sup_due"] = E["island_take"] + int(round(sup_offset * 1e6))
+        # The verdict names the due it judged (arg: route << 28 | the due's
+        # uptime ms, low 28 bits); on the board the trace clock is the uptime,
+        # so that due is placed exactly, on the host clock through the
+        # marker's own offset. The take-based one above, from the take's
+        # trace stamp, is up to 1 ms later (the handler reads the uptime in
+        # whole ms).
+        if dle is not None and dle.get("island_ns") is not None:
+            due_low = (dle["value"] & 0x0FFFFFFF) * 1_000_000
+            span = (1 << 28) * 1_000_000
+            k = (dle["island_ns"] - due_low + span // 2) // span
+            due_isl = due_low + k * span
+            E["sup_due_take"] = E.get("sup_due")
+            E["sup_due"] = dle["t_mono_ns"] - dle["island_ns"] + due_isl
         if E.get("sup_due") is not None and (E["sup_inject"] or E["sup_verdict"] or E["sup_safe_state"]):
             obs["sup_due_to_verdict"] = d(E["sup_due"], E["sup_verdict"])
             obs["sup_due_to_safe"] = d(E["sup_due"], E["sup_safe_state"])
@@ -721,6 +735,15 @@ def selftest_supervised(check):
     dt = by.get("detect (last sample -> reaction tick)")
     check("an injected overrun leaves the unsupervised detect row without a verdict",
           dt is not None and dt["ok"] is None and "injected" in dt["note"])
+    # the verdict's own due (arg low 28 bits, uptime ms) on a trace whose
+    # clock is the uptime, the host offset 5 s: the arg says 1548, not the take-based 1549 -> verdict +1.4 ms
+    off = 5000 * M
+    ev3 = [dict(e, t_mono_ns=e["t_mono_ns"] + off, island_ns=e["t_mono_ns"]) if e["source"] == "island"
+           else dict(e, t_mono_ns=e["t_mono_ns"] + off) for e in ev]
+    ev3 = [dict(e, value=1548) if e.get("marker") == "SUPERVISOR_DEADLINE" else e for e in ev3]
+    o3 = analyze(sorted(ev3, key=lambda e: e["t_mono_ns"]), rows)["observed"]
+    check(f"supervised: the due from the verdict's arg -> due->verdict {o3.get('sup_due_to_verdict')}",
+          o3.get("sup_due_to_verdict") is not None and abs(o3["sup_due_to_verdict"] - 1.4) < 1e-6)
     # a stall: no standstill, the safe-state output still within the FTTI
     ev2 = [e for e in ev if e["kind"] != "velocity" or e["t_mono_ns"] < 1000 * M]
     ev2 = [dict(e, value=0xFFFFFFFF) if e.get("marker") == "SUPERVISOR_INJECT" else e for e in ev2
