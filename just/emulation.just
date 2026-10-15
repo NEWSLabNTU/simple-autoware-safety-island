@@ -41,11 +41,17 @@ qemu-build: sync
     # overrides it for ONE build without editing a tracked file. Unset ones
     # are not passed. (ZPICO_* cargo knobs reach build.rs from the env as is.)
     EXTRA=()
-    for k in CONFIG_NROS_ZEPHYR_HEAP_SIZE CONFIG_MAIN_STACK_SIZE \
+    for k in CONFIG_MAIN_STACK_SIZE \
              CONFIG_NROS_ZEPHYR_TASK_STACK_SIZE CONFIG_NROS_ZEPHYR_TASK_SLOTS \
              CONFIG_MAX_PTHREAD_MUTEX_COUNT CONFIG_MAX_PTHREAD_COND_COUNT; do
         [ -n "${!k:-}" ] && EXTRA+=("-D${k}=${!k}")
     done
+    # The heap is a nano-ros knob (system.toml's [image.qemu.knobs.zephyr]):
+    # since the pin of phase10-B3 a -DCONFIG_ line for it is refused and the
+    # one-build override is -DNROS_OVERRIDE_ZEPHYR_HEAP_SIZE. The env name
+    # stays, so trace-qemu-build and earlier runbooks keep working.
+    [ -n "${CONFIG_NROS_ZEPHYR_HEAP_SIZE:-}" ] && \
+        EXTRA+=("-DNROS_OVERRIDE_ZEPHYR_HEAP_SIZE=${CONFIG_NROS_ZEPHYR_HEAP_SIZE}")
     [ ${#EXTRA[@]} -gt 0 ] && echo "qemu-build: env overrides -> ${EXTRA[*]}"
     # nano_ros_DIR is named, not left to the CMakeLists default (the
     # submodule): with NANO_ROS_ALLOW_EXTERNAL_ROOT=1 NANO_ROS_ROOT=<clone>

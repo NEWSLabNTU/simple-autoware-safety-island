@@ -144,10 +144,39 @@ with its evidence. Two were confirmed by experiment on 2026-10-15:
   `src/zephyr_entry/system.toml`, the native_sim image's ring depth to
   `src/native_sim_entry/system.toml`, and the posix workspace build says
   `nano_ros_ROOT` and `NROS_PLATFORM`. Built on this pin: the board image
-  and the native_sim image. Not built: the QEMU image (its board conf still
-  states the heap and the graph cache as Kconfig lines, and its snippets
-  more) and the posix workspace build (`nros ws board-facts` finds four
-  system.toml bringups and asks for one); both are left as they were.
+  and the native_sim image. The QEMU image and the posix workspace build
+  were fixed after (below, "Builds at the pin").
+- Builds at the pin (2026-10-15, at nano-ros f496a8b68a; each checked
+  against the previous pin 43fc1c2f first):
+  - QEMU image: failed at 43fc1c2f as well (`NROS_ZEPHYR_HEAP_SIZE ... is
+    assigned in a configuration file, but is not directly user-configurable`),
+    so not new. The heap and graph cache (boards/mps2_an385.conf), the ring
+    depth (trace.conf) and graph discovery off (snippets/qemu-ethernet) are
+    knob tables in `src/qemu_entry/system.toml`, values unchanged; the
+    board's `island-ethernet` snippet line moves to
+    `src/zephyr_entry/system.toml` the same way (the serial gate image
+    derives it off already). `qemu-build`'s heap lever passes
+    `-DNROS_OVERRIDE_ZEPHYR_HEAP_SIZE` (a `-DCONFIG_` line for a knob is
+    refused), so `trace-qemu-build` keeps its 1 MiB heap.
+  - posix `just build`: two refusals new at this pin and one link failure
+    already present at 43fc1c2f. New: `nros ws board-facts` asks which of
+    the four system.toml files (the recipe now passes
+    `-DNROS_BRINGUP_DIR=src/safety_island_bringup`, which declares no image,
+    so nothing to carry as before), and board `native` is retired for
+    `linux` (src/native_entry). Old: `nros_cpp_declare_param` undefined at
+    link, because the posix nros-cpp had no parameter store while the
+    generated entry seeds the launch parameters; the bringup now declares
+    `features = ["params"]` (nano-ros phase-461 W6, the store without the
+    services). Board RAM 276,152 B and DTCM 116,632 B unchanged by it.
+  - Trace markers: `gen_markers.py` reads the integer knobs of the entries'
+    system.toml knob tables (named through the pinned
+    `NanoRosKnobRegistry.cmake`) beside the conf files, so the provenance
+    list has `CONFIG_NROS_ZEPHYR_HEAP_SIZE` and
+    `CONFIG_NROS_GRAPH_CACHE_SIZE` again; `just trace-gen-check` passes.
+  - Gate: `just build`, `just qemu-build`, `just board-build` (FLASH
+    559,164 B, RAM 276,152 B, DTCM 116,632 B), the native_sim image
+    (`just trace-window-native-build`) and `just l3-check` (16 contracts,
+    every verdict as expected) all pass.
 - Board check (2026-10-15, done): image sha256 `3a41bdcf...` (`just
   board-build` at e55a63b), flashed by run-board.sh.
   - `b3-e2`, encore: `SUMMARY b3-e2 encore: PASS; load 31.35 at act; table
@@ -172,9 +201,16 @@ with its evidence. Two were confirmed by experiment on 2026-10-15:
     b3-b1). Both read `FAIL` on one table row only, `HPC alive: longest
     availability gap (host)`, 1086.91 and 556.21 ms at load 30.6 and 25.5,
     while the gate's own largest publish gap was 106.54 and 102.87 ms and
-    the island stored no silence: the probe's receipt stalled on the
-    loaded host (the same row as runs b3 and b4 in section 3 of
-    docs/takeover-trace.md), not the stream and not B3.
+    the island stored no silence. The stream did not stop: inside the
+    probe's gap (1314.64 and 705.41 ms raw) the island took the
+    availability 14 and 7 times, 79.9-107.5 ms apart, while the probe got
+    only 3 and 2 samples of its OTHER topics too, so the probe process
+    stalled, not the topic. The same row passes in fr-b1..3 (102.20-102.91
+    ms, act load 7.1-9.0) and b6-b1..3 (107.02-111.09 ms, act load
+    14.8-19.5); b3-b1/b2 ran at act load 30.6 and 25.5, under the
+    RB_LOAD_MAX of 35 but with other builds on the host. Same symptom as runs b3 and b4 in
+    section 3 of docs/takeover-trace.md: the host probe, not the stream,
+    and not B3.
 
 ### B4. The tool applies the measurement rule (this repo) - done
 

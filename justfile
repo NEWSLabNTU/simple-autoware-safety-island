@@ -242,11 +242,19 @@ setup-deps:
 # with no ROS site-packages on PYTHONPATH and failed with "rosidl_adapter is not
 # importable by this build's interpreter". The CycloneDDS_DIR pin above is what
 # keeps a sourced ROS from also supplying the wrong Cyclone.
+#
+# NROS_BRINGUP_DIR names the bringup this build is for. The workspace holds
+# four system.toml files (the bringup and the three Zephyr entries), and
+# since the nano-ros pin of phase10-B3 `nros ws board-facts` refuses to pick
+# one when the configure names none (nano-ros issue 1827: `nros build` passes
+# the same variable). The bringup declares no image, so the posix build has
+# no board facts to carry, as before.
 build: sync
     #!/usr/bin/env bash
     set -e
     source /opt/ros/humble/setup.bash
     env NROS_EXECUTOR_MAX_CBS=32 cmake -S . -B {{BUILD_DIR}} -Dnano_ros_ROOT={{NROS_ROOT}} \
+        -DNROS_BRINGUP_DIR=$PWD/src/{{BRINGUP}} \
         -DCycloneDDS_DIR={{CYCLONEDDS_HOME}}/lib/cmake/CycloneDDS
     env NROS_EXECUTOR_MAX_CBS=32 cmake --build {{BUILD_DIR}} -j
 

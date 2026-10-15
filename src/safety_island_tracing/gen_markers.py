@@ -75,6 +75,16 @@ KNOB_FILES = [
     "src/zephyr_entry/prj.conf",
     "src/zephyr_entry/boards/mr_canhubk3_s32k344.conf",
 ]
+# Since the nano-ros pin of phase10-B3 a nano-ros knob is not a Kconfig line
+# but a knob table in the entry's system.toml (`[image.<id>.knobs.<table>]
+# <name> = <value>`, RFC-0103 D2a), rendered into a Kconfig fragment at
+# configure time. Its integer values are read here too, and named by the
+# Kconfig symbol the pinned nano-ros registry maps them to.
+KNOB_SYSTEMS = [
+    "src/native_sim_entry/system.toml",
+    "src/zephyr_entry/system.toml",
+]
+KNOB_REGISTRY = "third-party/nano-ros/cmake/NanoRosKnobRegistry.cmake"
 
 
 # phase8-W27: mrm_handler's INIT -> RUN transition (docs/porting-notes.md 20).
@@ -338,8 +348,53 @@ def window_policy(model, markers):
     return policy, det["id"], arms[0]["id"]
 
 
-def knob_names():
+def knob_registry():
+    """(table, name) -> Kconfig symbol, from the pinned nano-ros registry."""
+    p = os.path.join(ROOT, KNOB_REGISTRY)
+    if not os.path.exists(p):
+        sys.exit(f"gen_markers: {KNOB_REGISTRY} is missing (git submodule update --init third-party/nano-ros)")
+    sets = dict(re.findall(r'^set\((NROS_KNOB_(?:KCONFIG_SYMBOL|IMAGE_TABLE|IMAGE_NAME)_[A-Z0-9_]+) (\S+)\)$',
+                           open(p).read(), re.M))
+    reg = {}
+    for key, sym in sets.items():
+        if key.startswith("NROS_KNOB_KCONFIG_SYMBOL_"):
+            kid = key[len("NROS_KNOB_KCONFIG_SYMBOL_"):]
+            table = sets.get("NROS_KNOB_IMAGE_TABLE_" + kid)
+            name = sets.get("NROS_KNOB_IMAGE_NAME_" + kid)
+            if table and name:
+                reg[(table, name)] = "CONFIG_" + sym
+    return reg
+
+
+def system_knob_names():
+    try:
+        import tomllib
+    except ModuleNotFoundError:  # python < 3.11
+        import tomli as tomllib
+    reg = None
     names = set()
+    for rel in KNOB_SYSTEMS:
+        p = os.path.join(ROOT, rel)
+        if not os.path.exists(p):
+            continue
+        with open(p, "rb") as f:
+            doc = tomllib.load(f)
+        for img_id, img in doc.get("image", {}).items():
+            for table, rows in img.get("knobs", {}).items():
+                for name, value in rows.items():
+                    if isinstance(value, bool) or not isinstance(value, int):
+                        continue  # integer knobs only, as KNOB_FILES' lines
+                    reg = reg if reg is not None else knob_registry()
+                    sym = reg.get((table, name))
+                    if sym is None:
+                        sys.exit(f"gen_markers: {rel}: [image.{img_id}.knobs.{table}] {name} "
+                                 f"is not in {KNOB_REGISTRY}")
+                    names.add(sym)
+    return names
+
+
+def knob_names():
+    names = system_knob_names()
     for rel in KNOB_FILES:
         p = os.path.join(ROOT, rel)
         if not os.path.exists(p):

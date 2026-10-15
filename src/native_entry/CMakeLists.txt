@@ -11,7 +11,9 @@ find_package(nano_ros REQUIRED)
 
 nano_ros_add_executable(native_entry
     SOURCES src/main.cpp
-    BOARD   native
+    # `linux`, not `native`: the nano-ros pin of phase10-B3 refuses `native`
+    # as a board (nano-ros phase-500: the host board builds on Linux only).
+    BOARD   linux
     # BRINGUP names the package a HUMAN authors -- system.toml, launch/ and
     # the launch file's contract sidecar. The SystemModel is a BUILD ARTIFACT
     # `nros sync` writes under build/nros/models/, located here by
@@ -20,4 +22,4 @@ nano_ros_add_executable(native_entry
     # before the contract existed (4 nodes, 0 topics).
     BRINGUP "${CMAKE_CURRENT_SOURCE_DIR}/../safety_island_bringup"
     TYPED
-    DEPLOY  native)
+    DEPLOY  linux)

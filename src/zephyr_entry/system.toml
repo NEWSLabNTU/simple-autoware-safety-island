@@ -47,6 +47,10 @@ heap_size = 106496
 
 [image.zephyr.knobs.zenoh]
 graph_cache_size = 4096
+# Off, as snippets/island-ethernet stated it until the same pin refused the
+# Kconfig line there (its reason is beside the old line). The serial image
+# derives off already, so the gate image's value does not change.
+graph_discovery = false
 
 [image.zephyr.knobs.executor]
 max_violations = 8

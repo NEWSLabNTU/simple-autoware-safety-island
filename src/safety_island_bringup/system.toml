@@ -33,9 +33,13 @@ default_launch = "safety_island.launch.xml"
 # boot and each component's declare_parameter reads them, or its source
 # default, with no queryable behind it. What goes: `ros2 param get/set/list/
 # describe/dump` and the parameter services, and the `use_sim_time` runtime
-# switch. nano-ros phase-461 W6 (the `params` axis) replaces the interim.
+# switch. nano-ros phase-461 W6 (the `params` axis) replaces the interim:
+# `params` declares the store without the services, for every image. Zephyr
+# C++ images carried it already; the posix workspace build compiled nros-cpp
+# without it while its generated entry seeds the launch parameters through
+# `nros_cpp_declare_param`, and failed to link (at the pin 43fc1c2f too).
 # P4 adds the E2E integrity layer (nano-ros RFC-0028): "safety".
-features = []
+features = ["params"]
 
 # ── Components — uncommented as ports land ─────────────────────────────────
 [[component]]

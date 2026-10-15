@@ -32,3 +32,19 @@ board = "zephyr"
 # RFC-0085 D4: a Zephyr image NAMES its entry package, which keeps the two
 # other entries from ever being a candidate for this block.
 entry = "qemu_entry"
+
+# nano-ros knobs (RFC-0103 D2a, phase-484 W8): Kconfig lines in
+# boards/mps2_an385.conf (heap, graph cache), trace.conf (ring depth) and
+# snippets/qemu-ethernet (graph discovery) until the nano-ros pin of
+# phase10-B3 refused them there. Values unchanged; the reasons stay beside
+# the old lines. `just trace-qemu-build` still raises the heap to 1 MiB for
+# one build (-DNROS_OVERRIDE_ZEPHYR_HEAP_SIZE, just/emulation.just).
+[image.qemu.knobs.zephyr]
+heap_size = 106496
+
+[image.qemu.knobs.zenoh]
+graph_cache_size = 4096
+graph_discovery = false
+
+[image.qemu.knobs.executor]
+max_violations = 8
