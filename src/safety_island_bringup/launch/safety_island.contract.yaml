@@ -416,7 +416,13 @@ severity_levels: [QM, ASIL_A, ASIL_B, ASIL_C, ASIL_D]
 # 0.1.61's `supervision:`). tick: the kernel tick the board's k_timer expires
 # on (CONFIG_SYS_CLOCK_TICKS_PER_SEC 1000). switch: the expiry ISR plus the
 # switch into the reaction thread (src/zephyr_entry/src/island_supervisor.c),
-# measured on the board: SUPERVISOR_SAFE_STATE after the due (phase-11 S7).
+# measured on the board: SUPERVISOR_SAFE_STATE after the due, 0.04 ms at
+# most (phase-11 S7), x 1.2 rounded up to the next ms.
+# One pair for the whole contract, and it holds because every `supervise:`
+# here is `mechanism: timer`. An `executor` supervision would be detected by
+# the executor's own check, which runs between callbacks: its tick is the
+# spin period plus the longest callback on that executor (the handler's
+# 10 Hz tick, so 100 ms + its work, not 1 ms), and no budget here uses it.
 supervision:
   tick: 1ms
   switch: 1ms
@@ -529,6 +535,20 @@ nodes:
           settle:
             decel: min_acceleration
             jerk: min_jerk
+            # phase11-S6: the comfortable stop is supervised to standstill
+            # on the board, not by a `supervise:` here. The island's route 2
+            # (island_supervisor.c) is armed at the comfortable call with
+            # due = call + this settle at the entry speed (profile 9996.67 +
+            # response 943 = 10939.67, CONFIG_ISLAND_SUPERVISOR_COMFORTABLE_MS
+            # 10940); at the due a vehicle not at standstill by the latest
+            # kinematic_state escalates to the emergency stop, timer
+            # mechanism. The overrun case is the comfortable rung's total
+            # 21393.67 + detection 2 + the emergency route 188.33 + its
+            # settle 4421.33 = 26005.33 ms of the 30 s FTTI. play_launch
+            # 0.18.0 lowers only a node path's `max_latency` to a monitor
+            # (`supervised-unlowered` on a settle's response), and charges a
+            # supervised response alone, not the settle it ends; until it
+            # lowers a supervised settle this stays unsupervised here.
             response:
               duration: 943ms
               source: { measured: { max: 785.43ms, n: 3, margin: 0.2 } }
@@ -718,11 +738,20 @@ nodes:
                 tick: { period: 100ms, max: 14.84ms, n: 1641 }
                 work: { max: 25.04ms, n: 13 }
           # phase11-S6: supervised by the board's timer rung
-          # (CONFIG_ISLAND_SUPERVISOR): a k_timer at take + max_age + 149 and
-          # a thread above the executor that drives the safe-state output.
-          # That output is a GPIO (an LED standing in for a brake line), not
-          # a ROS path, so the fallback named here is the emergency stop
-          # mode the brake line stands for.
+          # (CONFIG_ISLAND_SUPERVISOR), for both hazards: hpc_loss's due is
+          # the last availability take + max_age 500 + 149 (route 0, armed
+          # by the handler), odd_exit's the take + 149 (route 1, the
+          # executor's supervised route row, nano-ros phase-503). At the due
+          # a k_timer wakes a thread above the executor, which drives the
+          # safe-state output (CAN LED1) and commands the emergency stop
+          # directly: mrm_state MRM_OPERATING / EMERGENCY_STOP, the hazard
+          # lights and the emergency operator's braking command, published
+          # from messages and publishers the thread alone uses, every 33 ms
+          # until the handler's and the operator's own ticks take over. So
+          # the reaction runs even while the executor is stuck in this very
+          # callback. A miss in odd_exit enters the emergency stop as well
+          # (one `supervise:` per budget): a handler that overran once is
+          # not trusted with the takeover request.
           supervise: { enters: emergency_stop, mechanism: timer }
         # The client calls to the operators are named in `output` so the
         # reaction walk can follow the service edges (phase 82). The safe
