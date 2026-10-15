@@ -7,11 +7,13 @@ response, not only the braking profile.
 
 **Status (2026-10-15): B4, B5, B6, B9 done; the timeline side of B2 and
 B8 done, B2's response terms confirmed on eight independent runs; the checker side of B1, B2, B7 and B8 done and released in rlm
-v0.1.58, on play_launch main (c0a6a2e6, pinning v0.1.58) and pinned
-through nano-ros (f496a8b68a, this repo's pin). The island contract's keys
-(branch `phase10-contract-keys-rebased`) wait for play_launch 0.17.0 on
-PyPI, which CI installs by version;** B3 done in nano-ros, pinned and
-checked on the board.
+v0.1.58 and shipped in play_launch 0.17.0 (rlm v0.1.59); the island
+contract carries the keys (branch `phase10-contract-keys-rebased`, merged
+2026-10-15), in the phase-90 spellings (`enters:`, `holds:`), checked by
+CI with 0.17.0 (from the GitHub release's assets while its
+per-distribution PyPI projects are pending) and pinned through nano-ros
+79583587cf (rlm v0.1.59, play_launch 0.17.0);** B3 done in nano-ros,
+pinned and checked on the board.
 
 ## Why
 
@@ -53,9 +55,9 @@ with its evidence. Two were confirmed by experiment on 2026-10-15:
   contract states `param:` on every timer and checks clean; a contract
   fixture for each case in rlm and play_launch tests.
 - Owner: rlm (schema), play_launch (rule), this repo (contract keys).
-- Status (2026-10-15): the checker is done and released (rlm v0.1.58,
-  play_launch main c0a6a2e6); the contract keys wait for play_launch 0.17.0
-  on PyPI. rlm 6211471 (in v0.1.58): `trigger: { timer: { rate_hz, param } }` (a
+- Status (2026-10-15): done. The checker is released (rlm v0.1.58,
+  play_launch 0.17.0) and the contract carries the keys (CI checks it with
+  0.17.0). rlm 6211471 (in v0.1.58): `trigger: { timer: { rate_hz, param } }` (a
   rate, Hz) or `period_param` (seconds), and `max_age: { duration, param }`
   (`max_age` was not bound before). play_launch 7576ec46: `timer-param` and `max-age-param`, resolved from the launch
   tree's parameter files like `window-param`. Reproduced first: the
@@ -65,8 +67,8 @@ with its evidence. Two were confirmed by experiment on 2026-10-15:
   `param: update_rate`, and 'update_rate' resolves to 10 Hz`. Fixture
   `tests/fixtures/contract_param_bind` in play_launch, parse tests in rlm.
   The island contract with `param:` on every timer and on `max_age` is on
-  branch `phase10-contract-keys-rebased`: it checks clean on the local build and
-  is refused (`manifest-parse`) by the pinned 0.16.0, so it waits.
+  branch `phase10-contract-keys-rebased`, now merged: it checks clean on
+  0.17.0 (0.16.0 refused it with `manifest-parse`).
 
 ### B2. The vehicle's response in the settling (rlm, play_launch, this repo)
 
@@ -80,8 +82,8 @@ with its evidence. Two were confirmed by experiment on 2026-10-15:
   timeline table's settle row shows `profile + response` and the observed
   difference.
 - Status (2026-10-15): the timeline side, the key and the checker are done;
-  the contract's values are on branch `phase10-contract-keys-rebased`,
-  waiting for play_launch 0.17.0 (B1's status). rlm: `settle: { decel, jerk, response }`;
+  the contract's values are merged and checked with play_launch 0.17.0
+  (B1's status). rlm: `settle: { decel, jerk, response }`;
   play_launch 7e10a661: the settle is profile + response, `settle-derived`
   prints both parts ("... = 4165.33ms; + response 256.00ms (written) =
   settle 4421.33ms"), the totals include it and `--explain` notes
@@ -328,16 +330,16 @@ with its evidence. Two were confirmed by experiment on 2026-10-15:
 - Gate: the island contract states the source of every budget; `--explain`
   prints it per row; a contract whose measured term's stated maximum and
   margin do not reproduce the budget fails (`budget-rule`).
-- Status (2026-10-15): the checker is done; the contract waits for the
-  release (B1's status). rlm: every budget key takes the map form
+- Status (2026-10-15): done; the checker is released and the contract
+  carries the sources (B1's status). rlm: every budget key takes the map form
   `{ duration, source }` (and a window takes `source`), `source:
   requirement | measured | derived | analysed`, and a measured one may
   state `{ measured: { max, n, margin } }` or several `terms` (a timer
   tick's `period` takes no margin). play_launch b31fbeb9: `budget-rule`
   (error), a SOURCES column per row, every total with a measured term
   noted "measured, not a bound", and a "Stated budgets" table with each
-  budget's source and the rule's arithmetic. On branch
-  `phase10-contract-keys-rebased` every budget of the island contract states its
+  budget's source and the rule's arithmetic. In the island contract
+  (from branch `phase10-contract-keys-rebased`) every budget of the island contract states its
   source, the measured ones with the maxima from its comments (link 56 =
   46.42 x 1.2; `call_mrm` and `driver_exit` 149 = tick 100 + 14.84 x 1.2
   -> 118 + work 25.04 x 1.2 -> 31; the timers' jitter 18 and 6; the
