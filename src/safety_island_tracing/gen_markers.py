@@ -110,17 +110,29 @@ LIFECYCLE = [
 #   SUPERVISOR_DEADLINE    the reaction thread's verdict that a supervised
 #                          route is past its due: arg route << 28 | due's
 #                          uptime ms (low 28 bits); route 0 = the hpc_loss
-#                          reaction (mrm_handler/call_mrm)
+#                          reaction (mrm_handler/call_mrm), 1 the
+#                          executor's next supervised route, 2 the
+#                          comfortable stop's standstill (phase11-S6)
 #   SUPERVISOR_SAFE_STATE  the fallback's start: the safe-state output
 #                          driven; arg the cause, 1 a route deadline, 2 the
-#                          SWT0 first timeout
+#                          SWT0 first timeout, 3 the executor's reaction hook
 #   SUPERVISOR_INJECT      a commanded fault-tick overrun begins (the debug
 #                          hook, mrm_handler_core.cpp): arg its ms,
-#                          0xffffffff a stall that never ends
+#                          0xffffffff a stall that never ends; 0xfffffffd
+#                          the comfortable stop made inert (phase11-S6:
+#                          the operator answers but publishes no limit)
+#   SUPERVISOR_DIRECT      phase11-S6: the reaction thread's direct
+#                          emergency publish: arg slot << 28 | seq (slot 0
+#                          the handler's mrm_state + hazard, 1 the emergency
+#                          operator's braking command)
+#   SUPERVISOR_HANDOVER    phase11-S6: a slot's executor path publishes the
+#                          emergency itself; arg the slot
 SUPERVISION = [
     ("/mrm_handler/call_mrm", "SUPERVISOR_DEADLINE", "supervisor_deadline"),
     ("/mrm_handler/call_mrm", "SUPERVISOR_SAFE_STATE", "supervisor_safe_state"),
     ("/mrm_handler/call_mrm", "SUPERVISOR_INJECT", "supervisor_inject"),
+    ("/mrm_handler/call_mrm", "SUPERVISOR_DIRECT", "supervisor_direct"),
+    ("/mrm_handler/call_mrm", "SUPERVISOR_HANDOVER", "supervisor_handover"),
 ]
 
 # phase9-W4: nano-ros's own trace markers, forwarded into the island's stream

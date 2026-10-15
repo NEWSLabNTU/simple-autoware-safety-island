@@ -1,7 +1,7 @@
 {
  "generator": "src/safety_island_tracing/gen_markers.py",
- "contract_sha256": "127f891f70fc33f16f01953545730233aee2372ee82a7ce08cb34ece8fbadddf",
- "table_sha256": "bdaac4e043b17cd3b62089feffd32bf3545983defdd09c6992dec1f5815a1e99",
+ "contract_sha256": "8b17b83b12f83397368b8d18baea35adec255040bb69f4c25b0f9cec95e0a4a1",
+ "table_sha256": "7c6a7faa97ba8872e11f063fe65fba44dd2e1e1da067c52a11cd4b5de9122475",
  "entities": {
   "pub": 8,
   "sub": 7,
@@ -361,6 +361,22 @@
    "id": 34,
    "name": "SUPERVISOR_INJECT",
    "kind": "supervisor_inject",
+   "element": "/mrm_handler/call_mrm",
+   "node": "mrm_handler",
+   "record": "every"
+  },
+  {
+   "id": 35,
+   "name": "SUPERVISOR_DIRECT",
+   "kind": "supervisor_direct",
+   "element": "/mrm_handler/call_mrm",
+   "node": "mrm_handler",
+   "record": "every"
+  },
+  {
+   "id": 36,
+   "name": "SUPERVISOR_HANDOVER",
+   "kind": "supervisor_handover",
    "element": "/mrm_handler/call_mrm",
    "node": "mrm_handler",
    "record": "every"

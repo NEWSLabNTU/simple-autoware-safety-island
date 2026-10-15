@@ -109,6 +109,9 @@ private:
   MrmBehaviorStatus status_;
   Control prev_control_cmd_;
   bool is_prev_control_cmd_subscribed_;
+  // phase11-S6: this node's tick has taken over from the supervisor's direct
+  // emergency path (board only).
+  bool direct_taken_over_{false};
 
   // Algorithm
   Control calcTargetAcceleration(const Control & prev_control_cmd) const;

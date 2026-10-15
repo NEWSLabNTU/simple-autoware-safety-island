@@ -41,6 +41,18 @@ builtin_interfaces::msg::Time now_stamp()
 }
 }  // namespace
 
+#if defined(__ZEPHYR__) && defined(CONFIG_ISLAND_DEBUG_OVERRUN)
+// phase11-S6/S7 debug hook (CONFIG_ISLAND_DEBUG_OVERRUN, with the handler's):
+// 0 from boot; a debugger writes non-zero and the next operate=1 request is
+// answered OPERATING with no velocity limit published, once: a comfortable
+// stop that does not decelerate, for the supervised standstill (route 2,
+// island_supervisor.c). By name over SWD: tools/timeline/violations.py
+// comfortable-inert.
+extern "C" {
+volatile uint32_t island_debug_comfortable_inert;
+}
+#endif
+
 namespace autoware::mrm_comfortable_stop_operator
 {
 
@@ -94,7 +106,16 @@ tier4_system_msgs::srv::OperateMrm::Response MrmComfortableStopOperator::operate
   ISLAND_TRACE(ISLAND_MK_TAKE_MRM_COMFORTABLE_STOP_OPERATOR_OPERATE, request.operate);
   if (request.operate == true) {
     ISLAND_TRACE(ISLAND_MK_PATH_MRM_COMFORTABLE_STOP_OPERATOR_OPERATE_ENTRY, status_.state);
+#if defined(__ZEPHYR__) && defined(CONFIG_ISLAND_DEBUG_OVERRUN)
+    if (island_debug_comfortable_inert != 0u) {
+      island_debug_comfortable_inert = 0u;
+      ISLAND_TRACE(ISLAND_MK_SUPERVISOR_INJECT, 0xFFFFFFFDu);
+    } else {
+      publishVelocityLimit();
+    }
+#else
     publishVelocityLimit();
+#endif
     status_.state = tier4_system_msgs::msg::MrmBehaviorStatus::OPERATING;
     response.response.success = true;
     ISLAND_TRACE(ISLAND_MK_PATH_MRM_COMFORTABLE_STOP_OPERATOR_OPERATE_EXIT, status_.state);

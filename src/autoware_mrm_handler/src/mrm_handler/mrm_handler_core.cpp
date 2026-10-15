@@ -48,9 +48,15 @@ volatile uint32_t island_debug_fault_overrun_ms;
 #endif
 #if defined(CONFIG_ISLAND_SUPERVISOR)
 // phase11-S4 (src/zephyr_entry/src/island_supervisor.h): the board's
-// supervised-deadline rung. Route 0 is the hpc_loss reaction.
+// supervised-deadline rung. Route 0 is the hpc_loss reaction, route 2
+// (phase11-S6) the comfortable stop's standstill.
 void island_supervisor_arm(uint32_t route, int64_t due_ms);
 void island_supervisor_done(uint32_t route);
+uint32_t island_supervisor_latched(void);
+typedef void (*island_supervisor_direct_fn)(void * ctx, uint32_t seq, uint32_t since_latch_ms);
+void island_supervisor_set_direct(uint32_t slot, island_supervisor_direct_fn fn, void * ctx);
+void island_supervisor_handover(uint32_t slot);
+void island_supervisor_note_speed(uint32_t speed_mm_s);
 #endif
 #if defined(CONFIG_ISLAND_LED)
 // The MRM state on the board's LEDs (src/zephyr_entry/src/island_led.c),
@@ -119,6 +125,39 @@ builtin_interfaces::msg::Time now_stamp()
   t.nanosec = static_cast<uint32_t>(ns % 1000000000ull);
   return t;
 }
+
+#if defined(__ZEPHYR__) && defined(CONFIG_ISLAND_SUPERVISOR)
+// phase11-S6 (decision 2): the handler's half of the direct emergency path
+// (island_supervisor.h). Called on the supervisor's reaction thread once the
+// safe-state output is latched, and every 33 ms after, until this handler's
+// own tick publishes the emergency (MrmHandler::onTimer hands over). It
+// publishes what the handler's normal emergency path publishes, from
+// messages it owns: mrm_state MRM_OPERATING / EMERGENCY_STOP and the hazard
+// lights on. It reads nothing of the handler's state: the spin thread may be
+// stuck inside the handler's own tick.
+struct DirectEmergency
+{
+  ::rclcpp::Publisher<autoware_adapi_v1_msgs::msg::MrmState> * mrm_state;
+  ::rclcpp::Publisher<autoware_vehicle_msgs::msg::HazardLightsCommand> * hazard;
+};
+DirectEmergency g_direct_emergency{};
+
+void direct_emergency(void * ctx, uint32_t seq, uint32_t since_latch_ms)
+{
+  (void)seq;
+  (void)since_latch_ms;
+  auto * d = static_cast<DirectEmergency *>(ctx);
+  autoware_adapi_v1_msgs::msg::MrmState st{};
+  st.stamp = now_stamp();
+  st.state = autoware_adapi_v1_msgs::msg::MrmState::MRM_OPERATING;
+  st.behavior = autoware_adapi_v1_msgs::msg::MrmState::EMERGENCY_STOP;
+  (void)d->mrm_state->publish(st);
+  autoware_vehicle_msgs::msg::HazardLightsCommand hz{};
+  hz.stamp = st.stamp;
+  hz.command = autoware_vehicle_msgs::msg::HazardLightsCommand::ENABLE;
+  (void)d->hazard->publish(hz);
+}
+#endif
 
 const char * behavior2string(const int behavior)
 {
@@ -235,6 +274,14 @@ MrmHandler::MrmHandler(::rclcpp::NodeHandle handle)
     *this, client_mrm_emergency_stop_.bytes, "/system/mrm/emergency_stop/operate",
     tier4_system_msgs::srv::OperateMrm::TYPE_NAME);
 
+#if defined(__ZEPHYR__) && defined(CONFIG_ISLAND_SUPERVISOR)
+  // phase11-S6: the direct emergency path's publishers are this node's own,
+  // built above and never destroyed while the image runs.
+  g_direct_emergency.mrm_state = &pub_mrm_state_;
+  g_direct_emergency.hazard = &pub_hazard_cmd_;
+  island_supervisor_set_direct(0u, direct_emergency, &g_direct_emergency);
+#endif
+
   // Initialize
   mrm_state_ = {};
   mrm_state_.stamp = now_stamp();
@@ -298,6 +345,12 @@ void MrmHandler::onOdometry(const nav_msgs::msg::Odometry & msg)
   ISLAND_TRACE_TAKE_BIND(MRM_HANDLER_KINEMATIC_STATE);
   odom_ = msg;
   has_odom_ = true;
+#if defined(__ZEPHYR__) && defined(CONFIG_ISLAND_SUPERVISOR)
+  // phase11-S6: route 2 judges the standstill on the reaction thread from
+  // this, the latest speed (|v| in mm/s; 0 is isStopped()'s < 0.001 m/s).
+  island_supervisor_note_speed(
+    static_cast<uint32_t>(abs_d(msg.twist.twist.linear.x) * 1000.0));
+#endif
 }
 
 void MrmHandler::onControlMode(const autoware_vehicle_msgs::msg::ControlModeReport & msg)
@@ -478,6 +531,20 @@ bool MrmHandler::requestMrmBehavior(uint16_t mrm_behavior, RequestType request_t
   ISLAND_PRINTF(
     "[mrm_handler] %s is %s (request sent).\n", behavior2string(mrm_behavior),
     request.operate ? "operated" : "canceled");
+#if defined(__ZEPHYR__) && defined(CONFIG_ISLAND_SUPERVISOR)
+  // phase11-S6 (decision 4): the comfortable stop is supervised to
+  // standstill. Due = this call + the comfortable settle at the entry speed
+  // + its response (CONFIG_ISLAND_SUPERVISOR_COMFORTABLE_MS); cancelled with
+  // the stop. The handler clears it itself when it sees the standstill
+  // (updateMrmState), the reaction thread judges it at the due otherwise.
+  if (mrm_behavior == MrmState::COMFORTABLE_STOP) {
+    if (request.operate) {
+      island_supervisor_arm(2u, k_uptime_get() + CONFIG_ISLAND_SUPERVISOR_COMFORTABLE_MS);
+    } else {
+      island_supervisor_done(2u);
+    }
+  }
+#endif
   return true;
 }
 
@@ -639,9 +706,15 @@ bool MrmHandler::updatePhase()
 // An input the handler cannot judge the vehicle by: the availability stream
 // has gone stale, or (phase8-W27) a required input was not established
 // within init_timeout. Both force the emergency stop and skip the takeover request.
+//
+// phase11-S6 (decision 2): and the supervisor's safe-state output is latched
+// (a supervised deadline missed, SWT0, or the executor's reaction hook). Its
+// reaction thread has already commanded the emergency stop directly; read
+// here, the latch makes this handler's own path enter and hold the same
+// state (emergency stop, no takeover request) on the first tick that runs.
 bool MrmHandler::isInputLost()
 {
-  return is_operation_mode_availability_timeout || is_init_failed_;
+  return is_operation_mode_availability_timeout || is_init_failed_ || is_supervisor_latched_;
 }
 
 void MrmHandler::checkOperationModeAvailabilityTimeout()
@@ -672,6 +745,9 @@ void MrmHandler::onTimer()
   }
 
   checkOperationModeAvailabilityTimeout();
+#if defined(__ZEPHYR__) && defined(CONFIG_ISLAND_SUPERVISOR)
+  is_supervisor_latched_ = island_supervisor_latched() != 0u;
+#endif
   // call_mrm is this same body on a tick where the availability stream has
   // gone stale, or (phase8-W7) says the current mode is not available: the
   // two faults the contract's `call_mrm` answers.
@@ -721,6 +797,15 @@ void MrmHandler::onTimer()
 #endif
   }
   publishHazardCmd();
+#if defined(__ZEPHYR__) && defined(CONFIG_ISLAND_SUPERVISOR)
+  // phase11-S6: a tick that read the latch at its start has decided and
+  // published with it (the emergency stop, or, in manual control, no MRM, as
+  // upstream); from here the handler's own path publishes the state and the
+  // direct path's handler slot stops.
+  if (is_supervisor_latched_) {
+    island_supervisor_handover(0u);
+  }
+#endif
 #if defined(__ZEPHYR__) && defined(CONFIG_ISLAND_LED)
   island_led_update(1u, mrm_state_.state, mrm_state_.behavior, is_takeover_requested_ ? 1u : 0u);
 #endif
@@ -776,6 +861,10 @@ void MrmHandler::updateMrmState()
 
     case MrmState::MRM_OPERATING:
       if (!isStopped()) return;
+#if defined(__ZEPHYR__) && defined(CONFIG_ISLAND_SUPERVISOR)
+      // phase11-S6: the comfortable stop reached standstill: route 2 met.
+      if (mrm_state_.behavior == MrmState::COMFORTABLE_STOP) island_supervisor_done(2u);
+#endif
       if (mrm_state_.behavior != MrmState::PULL_OVER) {
         transitionTo(MrmState::MRM_SUCCEEDED);
         return;

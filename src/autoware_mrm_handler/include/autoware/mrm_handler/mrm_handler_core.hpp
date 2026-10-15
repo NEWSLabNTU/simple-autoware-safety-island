@@ -164,6 +164,9 @@ private:
   bool has_stamp_init_log_{false};
   double stamp_init_log_{0.0};
   bool is_init_failed_{false};
+  // phase11-S6: the board supervisor's safe-state output is latched (read at
+  // each tick; island_supervisor.h). Always false off the board.
+  bool is_supervisor_latched_{false};
   // One bit per required input, in this order (names: kRequiredInputNames).
   enum RequiredInput : uint32_t {
     INPUT_OPERATION_MODE_AVAILABILITY = 1u << 0,

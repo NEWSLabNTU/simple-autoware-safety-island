@@ -109,6 +109,34 @@ config ISLAND_SUPERVISOR_CALL_MRM_MS
 	  tools/timeline/analysis.py reads the due back from the trace and
 	  compares it with the contract's.
 
+config ISLAND_SUPERVISOR_STACK_SIZE
+	int "Reaction thread stack (bytes)"
+	default 4096
+	help
+	  The reaction thread runs the direct emergency path (phase11-S6):
+	  the handler's and the emergency operator's publishes, CDR
+	  serialisation and the zenoh-pico put included. 1024 sufficed while it
+	  only drove the output.
+
+config ISLAND_SUPERVISOR_DIRECT_PERIOD_MS
+	int "Direct emergency path period (ms)"
+	default 33
+	help
+	  Once the output is latched, how often the reaction thread repeats
+	  each component's direct emergency publish until that component's
+	  executor path takes over (island_supervisor_handover): the
+	  emergency operator's own update_rate 30.
+
+config ISLAND_SUPERVISOR_COMFORTABLE_MS
+	int "The comfortable stop's standstill deadline (ms)"
+	default 10940
+	help
+	  Route 2 (phase11-S6, decision 4): from the handler's comfortable
+	  stop call to standstill, the contract's comfortable settle at the
+	  entry speed (9996.67 ms at 8.33 m/s) plus its response (943 ms),
+	  rounded up to the next ms. Not at standstill by then, the comfortable
+	  stop has failed and the supervisor commands the emergency stop.
+
 config ISLAND_SUPERVISOR_SWT
 	bool "Feed SWT0 once per spin; its first timeout drives the same output"
 	depends on WATCHDOG

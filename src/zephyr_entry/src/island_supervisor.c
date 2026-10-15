@@ -26,6 +26,40 @@
  * availability sets the due of the hpc_loss reaction to take + max_age +
  * call_mrm, and the call_mrm EXIT of a tick that saw the loss clears it.
  *
+ * The direct emergency path (phase11-S6, decision 2). Driving the output
+ * is not the emergency stop by itself: the vehicle brakes on the island's
+ * emergency state and command. So once the output is latched the thread also
+ * calls each registered direct function (island_supervisor_set_direct): the
+ * handler's publishes mrm_state MRM_OPERATING / EMERGENCY_STOP and the hazard
+ * lights, the emergency operator's publishes its braking command, at once and
+ * then every CONFIG_ISLAND_SUPERVISOR_DIRECT_PERIOD_MS (the operator's own
+ * 30 Hz), until that component's executor path reports the emergency running
+ * (island_supervisor_handover). Why this is safe against the spin thread,
+ * which may be the one stuck (in the callback that owns the handler's state):
+ *   - the direct functions read and write only messages they own, never the
+ *     component's spin-thread state, and use only publishers built at
+ *     construction, which live as long as the image;
+ *   - a publish goes to zenoh-pico, built with Z_FEATURE_MULTI_THREAD
+ *     (CONFIG_NROS_ZENOH_MULTI_THREAD=y), whose transport serialises
+ *     writers under its tx mutex; a k_mutex inherits priority, so a spin
+ *     thread inside a publish when the deadline fires finishes it first;
+ *   - no service call, no executor, no take: nothing that dispatches;
+ *   - the handler reads island_supervisor_latched() at every tick and holds
+ *     the emergency stop from then on, so a spin thread that resumes (an
+ *     overrun rather than a stall) enters the same state through its normal
+ *     path, and hands over; a stall that never ends leaves the direct path
+ *     publishing until reset.
+ * A spin thread that resumes after an overrun may finish the tick it was in
+ * with the state it had computed before the latch; the next tick reads the
+ * latch.
+ *
+ * Route 2 (phase11-S6, decision 4): the comfortable stop's standstill. Its
+ * due is the comfortable call + settle + response at the entry speed; at
+ * the due the thread judges the speed the handler last noted from
+ * kinematic_state (island_supervisor_note_speed): fresh and below 1 mm/s is
+ * standstill and the route is met; otherwise the comfortable stop failed
+ * and the output is latched, which commands the emergency stop as above.
+ *
  * Everything is readable by name over SWD (island_supervisor_record,
  * tools/timeline/violations.py supervisor).
  */
@@ -66,6 +100,14 @@ struct island_supervisor_route {
 	uint32_t fire_verdict_us;  /* the first verdict's uptime, us (low 32) */
 };
 
+struct island_supervisor_direct {
+	uint32_t registered;         /* a function is set */
+	uint32_t calls;              /* direct-path calls */
+	uint32_t first_uptime_us;    /* the first one, us (low 32) */
+	uint32_t handover;           /* the executor path took over */
+	uint32_t handover_uptime_ms; /* when */
+};
+
 struct island_supervisor_record {
 	uint32_t magic;
 	uint32_t latched;            /* the safe-state output is driven */
@@ -86,6 +128,11 @@ struct island_supervisor_record {
 	uint32_t hook_calls;         /* nros_app_reaction_hook calls (phase-503) */
 	uint32_t hook_last_rule;     /* the last one's rule code */
 	struct island_supervisor_route route[ISLAND_SUPERVISOR_ROUTES];
+	/* phase11-S6, after the routes so the header keeps its offsets. */
+	struct island_supervisor_direct direct[ISLAND_SUPERVISOR_DIRECT_SLOTS];
+	uint32_t standstill_met;     /* route 2 dues judged at standstill */
+	uint32_t speed_mm_s;         /* the last noted |v| */
+	uint32_t speed_at_ms;        /* its uptime */
 };
 
 volatile struct island_supervisor_record island_supervisor_record;
@@ -98,6 +145,11 @@ static volatile uint32_t pending_swt;
 static volatile uint32_t pending_hook;
 static bool due_valid[ISLAND_SUPERVISOR_ROUTES];
 static int64_t due_ms[ISLAND_SUPERVISOR_ROUTES];
+static island_supervisor_direct_fn direct_fn[ISLAND_SUPERVISOR_DIRECT_SLOTS];
+static void *direct_ctx[ISLAND_SUPERVISOR_DIRECT_SLOTS];
+static int64_t latch_ms;
+/* A kinematic_state sample older than this is not a standstill (10 Hz). */
+#define STANDSTILL_FRESH_MS 300
 
 #if defined(CONFIG_ISLAND_SUPERVISOR_SWT)
 static const struct device *const swt = DEVICE_DT_GET(DT_NODELABEL(swt0));
@@ -216,10 +268,53 @@ static void safe_state(uint32_t cause)
 	if (rc != 0) {
 		island_supervisor_record.gpio_errors++;
 	}
+	latch_ms = k_uptime_get();
 	island_supervisor_record.latch_uptime_us = uptime_us32();
 	island_supervisor_record.latch_cause = cause;
 	island_supervisor_record.latched = 1u;
 	ISLAND_TRACE(ISLAND_MK_SUPERVISOR_SAFE_STATE, cause);
+}
+
+/* Route 2's due: the comfortable stop failed unless the vehicle is at
+ * standstill now, by a fresh sample. */
+static bool standstill_now(int64_t now)
+{
+	const uint32_t at = island_supervisor_record.speed_at_ms;
+
+	return at != 0u && (uint32_t)now - at <= STANDSTILL_FRESH_MS &&
+	       island_supervisor_record.speed_mm_s == 0u;
+}
+
+/* Every slot not yet handed over, once per call; true while one remains. */
+static bool direct_pending(void)
+{
+	for (int i = 0; i < ISLAND_SUPERVISOR_DIRECT_SLOTS; i++) {
+		if (direct_fn[i] != NULL && !island_supervisor_record.direct[i].handover) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static void direct_publish(void)
+{
+	const int64_t now = k_uptime_get();
+
+	for (int i = 0; i < ISLAND_SUPERVISOR_DIRECT_SLOTS; i++) {
+		volatile struct island_supervisor_direct *d = &island_supervisor_record.direct[i];
+
+		if (direct_fn[i] == NULL || d->handover) {
+			continue;
+		}
+		const uint32_t seq = d->calls;
+
+		if (seq == 0u) {
+			d->first_uptime_us = uptime_us32();
+		}
+		d->calls = seq + 1u;
+		ISLAND_TRACE(ISLAND_MK_SUPERVISOR_DIRECT, ((uint32_t)i << 28) | (seq & 0x0FFFFFFFu));
+		direct_fn[i](direct_ctx[i], seq, (uint32_t)(now - latch_ms));
+	}
 }
 
 static void reaction_thread(void *a, void *b, void *c)
@@ -228,13 +323,16 @@ static void reaction_thread(void *a, void *b, void *c)
 	ARG_UNUSED(b);
 	ARG_UNUSED(c);
 	for (;;) {
+		k_timeout_t wait = K_FOREVER;
+
+		if (island_supervisor_record.latched && direct_pending()) {
+			wait = K_MSEC(CONFIG_ISLAND_SUPERVISOR_DIRECT_PERIOD_MS);
+		}
 #if defined(CONFIG_ISLAND_SUPERVISOR_SWT)
 		/* Latched: keep SWT0 from its second (reset) timeout. */
-		const k_timeout_t wait = (island_supervisor_record.latched && swt_running)
-						 ? K_MSEC(CONFIG_ISLAND_SUPERVISOR_SWT_MS / 4)
-						 : K_FOREVER;
-#else
-		const k_timeout_t wait = K_FOREVER;
+		else if (island_supervisor_record.latched && swt_running) {
+			wait = K_MSEC(CONFIG_ISLAND_SUPERVISOR_SWT_MS / 4);
+		}
 #endif
 		const int got = k_sem_take(&wake, wait);
 #if defined(CONFIG_ISLAND_SUPERVISOR_SWT)
@@ -243,6 +341,10 @@ static void reaction_thread(void *a, void *b, void *c)
 		}
 #endif
 		if (got != 0) {
+			/* The period: the direct path's next publish. */
+			if (island_supervisor_record.latched) {
+				direct_publish();
+			}
 			continue;
 		}
 		island_supervisor_record.wakes++;
@@ -257,6 +359,12 @@ static void reaction_thread(void *a, void *b, void *c)
 
 				due_valid[i] = false;
 				r->armed = 0u;
+				if (i == ISLAND_SUPERVISOR_ROUTE_COMFORTABLE_STANDSTILL && standstill_now(now)) {
+					/* stopped in time: met at the due, not a miss */
+					r->dones++;
+					island_supervisor_record.standstill_met++;
+					continue;
+				}
 				if (r->fired++ == 0u) {
 					r->fire_due_ms = (uint32_t)due_ms[i];
 					r->fire_verdict_us = uptime_us32();
@@ -269,6 +377,8 @@ static void reaction_thread(void *a, void *b, void *c)
 		rearm_locked();
 		k_spin_unlock(&lock, key);
 
+		const uint32_t was_latched = island_supervisor_record.latched;
+
 		if (fired_routes != 0u) {
 			safe_state(ISLAND_SUPERVISOR_CAUSE_ROUTE);
 		}
@@ -280,10 +390,15 @@ static void reaction_thread(void *a, void *b, void *c)
 			pending_swt = 0u;
 			safe_state(ISLAND_SUPERVISOR_CAUSE_SWT);
 		}
+		/* The emergency command follows the output at once; later wakes
+		 * (another route, a hook call) do not publish out of period. */
+		if (!was_latched && island_supervisor_record.latched) {
+			direct_publish();
+		}
 	}
 }
 
-K_THREAD_DEFINE(island_supervisor_tid, 1024, reaction_thread, NULL, NULL, NULL,
+K_THREAD_DEFINE(island_supervisor_tid, CONFIG_ISLAND_SUPERVISOR_STACK_SIZE, reaction_thread, NULL, NULL, NULL,
 		CONFIG_ISLAND_SUPERVISOR_THREAD_PRIORITY, 0, 0);
 
 /*
@@ -367,6 +482,38 @@ void island_supervisor_spin(void)
 	}
 #endif
 	island_supervisor_record.spins++;
+}
+
+uint32_t island_supervisor_latched(void)
+{
+	return island_supervisor_record.latched;
+}
+
+void island_supervisor_set_direct(uint32_t slot, island_supervisor_direct_fn fn, void *ctx)
+{
+	if (slot >= ISLAND_SUPERVISOR_DIRECT_SLOTS) {
+		return;
+	}
+	direct_ctx[slot] = ctx;
+	direct_fn[slot] = fn;
+	island_supervisor_record.direct[slot].registered = 1u;
+}
+
+void island_supervisor_handover(uint32_t slot)
+{
+	if (slot >= ISLAND_SUPERVISOR_DIRECT_SLOTS || !island_supervisor_record.latched ||
+	    island_supervisor_record.direct[slot].handover) {
+		return;
+	}
+	island_supervisor_record.direct[slot].handover_uptime_ms = k_uptime_get_32();
+	island_supervisor_record.direct[slot].handover = 1u;
+	ISLAND_TRACE(ISLAND_MK_SUPERVISOR_HANDOVER, slot);
+}
+
+void island_supervisor_note_speed(uint32_t speed_mm_s)
+{
+	island_supervisor_record.speed_mm_s = speed_mm_s;
+	island_supervisor_record.speed_at_ms = k_uptime_get_32();
 }
 
 static int island_supervisor_init(void)
