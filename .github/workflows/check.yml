@@ -1,8 +1,8 @@
 # phase8-W3: `play_launch check` on every contract in the repository, each
 # against the verdict it is meant to give (.github/check-contracts.sh).
 # Builds nothing: `check` reads launch files and their contract sidecars.
-# play_launch is installed the way the runbook installs it (pip, from the
-# package index), pinned to the version the demo host runs.
+# play_launch is installed the way the runbook installs it (pip), pinned to
+# the version the demo host runs.
 name: check
 
 on:
@@ -18,7 +18,7 @@ jobs:
     # friends through it, and the wheel is built for jammy (manylinux_2_35).
     container: ros:humble-ros-base-jammy
     env:
-      PLAY_LAUNCH_VERSION: "0.16.0"
+      PLAY_LAUNCH_VERSION: "0.17.0"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -26,7 +26,13 @@ jobs:
       - name: Install play_launch ${{ env.PLAY_LAUNCH_VERSION }}
         run: |
           apt-get update -qq && apt-get install -y -qq --no-install-recommends python3-pip >/dev/null
-          pip3 install --no-cache-dir "play_launch==${PLAY_LAUNCH_VERSION}"
+          # From 0.17.0 play_launch is a meta package with one package per ROS
+          # distribution (play_launch[humble] -> play_launch_humble). The
+          # per-distribution projects are not on PyPI yet (their publishers are
+          # pending), so the wheels come from the GitHub release's assets.
+          # Once PyPI has them, drop --find-links; the requirement stays.
+          pip3 install --no-cache-dir "play_launch[humble]==${PLAY_LAUNCH_VERSION}" \
+            --find-links "https://github.com/NEWSLabNTU/play_launch/releases/expanded_assets/v${PLAY_LAUNCH_VERSION}"
           play_launch --version
       - name: play_launch check on every contract
         shell: bash

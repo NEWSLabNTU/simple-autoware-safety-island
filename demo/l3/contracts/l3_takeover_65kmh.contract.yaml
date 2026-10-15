@@ -119,7 +119,7 @@ hazards:
     # so changing it is one line.
     entry_speed: &odd_speed_bound 18.06  # m/s = 65 km/h
     ftti: 30s
-    reaction: l3_engaged
+    enters: l3_engaged
   hpc_loss:
     severity: ASIL_D
     description: >-
@@ -129,7 +129,7 @@ hazards:
     on: omission
     entry_speed: *odd_speed_bound
     ftti: 10s
-    reaction: l3_engaged
+    enters: l3_engaged
 
 modes:
   l3_engaged:
@@ -141,7 +141,7 @@ modes:
     requires: [hpc_alive]
     reaction: island.tor
     window: { duration: 10s, param: mrm_handler.takeover_request_timeout }
-    exit: { on: driver_took_over, to: manual }
+    exit: { holds: driver_took_over, to: manual }
   comfortable_stop:
     description: in-lane stop by the HPC's planner at the operator's request
     requires: [hpc_alive]   # the HPC's planner executes the stop

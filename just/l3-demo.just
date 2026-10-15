@@ -203,7 +203,11 @@ l3-check:
     set -eo pipefail
     ver="$(sed -n 's/^ *PLAY_LAUNCH_VERSION: *"\(.*\)"/\1/p' .github/workflows/check.yml)"
     venv=build/l3-ci/play_launch-$ver
-    [ -x $venv/bin/play_launch ] || { python3 -m venv $venv && $venv/bin/pip install -q "play_launch==$ver"; }
+    # play_launch[humble] from the GitHub release's assets until PyPI has the
+    # per-distribution projects (check.yml says why); a local wheelhouse wins.
+    links="https://github.com/NEWSLabNTU/play_launch/releases/expanded_assets/v$ver"
+    [ -d /mnt/mx500/aeon/wheelhouse/play_launch-$ver ] && links=/mnt/mx500/aeon/wheelhouse/play_launch-$ver
+    [ -x $venv/bin/play_launch ] || { python3 -m venv $venv && $venv/bin/pip install -q "play_launch[humble]==$ver" --find-links "$links"; }
     env -i HOME="$HOME" USER="$USER" PATH=/usr/bin:/bin PLAY_LAUNCH="$PWD/$venv/bin/play_launch" \
         bash -c 'source /opt/ros/humble/setup.bash && exec .github/check-contracts.sh'
 

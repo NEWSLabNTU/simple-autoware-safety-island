@@ -297,7 +297,7 @@ hazards:
     guards: [/si/in/odd_status]
     on: omission
     ftti: 10s
-    reaction: ads_active
+    enters: ads_active
 
 nodes:
   # N19, si_odd_monitor. Section 6.4, T1s, 2-5 Hz. "Also raises the ODD switch

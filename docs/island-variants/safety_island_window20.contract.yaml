@@ -452,7 +452,7 @@ hazards:
     on: omission
     entry_speed: &odd_speed_bound 8.33   # m/s = 30 km/h, the ODD speed bound
     ftti: { duration: 10s, source: requirement }
-    reaction: l3_engaged
+    enters: l3_engaged
   odd_exit:
     severity: ASIL_B        # illustrative; HARA-owned
     description: >-
@@ -464,7 +464,7 @@ hazards:
     when: { field: autonomous, equals: false }
     entry_speed: *odd_speed_bound
     ftti: { duration: 30s, source: requirement }
-    reaction: l3_engaged
+    enters: l3_engaged
 
 modes:
   l3_engaged:
@@ -476,7 +476,7 @@ modes:
     requires: [hpc_alive]
     reaction: island.tor
     window: { duration: 20s, param: mrm_handler.takeover_request_timeout, source: requirement }
-    exit: { on: driver_took_over, to: manual }
+    exit: { holds: driver_took_over, to: manual }
   comfortable_stop:
     description: in-lane stop by the HPC's planner at the operator's request
     requires: [hpc_alive]   # the HPC's planner executes the stop
