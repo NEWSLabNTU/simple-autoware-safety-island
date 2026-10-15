@@ -30,6 +30,7 @@ never puts an island edge EARLIER than it happened, and those rows are
 over-stated by the smallest out-link delay, never under-stated. They say so
 in their note.
 """
+import math
 import re
 
 import yaml
@@ -208,6 +209,32 @@ def standstill(ev, after):
     return e["t_mono_ns"] if e else None
 
 
+def verdict_due(dle):
+    """The due a SUPERVISOR_DEADLINE verdict judged, on the host clock: its
+    arg is route << 28 | the due's uptime ms (low 28 bits), and on the board
+    the trace clock is the uptime, so the due is placed through the marker's
+    own offset. None without the island stamp."""
+    if dle is None or dle.get("island_ns") is None:
+        return None
+    due_low = (dle["value"] & 0x0FFFFFFF) * 1_000_000
+    span = (1 << 28) * 1_000_000
+    k = (dle["island_ns"] - due_low + span // 2) // span
+    return dle["t_mono_ns"] - dle["island_ns"] + due_low + k * span
+
+
+def direct_edges(ev, after):
+    """phase11-S6: the supervisor's direct emergency path after `after`: the
+    first SUPERVISOR_DIRECT of each slot (0 the handler's mrm_state, 1 the
+    emergency operator's braking command) and each slot's handover to its
+    executor path (SUPERVISOR_HANDOVER), host ns or None."""
+    out = {}
+    for slot in (0, 1):
+        e = _first(ev, isl("SUPERVISOR_DIRECT", lambda a, s=slot: (a >> 28) == s), after=after)
+        h = _first(ev, isl("SUPERVISOR_HANDOVER", lambda a, s=slot: a == s), after=after)
+        out[slot] = (e["t_mono_ns"] if e else None, h["t_mono_ns"] if h else None)
+    return out
+
+
 # The serial link whose hop bounds the host-side window dwell's slack.
 DWELL_LINK_TOPIC = "/mrm_handler/operation_mode_availability"
 
@@ -298,6 +325,35 @@ def analyze(ev, rows, explain="", windows=None, entry_speed=None):
             obs["settle"] = d(E["safe_cmd"], E["standstill"])
             obs["total"] = d(t0, E["standstill"])
             rung = "comfortable_stop"
+            # phase11-S6: a supervised miss on the odd_exit chain. Route 1, the
+            # executor's supervised row of call_mrm (take + 149), on an
+            # injected fault-tick overrun; route 2, the comfortable stop's
+            # standstill (call + settle + response), on a comfortable stop
+            # made inert. Either latches the output and the direct path
+            # commands the emergency stop.
+            inj = _first(ev, isl("SUPERVISOR_INJECT"), after=t0 - 50_000_000)
+            dle = _first(ev, isl("SUPERVISOR_DEADLINE"), after=t0 - 50_000_000)
+            if inj is not None or dle is not None:
+                sse = _first(ev, isl("SUPERVISOR_SAFE_STATE"), after=t0 - 50_000_000)
+                E["sup_inject"] = t_of(inj)
+                E["sup_verdict"] = t_of(dle)
+                E["sup_safe_state"] = t_of(sse)
+                E["sup_due"] = verdict_due(dle)
+                de = direct_edges(ev, t0 - 50_000_000)
+                E["sup_direct_cmd"], E["sup_handover_cmd"] = de[1]
+                E["sup_direct_state"], E["sup_handover_state"] = de[0]
+                E["standstill"] = standstill(ev, E["sup_direct_cmd"] or E["call"] or after_on)
+                obs["total"] = d(t0, E["standstill"])
+                obs["sup_route"] = (dle["value"] >> 28) if dle else None
+                obs["sup_inject_ms"] = inj["value"] if inj else None
+                obs["sup_due_to_verdict"] = d(E["sup_due"], E["sup_verdict"])
+                obs["sup_due_to_safe"] = d(E["sup_due"], E["sup_safe_state"])
+                obs["sup_due_to_direct"] = d(E["sup_due"], E["sup_direct_cmd"])
+                obs["sup_direct_to_standstill"] = d(E["sup_direct_cmd"], E["standstill"])
+                obs["sup_call_to_due"] = d(E["call"], E["sup_due"])
+                obs["sup_cause"] = sse["value"] if sse else None
+                obs["sup_handover"] = {k: d(E["sup_direct_cmd"] if k == "cmd" else E["sup_direct_state"],
+                                            E[f"sup_handover_{k}"]) for k in ("state", "cmd")}
     else:
         E["sigstop"] = t0
         gl = _first(ev, lambda e: e["source"] == "gate" and e["kind"] == "last", after=t0 - 2_000_000_000)
@@ -349,17 +405,22 @@ def analyze(ev, rows, explain="", windows=None, entry_speed=None):
         # marker's own offset. The take-based one above, from the take's
         # trace stamp, is up to 1 ms later (the handler reads the uptime in
         # whole ms).
-        if dle is not None and dle.get("island_ns") is not None:
-            due_low = (dle["value"] & 0x0FFFFFFF) * 1_000_000
-            span = (1 << 28) * 1_000_000
-            k = (dle["island_ns"] - due_low + span // 2) // span
-            due_isl = due_low + k * span
+        if verdict_due(dle) is not None:
             E["sup_due_take"] = E.get("sup_due")
-            E["sup_due"] = dle["t_mono_ns"] - dle["island_ns"] + due_isl
+            E["sup_due"] = verdict_due(dle)
+        # phase11-S6: the direct emergency path's first braking command is
+        # the fallback's start (the output is the LED beside it).
+        de = direct_edges(ev, base)
+        E["sup_direct_cmd"], E["sup_handover_cmd"] = de[1]
+        E["sup_direct_state"], E["sup_handover_state"] = de[0]
         if E.get("sup_due") is not None and (E["sup_inject"] or E["sup_verdict"] or E["sup_safe_state"]):
             obs["sup_due_to_verdict"] = d(E["sup_due"], E["sup_verdict"])
             obs["sup_due_to_safe"] = d(E["sup_due"], E["sup_safe_state"])
             obs["sup_safe_to_standstill"] = d(E["sup_safe_state"], E["standstill"])
+            obs["sup_due_to_direct"] = d(E["sup_due"], E["sup_direct_cmd"])
+            obs["sup_direct_to_standstill"] = d(E["sup_direct_cmd"], E["standstill"])
+            obs["sup_handover"] = {k: d(E["sup_direct_cmd"] if k == "cmd" else E["sup_direct_state"],
+                                        E[f"sup_handover_{k}"]) for k in ("state", "cmd")}
             obs["sup_base_to_safe"] = d(base, E["sup_safe_state"])
             obs["sup_cause"] = sse["value"] if sse else None
             inj = _first(ev, isl("SUPERVISOR_INJECT"), after=base)
@@ -369,7 +430,11 @@ def analyze(ev, rows, explain="", windows=None, entry_speed=None):
     # the entry speed and the settle it implies
     t_cmd = E.get("safe_cmd")
     v_entry = velocity_at(ev, t_cmd) if t_cmd else None
-    decl_rows = {r["rung"]: r for r in rows if r["hazard"] == hazard}
+    # The overrun rows (play_launch 0.18.0) share their rung's name: kept
+    # apart, by the supervised budget they name.
+    decl_rows = {r["rung"]: r for r in rows if r["hazard"] == hazard and r.get("role") != "overrun"}
+    overrun_rows = {(r["rung"], r.get("term")): r for r in rows
+                    if r["hazard"] == hazard and r.get("role") == "overrun"}
     p = prof.get((hazard, rung))
     decl_settle_at_obs = tl.settle_s(v_entry, -p[0], -p[1]) * 1000 if p and v_entry else None
     bound = entry_speed.get(hazard)
@@ -384,7 +449,7 @@ def analyze(ev, rows, explain="", windows=None, entry_speed=None):
         if hops:
             links.append(dict(topic=topic, declared=decl, charged=charged, host=what, hops=hops))
     res = dict(act=act, hazard=hazard, rung=rung, t0=t0, edges={k: ms(v) for k, v in E.items()},
-               edges_ns=E, observed=obs, declared=decl_rows, window_ms=win_ms,
+               edges_ns=E, observed=obs, declared=decl_rows, overrun=overrun_rows, window_ms=win_ms,
                window_end_ms=(decl_rows.get("takeover_request") or {}).get("window_end"), profile=p,
                entry_speed_declared=bound, entry_speed_observed=v_entry,
                entry_speed_exceeded=(v_entry is not None and bound is not None and v_entry > bound),
@@ -511,12 +576,15 @@ def verdicts(r):
             add("windows + route, host (verdict -> velocity limit received)", o.get("windows_route_host"), wr,
                 "no derived instant")
             add("settle (velocity limit -> standstill)", o.get("settle"), cs.get("settle"),
-                "includes the planner hop, not declared here")
+                "the whole settle against settle + response at the entry speed bound, one sum; "
+                "includes the planner hop")
             ph = o.get("planner_hop")
             settle_at_speed(add, r, "velocity limit",
                             "includes the planner hop" + ("" if ph is None else f" {ph:.2f} ms"))
-            add("total (button -> standstill)", o.get("total"), cs.get("total"))
-            add("within the FTTI", o.get("total"), cs.get("ftti"))
+            if o.get("sup_route") is None and o.get("sup_inject_ms") is None:
+                add("total (button -> standstill)", o.get("total"), cs.get("total"))
+                add("within the FTTI", o.get("total"), cs.get("ftti"))
+            escalation_rows(add, out, r)
     else:
         fl = dr.get("emergency_stop", {})
         inj = o.get("sup_inject_ms")
@@ -527,7 +595,8 @@ def verdicts(r):
             dr_ = None if o.get("detect") is None or o.get("route") is None else o["detect"] + o["route"]
             dd_ = None if fl.get("detect") is None else fl["detect"] + fl["route"]
             add("detect + route (last sample -> braking command)", dr_, dd_)
-            add("settle (braking command -> standstill)", o.get("settle"), fl.get("settle"))
+            add("settle (braking command -> standstill)", o.get("settle"), fl.get("settle"),
+                "the whole settle against settle + response at the entry speed bound, one sum")
             settle_at_speed(add, r, "braking command")
             add("total (last sample -> standstill)", o.get("total"), fl.get("total"))
             add("within the FTTI", o.get("total"), fl.get("ftti"))
@@ -543,11 +612,9 @@ def verdicts(r):
                 out.append(dict(term=term, observed=o.get(key), declared=None, ok=None, note=nv, by=TRACE))
         supervised_rows(add, out, r, fl)
     exp = {"b": "COMFORTABLE_STOP", "encore": "EMERGENCY_STOP"}.get(r["act"])
-    if exp and o.get("sup_inject_ms") == 0xFFFFFFFF:
-        out.append(dict(term="rung reached", observed=r.get("behavior") or "none", declared=exp, ok=None,
-                        note="the stall never ends: the island's ladder cannot run; its safe state is the "
-                        "supervisor's output (the supervised rows)", by=TRACE))
-    elif exp:
+    if r["act"] == "b" and (o.get("sup_route") is not None or o.get("sup_inject_ms") is not None):
+        exp = "EMERGENCY_STOP"  # phase11-S6: a supervised miss enters the emergency stop
+    if exp:
         got = r.get("behavior")
         seq = r.get("behaviors") or []
         note = "escalated from " + ", ".join(b for _, b in seq[:-1]) if len(seq) > 1 else ""
@@ -582,16 +649,17 @@ def verdicts(r):
 
 
 def supervised_rows(add, out, r, fl):
-    """phase11-S4/S7: the hpc_loss reaction's supervised deadline
+    """phase11-S4/S6/S7: the hpc_loss reaction's supervised deadline
     (island_supervisor.c), on a run where the supervisor acted or an overrun
     was injected. The due is the last take + max_age + call_mrm, as the
     handler arms it; the detection delay is the platform's tick + switch
-    (tlcommon.supervision_ms). Rows: the verdict and the fallback's start
-    (the safe-state output) within the detection delay of the due; the
-    fallback's start -> standstill within the emergency settle; last sample
-    -> standstill within the overrun case's total (the rung total + the
-    detection delay) and the FTTI; last sample -> the safe-state output
-    within the FTTI."""
+    (tlcommon.supervision_ms). Rows: the verdict, the safe-state output and
+    the direct path's first braking command within the detection delay of
+    the due; that command -> standstill within the emergency settle; last
+    sample -> standstill within the overrun case's total (the checker's
+    overrun row of call_mrm, else the rung total + the detection delay) and
+    the FTTI; last sample -> the safe-state output within the FTTI; each
+    direct slot's handover to its executor path, as information."""
     o = r["observed"]
     if "sup_due_to_safe" not in o:
         return
@@ -604,48 +672,97 @@ def supervised_rows(add, out, r, fl):
     add("supervised: due -> deadline verdict", o.get("sup_due_to_verdict"), det, note, by=by)
     add("supervised: due -> fallback start (safe-state output)", o.get("sup_due_to_safe"), det,
         note + (f"; cause {cause}" if cause else ""), by=by)
-    stall = o.get("sup_inject_ms") == 0xFFFFFFFF
-    if stall:
-        # the island's emergency stop never runs and the safe-state output (an
-        # LED) is wired to no brake: a standstill the probe sees is the host's
-        # own doing (p11-st1: the speed steps from 4.17 to 0.0 m/s ~1.1 s after
-        # the fault, no island output), so no verdict on it
-        nb = ("the stall never ends: the island's emergency stop never runs, and the safe-state output "
-              "(an LED) is wired to no brake in the simulator; a standstill seen is not the island's")
-        out.append(dict(term="supervised: fallback start -> standstill", observed=o.get("sup_safe_to_standstill"),
-                        declared=fl.get("settle"), ok=None, note=nb, by=by))
-        out.append(dict(term="supervised: total (last sample -> standstill)", observed=o.get("total"),
-                        declared=None if fl.get("total") is None else fl["total"] + det, ok=None, note=nb, by=by))
+    add("supervised: due -> emergency command (direct path)", o.get("sup_due_to_direct"), det,
+        "the reaction thread's first braking command, published beside the output", by=by)
+    add("supervised: emergency command -> standstill", o.get("sup_direct_to_standstill"), fl.get("settle"),
+        "the emergency settle at the entry speed bound, settle + response", by=by)
+    ov = (r.get("overrun") or {}).get(("emergency_stop", "nodes.mrm_handler.paths.call_mrm.max_latency"))
+    if ov is not None and ov.get("total") is not None:
+        tot, how = ov["total"], "the checker's overrun row of call_mrm"
     else:
-        add("supervised: fallback start -> standstill", o.get("sup_safe_to_standstill"), fl.get("settle"),
-            "the emergency settle; the vehicle brakes on the late reaction, the safe-state output being an LED",
-            by=by)
-    tot = None if fl.get("total") is None else fl["total"] + det
-    if not stall:
-        add("supervised: total (last sample -> standstill)", o.get("total"), tot,
-            "the overrun case: the rung's total + the detection delay", by=by)
-        add("supervised: within the FTTI", o.get("total"), fl.get("ftti"), by=by)
+        tot = None if fl.get("total") is None else fl["total"] + det
+        how = "the rung's total + the detection delay"
+    add("supervised: total (last sample -> standstill)", o.get("total"), tot, f"the overrun case: {how}", by=by)
+    add("supervised: within the FTTI", o.get("total"), fl.get("ftti"), by=by)
     add("supervised: last sample -> safe-state output, within the FTTI", o.get("sup_base_to_safe"),
         fl.get("ftti"), by=by)
+    handover_rows(out, o, by)
+
+
+def handover_rows(out, o, by):
+    """The direct path's slots handed over to their executor paths, info."""
+    for k, what in (("state", "mrm_state (handler)"), ("cmd", "braking command (emergency operator)")):
+        h = (o.get("sup_handover") or {}).get(k)
+        out.append(dict(term=f"supervised: direct {what} -> executor takes over", observed=h, declared=None,
+                        ok=None, note="info; '-' while the executor never resumed (a stall)", by=by))
+
+
+def escalation_rows(add, out, r):
+    """phase11-S6 on act b: a supervised miss on the odd_exit chain, route 1
+    (call_mrm's executor row: take + 149, an injected fault-tick overrun) or
+    route 2 (the comfortable stop's standstill: call + settle + response, a
+    comfortable stop made inert). Rows: the comfortable call -> the due
+    (route 2) against the comfortable settle + response; the due -> verdict
+    and -> the direct path's first braking command within the detection
+    delay; that command -> standstill within the emergency settle; fault ->
+    standstill within the overrun case's total and the FTTI."""
+    o, dr = r["observed"], r["declared"]
+    if o.get("sup_route") is None and o.get("sup_inject_ms") is None:
+        return
+    tick, switch, src = tl.supervision_ms()
+    det = tick + switch
+    by = "supervisor (timer), trace"
+    cs, em = dr.get("comfortable_stop", {}), dr.get("emergency_stop", {})
+    route = o.get("sup_route")
+    what = {1: "route 1, call_mrm's executor row (take + 149)",
+            2: "route 2, the comfortable stop's standstill (call + settle + response)"}.get(route, f"route {route}")
+    if route == 2:
+        sr = cs.get("settle")
+        add("escalation: comfortable call -> standstill due", o.get("sup_call_to_due"),
+            None if sr is None else float(math.ceil(sr)),
+            "the comfortable settle + response at the entry speed bound, rounded up to the kernel's ms "
+            "(CONFIG_ISLAND_SUPERVISOR_COMFORTABLE_MS)", by=by)
+    note = f"{what}; detection delay = tick {tick:g} + switch {switch:g} ({src})"
+    add("escalation: due -> deadline verdict", o.get("sup_due_to_verdict"), det, note, by=by)
+    add("escalation: due -> emergency command (direct path)", o.get("sup_due_to_direct"), det, note, by=by)
+    add("escalation: emergency command -> standstill", o.get("sup_direct_to_standstill"), em.get("settle"),
+        "the emergency settle at the entry speed bound, settle + response", by=by)
+    if route == 2:
+        # the checker does not lower a supervised settle (play_launch 0.18.0),
+        # so the overrun case is the comfortable rung's total + detection +
+        # the emergency route and settle, as the contract states it
+        parts = [cs.get("total"), em.get("route"), em.get("settle")]
+        tot = None if None in parts else parts[0] + det + parts[1] + parts[2]
+        how = "the comfortable rung's total + detection + the emergency route and settle (contract comment)"
+    else:
+        ov = (r.get("overrun") or {}).get(("emergency_stop", "nodes.mrm_handler.paths.call_mrm.max_latency"))
+        tot = ov.get("total") if ov else None
+        how = "the checker's overrun row of call_mrm"
+    add("escalation: total (fault -> standstill)", o.get("total"), tot, f"the overrun case: {how}", by=by)
+    add("escalation: within the FTTI", o.get("total"), cs.get("ftti"), by=by)
+    handover_rows(out, o, by)
 
 
 def settle_at_speed(add, r, start, extra=""):
-    """phase10-B2: the braking profile at the OBSERVED entry speed against
-    the observed settle. Their difference is the measured response delay
-    (the vehicle's, plus `extra`); once the contract states a `response`,
-    the row's bound is profile + response and it gets a verdict."""
+    """phase10-B2, phase11-S6 (decision 5): the braking profile at the
+    OBSERVED entry speed against the observed settle. Their difference is
+    the response lag at this speed (the vehicle's, plus `extra`), which
+    depends on the speed (emergency 204-213 ms at 8.3 m/s, 441-464 ms at
+    4.21 m/s). Information, not a verdict: the settle is judged as one sum,
+    the whole settle against settle + response at the entry speed bound
+    (the row above), which holds for every speed at or below it as long as
+    settle(v) + lag(v) <= settle(v_max) + response."""
     prof = r.get("settle_at_observed_speed_ms")
     if prof is None:
         return
     obs, resp, v0 = r["observed"].get("settle"), r.get("settle_response_ms"), r["entry_speed_observed"]
     diff = None if obs is None else obs - prof
-    note = (f"profile {prof:.2f} at v0 {v0:.2f} m/s; response delay (observed - profile) "
+    note = (f"info; profile {prof:.2f} at v0 {v0:.2f} m/s; lag (observed - profile) "
             + ("-" if diff is None else f"{diff:.2f}") + " ms"
             + (f" {extra}" if extra else "")
-            + ("; no `response` declared, so no verdict" if resp is None else f"; declared response {resp:.2f} ms"))
-    decl = None if resp is None else prof + resp
-    add(f"settle at the observed entry speed ({start} -> standstill)", obs, decl, note,
-        by=TRACE if resp is None else "trace (contract response)")
+            + ("" if resp is None else f"; the response declared at the bound {resp:.2f} ms"))
+    r["observed"]["settle_lag"] = diff
+    add(f"settle at the observed entry speed ({start} -> standstill)", obs, None, note, by=TRACE)
 
 
 def selftest_rows(check):
@@ -691,9 +808,20 @@ def selftest_rows(check):
     check("settle row without a response: no verdict, the difference stated",
           st is not None and st["ok"] is None and st["declared"] is None and "489.31 ms" in st["note"])
     base["settle_response_ms"] = 600.0
-    st = {v["term"].split(" (")[0]: v for v in verdicts(base)}.get("settle at the observed entry speed")
-    check("settle row with a response: profile + response, PASS",
-          st is not None and abs(st["declared"] - 3110.69) < 1e-6 and st["ok"] is True)
+    vb = {v["term"].split(" (")[0]: v for v in verdicts(base)}
+    st = vb.get("settle at the observed entry speed")
+    check("phase11-S6: the per-speed row is information, the lag stated, no verdict",
+          st is not None and st["ok"] is None and st["declared"] is None and "lag" in st["note"]
+          and "489.31 ms" in st["note"])
+    # the whole settle is judged as one sum against settle + response at the
+    # entry speed bound: 3000 against a declared 4421.33 PASS, 4500 FAIL
+    base["declared"] = dict(emergency_stop=dict(settle=4421.33))
+    w = {v["term"].split(" (")[0]: v for v in verdicts(base)}.get("settle")
+    check("phase11-S6: whole settle against the bound's settle + response, PASS",
+          w is not None and w["ok"] is True and w["declared"] == 4421.33 and "one sum" in w["note"])
+    w = {v["term"].split(" (")[0]: v for v in verdicts(dict(base, observed=dict(settle=4500.0)))}.get("settle")
+    check("phase11-S6: whole settle over the bound's settle + response, FAIL", w is not None and w["ok"] is False)
+    base["declared"] = {}
     resp = settle_responses("  info[settle-derived]: c.yaml:1: hazard 'hpc_loss', rung 'emergency_stop': settle "
                             "from /mrm_emergency_stop_operator's braking profile, a = 2.5, response 250ms, "
                             "v0 = entry_speed 8.33 m/s: t = 4165.33ms", contract=False)
@@ -722,7 +850,9 @@ def selftest_supervised(check):
           dict(t_mono_ns=1000 * M, source="scenario", kind="inject", marker="hpc_loss", value=None),
           isl_ev(1450, "PATH_MRM_HANDLER_CALL_MRM_ENTRY", 1), isl_ev(1450.1, "SUPERVISOR_INJECT", 300),
           isl_ev(1549.4, "SUPERVISOR_DEADLINE", 0), isl_ev(1549.5, "SUPERVISOR_SAFE_STATE", 1),
+          isl_ev(1549.55, "SUPERVISOR_DIRECT", 0), isl_ev(1549.6, "SUPERVISOR_DIRECT", 1 << 28),
           isl_ev(1750.2, "CALL_MRM_HANDLER_EMERGENCY_STOP_OPERATE", 1),
+          isl_ev(1750.4, "SUPERVISOR_HANDOVER", 0), isl_ev(1770, "SUPERVISOR_HANDOVER", 1),
           isl_ev(1760, "PUB_MRM_EMERGENCY_STOP_OPERATOR_EMERGENCY_CONTROL_CMD", 2),
           vel(1800, 4.0), vel(4500, 0.0)]
     rows = [dict(hazard="hpc_loss", rung="emergency_stop", role="floor", detect=500.0, windows=0.0,
@@ -737,9 +867,15 @@ def selftest_supervised(check):
     ds = by.get("supervised: due -> fallback start (safe-state output)")
     check("supervised: due -> fallback start PASS within tick + switch, cause named",
           ds is not None and ds["ok"] is True and ds["declared"] == 2.0 and "route deadline" in ds["note"])
-    st = by.get("supervised: fallback start -> standstill")
-    check(f"supervised: fallback start -> standstill {st and st['observed']} against the settle",
-          st is not None and abs(st["observed"] - 2950.5) < 1e-6 and st["ok"] is True)
+    st = by.get("supervised: emergency command -> standstill")
+    check(f"supervised: emergency command -> standstill {st and st['observed']} against the settle",
+          st is not None and abs(st["observed"] - 2950.4) < 1e-6 and st["ok"] is True)
+    dd = by.get("supervised: due -> emergency command (direct path)")
+    check(f"supervised: due -> direct braking command {dd and dd['observed']} within tick + switch",
+          dd is not None and abs(dd["observed"] - 0.6) < 1e-6 and dd["ok"] is True)
+    ho = by.get("supervised: direct braking command (emergency operator) -> executor takes over")
+    check(f"supervised: the operator's handover {ho and ho['observed']} as info",
+          ho is not None and ho["ok"] is None and abs(ho["observed"] - 220.4) < 1e-6)
     tot = by.get("supervised: total (last sample -> standstill)")
     check("supervised: the overrun case's total = rung total + detection delay, PASS",
           tot is not None and abs(tot["declared"] - 5167.67) < 1e-6 and tot["ok"] is True)
@@ -755,18 +891,43 @@ def selftest_supervised(check):
     o3 = analyze(sorted(ev3, key=lambda e: e["t_mono_ns"]), rows)["observed"]
     check(f"supervised: the due from the verdict's arg -> due->verdict {o3.get('sup_due_to_verdict')}",
           o3.get("sup_due_to_verdict") is not None and abs(o3["sup_due_to_verdict"] - 1.4) < 1e-6)
-    # a stall: no standstill, the safe-state output still within the FTTI
-    ev2 = [e for e in ev if e["kind"] != "velocity" or e["t_mono_ns"] < 1000 * M]
-    ev2 = [dict(e, value=0xFFFFFFFF) if e.get("marker") == "SUPERVISOR_INJECT" else e for e in ev2
-           if e.get("marker") not in ("CALL_MRM_HANDLER_EMERGENCY_STOP_OPERATE",
+    # a stall: the handler and the operator never run again; the direct path
+    # brakes (phase11-S6), so the standstill is judged and nothing hands over
+    ev2 = [dict(e, value=0xFFFFFFFF) if e.get("marker") == "SUPERVISOR_INJECT" else e for e in ev
+           if e.get("marker") not in ("CALL_MRM_HANDLER_EMERGENCY_STOP_OPERATE", "SUPERVISOR_HANDOVER",
                                       "PUB_MRM_EMERGENCY_STOP_OPERATOR_EMERGENCY_CONTROL_CMD")]
     r2 = analyze(ev2, rows)
     by2 = {v["term"]: v for v in r2["verdicts"]}
-    s2 = by2.get("supervised: fallback start -> standstill")
+    s2 = by2.get("supervised: emergency command -> standstill")
     f2 = by2.get("supervised: last sample -> safe-state output, within the FTTI")
-    check("stall: no standstill row verdict (no brake line), safe-state output within the FTTI PASS",
-          s2 is not None and s2["ok"] is None and "never ends" in s2["note"]
+    h2 = by2.get("supervised: direct mrm_state (handler) -> executor takes over")
+    check("stall: the direct path's standstill judged PASS, no handover, output within the FTTI PASS",
+          s2 is not None and s2["ok"] is True and h2 is not None and h2["observed"] is None
           and f2 is not None and f2["ok"] is True and abs(f2["observed"] - 649.5) < 1e-6)
+    # phase11-S6: act b with the comfortable stop made inert: route 2 at the
+    # call + 10940, the direct path brakes, the escalation rows
+    isl2 = lambda t, m, v=0: dict(isl_ev(t, m, v), island_ns=int(t * M))  # noqa: E731
+    evc = [dict(t_mono_ns=0, source="scenario", kind="inject", marker="odd_exit", value=None),
+           vel(-10, 8.3), isl2(150, take, 0), isl2(200, "PUB_MRM_HANDLER_TAKEOVER_REQUEST_STATE", 2),
+           isl2(10300, "PUB_MRM_HANDLER_TAKEOVER_REQUEST_STATE", 1),
+           isl2(10301, "CALL_MRM_HANDLER_COMFORTABLE_STOP_OPERATE", 1), isl2(10302, "SUPERVISOR_INJECT", 0xFFFFFFFD),
+           vel(15000, 8.3), isl2(21241.4, "SUPERVISOR_DEADLINE", (2 << 28) | 21241),
+           isl2(21241.45, "SUPERVISOR_SAFE_STATE", 1), isl2(21241.5, "SUPERVISOR_DIRECT", 1 << 28),
+           isl2(21300, "SUPERVISOR_HANDOVER", 1), vel(25000, 0.0)]
+    rc = [dict(hazard="odd_exit", rung="comfortable_stop", role="rung", detect=100.0, windows=10205.0, route=149.0,
+               settle=10939.67, total=21393.67, ftti=30000.0),
+          dict(hazard="odd_exit", rung="emergency_stop", role="floor", detect=100.0, windows=10205.0,
+               route=188.33, settle=4421.33, total=14914.67, ftti=30000.0)]
+    r3 = analyze(sorted(evc, key=lambda e: e["t_mono_ns"]), rc)
+    by3 = {v["term"]: v for v in r3["verdicts"]}
+    cd = by3.get("escalation: comfortable call -> standstill due")
+    check(f"escalation: call -> due {cd and cd['observed']} against settle + response 10939.67 -> 10940",
+          cd is not None and abs(cd["observed"] - 10940.0) < 1e-6 and cd["ok"] is True)
+    tt = by3.get("escalation: total (fault -> standstill)")
+    check(f"escalation: total {tt and tt['observed']} against {tt and tt['declared']} (21393.67 + 2 + 188.33 "
+          f"+ 4421.33), PASS", tt is not None and abs(tt["declared"] - 26005.33) < 1e-6 and tt["ok"] is True)
+    rr = by3.get("rung reached")
+    check("escalation: the rung expected is EMERGENCY_STOP", rr is not None and rr["declared"] == "EMERGENCY_STOP")
     # HPC alive from the island's takes, not the host probe
     evb = [dict(t_mono_ns=0, source="scenario", kind="inject", marker="odd_exit", value=None)]
     evb += [isl_ev(t, take, 0) for t in (100, 200, 300, 950, 1050)]

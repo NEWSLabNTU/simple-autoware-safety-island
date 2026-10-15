@@ -274,13 +274,15 @@ def table(d):
         note = r[4] if len(r) > 4 else ""
         return len(r) > 3 and r[3] == "n/a" and (
             r[0].startswith("settle at the observed") or "judged by the supervised rows" in note
-            or "wired to no brake" in note or "the island's ladder cannot run" in note)
+            or "wired to no brake" in note or "the island's ladder cannot run" in note
+            or note.startswith("info"))  # phase11-S6: the lag per speed, a handover
     na = sum(1 for r in rows if apart(r))
     total = next((r for r in rows if r[0].startswith("total")), None)
     s = f"table {ok}/{len(rows) - na} PASS" + (f" (+{na} n/a)" if na else "")
     if total:
         s += f", total {total[2]} of {total[1]} ms"
-    sup = [r for r in rows if r[0].startswith("supervised:") and len(r) > 3 and r[3] in ("PASS", "FAIL")]
+    sup = [r for r in rows if r[0].startswith(("supervised:", "escalation:")) and len(r) > 3
+           and r[3] in ("PASS", "FAIL")]
     if sup:
         s += f", supervised {sum(1 for r in sup if r[3] == 'PASS')}/{len(sup)} PASS"
     return s

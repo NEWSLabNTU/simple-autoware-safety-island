@@ -337,9 +337,12 @@ def _num(tok):
 def parse_explain(text):
     """The `-- Fault-reaction budgets (--explain, ms) --` table, as rows.
 
-    Each row: hazard, rung, role (rung | floor | window | skipped), detect,
-    windows, route, settle, settle_kind (derived | literal | window), total,
-    ftti, slack; ms, None where the table prints '-'.
+    Each row: hazard, rung, role (rung | floor | window | skipped |
+    overrun), detect, windows, route, settle, settle_kind (derived | literal
+    | window), total, ftti, slack; ms, None where the table prints '-'. An
+    overrun row (play_launch 0.18.0) also names its supervised budget in
+    `term` (None on every other row). The SOURCES and LEVEL columns after
+    the slack are not read.
 
     A window row also gets `window_end`: the latest the rung ends after it
     goes on, from the checker's note (play_launch phase 84, `window-expiry`):
@@ -367,6 +370,11 @@ def parse_explain(text):
             continue
         hazard, rung, role = tok[0], tok[1], tok[2]
         rest = tok[3:]
+        term = None
+        if role.startswith("("):
+            # play_launch 0.18.0 (phase 93): an overrun row names the
+            # supervised budget after the rung, "<rung> (<key>) overrun".
+            term, role, rest = role.strip("()"), tok[3], tok[4:]
         detect, windows, route = _num(rest[0]), _num(rest[1]), _num(rest[2])
         if rest[3] == "window":
             # "window 10000.00" (phase 83) or "window >=10000.00" (phase 84)
@@ -378,7 +386,7 @@ def parse_explain(text):
         total, ftti, slack = _num(rest2[0]), _num(rest2[1]), _num(rest2[2])
         rows.append(dict(hazard=hazard, rung=rung, role=role, detect=detect, windows=windows,
                          route=route, settle=settle, settle_kind=kind, total=total, ftti=ftti,
-                         slack=slack, window_end=ends.get((hazard, rung))))
+                         slack=slack, window_end=ends.get((hazard, rung)), term=term))
     return rows
 
 
@@ -424,7 +432,7 @@ def selftest(path=os.path.join(HERE, "testdata/explain.txt")):
     import analysis
     text = open(path).read()
     rows = parse_explain(text)
-    by = {(r["hazard"], r["rung"]): r for r in rows}
+    by = {(r["hazard"], r["rung"]): r for r in rows if r.get("role") != "overrun"}
     fails = []
 
     def check(what, ok):

@@ -6,6 +6,7 @@
   violations.py overrun  --elf <zephyr.elf> <ms>                     the debug hook
   violations.py fault-overrun --elf <zephyr.elf> <ms>|stall          the same, on the fault tick
   violations.py spin-stall --elf <zephyr.elf>                        stall the spin (SWT0 bench)
+  violations.py comfortable-inert --elf <zephyr.elf>                 the next comfortable stop brakes not
   violations.py supervisor --elf <zephyr.elf> [--out <prefix>]       the supervisor record
   violations.py --dry-run read|overrun ...                           resolve, touch nothing
 
@@ -43,6 +44,12 @@ its ENTRY, before the reaction, so the route itself is late; `stall` writes
 0xffffffff, a busy-wait that never ends. `spin-stall` writes
 `island_debug_spin_stall` (CONFIG_ISLAND_DEBUG_SPIN_STALL, not in the gate
 image): the next spin never ends, with no route pending -- SWT0's case.
+phase11-S6. `comfortable-inert` writes `island_debug_comfortable_inert`
+(the comfortable operator, CONFIG_ISLAND_DEBUG_OVERRUN): the next operate=1
+request is answered OPERATING and no velocity limit is published, once, so
+the comfortable stop does not decelerate and the supervised standstill
+(route 2) is what stops the vehicle.
+
 `supervisor` reads `island_supervisor_record` (CONFIG_ISLAND_SUPERVISOR,
 src/zephyr_entry/src/island_supervisor.c; attach, no halt): whether the
 safe-state output is latched, by what and when, each route's arms, dones and
@@ -67,6 +74,7 @@ ARM_WORDS = ["island_monitors_armed_uptime_ms", "island_monitors_armed_via",
 OVERRUN = "island_debug_overrun_ms"
 FAULT_OVERRUN = "island_debug_fault_overrun_ms"
 SPIN_STALL = "island_debug_spin_stall"
+COMFORT_INERT = "island_debug_comfortable_inert"
 SUPERVISOR = "island_supervisor_record"
 STALL = 0xFFFFFFFF
 # island_supervisor.c's record, all u32: the header, then `routes` routes.
@@ -75,10 +83,17 @@ SUP_HEADER = ["magic", "latched", "latch_cause", "latch_uptime_us", "wakes", "ti
               "spins", "spin_gap_max_us", "spin_gap_max_at_ms", "gpio_errors", "routes", "hook_calls",
               "hook_last_rule"]
 SUP_ROUTE = ["armed", "due_ms", "arms", "dones", "fired", "fire_due_ms", "fire_verdict_us"]
+# phase11-S6: after the routes, the direct emergency path's slots and route
+# 2's standstill words.
+SUP_DIRECT = ["registered", "calls", "first_uptime_us", "handover", "handover_uptime_ms"]
+SUP_DIRECT_SLOTS = 2
+SUP_DIRECT_NAME = {0: "mrm_handler (mrm_state, hazard lights)", 1: "emergency operator (braking command)"}
+SUP_TAIL = ["standstill_met", "speed_mm_s", "speed_at_ms"]
 SUP_MAGIC = 0x56505553
 SUP_CAUSE = {0: "-", 1: "route deadline", 2: "SWT0 first timeout", 3: "the executor's reaction hook"}
 SUP_ROUTE_NAME = {0: "hpc_loss reaction (mrm_handler/call_mrm)",
-                  1: "the executor's next supervised route (nano-ros phase-503)"}
+                  1: "the executor's next supervised route (nano-ros phase-503)",
+                  2: "the comfortable stop's standstill (call + settle + response)"}
 ARM_VIA = {0: "not armed", 1: "INIT_DONE", 2: "init failure cleared"}
 # phase10-B3: what `measured` is, for the rules whose name does not say it.
 RULE_NOTE = {
@@ -171,6 +186,16 @@ def supervisor_decode(blob):
         if off + len(SUP_ROUTE) <= n:
             routes.append(dict(zip(SUP_ROUTE, w[off:off + len(SUP_ROUTE)])))
     hdr["route"] = routes
+    off = len(SUP_HEADER) + hdr.get("routes", 0) * len(SUP_ROUTE)
+    direct = []
+    for i in range(SUP_DIRECT_SLOTS):
+        o = off + i * len(SUP_DIRECT)
+        if o + len(SUP_DIRECT) <= n:
+            direct.append(dict(zip(SUP_DIRECT, w[o:o + len(SUP_DIRECT)])))
+    hdr["direct"] = direct
+    o = off + SUP_DIRECT_SLOTS * len(SUP_DIRECT)
+    if o + len(SUP_TAIL) <= n:
+        hdr.update(zip(SUP_TAIL, w[o:o + len(SUP_TAIL)]))
     return hdr
 
 
@@ -203,6 +228,18 @@ def supervisor_report(blob):
             line += (f"; first verdict at {r['fire_verdict_us'] / 1000:.3f} ms for the due at "
                      f"{r['fire_due_ms']} ms ({r['fire_verdict_us'] / 1000 - r['fire_due_ms']:+.3f} ms)")
         lines.append(line)
+    for i, dd in enumerate(d.get("direct") or []):
+        if not dd["registered"]:
+            continue
+        line = f"  direct emergency slot {i} {SUP_DIRECT_NAME.get(i, '')}: calls={dd['calls']}"
+        if dd["calls"]:
+            line += f", first at uptime {dd['first_uptime_us'] / 1000:.3f} ms"
+        line += (f"; handed over to the executor at uptime {dd['handover_uptime_ms']} ms" if dd["handover"]
+                 else "; not handed over")
+        lines.append(line)
+    if "standstill_met" in d:
+        lines.append(f"  route 2 dues met at standstill={d['standstill_met']}; last speed {d['speed_mm_s']} mm/s "
+                     f"at uptime {d['speed_at_ms']} ms")
     return "\n".join(lines) + "\n"
 
 
@@ -216,14 +253,15 @@ def board():
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cmd", choices=["read", "decode", "overrun", "fault-overrun", "spin-stall", "supervisor"])
+    ap.add_argument("cmd", choices=["read", "decode", "overrun", "fault-overrun", "spin-stall",
+                                        "comfortable-inert", "supervisor"])
     ap.add_argument("arg", nargs="?", help="decode: the record dump; overrun: ms; fault-overrun: ms or stall")
     ap.add_argument("--elf", required=True)
     ap.add_argument("--out", help="read: output prefix (<out>.bin, <out>.txt)")
     ap.add_argument("--words", help="decode: a JSON file of the arming words read beside the dump")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_intermixed_args()
-    syms = symbols(a.elf, {RECORD, OVERRUN, FAULT_OVERRUN, SPIN_STALL, SUPERVISOR, *ARM_WORDS})
+    syms = symbols(a.elf, {RECORD, OVERRUN, FAULT_OVERRUN, SPIN_STALL, COMFORT_INERT, SUPERVISOR, *ARM_WORDS})
     if a.cmd == "supervisor":
         if SUPERVISOR not in syms:
             sys.exit(f"violations: {a.elf} has no {SUPERVISOR} (built without CONFIG_ISLAND_SUPERVISOR)")
@@ -242,11 +280,12 @@ def main():
             open(a.out + ".txt", "w").write(text)
         sys.stdout.write(text)
         return 0
-    if a.cmd in ("fault-overrun", "spin-stall"):
-        word = FAULT_OVERRUN if a.cmd == "fault-overrun" else SPIN_STALL
+    if a.cmd in ("fault-overrun", "spin-stall", "comfortable-inert"):
+        word = {"fault-overrun": FAULT_OVERRUN, "spin-stall": SPIN_STALL,
+                "comfortable-inert": COMFORT_INERT}[a.cmd]
         if word not in syms:
             sys.exit(f"violations: {a.elf} has no {word}")
-        if a.cmd == "spin-stall":
+        if a.cmd in ("spin-stall", "comfortable-inert"):
             val = 1
         elif (a.arg or "") == "stall":
             val = STALL

@@ -566,7 +566,7 @@ def run(act, log):
     # it on its next call_mrm tick, the first one after the HPC loss.
     inject = ENV("SCENARIO_FAULT_CMD", "")
     if inject and act in ("encore", "b"):
-        say(f"== 3b. fault-tick overrun armed: {inject} ==")
+        say(f"== 3b. injection armed: {inject} ==")
         t_inj = time.monotonic_ns()
         rc_inj = subprocess.run(inject, shell=True).returncode
         b.w.write("scenario", "overrun_armed", t_mono_ns=t_inj,
@@ -614,9 +614,18 @@ def run(act, log):
         else:
             spin_for(observe, lambda: st["mrm"] and st["mrm"][0] == MrmState.MRM_SUCCEEDED)
             spin_for(1.0)
-            ok = (tor_on and st["mrm"] is not None and st["mrm"][0] == MrmState.MRM_SUCCEEDED
-                  and st["mrm"][1] == 3 and st["v"] is not None and abs(st["v"]) < 0.01)
-            why = f"TOR on {tor_on}, mrm {st['mrm']} (3 = COMFORTABLE_STOP), v {st['v']:.3f}"
+            # phase11-S6: an injected act ends on the emergency stop. A fault
+            # tick that overruns (RB_OVERRUN) misses call_mrm's supervised
+            # deadline, which enters the emergency stop at once (no takeover
+            # request); a comfortable stop that does not decelerate
+            # (RB_INERT) is escalated at its supervised standstill.
+            want = 2 if inject else 3
+            need_tor = "fault-overrun" not in inject
+            ok = ((tor_on or not need_tor) and st["mrm"] is not None
+                  and st["mrm"][0] == MrmState.MRM_SUCCEEDED
+                  and st["mrm"][1] == want and st["v"] is not None and abs(st["v"]) < 0.01)
+            why = (f"TOR on {tor_on}, mrm {st['mrm']} ({want} = "
+                   f"{'EMERGENCY_STOP' if want == 2 else 'COMFORTABLE_STOP'}), v {st['v']:.3f}")
         c1 = (clock["sim"], clock["wall"])
         spin_for(1.0 + hold)
         if not scen:  # odd_monitor's verdict is latched: it would set the flag again
@@ -625,11 +634,20 @@ def run(act, log):
     elif act == "encore":
         if not scen:  # scenario_trigger (board_encore) pressed it on the scenario's word (SW2)
             b.press("hpc-loss")
-        spin_for(observe, lambda: st["mrm"] and st["mrm"][0] == MrmState.MRM_SUCCEEDED)
+        # phase11-S6: a stall that never ends (RB_OVERRUN=stall) leaves the
+        # handler stuck, so nothing on the island can report MRM_SUCCEEDED:
+        # the supervisor's direct path publishes MRM_OPERATING /
+        # EMERGENCY_STOP and the braking command, and the act is judged on
+        # that state at standstill.
+        stall = "fault-overrun" in inject and inject.rstrip().endswith("stall")
+        done = (MrmState.MRM_OPERATING, MrmState.MRM_SUCCEEDED) if stall else (MrmState.MRM_SUCCEEDED,)
+        spin_for(observe, lambda: st["mrm"] and st["mrm"][0] in done and st["mrm"][1] == 2
+                 and st["v"] is not None and abs(st["v"]) < 0.01)
         spin_for(1.0)
-        ok = st["mrm"] is not None and st["mrm"][0] == MrmState.MRM_SUCCEEDED and st["mrm"][1] == 2 \
+        ok = st["mrm"] is not None and st["mrm"][0] in done and st["mrm"][1] == 2 \
             and st["v"] is not None and abs(st["v"]) < 0.01
-        why = f"mrm {st['mrm']} (2 = EMERGENCY_STOP), v {st['v']:.3f}"
+        why = f"mrm {st['mrm']} (2 = EMERGENCY_STOP), v {st['v']:.3f}" + \
+            (" (stall: MRM_OPERATING from the supervisor's direct path accepted)" if stall else "")
         c1 = (clock["sim"], clock["wall"])
         spin_for(hold)
         b.press("hpc-restore")

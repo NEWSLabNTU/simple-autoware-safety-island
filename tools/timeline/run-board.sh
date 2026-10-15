@@ -98,8 +98,9 @@
 # "<pid> <count path>", phase8-W16; needs just l3-host-ws or just
 # demo-host-ws), RB_PROBE,
 # RB_ROUTER_TIMEOUT (90 s),
-# RB_OVERRUN (phase11-S7, encore on the board: <ms> or stall, the handler's
-# fault tick overruns; see below),
+# RB_OVERRUN (phase11-S7, encore or b on the board: <ms> or stall, the
+# handler's fault tick overruns; see below), RB_INERT (phase11-S6, b on the
+# board: the comfortable stop does not decelerate; see below),
 # RB_ACT (the act command, $act and $dir expanded), RB_SETTLE (15 s after
 # Startup complete), RB_JOIN_TIMEOUT (120 s), RB_AW_TIMEOUT (300 s),
 # RB_QEMU_SECS (900, QEMU's own bound), L3_PEER_TTY (the gateway's tty),
@@ -261,6 +262,18 @@ if [ -n "${RB_OVERRUN:-}" ]; then
     # availability take, a few seconds before the fault.
     export SCENARIO_FAULT_CMD="python3 tools/timeline/readout.py --target board --elf '$(readlink -f "$elf")' --out /dev/null --rearm-only && python3 tools/timeline/violations.py fault-overrun --elf '$(readlink -f "$elf")' $RB_OVERRUN"
 fi
+# phase11-S6: RB_INERT=1, act b with a comfortable stop that does not
+# decelerate (violations.py comfortable-inert, written by the act like
+# RB_OVERRUN): the operator answers the request and publishes no velocity
+# limit, so the supervised standstill (island_supervisor.c route 2, due =
+# the comfortable call + settle + response) is what stops the vehicle, by
+# the emergency stop. analysis.py's escalation rows judge it.
+if [ -n "${RB_INERT:-}" ]; then
+    [ "$act" = b ] || { echo "run-board: RB_INERT is for act b" >&2; exit 2; }
+    [ "$target" = board ] || { echo "run-board: RB_INERT is for the board" >&2; exit 2; }
+    [ -z "${RB_OVERRUN:-}" ] || { echo "run-board: RB_INERT and RB_OVERRUN are separate acts" >&2; exit 2; }
+    export SCENARIO_FAULT_CMD="python3 tools/timeline/readout.py --target board --elf '$(readlink -f "$elf")' --out /dev/null --rearm-only && python3 tools/timeline/violations.py comfortable-inert --elf '$(readlink -f "$elf")'"
+fi
 : "${RB_GATE:=python3 tools/timeline/scenario.py gate --log $dir/gate.jsonl}"
 : "${RB_PROBE:=python3 tools/timeline/probe.py --out $dir/probe.jsonl}"
 : "${RB_ACT:=python3 tools/timeline/scenario.py run $act --log $dir/scenario.jsonl}"
@@ -408,7 +421,8 @@ if [ "$dry" = 0 ]; then
       [ -n "${INIT_X:-}${GOAL_X:-}" ] && echo "init=${INIT_X:-} ${INIT_Y:-} ${INIT_QZ:-} ${INIT_QW:-} goal=${GOAL_X:-} ${GOAL_Y:-} ${GOAL_QZ:-} ${GOAL_QW:-}"
       [ -n "${L3_PLANNING_COMMON:-}" ] && echo "planning_common=$(readlink -f "$L3_PLANNING_COMMON") sha256=$(sha256sum "$L3_PLANNING_COMMON" | cut -d' ' -f1) max_vel=$(sed -n 's/^ *max_vel: *\([0-9.]*\).*/\1/p' "$L3_PLANNING_COMMON")"
       [ "$rb_trigger" = board ] && echo "button_inject=${SCENARIO_BUTTON_INJECT:-0}"
-      [ -n "${RB_OVERRUN:-}" ] && echo "overrun=$RB_OVERRUN"; } >> "$out.meta"
+      [ -n "${RB_OVERRUN:-}" ] && echo "overrun=$RB_OVERRUN"
+      [ -n "${RB_INERT:-}" ] && echo "inert=comfortable"; } >> "$out.meta"
 fi
 start=$SECONDS
 
