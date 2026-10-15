@@ -536,6 +536,13 @@ fi
 
 step "1. flash"
 if [ "$target" = board ] && [ "$flash" = 1 ]; then
+    # phase11-S4: the image runs SWT0 (island_supervisor.c). The flash
+    # algorithm runs on the core, and a running SWT0 that nothing feeds
+    # interrupts it into a vector table being erased: twice the first flash
+    # after a run failed with "Memory transfer fault (FAULT ACK) @
+    # 0x20004800" (p11-e1, p11-e2; the retry passed). A reset with the core
+    # halted first leaves SWT0 at its reset state, disabled.
+    run pyocd reset -t s32k344 --halt >/dev/null 2>&1 || echo "   (pyocd reset --halt failed; flashing anyway)"
     run pyocd flash -t s32k344 "$elf" || { echo "run-board: flash failed"; exit 1; }
 else
     echo "   (nothing to flash: target $target, flash=$flash)"

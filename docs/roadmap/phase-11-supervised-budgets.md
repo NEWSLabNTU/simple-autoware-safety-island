@@ -222,15 +222,25 @@ monitor that fires on time, and the rung it can still start, are.
     `route-latency-runtime`) has nothing to judge there. p11-ov1 shows it:
     a 300 ms overrun of the fault tick stored three `max-latency-runtime`
     verdicts (301 ms) and no route verdict.
-  - Route 1, nano-ros phase-503 (S3, pinned at 16ee271442):
+  - Route 1, nano-ros phase-503 (S3, pinned at b7e63a5b44: #2264, the
+    model read of #2266, and #2267, a monitor row of 72 B on a 32-bit
+    target, without which nros-cpp did not build for the board):
     `nros_app_reaction_hook` wakes the thread (cause 3) and, after every
     spin, `nros_cpp_executor_route_next_due_us` re-arms route 1. The
     generated entry installs the hook only when a monitor row is
     supervised, and no row is until nano-ros reads `supervise:` from the
-    model (it needs the rlm pin carrying S1), so route 1 is idle today.
-  - Board, image 5fa405ff (`just board-build` at 08c8296; FLASH 563,060 B,
-    RAM 277,432 B, DTCM 117,120 B, +488 B DTCM, +1,280 B RAM against the
-    pin's image):
+    model and nano-ros's play_launch resolves the contract's `supervise:`
+    (its submodule still predates S2), so route 1 is idle today.
+  - Board images: 5fa405ff (`just board-build` at 08c8296, pin
+    79583587cf; FLASH 563,060 B, RAM 277,432 B, DTCM 117,120 B) and, at the
+    pin b7e63a5b44 with the hook wired, 71e81adc (FLASH 564,584 B, RAM
+    277,400 B, DTCM 117,192 B of 131,072).
+    - `run-board.sh` resets the core halted before it flashes: twice the
+      first flash after an act failed with `Memory transfer fault (FAULT
+      ACK) @ 0x20004800` (p11-e1, p11-e2; the retry passed), which fits
+      SWT0, running in the image, interrupting pyocd's flash algorithm into
+      a vector table being erased (not proven). A reset leaves SWT0 at its
+      reset state, disabled.
     - p11-swt1, SWT0 with no route pending (the encore with the act
       replaced by `violations.py spin-stall`, `island_debug_spin_stall`,
       `CONFIG_ISLAND_DEBUG_SPIN_STALL`): the spin stalls at uptime
@@ -240,9 +250,17 @@ monitor that fires on time, and the rung it can still start, are.
       the callback, cause SWT0. No reset followed. Before the stall the
       longest feed-to-feed gap over 20,846 spins was 10.63 ms, so the
       300 ms timeout is 28 times the longest spin seen.
-    - p11-ov2 and p11-st1 (S7 below): the route's verdict 0.025-0.03 ms
-      after its due and the output 0.036-0.04 ms after it, against the
-      1 ms tick + 1 ms switch the contract states.
+    - p11-ov2..4, p11-st1..2 (S7 below): the route's verdict 0.024-0.03 ms
+      after its due and the output 0.036-0.05 ms after it, against the
+      1 ms tick + 1 ms switch the S6 draft states.
+    - A plain encore leaves it dark: p11-e1 (pin 16ee271442 with #2267
+      applied) and p11-e2 (71e81adc) read `supervisor not driven`, route 0
+      armed 333-334 times and met once (the fault tick's EXIT 562-575 ms
+      after the last sample, inside the 649 ms due), longest spin 10.66 ms.
+      Both read FAIL on one phase-10 row only, `settle at the observed entry
+      speed`: response 463.80 and 441.41 ms at 4.21 m/s against the 256 ms
+      sized at 8.3 m/s (phase10-B2; the fr round at this speed measured
+      352.54-488.91), not on anything this phase changed.
 
 ### S5. A feasible range for each timer's period (play_launch)
 
@@ -339,15 +357,24 @@ monitor that fires on time, and the rung it can still start, are.
   (`island takes`), the host probe only without a trace. `merge.py` aligns
   a stalled island (no take after the loss) on its last take. Selftests in
   `tlcommon.py selftest`.
-  Runs (image 5fa405ff; the planning simulator at Autoware's default
-  `max_vel`, 4.17-4.25 m/s; run directories
-  /mnt/mx500/aeon/worktrees/p11-island/build/timeline/p11-*):
+  Runs (the planning simulator at Autoware's default `max_vel`, 4.17-4.25
+  m/s; run directories
+  /mnt/mx500/aeon/worktrees/p11-island/build/timeline/p11-*; images as in
+  S4's status: 5fa405ff for ov1, ov2, st1; the pin b7e63a5b44's code for
+  ov3 (built with #2267 applied before it merged), ov4, st2 (71e81adc)):
 
   | run | injected | due -> verdict / output (ms) | output cause | last sample -> output (ms) | output -> standstill / settle (ms) | total / overrun total (ms) | SUMMARY |
   |---|---|---|---|---|---|---|---|
   | p11-ov2 | 300 ms | 0.03 / 0.04 | route | 648.47 | 2940.86 / 4421.33 | 3589.34 / 5167.67 | PASS, supervised 6/6 |
+  | p11-ov3 | 300 ms | 0.03 / 0.04 | route | 648.59 | 2925.69 / 4421.33 | 3574.28 / 5167.67 | PASS, supervised 6/6 |
+  | p11-ov4 | 300 ms | 0.03 / 0.04 | route | 648.95 | 2895.30 / 4421.33 | 3544.26 / 5167.67 | PASS, supervised 6/6 |
   | p11-st1 | stall | 0.03 / 0.04 | route | 648.25 | - (no island braking) | - | FAIL (act), supervised 3/3 |
+  | p11-st2 | stall | 0.03 / 0.05 | route | 648.27 | - (no island braking) | - | FAIL (act), supervised 3/3 |
   | p11-ov1 | 300 ms | 0.024 / 0.036 (record) | route | - | - | - | trace full before the act |
+
+  The overrun total is the rung's total plus the detection delay (5165.67
+  + 2); the checker's overrun row on the S6 draft reads 5316.67, because it
+  also charges the island.emergency_stop route as the fallback's.
 
   p11-ov2: the reaction tick came 850.86 ms after the last sample (the
   300 ms overrun), the emergency operator braked 1.86 ms later, standstill
