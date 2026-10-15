@@ -10,9 +10,10 @@ the same arithmetic.
 **Status (2026-10-16): in progress.** S4 is done on the board and S7 for
 hpc_loss (overrun and stall); S6 is drafted on a branch, waiting for the
 release that carries S1 and S2; S7's odd_exit run waits for S6's
-escalation. S3 is merged in nano-ros (#2264) and pinned (16ee271442), its
-hook wired, with no supervised row until nano-ros reads `supervise:` from
-the model. S1 and S2 are on rlm and play_launch main (play_launch's phase
+escalation. S3 is merged in nano-ros (#2264, #2266, #2267, #2271) and
+pinned (573490978d); the S6 draft's image carries supervised route rows,
+whose timer route caught an overrun on the board; the hook was not called
+(S6 status). S1 and S2 are on rlm and play_launch main (play_launch's phase
 93), unreleased. The plan below was grounded in a read of rlm (main,
 v0.1.60), play_launch (main, 0.17.0), nano-ros (the island's pin,
 79583587cf) and this repository; file:line references are at those
@@ -222,25 +223,29 @@ monitor that fires on time, and the rung it can still start, are.
     `route-latency-runtime`) has nothing to judge there. p11-ov1 shows it:
     a 300 ms overrun of the fault tick stored three `max-latency-runtime`
     verdicts (301 ms) and no route verdict.
-  - Route 1, nano-ros phase-503 (S3, pinned at b7e63a5b44: #2264, the
-    model read of #2266, and #2267, a monitor row of 72 B on a 32-bit
-    target, without which nros-cpp did not build for the board):
+  - Route 1, nano-ros phase-503 (S3; pinned at 573490978d since #2271,
+    whose play_launch (68aa242d, rlm 33577ff) resolves `supervise:`; before
+    it b7e63a5b44: #2264, the model read of #2266, and #2267, a monitor row
+    of 72 B on a 32-bit target, without which nros-cpp did not build for
+    the board):
     `nros_app_reaction_hook` wakes the thread (cause 3) and, after every
     spin, `nros_cpp_executor_route_next_due_us` re-arms route 1. The
     generated entry installs the hook only when a monitor row is
-    supervised, and no row is until nano-ros reads `supervise:` from the
-    model and nano-ros's play_launch resolves the contract's `supervise:`
-    (its submodule still predates S2), so route 1 is idle today.
+    supervised. Main's contract states no `supervise:`, so on main route 1
+    is idle; the S6 draft's image has the rows (S6 status).
   - Board images: 5fa405ff (`just board-build` at 08c8296, pin
     79583587cf; FLASH 563,060 B, RAM 277,432 B, DTCM 117,120 B) and, at the
     pin b7e63a5b44 with the hook wired, 71e81adc (FLASH 564,584 B, RAM
     277,400 B, DTCM 117,192 B of 131,072).
-    - `run-board.sh` resets the core halted before it flashes: twice the
-      first flash after an act failed with `Memory transfer fault (FAULT
-      ACK) @ 0x20004800` (p11-e1, p11-e2; the retry passed), which fits
-      SWT0, running in the image, interrupting pyocd's flash algorithm into
-      a vector table being erased (not proven). A reset leaves SWT0 at its
-      reset state, disabled.
+    - Flashing: three first flashes after an act failed with `Memory
+      transfer fault (FAULT ACK)` in the flash algorithm's RAM (p11-e1,
+      p11-e2, p11-s6-ov1). The reset with the core halted that
+      `run-board.sh` now does first did not prevent the third, and SWT0
+      reads disabled after that reset (SWT_CR 0xff00010a), so the cause is
+      not known. An interrupted flash then left a sector whose read faults
+      on every retry (`@ 0x0041f000` while erasing); `pyocd erase -t
+      s32k344 --sector 0x41f000` (one sector, never `--chip`) cleared it,
+      and run-board.sh's failure message says so.
     - p11-swt1, SWT0 with no route pending (the encore with the act
       replaced by `violations.py spin-stall`, `island_debug_spin_stall`,
       `CONFIG_ISLAND_DEBUG_SPIN_STALL`): the spin stalls at uptime
@@ -303,6 +308,36 @@ monitor that fires on time, and the rung it can still start, are.
   keys, so it merges with the release that carries S1 and S2 (the lead
   coordinates it). The switch is 1 ms by the measurement rule: the largest
   due -> output measured is 0.04 ms (x 1.2, rounded up to the next ms).
+  Image of the draft through the pin 573490978d (2026-10-16; branch
+  `phase11-s6-draft` d2b696c, the board build, FLASH 564,760 B, RAM 277,400
+  B, DTCM 117,192 B): the generated entry
+  (`build-board/zephyr_entry_nros_main_generated.cpp`) carries two
+  supervised route rows, and installs `nros_app_reaction_hook`:
+
+      { "/system/fail_safe/mrm_state", "/mrm_handler/mrm_state", 9000u, 149u, "/system/operation_mode/availability", 149u, 149u, 1u, 1u },
+      { "/system/takeover_request/state", "/mrm_handler/takeover_request_state", 9000u, 149u, "/system/operation_mode/availability", 149u, 149u, 1u, 1u },
+      row 4 /mrm_handler/mrm_state: deadline 149 ms, reaction 1 (safety_island.launch.xml/island.emergency_stop), mechanism timer
+
+  (`route_deadline_ms` 149, `reaction_id` 1, `mechanism` 1 = timer; row 5
+  the same for takeover_request_state.) Board, `RB_OVERRUN=300`:
+  - p11-s6-b1, act b (the overrun on the takeover request's tick): the
+    odd-exit take at 45,394.21 ms, its tick stalls 300 ms from 45,421.39;
+    route 1, armed from `nros_cpp_executor_route_next_due_us`, fires at its
+    due 45,544 (take + 149, rounded up to the ms) +0.033 ms and the output
+    is driven 0.054 ms after the due. The reaction hook was not called
+    (`hook calls=0`) and no `route-deadline-runtime` was stored: when the
+    tick returned it published and answered the take before the executor's
+    overdue check ran, so the executor recorded only the completion verdict
+    `route-latency-runtime` 327 of 149 ms. On one long callback the
+    k_timer is what catches the miss; the executor's own check would see
+    only slowness spread over several dispatches. The act PASS
+    (comfortable stop reached); the table's declared columns are empty
+    because the act's `--explain` came from play_launch 0.17.0, which
+    refuses the draft.
+  - p11-s6-ov1, encore: route 0 (the handler's take + 649) fires at its due
+    +0.029 ms, output +0.048 ms; route 1 does not (no take pending at the
+    fault tick: the omission case S4 describes). Act PASS, standstill
+    3,632.33 ms after the last sample.
   Open in the plan as written:
   - one `supervise:` per budget: `call_mrm` serves both hazards, so
     odd_exit cannot have `executor` and the comfortable stop while hpc_loss

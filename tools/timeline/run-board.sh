@@ -537,14 +537,19 @@ fi
 
 step "1. flash"
 if [ "$target" = board ] && [ "$flash" = 1 ]; then
-    # phase11-S4: the image runs SWT0 (island_supervisor.c). The flash
-    # algorithm runs on the core, and a running SWT0 that nothing feeds
-    # interrupts it into a vector table being erased: twice the first flash
-    # after a run failed with "Memory transfer fault (FAULT ACK) @
-    # 0x20004800" (p11-e1, p11-e2; the retry passed). A reset with the core
-    # halted first leaves SWT0 at its reset state, disabled.
+    # phase11: three first flashes after an act failed with "Memory
+    # transfer fault (FAULT ACK)" in the flash algorithm's RAM (p11-e1,
+    # p11-e2, p11-s6-ov1; the retry passed twice). The reset with the core
+    # halted below did not prevent the third, so the cause is not SWT0 at
+    # flash time (it reads disabled, SWT_CR 0xff00010a, after the reset)
+    # and is not known. An interrupted flash then leaves a sector whose
+    # read faults on ECC ("FAULT ACK @ 0x0041f000" while erasing, on every
+    # retry, p11-s6-b1): `pyocd erase -t s32k344 --sector <address>` (one
+    # sector; NEVER --chip on this part, see board-flash) clears it.
     run pyocd reset -t s32k344 --halt >/dev/null 2>&1 || echo "   (pyocd reset --halt failed; flashing anyway)"
-    run pyocd flash -t s32k344 "$elf" || { echo "run-board: flash failed"; exit 1; }
+    run pyocd flash -t s32k344 "$elf" || {
+        echo "run-board: flash failed (a FAULT ACK at a flash address on every retry: erase that one sector,"
+        echo "run-board:   pyocd erase -t s32k344 --sector <address>; never --chip)"; exit 1; }
 else
     echo "   (nothing to flash: target $target, flash=$flash)"
 fi
