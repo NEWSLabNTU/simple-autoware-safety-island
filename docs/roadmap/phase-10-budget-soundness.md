@@ -6,7 +6,7 @@ checked by something, and the derived settling covers the vehicle's
 response, not only the braking profile.
 
 **Status (2026-10-15): B4, B5, B6, B9 done; the timeline side of B2 and
-B8 done; the checker side of B1, B2, B7 and B8 done and released in rlm
+B8 done, B2's response terms confirmed on eight independent runs; the checker side of B1, B2, B7 and B8 done and released in rlm
 v0.1.58, on play_launch main (c0a6a2e6, pinning v0.1.58) and pinned
 through nano-ros (f496a8b68a, this repo's pin). The island contract's keys
 (branch `phase10-contract-keys-rebased`) wait for play_launch 0.17.0 on
@@ -100,6 +100,56 @@ with its evidence. Two were confirmed by experiment on 2026-10-15:
   e1 362.18, e2 488.91, e3 352.54 (braking command -> standstill); b1
   608.65, b2 1796.30, b3 1781.04 (velocity limit -> standstill, so the
   planner hop is included: 629.49 in b2).
+
+  Confirmed on eight independent runs at the declared entry speed
+  (2026-10-15; b2c-e1..3, b2c-b1..5): no settle row and no total exceeds
+  its term with the response included. Same setup as B6 (image df1bf38a,
+  B6's `L3_PLANNING_COMMON`, `MIN_SPEED`, `INIT` and `GOAL`), judged
+  against the fr-era contract with the response terms: the island
+  contract of branch `phase10-contract-keys-rebased` with the link's
+  `max_transport` at 81 ms (67.02 x 1.2), `play_launch check --explain`
+  0.17.0 passed as `RB_EXPLAIN` (sha256 994c8fd5...; hpc_loss 5190.67,
+  settle 4421.33; odd_exit comfortable_stop 21418.67, settle 10939.67).
+  Every act PASS at 8.30 m/s; within the FTTI (10000 and 30000 ms) by at
+  least 5080.97 and 9149.51 ms.
+
+  | run | act | v0 (m/s) | settle observed / declared (ms) | profile at v0 (ms) | response observed (ms) | total observed / declared (ms) |
+  |---|---|---|---|---|---|---|
+  | b2c-e1 | encore | 8.302 | 4373.08 / 4421.33 | 4153.95 | 219.13 | 4918.10 / 5190.67 |
+  | b2c-e2 | encore | 8.300 | 4353.78 / 4421.33 | 4153.18 | 200.60 | 4885.19 / 5190.67 |
+  | b2c-e3 | encore | 8.301 | 4359.60 / 4421.33 | 4153.83 | 205.78 | 4919.03 / 5190.67 |
+  | b2c-b1 | b | 8.305 | 10486.39 / 10939.67 | 9971.39 | 515.00 | 20728.15 / 21418.67 |
+  | b2c-b2 | b | 8.304 | 10456.86 / 10939.67 | 9971.14 | 485.72 | 20598.66 / 21418.67 |
+  | b2c-b3 | b | 8.305 | 10553.31 / 10939.67 | 9971.27 | 582.05 | 20850.49 / 21418.67 |
+  | b2c-b4 | b | 8.304 | 10669.93 / 10939.67 | 9971.07 | 698.86 | 20752.99 / 21418.67 |
+  | b2c-b5 | b | 8.304 | 10599.07 / 10939.67 | 9971.05 | 628.03 | 20698.34 / 21418.67 |
+
+  The measured response stays within its term in every run: at most
+  219.13 of 256 ms (emergency) and 698.86 of 943 ms (comfortable; planner
+  hop 755.24-863.52 ms). The emergency maximum is above B6's 213.11, the
+  maximum the term was sized from; 219.13 x 1.2 = 262.96 would size it at
+  263 ms. Maxima over the 14 runs at 30 km/h (B6's six and these eight),
+  for a later re-derivation: emergency response 219.13 ms (b2c-e1),
+  settle 4373.08 ms (b2c-e1), total 4957.25 ms (b6-e2); comfortable
+  response 785.43 ms (b6-b3), settle 10756.62 ms (b6-b3), total 20948.25
+  ms (b6-b3), planner hop 863.52 ms (b2c-b5). The contract is not
+  re-derived here.
+
+  Notes on the runs. The tools are main be88e4e; its `markers.json` was
+  replaced in the run tree by the one the image was built with (table
+  6025ced3...), since main's (c3dfce2d..., with `route-latency-runtime`)
+  fails the trace's provenance check on this image; b2c-e1's check was
+  re-run with it (the first output is kept as
+  `island.trace.check.main-table.txt`). b2c-b2 and b2c-b3 waited 15 and 8
+  minutes for the host load at the act, after the board's boot; the trace
+  window opens at the arming silence a few seconds after boot and holds
+  about 134 s, so it was full before the act. Their island-clock rows
+  (takeover route, dwell, windows, route) are n/a and trace-check reads
+  FAIL (buffer full); the settle, total and entry speed rows come from the
+  host side and stand. b2c-b4 and b2c-b5 are the two complete act b runs
+  added for them. `RB_PYOCD_TIMEOUT` was 120 s (`pyocd list` took 26 s
+  under I/O wait). Run directories:
+  /mnt/evo/aeon/worktrees/island-b2c/build/timeline/b2c-*.
 
 ### B3. A runtime check of the route, not only of the callback (nano-ros) - done
 
@@ -258,6 +308,8 @@ with its evidence. Two were confirmed by experiment on 2026-10-15:
   PASS at 8.30 m/s. Every settle row exceeds its term: the difference to
   the profile at the entry speed is 204-213 ms (emergency) and 587-785 ms
   (comfortable); totals 4890-4957 of 4934.67 and 20751-20948 of 20475.67.
+  With B2's response terms (256 and 943 ms) the six runs fit; confirmed
+  on eight further runs that did not size them (B2's status).
 
 ### B7. Say where each budget comes from (rlm, play_launch)
 
