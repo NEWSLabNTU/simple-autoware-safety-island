@@ -42,8 +42,8 @@ declare -A EXPECT=(
     # comfortable-stop route (149 ms) are the island's, not the composed
     # demo's; the 20 s one raises takeover_request_timeout with it, so the
     # comfortable-stop rung is the only error.
-    [docs/island-variants/safety_island_window20]=1:ladder-rung-budget!  # 30450.67 ms
-    [docs/island-variants/safety_island_65kmh]=1:ladder-rung-budget!     # 30180.67 ms
+    [docs/island-variants/safety_island_window20]=1:ladder-rung-budget!  # 31393.67 ms
+    [docs/island-variants/safety_island_65kmh]=1:ladder-rung-budget!     # 31123.67 ms
 )
 
 echo "play_launch: $(command -v "$PL") ($("$PL" --version 2>/dev/null))"

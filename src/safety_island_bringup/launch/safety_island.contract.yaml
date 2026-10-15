@@ -236,12 +236,31 @@ version: 1
 #     30 km/h, decision 2: the ODD speed bound. One YAML anchor, read by both
 #     hazards: whichever fault occurs, the vehicle is at most here.
 #
-#   settle, DERIVED, not written: `settle-derived` prints the arithmetic from
-#     each operator's own parameter file and the entry speed.
+#   settle = the profile, DERIVED, + the vehicle's response, MEASURED.
+#     `settle-derived` prints the profile's arithmetic from each operator's
+#     own parameter file and the entry speed, and adds the written
+#     `response` (phase10-B2):
 #       emergency: target_acceleration -2.5, target_jerk -1.5 -> 4165.33 ms
+#                  + response 256 ms                           = 4421.33 ms
 #       comfortable: min_acceleration -1.0, min_jerk -0.3     -> 9996.67 ms
+#                  + response 943 ms                           = 10939.67 ms
 #     With a = |decel|, j = |jerk|: v_r = a^2/(2j); t = a/j + (v0 - v_r)/a
 #     above v_r, sqrt(2 v0 / j) below it.
+#
+#     The response is what the profile does not cover: the vehicle stopped
+#     later than the braking profile allows at the speed it actually had.
+#     phase10-B6 measured it on the board at the declared entry speed
+#     (8.30 m/s entry; island main 26558d4, runs b6-e1..3 and b6-b1..3) as
+#     the observed settle minus the profile at the observed speed:
+#     emergency stop 203.93 / 213.11 / 204.20 ms, comfortable stop 587.45 /
+#     612.81 / 785.43 ms. The comfortable row starts at the velocity limit,
+#     so its response includes the planner's hop to the first deceleration
+#     (809-862 ms in those runs). Each is sized by the measurement rule:
+#     213.11 x 1.2 = 255.73 -> 256, 785.43 x 1.2 = 942.52 -> 943. The runs
+#     at the declared entry speed are the ones that size it, because that is
+#     the speed the budget is computed at: lower-speed runs showed larger
+#     lags (up to 1797 ms, the gate image's fr-b runs at about 3 m/s) on much
+#     shorter settles, and their observed settles stay inside the budget.
 #
 #     This replaces the literal 2034 ms this file carried until phase8-W7,
 #     derived by hand from an ASSUMED 3.0 m/s. MEASURED, phase7-W3
@@ -252,19 +271,49 @@ version: 1
 #     3 s interval in every run. The assumed input was the one that was wrong;
 #     it is now the ODD bound, stated once, and the settle follows it.
 #
+# WHERE EACH BUDGET SAYS IT COMES FROM (phase10-B7)
+#
+# Every budget below is written in its map form, `{ duration, source }`, and
+# the source is one of four. `requirement`: chosen (the intervals, the
+# window, the detector's timeout, the 210 ms scope bound). `derived`:
+# computed from other numbers here (the handler's 100 ms tick budget is its
+# period; `within` is `call_mrm`; island.tor's 218 is 100 + 100 + 18).
+# `measured`: an observed maximum plus 20 %, rounded up to the next ms,
+# with the maximum, the sample count and the margin stated, so
+# `budget-rule` reproduces the number (a timer's 100 ms period takes no
+# margin: tick = period + lateness x 1.2). `analysed`: none yet. A measured
+# budget is NOT an upper bound -- the serial hop was set to 57 ms from a
+# 47.43 ms maximum and later reached 67.02 ms on a rebuilt image -- and
+# `--explain` marks every total that contains one "measured, not a bound";
+# today that is every hazard's total. `--explain` also lists, per budget,
+# what checks it; `control_mode`'s 143 ms link is checked by nothing in the
+# checker (the driver's answer is bounded by the window on the host) and is
+# compared with its observations by the post-run trace check
+# (tools/timeline, phase10-B8).
+#
+# EACH TIMER NAMES ITS PARAMETER (phase10-B1)
+#
+# `trigger: { timer: { rate_hz, param: update_rate } }` on every timer, and
+# `max_age: { duration: 500ms, param: timeout_operation_mode_availability }`
+# on the detector: `timer-param` and `max-age-param` resolve the parameter
+# from the launch file's parameter files and refuse the file when the two
+# disagree, as `window-param` does for the window. A rate typed here and
+# not in the parameter file used to check clean.
+#
 # WHY THE INTERVALS ARE 10 s AND 30 s
 #
 # They are the numbers here that are judgements rather than readings. What
 # matters is that they are written down and checked. The old 3 s cannot be
 # met at the decided bound by any island: from 8.33 m/s the emergency stop
 # alone takes 4165.33 ms to standstill; 3 s was chosen for the 3.0 m/s the
-# old settle assumed. 10 s (brief D's figure) leaves the floor 5090.33 ms of
-# slack with the board's 56 ms link and 149 ms handler hop (phase9-C7;
+# old settle assumed. 10 s (brief D's figure) leaves the floor 4834.33 ms of
+# slack with the board's 56 ms link, 149 ms handler hop and the vehicle's
+# 256 ms response (phase10-B2; 5090.33 without the response from phase9-C7;
 # 5065.33 with the 81 ms link from phase9-W5; 5095.33
 # with the 206 ms hop of phase8-W30, 5191.33 before it). odd_exit's 30 s is
 # decision 3, a stated judgement like the old 3 s: the takeover window is 10 s
-# of it, and the comfortable stop at the bound fits the rest with 9549.33 ms
-# to spare (the demo composition, with its 10 Hz gate's 20 ms path and the
+# of it, and the comfortable stop at the bound fits the rest with 8606.33 ms
+# to spare with its 943 ms response (9549.33 without it; the demo composition, with its 10 Hz gate's 20 ms path and the
 # 300 ms planner placeholder, reads 9223.33; 9198.33 with the 81 ms link
 # and play_launch 0.16.0's 6 ms gate jitter; 9491.33 and 9171.33 with the
 # 206 ms hop, 9683.33 and 9363.33 before phase8-W30).
@@ -394,7 +443,7 @@ hazards:
     guards: [/system/operation_mode/availability]
     on: omission
     entry_speed: &odd_speed_bound 8.33   # m/s = 30 km/h, the ODD speed bound
-    ftti: 10s
+    ftti: { duration: 10s, source: requirement }
     reaction: l3_engaged
   odd_exit:
     severity: ASIL_B        # illustrative; HARA-owned
@@ -406,7 +455,7 @@ hazards:
     on: reported
     when: { field: autonomous, equals: false }
     entry_speed: *odd_speed_bound
-    ftti: 30s
+    ftti: { duration: 30s, source: requirement }
     reaction: l3_engaged
 
 modes:
@@ -418,7 +467,7 @@ modes:
     description: the driver is asked to take over; the ADS keeps driving
     requires: [hpc_alive]
     reaction: island.tor
-    window: { duration: 10s, param: mrm_handler.takeover_request_timeout }
+    window: { duration: 10s, param: mrm_handler.takeover_request_timeout, source: requirement }
     exit: { on: driver_took_over, to: manual }
   comfortable_stop:
     description: in-lane stop by the HPC's planner at the operator's request
@@ -447,7 +496,7 @@ nodes:
       # tick, so listing them would claim a periodic output the node does not
       # produce.
       on_timer:
-        trigger: { timer: { rate_hz: 10 } }
+        trigger: { timer: { rate_hz: 10, param: update_rate } }
         output: [status]
       # `onOperate` -> `publishVelocityLimit()` (phase8-W7): the service
       # callback publishes the limit itself, so the comfortable rung's walk
@@ -468,7 +517,12 @@ nodes:
         output: [max_velocity_candidates]
         safe_state:
           emits: max_velocity_candidates
-          settle: { decel: min_acceleration, jerk: min_jerk }
+          settle:
+            decel: min_acceleration
+            jerk: min_jerk
+            response:
+              duration: 943ms
+              source: { measured: { max: 785.43ms, n: 3, margin: 0.2 } }
     pub:
       # Both are TRANSIENT_LOCAL in the source (QoS(1).transient_local()): a
       # velocity limit is latched so a late planner still sees it. Stated
@@ -495,7 +549,13 @@ nodes:
     paths:
       # `onTimer` -> `publishControlCommand()` + `publishStatus()`.
       on_timer:
-        trigger: { timer: { rate_hz: 30, jitter: 6ms } }
+        trigger:
+          timer:
+            rate_hz: 30
+            param: update_rate
+            jitter:
+              duration: 6ms
+              source: { measured: { max: 4.34ms, n: 1073, margin: 0.2 } }
         output: [emergency_control_cmd, status]
         # This node IS the second half of the island's reaction: mrm_handler
         # reaches it over the /system/mrm/emergency_stop/operate SERVICE, the
@@ -510,7 +570,12 @@ nodes:
         # was a literal 2034ms computed by hand at an assumed 3.0 m/s.
         safe_state:
           emits: emergency_control_cmd
-          settle: { decel: target_acceleration, jerk: target_jerk }
+          settle:
+            decel: target_acceleration
+            jerk: target_jerk
+            response:
+              duration: 256ms
+              source: { measured: { max: 213.11ms, n: 3, margin: 0.2 } }
     sub:
       # Cached in onControlCommand and read on the timer as the ramp seed: a
       # read-latest input, not a trigger. `state: true` says so; without it
@@ -559,7 +624,13 @@ nodes:
       # that order (phase8-W8a dropped TurnIndicatorCmd, GearCmd and
       # EmergencyHolding; see the head of this file).
       on_timer:
-        trigger: { timer: { rate_hz: 10, jitter: 18ms } }
+        trigger:
+          timer:
+            rate_hz: 10
+            param: update_rate
+            jitter:
+              duration: 18ms
+              source: { measured: { max: 14.84ms, n: 1641, margin: 0.2 } }
         output:
           - mrm_state
           - takeover_request_state
@@ -567,7 +638,7 @@ nodes:
         # One tick of `update_rate: 10`. A timer callback that has not
         # finished when the next tick is due is late by any definition, so
         # the period is the budget; it is not a new number.
-        max_latency: 100ms
+        max_latency: { duration: 100ms, source: derived }
       # THE REACTION. This is the same callback body as `on_timer` -- the
       # handler notices the stale availability stamp, or the cleared
       # `autonomous`, on a tick and reacts from there; there is no separate
@@ -629,7 +700,14 @@ nodes:
           - takeover_request_state
           - comfortable_stop_operate
           - emergency_stop_operate
-        max_latency: 149ms
+        max_latency:
+          duration: 149ms
+          source:
+            measured:
+              margin: 0.2
+              terms:
+                tick: { period: 100ms, max: 14.84ms, n: 1641 }
+                work: { max: 25.04ms, n: 13 }
         # The client calls to the operators are named in `output` so the
         # reaction walk can follow the service edges (phase 82). The safe
         # states are declared on the operators, whose outputs command the
@@ -646,7 +724,14 @@ nodes:
       driver_exit:
         trigger: { input: [control_mode] }
         output: [takeover_request_state]
-        max_latency: 149ms
+        max_latency:
+          duration: 149ms
+          source:
+            measured:
+              margin: 0.2
+              terms:
+                tick: { period: 100ms, max: 14.84ms, n: 1641 }
+                work: { max: 25.04ms, n: 13 }
     sub:
       # `max_age` is `timeout_operation_mode_availability: 0.5` from this
       # node's own parameter file. `on_violation` is what makes this
@@ -674,7 +759,10 @@ nodes:
         # the host, offers rclcpp's default AUTOMATIC liveliness, which a
         # MANUAL_BY_TOPIC request is RxO-incompatible with under DDS.
         # Dropping it moves no verdict, total or derived knob.
-        max_age: 500ms
+        max_age:
+          duration: 500ms
+          param: timeout_operation_mode_availability
+          source: requirement
         # THE SERIAL LINK (phase8-W30). This subscriber sits behind the
         # island gateway and the UART, so its transport is its own, not the
         # topic's (a host subscriber of the same topic has none): the
@@ -694,7 +782,9 @@ nodes:
         # by the smallest out-link delay, never under-stated. play_launch
         # 0.14.0 charges it once on the reaction route (F1), so it is no
         # longer inside `call_mrm`.
-        max_transport: 56ms
+        max_transport:
+          duration: 56ms
+          source: { measured: { max: 46.42ms, n: 12, margin: 0.2 } }
         qos: { depth: 1 }
         on_violation:
           # `reported` since phase8-W7: the handler also reacts to the VALUE
@@ -702,7 +792,7 @@ nodes:
           on: [omission, reported]
           mechanism: application
           reaction: call_mrm
-          within: 149ms   # the reaction path's own budget (`reaction-within`)
+          within: { duration: 149ms, source: derived }   # the reaction path's own budget (`reaction-within`)
       kinematic_state: { min_rate_hz: 10, qos: { depth: 1 } }
       # Behind the same link, and downsampled 40 -> 10 Hz by the gateway
       # (demo/l3/router/island-gateway.json5), so a change of mode waits
@@ -711,7 +801,12 @@ nodes:
       # runs (cross-clock, as the link above). 118.78 x 1.2 = 142.54 -> 143.
       # Nothing in the fault arithmetic reads it: the driver's answer is
       # bounded by the window, on the host (phase8-W30).
-      control_mode: { min_rate_hz: 10, max_transport: 143ms, qos: { depth: 1 } }
+      control_mode:
+        min_rate_hz: 10
+        max_transport:
+          duration: 143ms
+          source: { measured: { max: 118.78ms, n: 5, margin: 0.2 } }
+        qos: { depth: 1 }
       comfortable_stop_status: { min_rate_hz: 9, qos: { depth: 1 } }
       emergency_stop_status: { min_rate_hz: 9, qos: { depth: 1 } }
       # Latched, published on CHANGE by default_adapi: no rate is claimed.
@@ -774,14 +869,14 @@ paths:
   island.tor:
     trigger: { input: [/system/operation_mode/availability] }
     output: [/system/takeover_request/state]
-    max_latency: 218ms
+    max_latency: { duration: 218ms, source: derived }
   island.comfortable_stop:
     trigger: { input: [/system/operation_mode/availability] }
     output: [/planning/scenario_planning/max_velocity_candidates]
   island.emergency_stop:
     trigger: { input: [/system/operation_mode/availability] }
     output: [/system/emergency/control_cmd]
-    max_latency: 210ms
+    max_latency: { duration: 210ms, source: requirement }
 
 topics:
   # --- internal to the island: both sides are components in this image -------
