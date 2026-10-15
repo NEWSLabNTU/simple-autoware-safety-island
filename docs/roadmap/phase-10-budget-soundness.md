@@ -400,7 +400,9 @@ with its evidence. Two were confirmed by experiment on 2026-10-15:
 
 - Analysed (not measured) route bounds for the serial link and the
   executor. B7 makes the difference visible: every hazard's total still
-  contains a measured term and reads "measured, not a bound".
+  contains a measured term and reads "measured, not a bound". Phase 11
+  supervises those terms at run time instead
+  (`docs/roadmap/phase-11-supervised-budgets.md`).
 - Where a timer's period and a thread's priority come from. B1 binds the
   period to its parameter, so the two cannot disagree, but the parameter's
   value is still chosen by hand (the 10 Hz `update_rate` is upstream's
