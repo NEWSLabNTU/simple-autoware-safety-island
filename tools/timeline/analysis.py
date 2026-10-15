@@ -332,7 +332,8 @@ def analyze(ev, rows, explain="", windows=None, entry_speed=None):
         # A fault-tick overrun (SUPERVISOR_INJECT) makes call_mrm late; the
         # supervisor's verdict and the safe-state output are its fallback.
         E["sup_inject"] = t_of(_first(ev, isl("SUPERVISOR_INJECT"), after=base))
-        E["sup_verdict"] = t_of(_first(ev, isl("SUPERVISOR_DEADLINE"), after=base))
+        dle = _first(ev, isl("SUPERVISOR_DEADLINE"), after=base)
+        E["sup_verdict"] = t_of(dle)
         sse = _first(ev, isl("SUPERVISOR_SAFE_STATE"), after=base)
         E["sup_safe_state"] = t_of(sse)
         sup_offset = None
@@ -342,6 +343,19 @@ def analyze(ev, rows, explain="", windows=None, entry_speed=None):
             if max_age is not None and call_mrm is not None:
                 sup_offset = max_age + call_mrm
                 E["sup_due"] = E["island_take"] + int(round(sup_offset * 1e6))
+        # The verdict names the due it judged (arg: route << 28 | the due's
+        # uptime ms, low 28 bits); on the board the trace clock is the uptime,
+        # so that due is placed exactly, on the host clock through the
+        # marker's own offset. The take-based one above, from the take's
+        # trace stamp, is up to 1 ms later (the handler reads the uptime in
+        # whole ms).
+        if dle is not None and dle.get("island_ns") is not None:
+            due_low = (dle["value"] & 0x0FFFFFFF) * 1_000_000
+            span = (1 << 28) * 1_000_000
+            k = (dle["island_ns"] - due_low + span // 2) // span
+            due_isl = due_low + k * span
+            E["sup_due_take"] = E.get("sup_due")
+            E["sup_due"] = dle["t_mono_ns"] - dle["island_ns"] + due_isl
         if E.get("sup_due") is not None and (E["sup_inject"] or E["sup_verdict"] or E["sup_safe_state"]):
             obs["sup_due_to_verdict"] = d(E["sup_due"], E["sup_verdict"])
             obs["sup_due_to_safe"] = d(E["sup_due"], E["sup_safe_state"])
@@ -529,7 +543,11 @@ def verdicts(r):
                 out.append(dict(term=term, observed=o.get(key), declared=None, ok=None, note=nv, by=TRACE))
         supervised_rows(add, out, r, fl)
     exp = {"b": "COMFORTABLE_STOP", "encore": "EMERGENCY_STOP"}.get(r["act"])
-    if exp:
+    if exp and o.get("sup_inject_ms") == 0xFFFFFFFF:
+        out.append(dict(term="rung reached", observed=r.get("behavior") or "none", declared=exp, ok=None,
+                        note="the stall never ends: the island's ladder cannot run; its safe state is the "
+                        "supervisor's output (the supervised rows)", by=TRACE))
+    elif exp:
         got = r.get("behavior")
         seq = r.get("behaviors") or []
         note = "escalated from " + ", ".join(b for _, b in seq[:-1]) if len(seq) > 1 else ""
@@ -580,23 +598,30 @@ def supervised_rows(add, out, r, fl):
     tick, switch, src = tl.supervision_ms()
     det = tick + switch
     by = "supervisor (timer), trace"
-    cause = {1: "route deadline", 2: "SWT0 first timeout"}.get(o.get("sup_cause"), o.get("sup_cause"))
+    cause = {1: "route deadline", 2: "SWT0 first timeout", 3: "the executor's reaction hook"}.get(o.get("sup_cause"), o.get("sup_cause"))
     note = (f"due = last take + {o['sup_offset']:.0f} (max_age + call_mrm); detection delay = tick {tick:g} + "
             f"switch {switch:g} ({src})")
     add("supervised: due -> deadline verdict", o.get("sup_due_to_verdict"), det, note, by=by)
     add("supervised: due -> fallback start (safe-state output)", o.get("sup_due_to_safe"), det,
         note + (f"; cause {cause}" if cause else ""), by=by)
     stall = o.get("sup_inject_ms") == 0xFFFFFFFF
-    if stall and o.get("sup_safe_to_standstill") is None:
-        out.append(dict(term="supervised: fallback start -> standstill", observed=None, declared=fl.get("settle"),
-                        ok=None, note="the stall never ends: the island's emergency stop never runs, and the "
-                        "safe-state output (an LED) is wired to no brake in the simulator", by=by))
+    if stall:
+        # the island's emergency stop never runs and the safe-state output (an
+        # LED) is wired to no brake: a standstill the probe sees is the host's
+        # own doing (p11-st1: the speed steps from 4.17 to 0.0 m/s ~1.1 s after
+        # the fault, no island output), so no verdict on it
+        nb = ("the stall never ends: the island's emergency stop never runs, and the safe-state output "
+              "(an LED) is wired to no brake in the simulator; a standstill seen is not the island's")
+        out.append(dict(term="supervised: fallback start -> standstill", observed=o.get("sup_safe_to_standstill"),
+                        declared=fl.get("settle"), ok=None, note=nb, by=by))
+        out.append(dict(term="supervised: total (last sample -> standstill)", observed=o.get("total"),
+                        declared=None if fl.get("total") is None else fl["total"] + det, ok=None, note=nb, by=by))
     else:
         add("supervised: fallback start -> standstill", o.get("sup_safe_to_standstill"), fl.get("settle"),
             "the emergency settle; the vehicle brakes on the late reaction, the safe-state output being an LED",
             by=by)
     tot = None if fl.get("total") is None else fl["total"] + det
-    if not stall or o.get("total") is not None:
+    if not stall:
         add("supervised: total (last sample -> standstill)", o.get("total"), tot,
             "the overrun case: the rung's total + the detection delay", by=by)
         add("supervised: within the FTTI", o.get("total"), fl.get("ftti"), by=by)
@@ -721,6 +746,15 @@ def selftest_supervised(check):
     dt = by.get("detect (last sample -> reaction tick)")
     check("an injected overrun leaves the unsupervised detect row without a verdict",
           dt is not None and dt["ok"] is None and "injected" in dt["note"])
+    # the verdict's own due (arg low 28 bits, uptime ms) on a trace whose
+    # clock is the uptime, the host offset 5 s: the arg says 1548, not the take-based 1549 -> verdict +1.4 ms
+    off = 5000 * M
+    ev3 = [dict(e, t_mono_ns=e["t_mono_ns"] + off, island_ns=e["t_mono_ns"]) if e["source"] == "island"
+           else dict(e, t_mono_ns=e["t_mono_ns"] + off) for e in ev]
+    ev3 = [dict(e, value=1548) if e.get("marker") == "SUPERVISOR_DEADLINE" else e for e in ev3]
+    o3 = analyze(sorted(ev3, key=lambda e: e["t_mono_ns"]), rows)["observed"]
+    check(f"supervised: the due from the verdict's arg -> due->verdict {o3.get('sup_due_to_verdict')}",
+          o3.get("sup_due_to_verdict") is not None and abs(o3["sup_due_to_verdict"] - 1.4) < 1e-6)
     # a stall: no standstill, the safe-state output still within the FTTI
     ev2 = [e for e in ev if e["kind"] != "velocity" or e["t_mono_ns"] < 1000 * M]
     ev2 = [dict(e, value=0xFFFFFFFF) if e.get("marker") == "SUPERVISOR_INJECT" else e for e in ev2

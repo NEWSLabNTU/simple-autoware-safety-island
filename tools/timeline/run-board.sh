@@ -253,7 +253,12 @@ if [ -n "${RB_OVERRUN:-}" ]; then
     [ "$act" = encore ] && [ "$target" = board ] || { echo "run-board: RB_OVERRUN is for the encore on the board" >&2; exit 2; }
     case "$RB_OVERRUN" in stall|[1-9]|[1-9][0-9]|[1-9][0-9][0-9]|[1-9][0-9][0-9][0-9]) ;;
         *) echo "run-board: RB_OVERRUN is <ms> (1..2000) or stall" >&2; exit 2;; esac
-    export SCENARIO_FAULT_CMD="python3 tools/timeline/violations.py fault-overrun --elf '$(readlink -f "$elf")' $RB_OVERRUN"
+    # The trace window is re-armed first (readout.py --rearm-only, attach, no
+    # halt): opened at the arming silence after boot, it is full before an
+    # act that waited for the host's load (p11-ov1: full ~166 s before exit,
+    # no island marker of the act). The re-armed window opens at the next
+    # availability take, a few seconds before the fault.
+    export SCENARIO_FAULT_CMD="python3 tools/timeline/readout.py --target board --elf '$(readlink -f "$elf")' --out /dev/null --rearm-only && python3 tools/timeline/violations.py fault-overrun --elf '$(readlink -f "$elf")' $RB_OVERRUN"
 fi
 : "${RB_GATE:=python3 tools/timeline/scenario.py gate --log $dir/gate.jsonl}"
 : "${RB_PROBE:=python3 tools/timeline/probe.py --out $dir/probe.jsonl}"
@@ -531,6 +536,13 @@ fi
 
 step "1. flash"
 if [ "$target" = board ] && [ "$flash" = 1 ]; then
+    # phase11-S4: the image runs SWT0 (island_supervisor.c). The flash
+    # algorithm runs on the core, and a running SWT0 that nothing feeds
+    # interrupts it into a vector table being erased: twice the first flash
+    # after a run failed with "Memory transfer fault (FAULT ACK) @
+    # 0x20004800" (p11-e1, p11-e2; the retry passed). A reset with the core
+    # halted first leaves SWT0 at its reset state, disabled.
+    run pyocd reset -t s32k344 --halt >/dev/null 2>&1 || echo "   (pyocd reset --halt failed; flashing anyway)"
     run pyocd flash -t s32k344 "$elf" || { echo "run-board: flash failed"; exit 1; }
 else
     echo "   (nothing to flash: target $target, flash=$flash)"

@@ -13,10 +13,14 @@
 /* Route ids. 0: the hpc_loss reaction (mrm_handler/call_mrm on a tick that
  * sees the availability lost), armed from the handler's availability take. */
 #define ISLAND_SUPERVISOR_ROUTE_CALL_MRM_HPC_LOSS 0u
+/* 1: the executor's earliest pending supervised route (nano-ros phase-503,
+ * nros_cpp_executor_route_next_due_us), re-armed after every spin. */
+#define ISLAND_SUPERVISOR_ROUTE_EXECUTOR 1u
 
 /* SUPERVISOR_SAFE_STATE's arg. */
 #define ISLAND_SUPERVISOR_CAUSE_ROUTE 1u
 #define ISLAND_SUPERVISOR_CAUSE_SWT 2u
+#define ISLAND_SUPERVISOR_CAUSE_HOOK 3u /* the executor's reaction hook */
 
 #ifdef __cplusplus
 extern "C" {
@@ -28,6 +32,8 @@ void island_supervisor_done(uint32_t route);
 /* Once per spin, from the spin thread (spin_priority.c): starts SWT0 on the
  * first call, feeds it after. */
 void island_supervisor_spin(void);
+/* After each spin: re-arm route 1 from the executor's next due. */
+void island_supervisor_spin_after(void *executor);
 #ifdef __cplusplus
 }
 #endif

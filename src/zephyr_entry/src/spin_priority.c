@@ -38,6 +38,11 @@ int __wrap_nros_cpp_spin_once(void *handle, int32_t timeout_ms)
 #endif
 #if defined(CONFIG_ISLAND_SUPERVISOR)
 	island_supervisor_spin();
-#endif
+	const int rc = __real_nros_cpp_spin_once(handle, timeout_ms);
+
+	island_supervisor_spin_after(handle);
+	return rc;
+#else
 	return __real_nros_cpp_spin_once(handle, timeout_ms);
+#endif
 }
