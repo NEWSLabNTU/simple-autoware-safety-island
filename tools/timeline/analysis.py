@@ -598,7 +598,7 @@ def supervised_rows(add, out, r, fl):
     tick, switch, src = tl.supervision_ms()
     det = tick + switch
     by = "supervisor (timer), trace"
-    cause = {1: "route deadline", 2: "SWT0 first timeout"}.get(o.get("sup_cause"), o.get("sup_cause"))
+    cause = {1: "route deadline", 2: "SWT0 first timeout", 3: "the executor's reaction hook"}.get(o.get("sup_cause"), o.get("sup_cause"))
     note = (f"due = last take + {o['sup_offset']:.0f} (max_age + call_mrm); detection delay = tick {tick:g} + "
             f"switch {switch:g} ({src})")
     add("supervised: due -> deadline verdict", o.get("sup_due_to_verdict"), det, note, by=by)

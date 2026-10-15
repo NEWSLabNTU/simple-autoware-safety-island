@@ -40,6 +40,8 @@
 #include <zephyr/drivers/watchdog.h>
 #endif
 
+#include <nros/nros_cpp_ffi.h>
+
 #include "../../safety_island_tracing/include/island_trace.h"
 #include "island_supervisor.h"
 
@@ -81,6 +83,8 @@ struct island_supervisor_record {
 	uint32_t spin_gap_max_at_ms; /* when it ended */
 	uint32_t gpio_errors;
 	uint32_t routes;             /* ISLAND_SUPERVISOR_ROUTES */
+	uint32_t hook_calls;         /* nros_app_reaction_hook calls (phase-503) */
+	uint32_t hook_last_rule;     /* the last one's rule code */
 	struct island_supervisor_route route[ISLAND_SUPERVISOR_ROUTES];
 };
 
@@ -91,6 +95,7 @@ static struct k_spinlock lock;
 static struct k_timer due_timer;
 static K_SEM_DEFINE(wake, 0, 1);
 static volatile uint32_t pending_swt;
+static volatile uint32_t pending_hook;
 static bool due_valid[ISLAND_SUPERVISOR_ROUTES];
 static int64_t due_ms[ISLAND_SUPERVISOR_ROUTES];
 
@@ -267,6 +272,10 @@ static void reaction_thread(void *a, void *b, void *c)
 		if (fired_routes != 0u) {
 			safe_state(ISLAND_SUPERVISOR_CAUSE_ROUTE);
 		}
+		if (pending_hook != 0u) {
+			pending_hook = 0u;
+			safe_state(ISLAND_SUPERVISOR_CAUSE_HOOK);
+		}
 		if (pending_swt != 0u) {
 			pending_swt = 0u;
 			safe_state(ISLAND_SUPERVISOR_CAUSE_SWT);
@@ -276,6 +285,41 @@ static void reaction_thread(void *a, void *b, void *c)
 
 K_THREAD_DEFINE(island_supervisor_tid, 1024, reaction_thread, NULL, NULL, NULL,
 		CONFIG_ISLAND_SUPERVISOR_THREAD_PRIORITY, 0, 0);
+
+/*
+ * nano-ros phase-503 (the island's S3): a supervised route row carries a
+ * deadline; the executor reports `route-deadline-runtime` and calls this hook
+ * on the spin thread (it must not block: it only wakes the reaction thread),
+ * and tells the port, after each spin, how far away the earliest pending due
+ * is (nros_cpp_executor_route_next_due_us), which arms route 1 here so the
+ * k_timer catches a callback that never returns as well. The generated entry
+ * installs the hook only when the image has a supervised row; until nano-ros
+ * reads `supervise:` from the model, none has, and route 0 (the handler's own
+ * arming) is the supervised route.
+ */
+void nros_app_reaction_hook(const nros_cpp_reaction_event_t *event, void *ctx)
+{
+	ARG_UNUSED(ctx);
+	island_supervisor_record.hook_calls++;
+	island_supervisor_record.hook_last_rule = event->rule_code;
+	pending_hook = 1u;
+	k_sem_give(&wake);
+}
+
+void island_supervisor_spin_after(void *executor)
+{
+	uint64_t us = UINT64_MAX;
+
+	if (executor == NULL || nros_cpp_executor_route_next_due_us(executor, &us) != NROS_CPP_RET_OK ||
+	    us == UINT64_MAX) {
+		if (due_valid[ISLAND_SUPERVISOR_ROUTE_EXECUTOR]) {
+			island_supervisor_done(ISLAND_SUPERVISOR_ROUTE_EXECUTOR);
+		}
+		return;
+	}
+	island_supervisor_arm(ISLAND_SUPERVISOR_ROUTE_EXECUTOR,
+			      k_uptime_get() + (int64_t)((us + 999u) / 1000u));
+}
 
 void island_supervisor_spin(void)
 {

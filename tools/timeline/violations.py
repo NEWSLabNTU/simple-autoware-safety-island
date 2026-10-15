@@ -72,11 +72,13 @@ STALL = 0xFFFFFFFF
 # island_supervisor.c's record, all u32: the header, then `routes` routes.
 SUP_HEADER = ["magic", "latched", "latch_cause", "latch_uptime_us", "wakes", "timer_expiries",
               "swt_started", "swt_timeout_ms", "swt_fires", "swt_fire_uptime_us", "swt_errors",
-              "spins", "spin_gap_max_us", "spin_gap_max_at_ms", "gpio_errors", "routes"]
+              "spins", "spin_gap_max_us", "spin_gap_max_at_ms", "gpio_errors", "routes", "hook_calls",
+              "hook_last_rule"]
 SUP_ROUTE = ["armed", "due_ms", "arms", "dones", "fired", "fire_due_ms", "fire_verdict_us"]
 SUP_MAGIC = 0x56505553
-SUP_CAUSE = {0: "-", 1: "route deadline", 2: "SWT0 first timeout"}
-SUP_ROUTE_NAME = {0: "hpc_loss reaction (mrm_handler/call_mrm)"}
+SUP_CAUSE = {0: "-", 1: "route deadline", 2: "SWT0 first timeout", 3: "the executor's reaction hook"}
+SUP_ROUTE_NAME = {0: "hpc_loss reaction (mrm_handler/call_mrm)",
+                  1: "the executor's next supervised route (nano-ros phase-503)"}
 ARM_VIA = {0: "not armed", 1: "INIT_DONE", 2: "init failure cleared"}
 # phase10-B3: what `measured` is, for the rules whose name does not say it.
 RULE_NOTE = {
@@ -183,7 +185,8 @@ def supervisor_report(blob):
     else:
         lines.append("  safe-state output not driven")
     lines.append(f"  reaction thread wakes={d['wakes']} timer expiries={d['timer_expiries']} "
-                 f"gpio_errors={d['gpio_errors']}")
+                 f"gpio_errors={d['gpio_errors']}; reaction hook calls={d.get('hook_calls', 0)}"
+                 + (f" (last rule {d['hook_last_rule']})" if d.get("hook_calls") else ""))
     if d["swt_started"]:
         lines.append(f"  SWT0 running, timeout {d['swt_timeout_ms']} ms; first-timeout callbacks {d['swt_fires']}"
                      + (f" (first at uptime {d['swt_fire_uptime_us'] / 1000:.3f} ms)" if d["swt_fires"] else "")

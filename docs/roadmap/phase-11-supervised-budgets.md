@@ -7,10 +7,16 @@ hazard's FTTI. A budget that is neither is reported as such, as a warning
 or an error by project policy. A timer's period gets a feasible range from
 the same arithmetic.
 
-**Status (2026-10-16): plan. Nothing here is implemented.** Grounded in a
-read of rlm (main, v0.1.60), play_launch (main, 0.17.0), nano-ros (the
-island's pin, 79583587cf) and this repository; file:line references are at
-those revisions.
+**Status (2026-10-16): in progress.** S4 is done on the board and S7 for
+hpc_loss (overrun and stall); S6 is drafted on a branch, waiting for the
+release that carries S1 and S2; S7's odd_exit run waits for S6's
+escalation. S3 is merged in nano-ros (#2264) and pinned (16ee271442), its
+hook wired, with no supervised row until nano-ros reads `supervise:` from
+the model. S1 and S2 are on rlm and play_launch main (play_launch's phase
+93), unreleased. The plan below was grounded in a read of rlm (main,
+v0.1.60), play_launch (main, 0.17.0), nano-ros (the island's pin,
+79583587cf) and this repository; file:line references are at those
+revisions.
 
 ## Why
 
@@ -187,6 +193,56 @@ monitor that fires on time, and the rung it can still start, are.
   drives the safe-state output within budget + 1 tick + the switch; SWT0
   catches a stuck spin and the output follows.
 - Size: ~150 LOC C, Kconfig, the contract's platform term for the switch.
+- Status (2026-10-16): done on the board, with the handler arming the route
+  itself (below); the nano-ros hook is wired but has no row to fire yet.
+  `CONFIG_ISLAND_SUPERVISOR` (on in the board conf),
+  `src/zephyr_entry/src/island_supervisor.c`: a `k_timer` re-armed to the
+  earliest due of two routes; its expiry gives a semaphore to a reaction
+  thread at priority 2 (the spin thread runs at 3; a build assert keeps it
+  above) that records `SUPERVISOR_DEADLINE` (arg route << 28 | the due's
+  uptime ms) and drives CAN LED1 (PTE5, node `can_led1` of the board DTS,
+  the brake line's stand-in) with a raw port write, then
+  `SUPERVISOR_SAFE_STATE` (arg the cause: 1 route, 2 SWT0, 3 the
+  executor's hook). It touches neither the executor nor the session. The
+  output latches until reset. SWT0 (`wdt_nxp_s32`) is installed and started
+  at the first spin, fed at the start of every spin, timeout 300 ms
+  (`CONFIG_ISLAND_SUPERVISOR_SWT_MS`), paused while a debugger halts the
+  core; its first-timeout callback wakes the same thread. Once the output
+  is latched the reaction thread feeds SWT0 itself, so the second timeout
+  (the MCU reset, which would also release the output) is left for a
+  reaction thread that cannot run. Everything is in
+  `island_supervisor_record` (SWD; `violations.py supervisor`, and
+  `supervisor.txt` in every act's readout).
+  - Route 0, armed by the handler until nano-ros arms deadlines from the
+    model: every availability take sets due = take + max_age 500 + call_mrm
+    149 (`CONFIG_ISLAND_SUPERVISOR_CALL_MRM_MS`), once the monitors are
+    armed; the call_mrm EXIT of a tick that saw the loss clears it. That is
+    the hpc_loss reaction's deadline, an omission: no take is pending at
+    the fault tick, so a completion-based route monitor (S3's, or B3's
+    `route-latency-runtime`) has nothing to judge there. p11-ov1 shows it:
+    a 300 ms overrun of the fault tick stored three `max-latency-runtime`
+    verdicts (301 ms) and no route verdict.
+  - Route 1, nano-ros phase-503 (S3, pinned at 16ee271442):
+    `nros_app_reaction_hook` wakes the thread (cause 3) and, after every
+    spin, `nros_cpp_executor_route_next_due_us` re-arms route 1. The
+    generated entry installs the hook only when a monitor row is
+    supervised, and no row is until nano-ros reads `supervise:` from the
+    model (it needs the rlm pin carrying S1), so route 1 is idle today.
+  - Board, image 5fa405ff (`just board-build` at 08c8296; FLASH 563,060 B,
+    RAM 277,432 B, DTCM 117,120 B, +488 B DTCM, +1,280 B RAM against the
+    pin's image):
+    - p11-swt1, SWT0 with no route pending (the encore with the act
+      replaced by `violations.py spin-stall`, `island_debug_spin_stall`,
+      `CONFIG_ISLAND_DEBUG_SPIN_STALL`): the spin stalls at uptime
+      92,947.11 ms (`SUPERVISOR_INJECT`), SWT0's first timeout calls back
+      at 93,235.86 ms (288.75 ms later: 300 ms nominal on the 32 kHz SIRC,
+      counted from the last feed) and the output is driven 0.027 ms after
+      the callback, cause SWT0. No reset followed. Before the stall the
+      longest feed-to-feed gap over 20,846 spins was 10.63 ms, so the
+      300 ms timeout is 28 times the longest spin seen.
+    - p11-ov2 and p11-st1 (S7 below): the route's verdict 0.025-0.03 ms
+      after its due and the output 0.036-0.04 ms after it, against the
+      1 ms tick + 1 ms switch the contract states.
 
 ### S5. A feasible range for each timer's period (play_launch)
 
@@ -219,6 +275,34 @@ monitor that fires on time, and the rung it can still start, are.
 - Gate: `play_launch check --explain` lists every budget with its level;
   the unsupervised ones carry their reason; CI on the next play_launch
   release.
+- Status (2026-10-16): drafted, not on main: branch `phase11-s6-draft`
+  (top-level `supervision: { tick: 1ms, switch: 1ms }`; `call_mrm`'s
+  `supervise: { enters: emergency_stop, mechanism: timer }`). It checks
+  clean with play_launch main bfede19e (rlm main 33577ff, built locally):
+  `supervised-fit` hpc_loss 556 + 149 + 2 (tick 1 + switch 1) + the
+  island.emergency_stop route 188.33 + settle 4421.33 = 5316.67 of
+  10,000 ms; odd_exit 15,065.67 of 30,000. play_launch 0.17.0 refuses the
+  keys, so it merges with the release that carries S1 and S2 (the lead
+  coordinates it). The switch is 1 ms by the measurement rule: the largest
+  due -> output measured is 0.04 ms (x 1.2, rounded up to the next ms).
+  Open in the plan as written:
+  - one `supervise:` per budget: `call_mrm` serves both hazards, so
+    odd_exit cannot have `executor` and the comfortable stop while hpc_loss
+    has `timer` and the emergency stop; the draft supervises both with the
+    timer and the emergency stop;
+  - the S4 output is a GPIO, not a ROS path, so `enters: emergency_stop`
+    stands for the brake line it replaces; the checker then charges the
+    island.emergency_stop route, which a stalled executor would not run;
+  - the comfortable settle's escalation is not built. The B2c and B6 runs
+    say "no deceleration by take + 943" is the wrong test: at 30 km/h the
+    speed first falls 940-990 ms after the velocity limit (b2c-b1, b4, b5),
+    still +0.0003 m/s over the speed at the call 965 ms after it in
+    b2c-b5, because `response` is settle minus profile, not the onset of
+    braking. A check against the profile delayed by `response` is the
+    candidate; until it exists the odd_exit run with a stop that does not
+    decelerate (S7) is not done;
+  - `supervision.tick` is one term per contract; an `executor` supervision
+    on the handler's 10 Hz tick reads its clock every 100 ms, not every 1 ms.
 
 ### S7. The board check of a supervised overrun (this repo)
 
@@ -233,6 +317,48 @@ monitor that fires on time, and the rung it can still start, are.
 - Gate: hpc_loss with an overrun and with a stall, and odd_exit with a
   comfortable stop that does not decelerate: each lands in its safe state
   within the FTTI, the overrun row PASS.
+- Status (2026-10-16): hpc_loss done (overrun and stall); odd_exit not
+  done (S6's escalation does not exist). `island_debug_fault_overrun_ms`
+  (`CONFIG_ISLAND_DEBUG_OVERRUN`): the next tick that runs call_mrm
+  busy-waits N ms right after its ENTRY, before the reaction, or forever
+  (0xffffffff). `RB_OVERRUN=<ms>|stall` on the encore: once the vehicle
+  drives the act re-arms the trace window (`readout.py --rearm-only`) and
+  writes the hook (`violations.py fault-overrun`), then the HPC loss;
+  p11-ov1's window, opened at boot, was full before the act. Markers
+  `SUPERVISOR_DEADLINE`, `_SAFE_STATE`, `_INJECT`, appended (no id moves).
+  `analysis.py` rows on an encore where the supervisor acted: due ->
+  verdict and due -> output within tick + switch (`supervision:` of the
+  contract, else 1 + 1 ms); output -> standstill within the emergency
+  settle; last sample -> standstill within the rung's total + the
+  detection delay and the FTTI; last sample -> output within the FTTI. The
+  due is the verdict's own (its arg; the trace clock is the uptime), the
+  take-based one kept beside it. The unsupervised rows of an injected act
+  carry no verdict, a stall's standstill, total and rung neither;
+  `run_summary.py` counts them apart and prints `supervised k/n` and the
+  supervisor record. The `HPC alive` row is taken from the island's takes
+  (`island takes`), the host probe only without a trace. `merge.py` aligns
+  a stalled island (no take after the loss) on its last take. Selftests in
+  `tlcommon.py selftest`.
+  Runs (image 5fa405ff; the planning simulator at Autoware's default
+  `max_vel`, 4.17-4.25 m/s; run directories
+  /mnt/mx500/aeon/worktrees/p11-island/build/timeline/p11-*):
+
+  | run | injected | due -> verdict / output (ms) | output cause | last sample -> output (ms) | output -> standstill / settle (ms) | total / overrun total (ms) | SUMMARY |
+  |---|---|---|---|---|---|---|---|
+  | p11-ov2 | 300 ms | 0.03 / 0.04 | route | 648.47 | 2940.86 / 4421.33 | 3589.34 / 5167.67 | PASS, supervised 6/6 |
+  | p11-st1 | stall | 0.03 / 0.04 | route | 648.25 | - (no island braking) | - | FAIL (act), supervised 3/3 |
+  | p11-ov1 | 300 ms | 0.024 / 0.036 (record) | route | - | - | - | trace full before the act |
+
+  p11-ov2: the reaction tick came 850.86 ms after the last sample (the
+  300 ms overrun), the emergency operator braked 1.86 ms later, standstill
+  3589.34 ms after the last sample, inside 10,000. p11-st1: the island's
+  ladder never ran (MRM state stays NORMAL, no emergency command); the
+  output was driven 648.25 ms after the last sample and is the island's
+  safe state here, which the simulator does not see: the act reads FAIL.
+  The simulated speed stepped from 4.17 to 0.0 m/s about 1.1 s after the
+  fault with no island output, the host's own doing, not judged. In both
+  stall cases SWT0 did not fire: the route latched first and the reaction
+  thread fed SWT0 from then on (p11-swt1 is SWT0's own check).
 
 ## Order
 

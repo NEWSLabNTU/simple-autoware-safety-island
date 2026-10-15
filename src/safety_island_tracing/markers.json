@@ -1,7 +1,7 @@
 {
  "generator": "src/safety_island_tracing/gen_markers.py",
  "contract_sha256": "98e46e3964dcc35a2a24e7d8135600407c85b9ab86c293029b20461e6665288a",
- "table_sha256": "75b15952cfec7c5f875ab93755cd1c102b7be3b37d14e087550cab2d7c37d079",
+ "table_sha256": "bdaac4e043b17cd3b62089feffd32bf3545983defdd09c6992dec1f5815a1e99",
  "entities": {
   "pub": 8,
   "sub": 7,
@@ -443,7 +443,8 @@
    "silence-runtime",
    "timer-overrun-runtime",
    "release-jitter-runtime",
-   "route-latency-runtime"
+   "route-latency-runtime",
+   "route-deadline-runtime"
   ],
   "endpoint_hashes": {
    "8a287f9b": "/mrm_comfortable_stop_operator/clear_velocity_limit",
