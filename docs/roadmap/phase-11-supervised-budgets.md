@@ -14,8 +14,9 @@ reach main with the CI move to play_launch 0.18.0, which carries S1, S2
 and S5 (rlm v0.1.61). S3 is merged in nano-ros (#2264, #2266, #2267,
 #2271, and #2279: a late completion of a supervised route is a deadline
 miss) and pinned at 7874373b01. Open: the comfortable settle cannot be
-`supervise:`d in 0.18.0 (S6), and one escalation's emergency settle
-exceeded its measured bound by 1.54 ms (S6). The plan below was grounded in a read of rlm (main,
+`supervise:`d in 0.18.0 (S6). The emergency response is re-sized to 319 ms
+from 16 stops at 8.30 m/s (S6, gap 2), and the overrun's ~220 ms slower
+stop was the timeline's clock alignment, not the handback (S7, gap 3). The plan below was grounded in a read of rlm (main,
 v0.1.60), play_launch (main, 0.17.0), nano-ros (the island's pin,
 79583587cf) and this repository; file:line references are at those
 revisions.
@@ -103,13 +104,13 @@ is never required.
 | availability `max_transport` | 56 (46.42, n 12) | both hazards | - | no: host stamp, island take, no shared clock. Total loss is caught by `max_age` 500 |
 | `control_mode.max_transport` | 143 (118.78, n 5) | no hazard | - | no (deferred to an Ethernet link, phase 10) |
 | comfortable settle `response` | 943 (785.43, n 3) | odd_exit | escalate to the emergency stop | yes: no deceleration in `kinematic_state` by take + 943 |
-| emergency settle `response` | 256 (213.11, n 3) | hpc_loss, odd_exit floor | none on the island (it is the floor) | observable; no rung below it |
+| emergency settle `response` | 319 (265.34, n 16; was 256 from 213.11, n 3) | hpc_loss, odd_exit floor | none on the island (it is the floor) | observable; no rung below it |
 
-Slack on main (link 56): hpc_loss 5,165.67 of 10,000 ms; odd_exit
-21,393.67 of 30,000 ms. By hand, with d the detection delay: `call_mrm`
+Slack on main (link 56): hpc_loss 5,228.67 of 10,000 ms (5,165.67 with the
+256 ms response); odd_exit 21,393.67 of 30,000 ms. By hand, with d the detection delay: `call_mrm`
 overrunning in hpc_loss gives 5,165.67 + d; the comfortable stop failing
 at its response gives 100 + 56 + 149 + 10,000 + 149 + 943 + d + the
-emergency route 39.33 + the emergency settle 4,421.33 = 15,857.66 + d. Both
+emergency route 39.33 + the emergency settle 4,484.33 = 15,920.66 + d. Both
 fit with seconds to spare, so the arithmetic is not the hard part; the
 monitor that fires on time, and the rung it can still start, are.
 
@@ -341,11 +342,13 @@ monitor that fires on time, and the rung it can still start, are.
     budget 943 + detection 2 + route 188.33 + settle 4421.33 = 16008.67),
     not the settle the response ends. The contract states the island's
     supervision and its overrun case in a comment: 21393.67 + 156 + 2 +
-    188.33 + 4421.33 = 26161.33 ms of 30,000. The variants follow.
+    188.33 + 4421.33 = 26161.33 ms of 30,000 (26224.33 with the 319 ms
+    response, gap 2 below). The variants follow.
   - `--explain` overrun rows (`supervised-fit`): hpc_loss 556 + 149 + 2
     (tick 1 + switch 1) + island.emergency_stop 188.33 + settle 4421.33 =
     5316.67 of 10,000 ms; odd_exit (comfortable and emergency rungs)
-    10305 + 149 + 2 + 188.33 + 4421.33 = 15065.67 of 30,000.
+    10305 + 149 + 2 + 188.33 + 4421.33 = 15065.67 of 30,000. With the
+    319 ms response (gap 2): 5379.67 and 15128.67.
   - The direct path (`island_supervisor.c`, `island_supervisor_set_direct`,
     `_handover`, `_latched`). Once the output latches, the reaction thread
     calls each component's direct function at once and every 33 ms until
@@ -409,15 +412,63 @@ monitor that fires on time, and the rung it can still start, are.
     hop). The emergency lag at 4.14 m/s is now 182-194 ms (441-464 on the
     image before the publishers were express: part of that lag was the tx
     batch).
-  - Open: the emergency settle after an escalation exceeded its bound by
-    1.54 ms once (s6-in4: 4422.87 of 4421.33 from the direct path's first
-    command at 8.30 m/s; lag 269.37 ms over the profile 4153.49, against the
-    measured response 256 = 213.11 x 1.2, n 3). s6-in3, in5 and in6 read
-    4400.38, 4408.66 and 4400.93, and on the image before the express
-    publishers s6-in2 read 4426.44 and s6-in1 4405.22. The ramps of the direct path and of the operator's own path
-    are the same command for command; the overrun is the vehicle's response
-    at the top speed. The budget is not resized here; the response term
-    needs more runs at 8.3 m/s.
+  - Gap 2, the emergency response at 8.3 m/s (done, island main 8316e32).
+    s6-in4 read 4422.87 of 4421.33 with the clocks aligned on the wrong
+    publish (S7, gap 3); re-merged it reads 4416.64. The response was
+    re-sized from the final image's stops at 8.30 m/s anyway: it was 256 =
+    213.11 x 1.2 from 3 runs before the direct path's publishers were
+    express. 16 stops on image 2b8a7985, merged with 5aa6226 (lag = settle -
+    profile at the speed at the first emergency command; 2b8a7985 and
+    74451cc2 differ only in the contract hash string):
+
+    | run | path | entry m/s | settle (ms) | profile at v | lag | handover handler / operator (ms) |
+    |---|---|---|---|---|---|---|
+    | s6-e8-c | direct (hpc_loss) | 8.30 | 4334.64 | 4153.49 | 181.15 | - |
+    | s6-e8-d | direct (hpc_loss) | 8.30 | 4351.46 | 4153.69 | 197.77 | - |
+    | s6-g8e1 | direct (hpc_loss) | 8.30 | 4337.27 | 4153.20 | 184.07 | - |
+    | s6-g8e2 | direct (hpc_loss) | 8.30 | 4340.76 | 4153.69 | 187.07 | - |
+    | s6-g8e3 | direct (hpc_loss) | 8.30 | 4340.77 | 4153.30 | 187.47 | - |
+    | s6-g8e4 | direct (hpc_loss) | 8.30 | 4352.98 | 4153.52 | 199.46 | - |
+    | s6-g8e5 | direct (hpc_loss) | 8.30 | 4350.13 | 4154.09 | 196.04 | - |
+    | s6-in3 | escalation (odd_exit, comfortable inert) | 8.30 | 4400.38 | 4153.43 | 246.95 | 6.11 / 35.53 |
+    | s6-in4 | escalation | 8.30 | 4416.64 | 4153.44 | 263.20 | 6.99 / 36.04 |
+    | s6-in5 | escalation | 8.30 | 4403.56 | 4153.46 | 250.10 | 6.00 / 35.53 |
+    | s6-in6 | escalation | 8.30 | 4400.16 | 4153.45 | 246.71 | 5.83 / 35.54 |
+    | s6-g8i1 | escalation | 8.30 | 4413.40 | 4153.48 | 259.92 | 4.87 / 34.54 |
+    | s6-g8i2 | escalation | 8.30 | 4395.02 | 4153.46 | 241.56 | 6.35 / 35.56 |
+    | s6-g8i3 | escalation | 8.30 | 4393.71 | 4153.44 | 240.27 | 6.63 / 36.50 |
+    | s6-g8i4 | escalation | 8.30 | 4407.46 | 4153.45 | 254.01 | 5.40 / 31.52 |
+    | s6-g8i5 | escalation | 8.30 | 4418.77 | 4153.43 | 265.34 | 7.34 / 33.99 |
+
+    Direct 181.15-199.46 ms (n 7), escalation 240.27-265.34 ms (n 9). By
+    the contract's rule, 265.34 x 1.2 = 318.41 -> 319: settle 4484.33,
+    hpc_loss 5228.67 of 10,000 (overrun row 5379.67), the route-2 overrun
+    case 26224.33 of 30,000. Every run's settle is under 4484.33. The
+    direct encores' totals (last sample -> standstill) 4900.28-4958.21.
+    Excluded: s6-e8-1 and s6-e8-a (lag 206.16, 208.06; image 6eb8371f) and
+    s6-in1, s6-in2 (267.84, 268.60; 489fdf39, before the express
+    publishers).
+
+    The escalation is not a different command. Its first command seeds from
+    the last control command (acceleration -0.03 against -0.066 in the
+    encore; the inert comfortable stop leaves the host's command at 8.3
+    m/s, nothing of the comfortable state in it), and the ramps match: the
+    host receives acceleration -2.5 at 1647-1660 ms and velocity 0 at
+    4158-4172 ms after the first command on both paths, no step back in
+    either. The gate forwards the first decelerating command 7-30 ms
+    (direct) and 34-43 ms (escalation) after it, and the speed first drops
+    326-335 ms against 350-366 ms. The rest is the vehicle: the encore
+    brakes ~63 m along the 315 m straight, the escalation ~251 m (11 s more
+    at 8.3 m/s; distance from the integrated speed). The mean deceleration
+    1.8-3.8 s after the command is 2.506-2.512 m/s2 in the encores and
+    2.436-2.467 in the escalations, against the 2.5 commanded. The likely
+    cause is the road: the planning simulator has
+    `enable_road_slope_simulation: true`, and the lanelet map's elevation
+    (node `ele`, averaged per 20 m along the straight) is flat around 63 m
+    and falls about 0.2 m over the 80 m before 280 m (~0.25 %, ~0.025 m/s2;
+    same sign, a little under the 0.04-0.07 seen). Not isolated: no run
+    braked at both places on one path. The response is the vehicle's,
+    wherever on the route it brakes, so the escalations' sample sizes it.
   - Before this unit's decisions, the draft's image (d2b696c, pin
     573490978d) showed the timer route catching the overrun of one long
     callback (p11-s6-b1: route 1 fired at its due +0.033 ms; the executor
@@ -446,14 +497,18 @@ monitor that fires on time, and the rung it can still start, are.
 
   | run | act, injected | entry m/s | due -> verdict / output / emergency command (ms) | command -> standstill / settle (ms) | total / overrun case (ms) | handover handler / operator (ms) | SUMMARY |
   |---|---|---|---|---|---|---|---|
-  | s6-ov4 | encore, 300 ms | 4.16 | 0.03 / 0.05 / 0.70 | 3014.55 / 4421.33 | 3664.15 / 5316.67 | 235.23 / 232.70 | PASS, supervised 7/7 |
-  | s6-ov5 | encore, 300 ms | 4.16 | 0.03 / 0.04 / 0.57 | 3010.34 / 4421.33 | 3659.13 / 5316.67 | 238.82 / 235.84 | PASS, supervised 7/7 |
-  | s6-st4 | encore, stall | 4.16 | 0.03 / 0.04 / 0.57 | 2789.84 / 4421.33 | 3438.76 / 5316.67 | - / - | PASS, supervised 7/7 |
-  | s6-st5 | encore, stall | 4.16 | 0.03 / 0.04 / 0.57 | 2799.66 / 4421.33 | 3449.23 / 5316.67 | - / - | PASS, supervised 7/7 |
+  | s6-ov4 | encore, 300 ms | 4.15 | 0.03 / 0.05 / 0.70 | 2789.04 / 4421.33 | 3438.64 / 5316.67 | 235.23 / 232.70 | PASS, supervised 7/7 |
+  | s6-ov5 | encore, 300 ms | 4.15 | 0.03 / 0.04 / 0.57 | 2775.74 / 4421.33 | 3424.52 / 5316.67 | 238.82 / 235.84 | PASS, supervised 7/7 |
+  | s6-st4 | encore, stall | 4.16 | 0.03 / 0.04 / 0.57 | 2777.27 / 4421.33 | 3426.19 / 5316.67 | - / - | PASS, supervised 7/7 |
+  | s6-st5 | encore, stall | 4.16 | 0.03 / 0.04 / 0.57 | 2795.07 / 4421.33 | 3444.64 / 5316.67 | - / - | PASS, supervised 7/7 |
+  | s6-ov6 | encore, 300 ms | 4.15 | 0.03 / 0.05 / 0.58 | 2776.24 / 4484.33 | 3425.37 / 5379.67 | 230.60 / 227.88 | PASS, supervised 7/7 |
+  | s6-ov7 | encore, 300 ms | 4.15 | 0.03 / 0.04 / 0.57 | 2786.55 / 4484.33 | 3435.84 / 5379.67 | 224.47 / 221.64 | PASS, supervised 7/7 |
+  | s6-st6 | encore, stall | 4.16 | 0.03 / 0.05 / 0.70 | 2787.00 / 4484.33 | 3436.70 / 5379.67 | - / - | PASS, supervised 7/7 |
+  | s6-st7 | encore, stall | 4.16 | 0.03 / 0.04 / 0.57 | 2801.28 / 4484.33 | 3450.57 / 5379.67 | - / - | PASS, supervised 7/7 |
   | s6-in3 | b, comfortable inert | 8.30 | 0.03 / - / 0.57 (served -> due 11094.11 of 11096) | 4400.38 / 4421.33 | 25698.03 / 26161.33 | 6.11 / 35.53 | PASS, supervised 6/6 |
-  | s6-in4 | b, comfortable inert | 8.30 | 0.03 / - / 0.56 (served -> due 11093.91 of 11096) | 4422.87 / 4421.33 FAIL | 25701.46 / 26161.33 | 6.99 / 36.04 | act PASS; 1 row FAIL |
-  | s6-in5 | b, comfortable inert | 8.30 | 0.03 / - / 0.57 (served -> due 11094.13 of 11096) | 4408.66 / 4421.33 | 25674.78 / 26161.33 | 6.00 / 35.53 | PASS, supervised 6/6 |
-  | s6-in6 | b, comfortable inert | 8.30 | 0.03 / - / 0.57 (served -> due 11094.91 of 11096) | 4400.93 / 4421.33 | 25624.63 / 26161.33 | 5.83 / 35.54 | PASS, supervised 6/6 |
+  | s6-in4 | b, comfortable inert | 8.30 | 0.03 / - / 0.56 (served -> due 11093.91 of 11096) | 4416.64 / 4421.33 | 25701.46 / 26161.33 | 6.99 / 36.04 | PASS, supervised 6/6 |
+  | s6-in5 | b, comfortable inert | 8.30 | 0.03 / - / 0.57 (served -> due 11094.13 of 11096) | 4403.56 / 4421.33 | 25674.78 / 26161.33 | 6.00 / 35.53 | PASS, supervised 6/6 |
+  | s6-in6 | b, comfortable inert | 8.30 | 0.03 / - / 0.57 (served -> due 11094.91 of 11096) | 4400.16 / 4421.33 | 25624.63 / 26161.33 | 5.83 / 35.54 | PASS, supervised 6/6 |
 
   The total is from the last sample (encore) or the ODD exit (b). In the
   stall the handler never runs again: mrm_state stays MRM_OPERATING /
@@ -461,9 +516,34 @@ monitor that fires on time, and the rung it can still start, are.
   standstill (nothing on the island can report MRM_SUCCEEDED), and the
   vehicle stops on the island's command, which the host now receives at
   30 Hz (the earlier stall runs stopped on the host's own heartbeat
-  timeout). The overrun case hands over once the spin thread resumes; its
-  command -> standstill is ~220 ms longer than the stall's on the same
-  ramp, not explained yet. s6-in4's row is S6's open item. Route 2's due
+  timeout). The overrun case hands over once the spin thread resumes.
+
+  Gap 3 (done, island main 5aa6226): the overrun's command -> standstill
+  read ~220 ms longer than the stall's (3010-3015 against 2790-2800) because
+  `merge.py` aligned the two clocks on the wrong publish. The host's first
+  MRM_OPERATING after an overrun is the direct path's (slot 0, published
+  from the reaction thread with no `PUB_MRM_HANDLER_MRM_STATE` marker); the
+  handler publishes its own only when the spin thread resumes, ~231 ms
+  later. Anchor 1 paired the host's receipt with the handler's marker, and
+  as the smallest publish/receipt pair it set the offset: s6-ov4/ov5 were
+  aligned 220.78 / 223.69 ms off (anchor 2 disagreed by exactly that), so
+  the host's standstill landed that much later against the island's
+  command. A stall publishes no handler mrm_state and aligned on anchor 2.
+  The handback itself is clean, from the host's own samples (no
+  alignment): command -> standstill 2685.33 / 2671.46 ms (overrun) against
+  2681.82 / 2692.86 (stall); the operator's first own command follows the
+  direct path's last 16 ms later, one step further down the same ramp
+  (-0.289 -> -0.304 m/s2, the jerk unchanged), with no gap, repeat or
+  restart. The fix counts the direct path's slot-0 calls as mrm_state
+  publishes in anchor 1 and the refinement (selftest in `tlcommon.py`);
+  every run's anchors now disagree by 4.6-23 ms. The escalations moved by
+  the handler's ~6 ms handover (s6-in4 4422.87 -> 4416.64), which also
+  closes S6's 1.54 ms overrun. Rows above: s6-ov4/5, st4/5 and in3-6
+  re-merged from their traces (copies in
+  /mnt/mx500/aeon/worktrees/p11-gap-re; the run directories keep the
+  original merge); s6-ov6/7, st6/7 new on image 74451cc2 (2b8a7985
+  with the contract hash of 8316e32), judged against the 319 ms response.
+  Route 2's due
   is timed from the operator's operate path, where the settle starts: the
   handler arms it after sending the request, up to ~1.4 ms after its call
   marker (s6-in6 read 11096.42 from the call). The output
@@ -538,8 +618,6 @@ on the board. One agent owns the board.
   its response) that the platform checks to standstill, with the overrun
   row charging the whole settle (profile + response), not the response
   alone. Until then the island's route 2 is stated in a contract comment.
-- The emergency response term at 8.3 m/s: more runs (s6-in4 read 269.37
-  ms of lag against 256).
 
 ## Not in this phase
 
