@@ -257,6 +257,13 @@ def selftest(check):
         got = supervisor(d)
         check(f"supervisor: the record in one line: {got}",
               got == "; supervisor latched (route deadline), SWT0 fires 1, spin gap max 34.100 ms")
+        with open(os.path.join(d, "supervisor.txt"), "a") as f:
+            f.write("  priority plan: transport [4, 4], pool.app [5, 14], tier 5, reaction 3\n"
+                    "  priorities at the first spin: spin thread 5, reaction thread 3; zpico_read 4\n"
+                    "  priorities: AGREE with the plan\n")
+        got = supervisor(d)
+        check(f"supervisor: the derived priorities in the line: {got}",
+              got.endswith(", priorities spin 5 / reaction 3 AGREE with the plan"))
 
 
 def table(d):
@@ -301,6 +308,11 @@ def supervisor(d):
         s += f", SWT0 fires {swt.group(1)}"
     if gap:
         s += f", spin gap max {gap.group(1)} ms"
+    # phase13-D4: the derived priorities against what the kernel gave
+    pr = re.search(r"priorities at the first spin: spin thread (-?\d+), reaction thread (-?\d+)", t)
+    agree = re.search(r"  priorities: (AGREE|DISAGREE)", t)
+    if pr and agree:
+        s += f", priorities spin {pr.group(1)} / reaction {pr.group(2)} {agree.group(1)} with the plan"
     return s
 
 

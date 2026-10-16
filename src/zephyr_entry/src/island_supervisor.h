@@ -9,6 +9,8 @@
 #include <stdint.h>
 
 #define ISLAND_SUPERVISOR_ROUTES 3
+/* phase13-D4: threads listed in the record (the image has about eight). */
+#define ISLAND_SUPERVISOR_PRIO_THREADS 12
 
 /* Route ids. 0: the hpc_loss reaction (mrm_handler/call_mrm on a tick that
  * sees the availability lost), armed from the handler's availability take. */
@@ -53,7 +55,7 @@ extern "C" {
 void island_supervisor_arm(uint32_t route, int64_t due_ms);
 /* The route's output came in time: clear its due. */
 void island_supervisor_done(uint32_t route);
-/* Once per spin, from the spin thread (spin_priority.c): starts SWT0 on the
+/* Once per spin, from the spin thread (spin_hook.c): starts SWT0 on the
  * first call, feeds it after. */
 void island_supervisor_spin(void);
 /* After each spin: re-arm route 1 from the executor's next due. */

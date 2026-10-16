@@ -46,11 +46,13 @@ features = ["params"]
 pkg = "autoware_mrm_emergency_stop_operator"
 class = "autoware::mrm_emergency_stop_operator::MrmEmergencyStopOperator"
 name = "mrm_emergency_stop_operator"
+group_tiers = { main = "mrm" }
 
 [[component]]
 pkg = "autoware_mrm_comfortable_stop_operator"
 class = "autoware::mrm_comfortable_stop_operator::MrmComfortableStopOperator"
 name = "mrm_comfortable_stop_operator"
+group_tiers = { main = "mrm" }
 
 # stop_mode_operator left the image in phase8-W8a (phase-8 doc D4): Autoware
 # 1.5.0 launches it only with the control-command gate, the demo runs
@@ -61,18 +63,28 @@ name = "mrm_comfortable_stop_operator"
 pkg = "autoware_mrm_handler"
 class = "autoware::mrm_handler::MrmHandler"
 name = "mrm_handler"
+group_tiers = { main = "mrm" }
 
-# [[component]]
-# pkg = "autoware_mrm_handler"                       # P3
-# class = "autoware::mrm_handler::MrmHandler"
-# name = "mrm_handler"
-# group_tiers = { control = "ctrl" }
-
-# ── Tiers (P4) — MRM control loop isolated from telemetry ──────────────────
-# [tiers.ctrl]
-# spin_period_us = 33_333            # 30 Hz, matches upstream update_rate
-# [tiers.telem]
-# spin_period_us = 100_000
+# ── The executor's tier (phase 13) ─────────────────────────────────────────
+# One tier, `mrm`, and every component's node-level group `main` bound to it
+# (`group_tiers` above). It states NO priority and no platform sub-table: the
+# priority is ALLOCATED by nano-ros (RFC-0079, issue 1426 rule 2) from the
+# contract's ranks (launch/safety_island.contract.yaml: the timer rates, the
+# path deadlines, the reaction chains), inside the priority plan of the image
+# being built (its .config: the transport band, pool.app). A tier is one
+# thread, so it takes the most urgent of its members' ranks, and the build
+# prints the split it loses as a degradation. `nros codegen entry` records the
+# plan and the tier beside the generated entry (nros_priority_plan.json, .h).
+#
+# One tier, not one per rate: each tier is an executor of its own, 53,776 B of
+# storage on the board image, which does not fit (phase-13 doc).
+#
+# `spin_period` is the spin loop's park timeout, not a priority: 10 ms is what
+# `run_components` used (spin_once(10)), so moving to the tier runner changes
+# the priority and nothing else. Unset, the C tier runner would spin with a
+# 1 ms timeout (nano-ros derives no spin period yet).
+[tiers.mrm]
+spin_period = "10ms"
 
 # No [deploy.*] target blocks: nodes stay UNPLACED in the model, i.e.
 # board-agnostic (#236 semantics) — the SAME model bakes into the native

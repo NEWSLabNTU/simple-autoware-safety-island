@@ -737,6 +737,43 @@ board-build: sync
     # build-board present that surfaced as `ninja: error: unknown target
     # 'rom_report'` -- an error about the report, from a directory nobody built.
     just BOARD_BUILD_DIR={{BOARD_BUILD_DIR}} board-size
+    # phase13-D5: the image against the priority plan it was derived from.
+    just BOARD_BUILD_DIR={{BOARD_BUILD_DIR}} priority-check
+
+# phase13-D5: hold the board image to the priority plan nano-ros derived for
+# it (nano-ros RFC-0079): `nros codegen entry` records the plan and the tier
+# priorities in <build>/nros_priority_plan.json; nano-ros's checker resolves
+# the band again from the image's .config and compares, and compares the
+# generated entry's tier table. With board=1 it also reads the supervisor
+# record of the running board over SWD (the priorities the kernel gave the
+# spin thread, the reaction thread and zenoh-pico's tasks at the first spin)
+# and fails unless they agree with the plan.
+#
+# Check the board image (and with board=1 the running board) against its derived priority plan.
+priority-check board="0":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    b="{{BOARD_BUILD_DIR}}"
+    echo "priority-check: $b"
+    python3 "{{NROS_ROOT}}/scripts/check-tier-priority-plan-image.py" --derived-plan \
+        "$b/nros_priority_plan.json" "$b/zephyr/.config" "$b/zephyr_entry_nros_main_generated.cpp"
+    python3 - "$b/nros_priority_plan.json" <<'PY'
+    import json, sys
+    r = json.load(open(sys.argv[1]))
+    p = r["plan"]
+    print(f"  plan: transport {p['reserved'].get('transport')}, pool.app {p['app']} ({p['source']})")
+    for t in r["tiers"]:
+        print(f"  tier {t['name']}: {t['priority']} ({t['origin']}; spin period {t['spin_period_us']} us)")
+    for n in r["ranks"]:
+        print(f"  rank {n['node']}: {n['priority']} (period {n['period_us']} us, deadline {n['deadline_us']} us)")
+    PY
+    if [ "{{board}}" = "1" ]; then
+        source scripts/board-env.sh "{{NROS_ROOT}}" >/dev/null
+        out="$(python3 tools/timeline/violations.py supervisor --elf "$b/zephyr/zephyr.elf")"
+        printf '%s\n' "$out" | grep -E "priorit" || true
+        printf '%s\n' "$out" | grep -q "priorities: AGREE with the plan" \
+            || { echo "priority-check: the board's priorities do not agree with the plan" >&2; exit 1; }
+    fi
 
 # CARLA demo C5: the booth image, the gate image plus snippet island-booth
 # (src/zephyr_entry/snippets/island-booth: CONFIG_ISLAND_LED=y, the MRM state on

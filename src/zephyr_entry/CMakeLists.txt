@@ -256,10 +256,11 @@ if(CONFIG_ISLAND_BUTTONS)
     target_sources(app PRIVATE src/island_buttons.c)
 endif()
 
-# phase9 spin latency: the executor runs above the transport once registration
-# is done (src/spin_priority.c).
-if(CONFIG_ISLAND_SPIN_RAISE OR CONFIG_ISLAND_SUPERVISOR)
-    target_sources(app PRIVATE src/spin_priority.c)
+# phase11-S4: the supervisor's per-spin hook (src/spin_hook.c). The spin
+# thread's priority is not set here: the executor is the bringup's tier `mrm`,
+# its priority allocated by nano-ros (phase13-D3).
+if(CONFIG_ISLAND_SUPERVISOR)
+    target_sources(app PRIVATE src/spin_hook.c)
     zephyr_ld_options(-Wl,--wrap=nros_cpp_spin_once)
 endif()
 
@@ -268,4 +269,8 @@ endif()
 # island_supervisor.h.
 if(CONFIG_ISLAND_SUPERVISOR)
     target_sources(app PRIVATE src/island_supervisor.c)
+    # phase13-D4: the reaction thread's priority is placed from the priority
+    # plan `nros codegen entry` writes beside the generated entry
+    # (nros_priority_plan.h, nano-ros RFC-0079).
+    target_include_directories(app PRIVATE ${CMAKE_BINARY_DIR})
 endif()

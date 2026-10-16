@@ -66,6 +66,7 @@
  */
 #include <stdbool.h>
 #include <stdint.h>
+#include <string.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/init.h>
@@ -80,13 +81,36 @@
 #include "../../safety_island_tracing/include/island_trace.h"
 #include "island_supervisor.h"
 
-#if defined(CONFIG_ISLAND_SPIN_RAISE)
-BUILD_ASSERT(CONFIG_ISLAND_SUPERVISOR_THREAD_PRIORITY < CONFIG_ISLAND_SPIN_THREAD_PRIORITY,
-	     "the reaction thread must run above the spin thread");
-#else
-BUILD_ASSERT(CONFIG_ISLAND_SUPERVISOR_THREAD_PRIORITY < CONFIG_MAIN_THREAD_PRIORITY,
-	     "the reaction thread must run above the spin thread");
+/*
+ * phase13-D4: the reaction thread's priority comes from the priority plan the
+ * executor's tier was allocated from (nano-ros RFC-0079; the header is written
+ * beside the generated entry by `nros codegen entry`): one above the most
+ * urgent of the transport band and the tiers. The executor is what may be
+ * stuck, and zenoh-pico's read, lease and flush tasks must not hold the
+ * reaction off either. On this image: transport 4, tier 5, reaction 3.
+ */
+#include <nros_priority_plan.h>
+
+#if !NROS_PRIORITY_PLAN_FROM_IMAGE
+#error "the priority plan is the Kconfig projection, not this image's (no --dotconfig)"
 #endif
+#if !NROS_PRIORITY_PLAN_SMALLER_IS_URGENT
+#error "the supervisor's arithmetic assumes Zephyr's smaller-is-urgent priorities"
+#endif
+#if NROS_ENTRY_TIER_COUNT < 1
+#error "the entry runs no tier: the executor's priority is not from the plan"
+#endif
+#define ISLAND_PLAN_MIN_(a, b) ((a) < (b) ? (a) : (b))
+#define ISLAND_SUPERVISOR_PRIORITY                                                                 \
+	(ISLAND_PLAN_MIN_(NROS_PRIORITY_PLAN_RESERVED_TRANSPORT_LO,                                \
+			  NROS_ENTRY_TIERS_MOST_URGENT_PRIORITY) - 1)
+BUILD_ASSERT(ISLAND_SUPERVISOR_PRIORITY < NROS_ENTRY_TIERS_MOST_URGENT_PRIORITY,
+	     "the reaction thread must run above every executor tier");
+BUILD_ASSERT(ISLAND_SUPERVISOR_PRIORITY < NROS_PRIORITY_PLAN_RESERVED_TRANSPORT_LO,
+	     "the reaction thread must run above the transport band");
+BUILD_ASSERT(ISLAND_SUPERVISOR_PRIORITY < CONFIG_MAIN_THREAD_PRIORITY,
+	     "the reaction thread must run above registration");
+BUILD_ASSERT(ISLAND_SUPERVISOR_PRIORITY >= 0, "the reaction thread stays preemptible");
 
 #define ISLAND_SUPERVISOR_MAGIC 0x56505553u /* "SUPV" little-endian */
 
@@ -134,6 +158,24 @@ struct island_supervisor_record {
 	uint32_t standstill_met;     /* route 2 dues judged at standstill */
 	uint32_t speed_mm_s;         /* the last noted |v| */
 	uint32_t speed_at_ms;        /* its uptime */
+	/* phase13-D4, after route 2's words so every offset above holds: the
+	 * plan this image was built from and what the kernel gave the threads,
+	 * taken on the first spin (the tier has adopted its priority by then).
+	 * Signed values stored as int32. */
+	uint32_t prio_taken;           /* 1 once the words below are set */
+	int32_t prio_plan_transport_lo;
+	int32_t prio_plan_transport_hi;
+	int32_t prio_plan_app_lo;
+	int32_t prio_plan_app_hi;
+	int32_t prio_plan_tier;        /* the most urgent tier's planned priority */
+	int32_t prio_plan_reaction;    /* ISLAND_SUPERVISOR_PRIORITY */
+	int32_t prio_spin;             /* the spin thread, observed */
+	int32_t prio_reaction;         /* the reaction thread, observed */
+	uint32_t prio_threads;         /* entries of thread[] filled */
+	struct {
+		char name[16];
+		int32_t prio;
+	} thread[ISLAND_SUPERVISOR_PRIO_THREADS];
 };
 
 volatile struct island_supervisor_record island_supervisor_record;
@@ -400,7 +442,43 @@ static void reaction_thread(void *a, void *b, void *c)
 }
 
 K_THREAD_DEFINE(island_supervisor_tid, CONFIG_ISLAND_SUPERVISOR_STACK_SIZE, reaction_thread, NULL, NULL, NULL,
-		CONFIG_ISLAND_SUPERVISOR_THREAD_PRIORITY, 0, 0);
+		ISLAND_SUPERVISOR_PRIORITY, 0, 0);
+
+static void prio_thread_cb(const struct k_thread *t, void *user)
+{
+	ARG_UNUSED(user);
+	const uint32_t i = island_supervisor_record.prio_threads;
+
+	if (i >= ISLAND_SUPERVISOR_PRIO_THREADS) {
+		return;
+	}
+	const char *name = k_thread_name_get((k_tid_t)t);
+
+	if (name != NULL) {
+		strncpy((char *)island_supervisor_record.thread[i].name, name,
+			sizeof(island_supervisor_record.thread[i].name) - 1u);
+	}
+	island_supervisor_record.thread[i].prio = k_thread_priority_get((k_tid_t)t);
+	island_supervisor_record.prio_threads = i + 1u;
+}
+
+/* phase13-D4: the plan and the priorities the kernel gave, once. */
+static void prio_take(void)
+{
+	island_supervisor_record.prio_plan_transport_lo = NROS_PRIORITY_PLAN_RESERVED_TRANSPORT_LO;
+	island_supervisor_record.prio_plan_transport_hi = NROS_PRIORITY_PLAN_RESERVED_TRANSPORT_HI;
+	island_supervisor_record.prio_plan_app_lo = NROS_PRIORITY_PLAN_APP_LO;
+	island_supervisor_record.prio_plan_app_hi = NROS_PRIORITY_PLAN_APP_HI;
+	island_supervisor_record.prio_plan_tier = NROS_ENTRY_TIERS_MOST_URGENT_PRIORITY;
+	island_supervisor_record.prio_plan_reaction = ISLAND_SUPERVISOR_PRIORITY;
+	island_supervisor_record.prio_spin = k_thread_priority_get(k_current_get());
+	island_supervisor_record.prio_reaction = k_thread_priority_get(island_supervisor_tid);
+	island_supervisor_record.prio_threads = 0u;
+#if defined(CONFIG_THREAD_MONITOR)
+	k_thread_foreach_unlocked(prio_thread_cb, NULL);
+#endif
+	island_supervisor_record.prio_taken = 1u;
+}
 
 /*
  * nano-ros phase-503 (the island's S3): a supervised route row carries a
@@ -439,6 +517,9 @@ void island_supervisor_spin_after(void *executor)
 
 void island_supervisor_spin(void)
 {
+	if (island_supervisor_record.prio_taken == 0u) {
+		prio_take();
+	}
 #if defined(CONFIG_ISLAND_DEBUG_SPIN_STALL)
 	if (island_debug_spin_stall != 0u) {
 		ISLAND_TRACE(ISLAND_MK_SUPERVISOR_INJECT, 0xFFFFFFFEu);

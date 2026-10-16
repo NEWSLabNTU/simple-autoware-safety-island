@@ -89,6 +89,16 @@ SUP_DIRECT = ["registered", "calls", "first_uptime_us", "handover", "handover_up
 SUP_DIRECT_SLOTS = 2
 SUP_DIRECT_NAME = {0: "mrm_handler (mrm_state, hazard lights)", 1: "emergency operator (braking command)"}
 SUP_TAIL = ["standstill_met", "speed_mm_s", "speed_at_ms"]
+# phase13-D4: after the tail, the priority plan the image was built from and
+# what the kernel gave the threads at the first spin (int32 but prio_taken
+# and prio_threads), then SUP_PRIO_THREADS x (name[16], int32 prio).
+SUP_PRIO = ["prio_taken", "prio_plan_transport_lo", "prio_plan_transport_hi", "prio_plan_app_lo",
+            "prio_plan_app_hi", "prio_plan_tier", "prio_plan_reaction", "prio_spin", "prio_reaction",
+            "prio_threads"]
+SUP_PRIO_THREADS = 12
+# zenoh-pico's tasks, by the name the platform gives them, sit in the
+# transport band (read, lease and the tx flush task).
+TRANSPORT_THREADS = ("zpico_read", "zpico_lease", "zpico_flush")
 SUP_MAGIC = 0x56505553
 SUP_CAUSE = {0: "-", 1: "route deadline", 2: "SWT0 first timeout", 3: "the executor's reaction hook"}
 SUP_ROUTE_NAME = {0: "hpc_loss reaction (mrm_handler/call_mrm)",
@@ -196,7 +206,47 @@ def supervisor_decode(blob):
     o = off + SUP_DIRECT_SLOTS * len(SUP_DIRECT)
     if o + len(SUP_TAIL) <= n:
         hdr.update(zip(SUP_TAIL, w[o:o + len(SUP_TAIL)]))
+    o += len(SUP_TAIL)
+    if o + len(SUP_PRIO) <= n:
+        signed = struct.unpack(f"<{len(SUP_PRIO)}i", blob[o * 4:(o + len(SUP_PRIO)) * 4])
+        hdr.update(zip(SUP_PRIO, signed))
+        b = (o + len(SUP_PRIO)) * 4
+        threads = []
+        for i in range(min(max(hdr["prio_threads"], 0), SUP_PRIO_THREADS)):
+            e = blob[b + i * 20:b + (i + 1) * 20]
+            if len(e) < 20:
+                break
+            name = e[:16].split(b"\0", 1)[0].decode("ascii", "replace")
+            threads.append((name, struct.unpack("<i", e[16:20])[0]))
+        hdr["threads"] = threads
     return hdr
+
+
+def priority_findings(d):
+    """phase13-D4: the record's plan against what the kernel gave. Empty when
+    every thread is where the plan put it; None when the record has no
+    priority words (an image before phase 13, or no spin yet)."""
+    if not d.get("prio_taken"):
+        return None
+    out = []
+    if d["prio_spin"] != d["prio_plan_tier"]:
+        out.append(f"spin thread at {d['prio_spin']}, the plan's tier at {d['prio_plan_tier']}")
+    if d["prio_reaction"] != d["prio_plan_reaction"]:
+        out.append(f"reaction thread at {d['prio_reaction']}, planned {d['prio_plan_reaction']}")
+    lo, hi = d["prio_plan_transport_lo"], d["prio_plan_transport_hi"]
+    seen = {n: p for n, p in d.get("threads", [])}
+    for name in TRANSPORT_THREADS:
+        if name not in seen:
+            out.append(f"no thread named {name} in the record")
+        elif not lo <= seen[name] <= hi:
+            out.append(f"{name} at {seen[name]}, outside the transport band [{lo}, {hi}]")
+    if not d["prio_plan_app_lo"] <= d["prio_spin"] <= d["prio_plan_app_hi"]:
+        out.append(f"spin thread at {d['prio_spin']}, outside pool.app "
+                   f"[{d['prio_plan_app_lo']}, {d['prio_plan_app_hi']}]")
+    if not d["prio_reaction"] < min(lo, d["prio_spin"]):
+        out.append(f"reaction thread at {d['prio_reaction']} is not above the transport ({lo}) "
+                   f"and the spin thread ({d['prio_spin']})")
+    return out
 
 
 def supervisor_report(blob):
@@ -240,6 +290,14 @@ def supervisor_report(blob):
     if "standstill_met" in d:
         lines.append(f"  route 2 dues met at standstill={d['standstill_met']}; last speed {d['speed_mm_s']} mm/s "
                      f"at uptime {d['speed_at_ms']} ms")
+    pf = priority_findings(d)
+    if pf is not None:
+        lines.append(f"  priority plan: transport [{d['prio_plan_transport_lo']}, {d['prio_plan_transport_hi']}], "
+                     f"pool.app [{d['prio_plan_app_lo']}, {d['prio_plan_app_hi']}], tier {d['prio_plan_tier']}, "
+                     f"reaction {d['prio_plan_reaction']}")
+        lines.append(f"  priorities at the first spin: spin thread {d['prio_spin']}, reaction thread "
+                     f"{d['prio_reaction']}; " + ", ".join(f"{n or '?'} {p}" for n, p in d["threads"]))
+        lines.append("  priorities: " + ("AGREE with the plan" if not pf else "DISAGREE: " + "; ".join(pf)))
     return "\n".join(lines) + "\n"
 
 

@@ -1,18 +1,6 @@
 # The application Kconfig of this entry (phase8-W17): Zephyr's, plus the
-# island's trace-window options, the spin raise and the assert record.
+# island's trace-window options and the assert record.
 rsource "../safety_island_tracing/Kconfig.island_trace"
-
-config ISLAND_SPIN_RAISE
-	bool "Raise the executor above the transport after registration"
-	help
-	  phase9 spin latency. On the first spin, set the spin thread's priority
-	  to ISLAND_SPIN_THREAD_PRIORITY (src/spin_priority.c). Registration
-	  still runs at CONFIG_MAIN_THREAD_PRIORITY, below the read task.
-
-config ISLAND_SPIN_THREAD_PRIORITY
-	int "Executor priority after registration"
-	depends on ISLAND_SPIN_RAISE
-	default 3
 
 config ISLAND_ASSERT_RECORD
 	bool "Record a failing assert's file and line for the SWD readout"
@@ -88,15 +76,6 @@ config ISLAND_SUPERVISOR
 	  saw the loss clears it. The output latches until reset.
 
 if ISLAND_SUPERVISOR
-
-config ISLAND_SUPERVISOR_THREAD_PRIORITY
-	int "Reaction thread priority"
-	default 2
-	help
-	  Above (numerically below) the spin thread's priority: the executor
-	  is what may be stuck. Checked at build time against
-	  ISLAND_SPIN_THREAD_PRIORITY (or MAIN_THREAD_PRIORITY without the
-	  spin raise).
 
 config ISLAND_SUPERVISOR_CALL_MRM_MS
 	int "call_mrm's supervised budget (ms)"
