@@ -13,8 +13,9 @@ overrun, stall and comfortable-escalation acts PASS on the board), and
 reach main with the CI move to play_launch 0.18.0, which carries S1, S2
 and S5 (rlm v0.1.61). S3 is merged in nano-ros (#2264, #2266, #2267,
 #2271, and #2279: a late completion of a supervised route is a deadline
-miss) and pinned at 7874373b01. Open: the comfortable settle cannot be
-`supervise:`d in 0.18.0 (S6). The emergency response is re-sized to 319 ms
+miss) and pinned at 7874373b01. The comfortable settle is `supervise:`d
+in the contract since play_launch 0.18.1 (rlm v0.1.62, S6). The emergency
+response is re-sized to 319 ms
 from 16 stops at 8.30 m/s (S6, gap 2), and the overrun's ~220 ms slower
 stop was the timeline's clock alignment, not the handback (S7, gap 3). The plan below was grounded in a read of rlm (main,
 v0.1.60), play_launch (main, 0.17.0), nano-ros (the island's pin,
@@ -335,15 +336,22 @@ monitor that fires on time, and the rung it can still start, are.
   with the CI bump to 0.18.0.
   - The contract: `supervision:` with its comment (decision 3);
     `call_mrm`'s `supervise:` as drafted, its comment naming routes 0 and
-    1 and the direct path. The comfortable `response` is not
-    `supervise:`d: 0.18.0 lowers only a node path's `max_latency` to a
-    monitor (`supervised-unlowered`, an error, on a settle's response), and
-    its overrun row would charge the response alone (before it 10454 +
-    budget 943 + detection 2 + route 188.33 + settle 4421.33 = 16008.67),
-    not the settle the response ends. The contract states the island's
-    supervision and its overrun case in a comment: 21393.67 + 156 + 2 +
-    188.33 + 4421.33 = 26161.33 ms of 30,000 (26224.33 with the 319 ms
-    response, gap 2 below). The variants follow.
+    1 and the direct path. The comfortable settle carries `supervise: {
+    enters: emergency_stop, mechanism: timer, observes:
+    mrm_handler/kinematic_state }` since play_launch 0.18.1 (rlm v0.1.62),
+    route 2 as the island enforces it: 0.18.0 refused a supervised
+    `response` (`supervised-unlowered`) and charged it alone (10454 + 943
+    + 2 + 188.33 + 4421.33 = 16008.67), not the settle it ends. 0.18.1
+    supervises the whole settle and derives the observation (the
+    kinematic_state period 100 + its `max_transport` 56, stated `derived`
+    from the availability's, the same gateway and link): `odd_exit
+    comfortable_stop (...operate.safe_state.settle) overrun` = before it
+    10454 + settle 10939.67 (profile 9996.67 + response 943) + observation
+    156 + detection 2 + island.emergency_stop 188.33 + settle 4484.33 (the
+    319 ms response, gap 2 below) = 26224.33 ms of 30,000; the response
+    reads LEVEL supervised, CHECKED BY `settle-deadline`. The variants
+    follow (each keeps its single `ladder-rung-budget`: the overrun row
+    contains the failing rung's total and is `info` there).
   - `--explain` overrun rows (`supervised-fit`): hpc_loss 556 + 149 + 2
     (tick 1 + switch 1) + island.emergency_stop 188.33 + settle 4421.33 =
     5316.67 of 10,000 ms; odd_exit (comfortable and emergency rungs)
@@ -614,10 +622,9 @@ on the board. One agent owns the board.
   contract, right for the timer mechanism only; an `executor` supervision
   should be charged the spin period plus the longest callback on that
   executor, read from the contract, not stated by hand.
-- Lower a supervised settle in the checker: a `supervise:` on a settle (or
-  its response) that the platform checks to standstill, with the overrun
-  row charging the whole settle (profile + response), not the response
-  alone. Until then the island's route 2 is stated in a contract comment.
+- Lower a supervised settle in the checker: done in play_launch 0.18.1
+  (rlm v0.1.62); the island contract states route 2 as `supervise:` on the
+  comfortable settle (S6).
 
 ## Not in this phase
 
