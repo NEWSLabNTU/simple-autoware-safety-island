@@ -83,7 +83,7 @@ docs/
   Provides the `nros` CLI and the cmake package.
 - `just` (task runner), `direnv` (optional but assumed by `.envrc`).
 - play_launch — **installed by `just setup`**, not a manual prerequisite. It
-  runs Autoware for the demo; >= 0.16.0 (the CI pin) is required. To install from a source
+  runs Autoware for the demo; >= 0.18.2 (the CI pin) is required. To install from a source
   checkout instead of the package index: `PLAY_LAUNCH_REPO=<path> just setup`.
 
 `direnv allow` sources ROS 2, Autoware, the demo overlay and nano-ros, and
@@ -144,7 +144,7 @@ down (`--termseq` TERM→KILL). Normal teardown is simply Ctrl-C;
 
 Variants: `just demo-all native` / `just island native` (native island
 instead of the Zephyr native_sim image). Autoware is launched with
-play_launch (>= 0.16.0, the CI pin; 0.5.x stalls on the composable
+play_launch (>= 0.18.2, the CI pin; 0.5.x stalls on the composable
 containers); `just doctor` checks the environment.
 
 ### Demo sequence & timeline

@@ -18,7 +18,7 @@ jobs:
     # friends through it, and the wheel is built for jammy (manylinux_2_35).
     container: ros:humble-ros-base-jammy
     env:
-      PLAY_LAUNCH_VERSION: "0.18.1"
+      PLAY_LAUNCH_VERSION: "0.18.2"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -26,15 +26,9 @@ jobs:
       - name: Install play_launch ${{ env.PLAY_LAUNCH_VERSION }}
         run: |
           apt-get update -qq && apt-get install -y -qq --no-install-recommends python3-pip >/dev/null
-          # From 0.17.0 play_launch is a meta package with one package per ROS
-          # distribution (play_launch[humble] -> play_launch_humble). The
-          # per-distribution projects never reached PyPI (0.17.0 is yanked
-          # there, 0.18.x is not on PyPI), so the wheels come from the GitHub
-          # release's assets. Once
-          # play_launch ships one PyPI package (its phase 92), drop
-          # --find-links and move the version.
-          pip3 install --no-cache-dir "play_launch[humble]==${PLAY_LAUNCH_VERSION}" \
-            --find-links "https://github.com/NEWSLabNTU/play_launch/releases/expanded_assets/v${PLAY_LAUNCH_VERSION}"
+          # One PyPI package since 0.18.2 (play_launch phase 92): the wheel
+          # carries every distribution its Python serves and picks Humble here.
+          pip3 install --no-cache-dir "play_launch==${PLAY_LAUNCH_VERSION}"
           play_launch --version
       - name: play_launch check on every contract
         shell: bash
