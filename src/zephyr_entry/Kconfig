@@ -139,13 +139,13 @@ config ISLAND_SUPERVISOR_COMFORTABLE_MS
 
 config ISLAND_SUPERVISOR_STANDSTILL_OBSERVE_MS
 	int "How late the island sees a standstill (ms)"
-	default 156
+	default 136
 	help
 	  Added to route 2's due: the island judges the standstill from its
 	  latest kinematic_state take, which comes up to one sample period
 	  (10 Hz, 100 ms) plus the serial link after the vehicle stopped. The
-	  link is the availability's max_transport (56 ms, the same gateway
-	  and UART; kinematic_state states none of its own). Without it a stop
+	  link is kinematic_state's own max_transport (36 ms, measured on the
+	  board: 29.43 x 1.2; the contract names the runs). Without it a stop
 	  inside the settle was judged late on the board (s6-b8-1: standstill
 	  52 ms before the due, not yet seen on the island).
 

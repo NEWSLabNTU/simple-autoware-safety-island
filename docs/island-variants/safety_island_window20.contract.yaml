@@ -561,16 +561,16 @@ nodes:
             # serve with due = this settle at the entry speed (profile
             # 9996.67 + response 943 = 10939.67,
             # CONFIG_ISLAND_SUPERVISOR_COMFORTABLE_MS 10940) + how late the
-            # island sees standstill (156: one kinematic_state period 100 +
-            # its max_transport 56, CONFIG_ISLAND_SUPERVISOR_
+            # island sees standstill (136: one kinematic_state period 100 +
+            # its max_transport 36, CONFIG_ISLAND_SUPERVISOR_
             # STANDSTILL_OBSERVE_MS; play_launch derives it from `observes`).
             # At the due a vehicle not at standstill by the latest
             # kinematic_state escalates to the emergency stop: a k_timer and
             # a thread above the executor, which command it directly (the
             # direct path, as call_mrm's supervision). The overrun case
             # (`supervised-fit`, play_launch 0.18.1) is the comfortable
-            # rung's total 21393.67 + observation 156 + detection 2 + the
-            # emergency route 188.33 + its settle 4484.33 = 26224.33 ms of
+            # rung's total 21393.67 + observation 136 + detection 2 + the
+            # emergency route 188.33 + its settle 4484.33 = 26204.33 ms of
             # the 30 s FTTI.
             supervise:
               enters: emergency_stop
@@ -864,14 +864,25 @@ nodes:
           within: { duration: 149ms, source: derived }   # the reaction path's own budget (`reaction-within`)
       # The comfortable settle's supervision sees standstill here
       # (`observes:` above): the handler notes the speed of every take, and
-      # route 2 judges the latest at its due. The transport is not measured
-      # on this topic: it is the availability's `max_transport` (46.42 x 1.2,
-      # n 12, below), which crosses the same gateway and serial link, and
-      # route 2's observation delay (CONFIG_ISLAND_SUPERVISOR_STANDSTILL_
-      # OBSERVE_MS 156) uses the same 56.
+      # route 2 judges the latest at its due, so its observation delay
+      # (CONFIG_ISLAND_SUPERVISOR_STANDSTILL_OBSERVE_MS 136) is one period
+      # 100 + this max_transport. 36 ms = the measured hop plus 20 %: the
+      # publisher's stamp on the host to this subscriber's take on the island
+      # (gateway, UART, rx), 11.73-29.43 ms over 361 samples of 11 board runs:
+      # image cc14139c (main 0a536a2's contract on nano-ros 392bd26330, the
+      # play_launch 0.18.1 resolver; s7k-ov1, -ov2, -st1, -st2, -in1..3) and
+      # image 74451cc2 (s6-ov6, -ov7, -st6, -st7); max s7k-in1. 29.43 x 1.2 =
+      # 35.32 -> 36. The island's take is put on the host clock by merge.py's
+      # alignment, as the availability's hop (over-stated by the smallest
+      # out-link delay, never under-stated); the stamp by the run's own
+      # REALTIME - MONOTONIC offset. Takes held by an injected overrun of the
+      # handler's tick are not transport and are left out (2: 136.34 s6-ov6,
+      # 269.11 s7k-ov1). Before it 56, the availability's, unmeasured here.
       kinematic_state:
         min_rate_hz: 10
-        max_transport: { duration: 56ms, source: derived }
+        max_transport:
+          duration: 36ms
+          source: { measured: { max: 29.43ms, n: 361, margin: 0.2 } }
         qos: { depth: 1 }
       # Behind the same link, and downsampled 40 -> 10 Hz by the gateway
       # (demo/l3/router/island-gateway.json5), so a change of mode waits

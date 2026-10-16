@@ -425,7 +425,9 @@ def selftest(path=os.path.join(HERE, "testdata/explain.txt")):
     contract (the settle-derived lines and the budget table): 92043c82 for
     the W7 runs, the phase-84 checker since phase8-W12, which adds the
     window's `ends within` note; since phase8-W30 the pinned 0.13.0 on the
-    board budget (the handler's hop 206 ms). The timeline's declared bars are parse_explain()
+    board budget (the handler's hop 206 ms); since phase11-S7 play_launch
+    0.18.1 on main's contract, with its overrun rows (the supervised settle's
+    among them). The timeline's declared bars are parse_explain()
     of that table and its dashed stop curve is settle_s(); both must agree
     with the checker's own numbers, or every bar drawn is wrong.
     """
@@ -439,7 +441,17 @@ def selftest(path=os.path.join(HERE, "testdata/explain.txt")):
         print(("ok   " if ok else "FAIL ") + what)
         if not ok:
             fails.append(what)
-    check(f"{len(rows)} budget rows parsed (want 6)", len(rows) == 6)
+    check(f"{len(rows)} budget rows parsed (want 10: 6 rungs + 4 overrun rows)", len(rows) == 10)
+    # phase11-S7: the supervised settle's overrun row (play_launch 0.18.1),
+    # which analysis.py's escalation total reads by its key
+    ov = {(r["hazard"], r["rung"], r["term"]): r for r in rows if r.get("role") == "overrun"}
+    st = ov.get(("odd_exit",) + analysis.OVERRUN_ROWS[2], {})
+    cm = ov.get(("hpc_loss",) + analysis.OVERRUN_ROWS[1], {})
+    check(f"odd_exit settle overrun row: total {st.get('total')} = DETECT+WINDOWS+ROUTE+SETTLE, "
+          f"hpc_loss call_mrm overrun row: total {cm.get('total')}",
+          st.get("total") is not None and cm.get("total") is not None
+          and abs(st["detect"] + st["windows"] + st["route"] + st["settle"] - st["total"]) < 0.02
+          and abs(cm["detect"] + cm["windows"] + cm["route"] + cm["settle"] - cm["total"]) < 0.02)
     check("duration_ms reads a budget's map form (phase10-B7)",
           duration_ms({"duration": "149ms", "source": "derived"}) == 149.0
           and duration_ms("10s") == 10000.0)

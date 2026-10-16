@@ -45,10 +45,16 @@ TICK_MS = 118.0
 CROSS = "island vs host clock"  # the note on a cross-clock row (module doc)
 HPC_TIMEOUT_MS = 500.0  # mrm_handler timeout_operation_mode_availability: hpc_loss
 # phase11-S6: how late the island sees a standstill, added to route 2's due:
-# one kinematic_state period (10 Hz) + the serial link (the availability's
-# max_transport 56, the same gateway). CONFIG_ISLAND_SUPERVISOR_STANDSTILL_
-# OBSERVE_MS on the board; the contract states it in a comment only.
-STANDSTILL_OBSERVE_MS = 156.0
+# one kinematic_state period (10 Hz) + its max_transport 36 (measured, the
+# contract). CONFIG_ISLAND_SUPERVISOR_STANDSTILL_OBSERVE_MS on the board;
+# play_launch 0.18.1 derives the same observation from `observes:`.
+STANDSTILL_OBSERVE_MS = 136.0
+# phase11-S6/S7: the `--explain` overrun row of each supervisor route's
+# budget, keyed (rung, supervised key) as parse_explain() names it.
+OVERRUN_ROWS = {
+    1: ("emergency_stop", "nodes.mrm_handler.paths.call_mrm.max_latency"),
+    2: ("comfortable_stop", "nodes.mrm_comfortable_stop_operator.paths.operate.safe_state.settle"),
+}
 # What checks a row's declared value besides this trace check (phase10-B8):
 # the checker's fault-reaction sum (a term of a total held to the FTTI), the
 # island's runtime monitor (a deadline or max_age compiled into the image),
@@ -748,18 +754,14 @@ def escalation_rows(add, out, r):
     add("escalation: due -> emergency command (direct path)", o.get("sup_due_to_direct"), det, note, by=by)
     add("escalation: emergency command -> standstill", o.get("sup_direct_to_standstill"), em.get("settle"),
         "the emergency settle at the entry speed bound, settle + response", by=by)
-    if route == 2:
-        # the checker does not lower a supervised settle (play_launch 0.18.0),
-        # so the overrun case is the comfortable rung's total + detection +
-        # the emergency route and settle, as the contract states it
-        parts = [cs.get("total"), em.get("route"), em.get("settle")]
-        tot = None if None in parts else parts[0] + STANDSTILL_OBSERVE_MS + det + parts[1] + parts[2]
-        how = ("the comfortable rung's total + the standstill's observation + detection + the emergency "
-               "route and settle (contract comment)")
-    else:
-        ov = (r.get("overrun") or {}).get(("emergency_stop", "nodes.mrm_handler.paths.call_mrm.max_latency"))
-        tot = ov.get("total") if ov else None
-        how = "the checker's overrun row of call_mrm"
+    # The overrun case is the checker's row for the supervised budget
+    # (`supervised-fit`): route 2, the comfortable settle's (play_launch
+    # 0.18.1: the comfortable rung's total + the standstill's observation +
+    # detection + the emergency route and settle); route 1, call_mrm's.
+    key = OVERRUN_ROWS.get(route, OVERRUN_ROWS[1])
+    ov = (r.get("overrun") or {}).get(key)
+    tot = ov.get("total") if ov else None
+    how = f"the checker's overrun row {key[0]} ({key[1]})"
     add("escalation: total (fault -> standstill)", o.get("total"), tot, f"the overrun case: {how}", by=by)
     add("escalation: within the FTTI", o.get("total"), cs.get("ftti"), by=by)
     handover_rows(out, o, by)
@@ -935,21 +937,29 @@ def selftest_supervised(check):
            isl2(10301, "CALL_MRM_HANDLER_COMFORTABLE_STOP_OPERATE", 1),
            isl2(10302, "PATH_MRM_COMFORTABLE_STOP_OPERATOR_OPERATE_ENTRY", 1),
            isl2(10302.1, "SUPERVISOR_INJECT", 0xFFFFFFFD),
-           vel(15000, 8.3), isl2(21397.4, "SUPERVISOR_DEADLINE", (2 << 28) | 21397),
-           isl2(21397.45, "SUPERVISOR_SAFE_STATE", 1), isl2(21397.5, "SUPERVISOR_DIRECT", 1 << 28),
+           vel(15000, 8.3), isl2(21377.4, "SUPERVISOR_DEADLINE", (2 << 28) | 21377),
+           isl2(21377.45, "SUPERVISOR_SAFE_STATE", 1), isl2(21377.5, "SUPERVISOR_DIRECT", 1 << 28),
            isl2(21450, "SUPERVISOR_HANDOVER", 1), vel(25000, 0.0)]
     rc = [dict(hazard="odd_exit", rung="comfortable_stop", role="rung", detect=100.0, windows=10205.0, route=149.0,
                settle=10939.67, total=21393.67, ftti=30000.0),
           dict(hazard="odd_exit", rung="emergency_stop", role="floor", detect=100.0, windows=10205.0,
-               route=188.33, settle=4421.33, total=14914.67, ftti=30000.0)]
+               route=188.33, settle=4421.33, total=14914.67, ftti=30000.0),
+          dict(hazard="odd_exit", rung="comfortable_stop", role="overrun", detect=100.0, windows=10205.0,
+               route=11415.0, settle=4421.33, total=26141.33, ftti=30000.0, term=OVERRUN_ROWS[2][1])]
     r3 = analyze(sorted(evc, key=lambda e: e["t_mono_ns"]), rc)
     by3 = {v["term"]: v for v in r3["verdicts"]}
     cd = by3.get("escalation: comfortable stop served -> standstill due")
-    check(f"escalation: call -> due {cd and cd['observed']} against settle + response 10939.67 -> 10940 + 156",
-          cd is not None and abs(cd["observed"] - 11095.0) < 1e-6 and cd["ok"] is True)
+    check(f"escalation: call -> due {cd and cd['observed']} against settle + response 10939.67 -> 10940 + 136",
+          cd is not None and abs(cd["observed"] - 11075.0) < 1e-6 and cd["ok"] is True)
     tt = by3.get("escalation: total (fault -> standstill)")
-    check(f"escalation: total {tt and tt['observed']} against {tt and tt['declared']} (21393.67 + 156 + 2 + "
-          f"188.33 + 4421.33), PASS", tt is not None and abs(tt["declared"] - 26161.33) < 1e-6 and tt["ok"] is True)
+    check(f"escalation: total {tt and tt['observed']} against the checker's settle overrun row "
+          f"{tt and tt['declared']}, PASS", tt is not None and abs(tt["declared"] - 26141.33) < 1e-6
+          and tt["ok"] is True and "safe_state.settle" in tt["note"])
+    # without the checker's row (a checker before 0.18.1) the total has no declared value
+    r4 = analyze(sorted(evc, key=lambda e: e["t_mono_ns"]), rc[:2])
+    t4 = {v["term"]: v for v in r4["verdicts"]}.get("escalation: total (fault -> standstill)")
+    check("escalation: no settle overrun row -> no declared total, no verdict",
+          t4 is not None and t4["declared"] is None and t4["ok"] is None)
     rr = by3.get("rung reached")
     check("escalation: the rung expected is EMERGENCY_STOP", rr is not None and rr["declared"] == "EMERGENCY_STOP")
     # HPC alive from the island's takes, not the host probe

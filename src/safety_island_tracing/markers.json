@@ -1,6 +1,6 @@
 {
  "generator": "src/safety_island_tracing/gen_markers.py",
- "contract_sha256": "4e04ed0ea36dddc4a85352446e7416a692b9b54ce74491608eaa95a969119dfe",
+ "contract_sha256": "ba805873ef044e816cff849d47954a800df729da5f18ee0370f0f7f13750da21",
  "table_sha256": "7c6a7faa97ba8872e11f063fe65fba44dd2e1e1da067c52a11cd4b5de9122475",
  "entities": {
   "pub": 8,
