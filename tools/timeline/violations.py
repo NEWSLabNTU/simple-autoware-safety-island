@@ -240,9 +240,9 @@ def priority_findings(d):
             out.append(f"no thread named {name} in the record")
         elif not lo <= seen[name] <= hi:
             out.append(f"{name} at {seen[name]}, outside the transport band [{lo}, {hi}]")
-    if not d["prio_plan_app_lo"] <= d["prio_spin"] <= d["prio_plan_app_hi"]:
-        out.append(f"spin thread at {d['prio_spin']}, outside pool.app "
-                   f"[{d['prio_plan_app_lo']}, {d['prio_plan_app_hi']}]")
+    if not d["prio_spin"] < lo:
+        out.append(f"spin thread at {d['prio_spin']}, not above the transport band [{lo}, {hi}] "
+                   f"(its tier hosts the supervised call_mrm)")
     if not d["prio_reaction"] < min(lo, d["prio_spin"]):
         out.append(f"reaction thread at {d['prio_reaction']} is not above the transport ({lo}) "
                    f"and the spin thread ({d['prio_spin']})")

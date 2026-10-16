@@ -84,10 +84,11 @@
 /*
  * phase13-D4: the reaction thread's priority comes from the priority plan the
  * executor's tier was allocated from (nano-ros RFC-0079; the header is written
- * beside the generated entry by `nros codegen entry`): one above the most
- * urgent of the transport band and the tiers. The executor is what may be
- * stuck, and zenoh-pico's read, lease and flush tasks must not hold the
- * reaction off either. On this image: transport 4, tier 5, reaction 3.
+ * beside the generated entry by `nros codegen entry`). The contract supervises
+ * mrm_handler/call_mrm, so nano-ros allocates the tier holding the handler
+ * ABOVE the transport band and reserves one priority above it for the
+ * supervisor of that deadline: NROS_PRIORITY_PLAN_SUPERVISOR_PRIORITY. On this
+ * image: transport 4, tier 3, reaction 2.
  */
 #include <nros_priority_plan.h>
 
@@ -100,12 +101,14 @@
 #if NROS_ENTRY_TIER_COUNT < 1
 #error "the entry runs no tier: the executor's priority is not from the plan"
 #endif
-#define ISLAND_PLAN_MIN_(a, b) ((a) < (b) ? (a) : (b))
-#define ISLAND_SUPERVISOR_PRIORITY                                                                 \
-	(ISLAND_PLAN_MIN_(NROS_PRIORITY_PLAN_RESERVED_TRANSPORT_LO,                                \
-			  NROS_ENTRY_TIERS_MOST_URGENT_PRIORITY) - 1)
+#ifndef NROS_PRIORITY_PLAN_SUPERVISOR_PRIORITY
+#error "the plan reserves no supervisor priority: no supervised deadline was allocated above the transport"
+#endif
+#define ISLAND_SUPERVISOR_PRIORITY NROS_PRIORITY_PLAN_SUPERVISOR_PRIORITY
 BUILD_ASSERT(ISLAND_SUPERVISOR_PRIORITY < NROS_ENTRY_TIERS_MOST_URGENT_PRIORITY,
 	     "the reaction thread must run above every executor tier");
+BUILD_ASSERT(NROS_ENTRY_TIERS_MOST_URGENT_PRIORITY < NROS_PRIORITY_PLAN_RESERVED_TRANSPORT_LO,
+	     "the executor's tier hosts a supervised deadline and must run above the transport");
 BUILD_ASSERT(ISLAND_SUPERVISOR_PRIORITY < NROS_PRIORITY_PLAN_RESERVED_TRANSPORT_LO,
 	     "the reaction thread must run above the transport band");
 BUILD_ASSERT(ISLAND_SUPERVISOR_PRIORITY < CONFIG_MAIN_THREAD_PRIORITY,
@@ -168,7 +171,7 @@ struct island_supervisor_record {
 	int32_t prio_plan_app_lo;
 	int32_t prio_plan_app_hi;
 	int32_t prio_plan_tier;        /* the most urgent tier's planned priority */
-	int32_t prio_plan_reaction;    /* ISLAND_SUPERVISOR_PRIORITY */
+	int32_t prio_plan_reaction;    /* NROS_PRIORITY_PLAN_SUPERVISOR_PRIORITY */
 	int32_t prio_spin;             /* the spin thread, observed */
 	int32_t prio_reaction;         /* the reaction thread, observed */
 	uint32_t prio_threads;         /* entries of thread[] filled */
