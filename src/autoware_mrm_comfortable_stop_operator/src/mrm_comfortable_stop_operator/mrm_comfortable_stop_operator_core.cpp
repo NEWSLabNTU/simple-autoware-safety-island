@@ -13,7 +13,7 @@
 // limitations under the License.
 
 #include "autoware/mrm_comfortable_stop_operator/mrm_comfortable_stop_operator_core.hpp"
-#include <nros/clock.hpp>
+#include <rclcpp/clock.hpp>
 
 #include <cstring>
 

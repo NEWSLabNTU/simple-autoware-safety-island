@@ -25,13 +25,13 @@
 // nano-ros port: <rclcpp/rclcpp.hpp> -> rclcpp::Node (porting-notes 01). A
 // component IS-A node since nano-ros 1f3b88aec; the timer pool is the base's
 // template argument, so a node with one timer derives NodeWithTimers<1>.
-#include <nros/component.hpp>
+#include <rclcpp/detail/component.hpp>
 // component_node.hpp used to pull this in; component.hpp does not, and the
 // rclcpp::Publisher<M> members below plus create_publisher_in need it complete.
-#include <nros/publisher.hpp>
+#include <rclcpp/publisher.hpp>
 // The freestanding parameter forwarders the declare_parameter helper below
 // calls (rclcpp::Node hosts the same facade, but only under NROS_CPP_STD).
-#include <nros/node_parameters.hpp>
+#include <rclcpp/node_parameters.hpp>
 
 namespace autoware::mrm_comfortable_stop_operator
 {

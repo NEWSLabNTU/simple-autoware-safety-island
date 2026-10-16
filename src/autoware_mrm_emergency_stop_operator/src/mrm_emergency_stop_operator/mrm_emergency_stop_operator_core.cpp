@@ -13,7 +13,7 @@
 // limitations under the License.
 
 #include "autoware/mrm_emergency_stop_operator/mrm_emergency_stop_operator_core.hpp"
-#include <nros/clock.hpp>
+#include <rclcpp/clock.hpp>
 
 // phase7-W1 trace markers (no-op unless the image enables CTF tracing).
 #include "../../../safety_island_tracing/include/island_trace.h"

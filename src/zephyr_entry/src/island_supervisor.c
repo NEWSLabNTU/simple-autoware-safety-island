@@ -75,7 +75,7 @@
 #include <zephyr/drivers/watchdog.h>
 #endif
 
-#include <nros/nros_cpp_ffi.h>
+#include <rclcpp/detail/nros_cpp_ffi.h>
 
 #include "../../safety_island_tracing/include/island_trace.h"
 #include "island_supervisor.h"
