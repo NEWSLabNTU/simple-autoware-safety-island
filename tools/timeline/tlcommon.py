@@ -468,6 +468,8 @@ def selftest(path=os.path.join(HERE, "testdata/explain.txt")):
           and w["settle"] < end <= w["settle"] + cs["route"] + 0.005)
     analysis.selftest_rows(check)  # phase10-B8 link rows, phase10-B2 settle row
     analysis.selftest_supervised(check)  # phase11-S7 supervised rows, HPC alive from the island
+    import merge
+    merge.selftest(check)  # phase11-S6 the direct path's mrm_state aligns the clocks
     import run_summary
     run_summary.selftest(check)  # phase10-B9 the verdict with the table
     print("selftest: " + ("OK" if not fails else f"{len(fails)} FAILED"))

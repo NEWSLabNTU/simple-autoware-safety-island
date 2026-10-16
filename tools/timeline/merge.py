@@ -51,6 +51,25 @@ MRM_OPERATING, OPERATING = 2, 2
 TOR = "PUB_MRM_HANDLER_TAKEOVER_REQUEST_STATE"
 MRM = "PUB_MRM_HANDLER_MRM_STATE"
 TAKE_AV = "TAKE_MRM_HANDLER_OPERATION_MODE_AVAILABILITY"
+# phase11-S6: the supervisor's direct path publishes mrm_state MRM_OPERATING /
+# EMERGENCY_STOP on the handler's publisher from the reaction thread (slot 0,
+# its SUPERVISOR_DIRECT marker right before the publish), with no
+# PUB_MRM_HANDLER_MRM_STATE marker. The host's first MRM_OPERATING is that
+# sample whenever the direct path ran, so it is an mrm_state publish here.
+DIRECT = "SUPERVISOR_DIRECT"
+DIRECT_MRM_ARG = (MRM_OPERATING << 16) | 2  # MRM_OPERATING, EMERGENCY_STOP
+
+
+def mrm_publishes(mk):
+    """The handler's mrm_state publishes as (name MRM, arg) records, the
+    direct path's slot-0 calls among them (SUPERVISOR_DIRECT, slot << 28)."""
+    out = []
+    for r in mk:
+        if r["name"] == MRM:
+            out.append(r)
+        elif r["name"] == DIRECT and (r["arg"] >> 28) == 0:
+            out.append(dict(r, name=MRM, arg=DIRECT_MRM_ARG))
+    return out
 
 
 def onsets(mk, name, pred):
@@ -118,7 +137,8 @@ def align(mk, ev):
     if "hpc_loss" in kinds:
         t_inj = next(e["t_mono_ns"] for e in injects if e["marker"] == "hpc_loss")
         host = host_first(ev, "mrm_state", lambda v: v["state"] == "MRM_OPERATING", after=t_inj)
-        isl = best_onset(mk, ev, onsets(mk, MRM, lambda a: (a >> 16) == MRM_OPERATING), host) if host else None
+        isl = best_onset(mk, ev, onsets(mrm_publishes(mk), MRM, lambda a: (a >> 16) == MRM_OPERATING),
+                         host) if host else None
         if isl is not None and host:
             res["anchor1"] = dict(what="mrm_state MRM_OPERATING", island_ns=isl, host_ns=host)
         takes = [r["t_ns"] for r in mk if r["name"] == TAKE_AV]
@@ -158,7 +178,7 @@ def changes(mk, name, fmt):
 
 def refine(mk, ev, coarse):
     isl = changes(mk, TOR, lambda a: tl.BEHAVIOR_STATUS.get(a))
-    isl += [(t, ("mrm", v)) for t, v in changes(mk, MRM, lambda a: (tl.MRM_STATE.get(a >> 16),
+    isl += [(t, ("mrm", v)) for t, v in changes(mrm_publishes(mk), MRM, lambda a: (tl.MRM_STATE.get(a >> 16),
                                                                       tl.MRM_BEHAVIOR.get(a & 0xFFFF)))]
     isl += [(r["t_ns"], "limit") for r in mk if r["name"] == "PUB_MRM_COMFORTABLE_STOP_OPERATOR_MAX_VELOCITY_CANDIDATES"]
     host = []
@@ -178,6 +198,33 @@ def refine(mk, ev, coarse):
         if cand:
             pairs.append(min(cand) - ti)
     return pairs
+
+
+def selftest(check):
+    """phase11-S6: an overrun's host MRM_OPERATING is the direct path's, not
+    the handler's own publish 230 ms later (s6-ov4 aligned 220.78 ms off and
+    read command -> standstill 3014.55 against the stall's 2789.84)."""
+    ms = 1_000_000
+    off = 5_000_000 * ms
+    mk = [dict(name=MRM, arg=(1 << 16) | 1, t_ns=1000 * ms),
+          dict(name=TAKE_AV, arg=1, t_ns=1400 * ms),
+          dict(name=DIRECT, arg=0, t_ns=2100 * ms),
+          dict(name=DIRECT, arg=1 << 28, t_ns=2101 * ms),
+          dict(name=DIRECT, arg=1, t_ns=2134 * ms),
+          dict(name=MRM, arg=DIRECT_MRM_ARG, t_ns=2330 * ms),
+          dict(name=TAKE_AV, arg=1, t_ns=2400 * ms)]
+    ev = [dict(source="probe", marker="availability", t_mono_ns=1405 * ms + off, value=dict(autonomous=True)),
+          dict(source="scenario", kind="inject", marker="hpc_loss", t_mono_ns=1500 * ms + off),
+          dict(source="probe", marker="mrm_state", t_mono_ns=1003 * ms + off,
+               value=dict(state="NORMAL", behavior="NONE")),
+          dict(source="probe", marker="mrm_state", t_mono_ns=2105 * ms + off,
+               value=dict(state="MRM_OPERATING", behavior="EMERGENCY_STOP"))]
+    got, res, _ = align(mk, ev)
+    pairs = sorted(refine(mk, ev, got))
+    check(f"merge: the direct path's mrm_state is anchor 1 (offset {(got - off) / ms:+.2f} ms, want +5)",
+          got - off == 5 * ms)
+    check(f"merge: the refined offset {(pairs[0] - off) / ms:+.2f} ms (want +3, not the handler's -225)",
+          pairs and pairs[0] - off == 3 * ms)
 
 
 def main():
