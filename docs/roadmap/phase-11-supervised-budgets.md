@@ -714,5 +714,8 @@ on the board. One agent owns the board.
   91's profiles) is where a link's or a processor's numbers would live.
 - A runtime check of a host-to-island hop: needs a shared clock (phase 10).
 - The vehicle-side safe input below the emergency stop.
-- Thread priorities from the contract: the island has one spin thread;
-  S4's reaction thread is set above it by construction.
+- Thread priorities from the contract: phase 13
+  (`phase-13-derived-priorities.md`). The spin thread (3) and S4's reaction
+  thread (2) are now derived by nano-ros from this phase's `supervise:` on
+  `call_mrm`: a supervised deadline is allocated above the transport band, and
+  the plan reserves the supervisor's priority above it.
