@@ -8,10 +8,15 @@ or an error by project policy. A timer's period gets a feasible range from
 the same arithmetic.
 
 **Status (2026-10-16): in progress.** S4 is done on the board. S6 and S7
-are done on branch `phase11-s6` (the five S6 decisions below; S7's
-overrun, stall and comfortable-escalation acts PASS on the board), and
-reach main with the CI move to play_launch 0.18.0, which carries S1, S2
-and S5 (rlm v0.1.61). S3 is merged in nano-ros (#2264, #2266, #2267,
+are done on main (the five S6 decisions below; S7's overrun, stall and
+comfortable-escalation acts PASS on the board, last on main's images
+cc14139c and 56b81ad6, S7's status), with play_launch 0.18.0, which
+carries S1, S2 and S5 (rlm v0.1.61), and 0.18.1 since. Main da12a9b pins
+nano-ros b285c0b654 (#2297: its resolver on play_launch 0.18.1; without it
+`nros sync` refused main's supervised settle and no image built) and
+states kinematic_state's hop as measured, 36 ms (S6's status), so route
+2's due is the comfortable call + 10940 + 136 and the settle's overrun
+row 26204.33 of 30,000 ms. S3 is merged in nano-ros (#2264, #2266, #2267,
 #2271, and #2279: a late completion of a supervised route is a deadline
 miss) and pinned at 7874373b01. The comfortable settle is `supervise:`d
 in the contract since play_launch 0.18.1 (rlm v0.1.62, S6). The emergency
@@ -477,6 +482,43 @@ monitor that fires on time, and the rung it can still start, are.
     same sign, a little under the 0.04-0.07 seen). Not isolated: no run
     braked at both places on one path. The response is the vehicle's,
     wherever on the route it brakes, so the escalations' sample sizes it.
+  - kinematic_state's hop (done, island main da12a9b). Its `max_transport`
+    was the availability's 56 ms, stated `derived`, never measured on this
+    topic. Measured as the availability's hop is: the publisher's stamp on
+    the host (CLOCK_REALTIME, the sample's header) to the island's take
+    (`NROS_TAKE` and its stamp markers), the take put on the host clock by
+    merge.py's alignment (5aa6226's, each run re-merged), the stamp by the
+    REALTIME - MONOTONIC offset the run's own merge recorded. Over-stated
+    by the smallest out-link delay, as the availability's. Takes held by an
+    injected overrun of the handler's tick (from `SUPERVISOR_INJECT` to the
+    overrun + one tick) wait on the executor, not the link, and are left
+    out: one each in s6-ov6 (136.34) and s7k-ov1 (269.11). Every valid run
+    on images cc14139c and 74451cc2:
+
+    | run | image | n | min / max (ms) |
+    |---|---|---|---|
+    | s7k-ov1 | cc14139c | 25 | 14.51 / 23.20 |
+    | s7k-st1 | cc14139c | 5 | 12.28 / 19.78 |
+    | s7k-in1 | cc14139c | 76 | 12.02 / 29.43 |
+    | s7k-in2 | cc14139c | 81 | 12.26 / 25.50 |
+    | s7k-in3 | cc14139c | 80 | 13.62 / 25.30 |
+    | s7k-ov2 | cc14139c | 28 | 12.45 / 21.59 |
+    | s7k-st2 | cc14139c | 5 | 18.95 / 22.61 |
+    | s6-ov6 | 74451cc2 | 26 | 11.73 / 21.45 |
+    | s6-ov7 | 74451cc2 | 28 | 12.30 / 19.82 |
+    | s6-st6 | 74451cc2 | 3 | 20.28 / 27.14 |
+    | s6-st7 | 74451cc2 | 4 | 12.96 / 19.39 |
+
+    361 samples, 11.73-29.43 ms (max s7k-in1); 29.43 x 1.2 = 35.32 -> 36,
+    `measured: { max: 29.43ms, n: 361, margin: 0.2 }`. The observation is
+    one 10 Hz period + 36 = 136 (`CONFIG_ISLAND_SUPERVISOR_STANDSTILL_
+    OBSERVE_MS`, was 156), so route 2's due is the call + 10940 + 136 and
+    the settle's overrun row 26204.33 (was 26224.33). Cross-checks, not in
+    the number: the 2b8a7985 runs (the same code, another contract hash)
+    read 9.91-30.44 ms over 1,150 samples, and image 56b81ad6's
+    s7k-in4, -in5 and -b8 13.45-28.67 over 242, both under 36. A runtime check of this hop needs a shared
+    clock, as the availability's (not in this phase); the checker reports
+    it `measured-unsupervised` with the other two host hops.
   - Before this unit's decisions, the draft's image (d2b696c, pin
     573490978d) showed the timer route catching the overrun of one long
     callback (p11-s6-b1: route 1 fired at its due +0.033 ms; the executor
@@ -496,6 +538,45 @@ monitor that fires on time, and the rung it can still start, are.
 - Gate: hpc_loss with an overrun and with a stall, and odd_exit with a
   comfortable stop that does not decelerate: each lands in its safe state
   within the FTTI, the overrun row PASS.
+- Status (2026-10-16), on main: the board check repeated on main's
+  contract with the 0.18.1 `--explain` rows, the overrun case of each act
+  read from the checker (`analysis.py` now reads route 2's from the
+  settle's row, keyed (`comfortable_stop`,
+  `nodes.mrm_comfortable_stop_operator.paths.operate.safe_state.settle`),
+  as route 1 reads call_mrm's). Images cc14139c (main 0a536a2's contract,
+  nano-ros 392bd26330, which is b285c0b654 but for a zenoh-pico fix in its
+  ThreadX/stm32 port) and 56b81ad6 (da12a9b: kinematic_state 36 ms, route
+  2 at + 136); run directories
+  /mnt/mx500/aeon/worktrees/p11-s6/build/timeline/s7k-*. The encores on
+  Autoware's default `max_vel`, act b at 8.3 m/s
+  (`common-30kmh.param.yaml`), all on the 315 m straight. Every act PASS:
+
+  | run | image | act, injected | entry m/s | due -> verdict / output / emergency command (ms) | command -> standstill / settle (ms) | total / overrun row (ms) | handover handler / operator (ms) | SUMMARY |
+  |---|---|---|---|---|---|---|---|---|
+  | s7k-ov2 | cc14139c | encore, 300 ms | 4.15 | 0.05 / 0.07 / 0.72 | 2801.05 / 4484.33 | 3450.22 / 5379.67 | 168.17 / 165.67 | PASS, supervised 7/7 |
+  | s7k-st2 | cc14139c | encore, stall | 4.16 | 0.03 / 0.05 / 0.71 | 2782.91 / 4484.33 | 3432.21 / 5379.67 | - / - | PASS, supervised 7/7 |
+  | s7k-in2 | cc14139c | b, comfortable inert | 8.30 | 0.03 / - / 0.58 (served -> due 11094.15 of 11096) | 4393.00 / 4484.33 | 25626.04 / 26224.33 | 4.83 / 34.53 | PASS, supervised 6/6 |
+  | s7k-in3 | cc14139c | b, comfortable inert | 8.30 | 0.03 / - / 0.71 (served -> due 11094.38 of 11096) | 4413.63 / 4484.33 | 25747.63 / 26224.33 | 6.29 / 11.39 | PASS, supervised 6/6 |
+  | s7k-in4 | 56b81ad6 | b, comfortable inert | 8.30 | 0.03 / - / 0.70 (served -> due 11074.11 of 11076) | 4410.58 / 4484.33 | 25675.51 / 26204.33 | 26.58 / 57.42 | PASS, supervised 6/6 |
+  | s7k-in5 | 56b81ad6 | b, comfortable inert | 8.30 | 0.03 / - / 0.57 (served -> due 11074.72 of 11076) | 4391.47 / 4484.33 | 25525.50 / 26204.33 | 25.04 / 25.01 | PASS, supervised 6/6 |
+
+  The overrun rows: hpc_loss call_mrm 5379.67 of 10,000; odd_exit settle
+  26224.33 (before 10454 + settle 10939.67 + observation 156 + detection
+  2 + island.emergency_stop 188.33 + emergency settle 4484.33), 26204.33
+  with the observation at 136. s7k-b8 (56b81ad6, act b at 8.30 m/s, the
+  comfortable stop working) checks that the shorter observation does not
+  escalate a good stop: settle 10756.09 of 10939.67, total 20849.67 of
+  21393.67, supervisor not driven, PASS. s7k-ov1, -st1 and -in1
+  (cc14139c) ran without the straight's pose and goal, on
+  scenario_driver.py's default route, where the vehicle stops and starts:
+  entry 3.16, 3.13 and 2.78 m/s (in1's act gave up waiting for 8 m/s),
+  all PASS (totals 2956.17 and 2980.06 of 5379.67, 23326.00 of 26224.33);
+  kept for the kinematic_state hop only, not in the table.
+  s7k-in4 read one serial overrun / bad frame in the act (`serial in act
+  1/1`), the act PASS. The first flash of cc14139c faulted (`FAULT ACK`
+  @ 0x20002800, the flash algorithm's RAM); `pyocd erase -t s32k344
+  --sector 0x41f000` (sector 0x41e000 erased) and the reflash went
+  through.
 - Status (2026-10-16): done on branch `phase11-s6` with S6's direct
   emergency path: hpc_loss overrun and stall, and odd_exit with a
   comfortable stop that does not decelerate, each in its safe state within
