@@ -241,7 +241,7 @@ version: 1
 #     own parameter file and the entry speed, and adds the written
 #     `response` (phase10-B2):
 #       emergency: target_acceleration -2.5, target_jerk -1.5 -> 4165.33 ms
-#                  + response 256 ms                           = 4421.33 ms
+#                  + response 319 ms                           = 4484.33 ms
 #       comfortable: min_acceleration -1.0, min_jerk -0.3     -> 9996.67 ms
 #                  + response 943 ms                           = 10939.67 ms
 #     With a = |decel|, j = |jerk|: v_r = a^2/(2j); t = a/j + (v0 - v_r)/a
@@ -256,7 +256,15 @@ version: 1
 #     612.81 / 785.43 ms. The comfortable row starts at the velocity limit,
 #     so its response includes the planner's hop to the first deceleration
 #     (809-862 ms in those runs). Each is sized by the measurement rule:
-#     213.11 x 1.2 = 255.73 -> 256, 785.43 x 1.2 = 942.52 -> 943. The runs
+#     785.43 x 1.2 = 942.52 -> 943. The emergency response was re-measured
+#     on the image whose direct-path publishers are express (phase11 S6,
+#     image 2b8a7985, island main 5aa6226's clock alignment): 16 stops from
+#     8.30 m/s, 7 direct (the HPC loss at ~63 m along the straight: 181.15-
+#     199.46 ms) and 9 escalations from an inert comfortable stop
+#     (~251 m along it: 240.27-265.34 ms; runs s6-e8-c/d, s6-g8e1..5,
+#     s6-in3..6, s6-g8i1..5). The command ramps are the same on both paths;
+#     the escalations brake where the map falls, and the simulator's road
+#     slope takes ~0.04 m/s2 of the 2.5. 265.34 x 1.2 = 318.41 -> 319. The runs
 #     at the declared entry speed are the ones that size it, because that is
 #     the speed the budget is computed at: lower-speed runs showed larger
 #     lags (up to 1797 ms, the gate image's fr-b runs at about 3 m/s) on much
@@ -306,9 +314,10 @@ version: 1
 # matters is that they are written down and checked. The old 3 s cannot be
 # met at the decided bound by any island: from 8.33 m/s the emergency stop
 # alone takes 4165.33 ms to standstill; 3 s was chosen for the 3.0 m/s the
-# old settle assumed. 10 s (brief D's figure) leaves the floor 4834.33 ms of
+# old settle assumed. 10 s (brief D's figure) leaves the floor 4771.33 ms of
 # slack with the board's 56 ms link, 149 ms handler hop and the vehicle's
-# 256 ms response (phase10-B2; 5090.33 without the response from phase9-C7;
+# 319 ms response (phase11 S6; 4834.33 with phase10-B2's 256;
+# 5090.33 without the response from phase9-C7;
 # 5065.33 with the 81 ms link from phase9-W5; 5095.33
 # with the 206 ms hop of phase8-W30, 5191.33 before it). odd_exit's 30 s is
 # decision 3, a stated judgement like the old 3 s: the takeover window is 10 s
@@ -547,7 +556,7 @@ nodes:
             # by the latest kinematic_state escalates to the emergency stop,
             # timer mechanism. The overrun case is the comfortable rung's
             # total 21393.67 + observation 156 + detection 2 + the emergency
-            # route 188.33 + its settle 4421.33 = 26161.33 ms of the 30 s
+            # route 188.33 + its settle 4484.33 = 26224.33 ms of the 30 s
             # FTTI. play_launch
             # 0.18.0 lowers only a node path's `max_latency` to a monitor
             # (`supervised-unlowered` on a settle's response), and charges a
@@ -607,8 +616,8 @@ nodes:
             decel: target_acceleration
             jerk: target_jerk
             response:
-              duration: 256ms
-              source: { measured: { max: 213.11ms, n: 3, margin: 0.2 } }
+              duration: 319ms
+              source: { measured: { max: 265.34ms, n: 16, margin: 0.2 } }
     sub:
       # Cached in onControlCommand and read on the timer as the ramp seed: a
       # read-latest input, not a trigger. `state: true` says so; without it
