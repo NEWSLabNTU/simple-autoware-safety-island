@@ -7,14 +7,15 @@ hazard's FTTI. A budget that is neither is reported as such, as a warning
 or an error by project policy. A timer's period gets a feasible range from
 the same arithmetic.
 
-**Status (2026-10-16): in progress.** S4 is done on the board and S7 for
-hpc_loss (overrun and stall); S6 is drafted on a branch, waiting for the
-release that carries S1 and S2; S7's odd_exit run waits for S6's
-escalation. S3 is merged in nano-ros (#2264, #2266, #2267, #2271) and
-pinned (573490978d); the S6 draft's image carries supervised route rows,
-whose timer route caught an overrun on the board; the hook was not called
-(S6 status). S1 and S2 are on rlm and play_launch main (play_launch's phase
-93), unreleased. The plan below was grounded in a read of rlm (main,
+**Status (2026-10-16): in progress.** S4 is done on the board. S6 and S7
+are done on branch `phase11-s6` (the five S6 decisions below; S7's
+overrun, stall and comfortable-escalation acts PASS on the board), and
+reach main with the CI move to play_launch 0.18.0, which carries S1, S2
+and S5 (rlm v0.1.61). S3 is merged in nano-ros (#2264, #2266, #2267,
+#2271, and #2279: a late completion of a supervised route is a deadline
+miss) and pinned at 7874373b01. Open: the comfortable settle cannot be
+`supervise:`d in 0.18.0 (S6), and one escalation's emergency settle
+exceeded its measured bound by 1.54 ms (S6). The plan below was grounded in a read of rlm (main,
 v0.1.60), play_launch (main, 0.17.0), nano-ros (the island's pin,
 79583587cf) and this repository; file:line references are at those
 revisions.
@@ -298,64 +299,130 @@ monitor that fires on time, and the rung it can still start, are.
 - Gate: `play_launch check --explain` lists every budget with its level;
   the unsupervised ones carry their reason; CI on the next play_launch
   release.
-- Status (2026-10-16): drafted, not on main: branch `phase11-s6-draft`
-  (top-level `supervision: { tick: 1ms, switch: 1ms }`; `call_mrm`'s
-  `supervise: { enters: emergency_stop, mechanism: timer }`). It checks
-  clean with play_launch main bfede19e (rlm main 33577ff, built locally):
-  `supervised-fit` hpc_loss 556 + 149 + 2 (tick 1 + switch 1) + the
-  island.emergency_stop route 188.33 + settle 4421.33 = 5316.67 of
-  10,000 ms; odd_exit 15,065.67 of 30,000. play_launch 0.17.0 refuses the
-  keys, so it merges with the release that carries S1 and S2 (the lead
-  coordinates it). The switch is 1 ms by the measurement rule: the largest
-  due -> output measured is 0.04 ms (x 1.2, rounded up to the next ms).
-  Image of the draft through the pin 573490978d (2026-10-16; branch
-  `phase11-s6-draft` d2b696c, the board build, FLASH 564,760 B, RAM 277,400
-  B, DTCM 117,192 B): the generated entry
-  (`build-board/zephyr_entry_nros_main_generated.cpp`) carries two
-  supervised route rows, and installs `nros_app_reaction_hook`:
+- Decisions (2026-10-16), each with its reason:
+  1. `call_mrm` is supervised with `mechanism: timer` for both chains,
+     `supervise: { enters: emergency_stop, mechanism: timer }`; nothing in
+     the contract uses `executor`. One `supervise:` per budget, and the
+     executor's check cannot see one long callback that overruns before it
+     returns (p11-s6-b1).
+  2. The reaction commands the emergency stop itself, not only CAN LED1, so
+     `enters: emergency_stop` holds: the timer rung's thread publishes
+     mrm_state MRM_OPERATING / EMERGENCY_STOP, the hazard lights and the
+     emergency operator's braking command directly (the direct path below),
+     because the callback that is stuck may own the handler's state.
+  3. One `supervision: { tick: 1ms, switch: 1ms }` for the contract; it
+     holds because only the timer mechanism is used. The contract states
+     that an executor detection would be tick = spin period + the longest
+     callback, and that none is used.
+  4. The comfortable stop is supervised to standstill (option C): not at
+     standstill by the comfortable call + settle 9996.67 + response 943 (at
+     8.33 m/s) + 156 for the island to see it, the emergency stop is
+     commanded, timer mechanism. The deceleration onset is not the test:
+     the speed first falls 940-990 ms after the request at 8.3 m/s, past
+     the response term.
+  5. A settle is judged as one sum at the entry speed bound (option A): the
+     whole settle, safe command to standstill, against settle + response at
+     8.33 m/s; the lag at the observed speed is information. The lag
+     depends on the speed, the sum is what the FTTI arithmetic uses.
+- Status (2026-10-16): on branch `phase11-s6`, rebased onto main at
+  4a56aac, nano-ros pinned at 7874373b01 (#2279: a supervised route that
+  completes after its due records `route-deadline-runtime` and calls the
+  hook). Board image 2b8a7985 (`just board-build`; FLASH 567,552 B, RAM
+  280,632 B, DTCM 117,304 B). Checks clean with play_launch main 9af9c631
+  (0.18.0's release commit plus a CI fix; rlm v0.1.61), built locally,
+  16/16 contracts as expected; 0.17.0 refuses the keys, so main takes it
+  with the CI bump to 0.18.0.
+  - The contract: `supervision:` with its comment (decision 3);
+    `call_mrm`'s `supervise:` as drafted, its comment naming routes 0 and
+    1 and the direct path. The comfortable `response` is not
+    `supervise:`d: 0.18.0 lowers only a node path's `max_latency` to a
+    monitor (`supervised-unlowered`, an error, on a settle's response), and
+    its overrun row would charge the response alone (before it 10454 +
+    budget 943 + detection 2 + route 188.33 + settle 4421.33 = 16008.67),
+    not the settle the response ends. The contract states the island's
+    supervision and its overrun case in a comment: 21393.67 + 156 + 2 +
+    188.33 + 4421.33 = 26161.33 ms of 30,000. The variants follow.
+  - `--explain` overrun rows (`supervised-fit`): hpc_loss 556 + 149 + 2
+    (tick 1 + switch 1) + island.emergency_stop 188.33 + settle 4421.33 =
+    5316.67 of 10,000 ms; odd_exit (comfortable and emergency rungs)
+    10305 + 149 + 2 + 188.33 + 4421.33 = 15065.67 of 30,000.
+  - The direct path (`island_supervisor.c`, `island_supervisor_set_direct`,
+    `_handover`, `_latched`). Once the output latches, the reaction thread
+    calls each component's direct function at once and every 33 ms until
+    that component's own tick publishes the emergency: slot 0, mrm_handler,
+    mrm_state and the hazard lights; slot 1, the emergency operator, its
+    braking command, the operator's ramp in closed form from the last
+    control command it saw. Safe against the spin thread because each
+    function uses only publishers built at construction and messages it
+    owns, never the executor, a take or a service; zenoh-pico is built
+    multi-threaded (its tx mutex serialises writers, with priority
+    inheritance). The handler reads the latch every tick (`isInputLost`),
+    so a spin thread that resumes enters and holds the emergency stop
+    through its own path and hands over (`SUPERVISOR_HANDOVER`); the
+    operator continues the direct ramp from its last command. The three
+    publishers are `tx_express`: batched, the direct path's samples waited
+    for a flush that the flush thread, below a stalled spin thread, never
+    ran (s6-st3: bursts of six every ~200 ms, and the host's own heartbeat
+    timeout stopped the vehicle first). Reaction thread stack 4096.
+  - Route 2, the comfortable standstill: armed at the comfortable call,
+    due = call + 10940 + 156 (`CONFIG_ISLAND_SUPERVISOR_COMFORTABLE_MS`,
+    `_STANDSTILL_OBSERVE_MS`). At the due the thread judges the speed the
+    handler last noted from `kinematic_state` (fresh within 300 ms, below
+    1 mm/s is standstill); not at standstill, it latches and the direct
+    path commands the emergency stop. The 156 ms (one 10 Hz period + the
+    link 56) came from s6-b8-1: a stop met on the host 52 ms before a due
+    of call + 10940 was not yet seen on the island and was escalated.
+    `kinematic_state` already reaches the island (mrm_handler's
+    `isStopped()` input); no new input was needed.
+  - `analysis.py`: the settle rows per decision 5; supervised rows on the
+    direct path (due -> first braking command, command -> standstill, the
+    handovers as information; a stall is now judged, the island brakes);
+    act b's escalation rows (call -> due, due -> verdict and command,
+    command -> standstill, the total against the overrun case);
+    `parse_explain` reads 0.18.0's overrun rows. `run-board.sh RB_INERT=1`
+    (act b, `violations.py comfortable-inert`).
+  - Speed sweep (decision 5), image 2b8a7985, the 315 m straight,
+    `max_vel` 2.0 / 4.17 (stock) / 6.0 / 8.3 m/s; every act PASS:
 
-      { "/system/fail_safe/mrm_state", "/mrm_handler/mrm_state", 9000u, 149u, "/system/operation_mode/availability", 149u, 149u, 1u, 1u },
-      { "/system/takeover_request/state", "/mrm_handler/takeover_request_state", 9000u, 149u, "/system/operation_mode/availability", 149u, 149u, 1u, 1u },
-      row 4 /mrm_handler/mrm_state: deadline 149 ms, reaction 1 (safety_island.launch.xml/island.emergency_stop), mechanism timer
+    | run | act | entry m/s | settle (ms) | bound (ms) | profile at v | lag (info) | total / of |
+    |---|---|---|---|---|---|---|---|
+    | s6-e2-c | encore | 2.04 | 1850.60 | 4421.33 | 1647.71 | 202.89 | 2472.10 / 5165.67 |
+    | s6-e2-d | encore | 2.04 | 1861.66 | 4421.33 | 1647.59 | 214.07 | 2418.75 / 5165.67 |
+    | s6-e4-c | encore | 4.14 | 2670.41 | 4421.33 | 2488.24 | 182.17 | 3198.33 / 5165.67 |
+    | s6-e4-d | encore | 4.14 | 2681.15 | 4421.33 | 2487.59 | 193.56 | 3232.07 / 5165.67 |
+    | s6-e6-c | encore | 5.96 | 3512.82 | 4421.33 | 3217.87 | 294.96 | 4055.43 / 5165.67 |
+    | s6-e6-d | encore | 5.96 | 3532.13 | 4421.33 | 3216.86 | 315.27 | 4063.05 / 5165.67 |
+    | s6-e8-c | encore | 8.30 | 4334.64 | 4421.33 | 4153.49 | 181.15 | 4883.11 / 5165.67 |
+    | s6-e8-d | encore | 8.30 | 4351.46 | 4421.33 | 4153.69 | 197.77 | 4955.85 / 5165.67 |
+    | s6-b2-c | b | 2.00 | 3832.61 | 10939.67 | 3665.18 | 167.44 | 13974.71 / 21393.67 |
+    | s6-b2-d | b | 2.00 | 3932.18 | 10939.67 | 3665.45 | 266.74 | 14050.00 / 21393.67 |
+    | s6-b4-c | b | 4.17 | 6620.46 | 10939.67 | 5837.13 | 783.33 | 16773.30 / 21393.67 |
+    | s6-b4-d | b | 4.17 | 6645.45 | 10939.67 | 5838.98 | 806.48 | 16717.66 / 21393.67 |
+    | s6-b6-c | b | 6.00 | 8457.54 | 10939.67 | 7664.36 | 793.18 | 18546.54 / 21393.67 |
+    | s6-b6-d | b | 6.00 | 8420.24 | 10939.67 | 7664.37 | 755.88 | 18474.67 / 21393.67 |
+    | s6-b8-c | b | 8.30 | 10536.75 | 10939.67 | 9971.07 | 565.69 | 20699.84 / 21393.67 |
+    | s6-b8-d | b | 8.30 | 10662.85 | 10939.67 | 9970.92 | 691.94 | 20774.52 / 21393.67 |
 
-  (`route_deadline_ms` 149, `reaction_id` 1, `mechanism` 1 = timer; row 5
-  the same for takeover_request_state.) Board, `RB_OVERRUN=300`:
-  - p11-s6-b1, act b (the overrun on the takeover request's tick): the
-    odd-exit take at 45,394.21 ms, its tick stalls 300 ms from 45,421.39;
-    route 1, armed from `nros_cpp_executor_route_next_due_us`, fires at its
-    due 45,544 (take + 149, rounded up to the ms) +0.033 ms and the output
-    is driven 0.054 ms after the due. The reaction hook was not called
-    (`hook calls=0`) and no `route-deadline-runtime` was stored: when the
-    tick returned it published and answered the take before the executor's
-    overdue check ran, so the executor recorded only the completion verdict
-    `route-latency-runtime` 327 of 149 ms. On one long callback the
-    k_timer is what catches the miss; the executor's own check would see
-    only slowness spread over several dispatches. The act PASS
-    (comfortable stop reached); the table's declared columns are empty
-    because the act's `--explain` came from play_launch 0.17.0, which
-    refuses the draft.
-  - p11-s6-ov1, encore: route 0 (the handler's take + 649) fires at its due
-    +0.029 ms, output +0.048 ms; route 1 does not (no take pending at the
-    fault tick: the omission case S4 describes). Act PASS, standstill
-    3,632.33 ms after the last sample.
-  Open in the plan as written:
-  - one `supervise:` per budget: `call_mrm` serves both hazards, so
-    odd_exit cannot have `executor` and the comfortable stop while hpc_loss
-    has `timer` and the emergency stop; the draft supervises both with the
-    timer and the emergency stop;
-  - the S4 output is a GPIO, not a ROS path, so `enters: emergency_stop`
-    stands for the brake line it replaces; the checker then charges the
-    island.emergency_stop route, which a stalled executor would not run;
-  - the comfortable settle's escalation is not built. The B2c and B6 runs
-    say "no deceleration by take + 943" is the wrong test: at 30 km/h the
-    speed first falls 940-990 ms after the velocity limit (b2c-b1, b4, b5),
-    still +0.0003 m/s over the speed at the call 965 ms after it in
-    b2c-b5, because `response` is settle minus profile, not the onset of
-    braking. A check against the profile delayed by `response` is the
-    candidate; until it exists the odd_exit run with a stop that does not
-    decelerate (S7) is not done;
-  - `supervision.tick` is one term per contract; an `executor` supervision
-    on the handler's 10 Hz tick reads its clock every 100 ms, not every 1 ms.
+    settle(v) + lag(v) stays under settle + response at 8.33 m/s at every
+    speed: emergency 1850.60-4351.46 of 4421.33, comfortable
+    3832.61-10662.85 of 10939.67 (the comfortable lag includes the planner
+    hop). The emergency lag at 4.14 m/s is now 182-194 ms (441-464 on the
+    image before the publishers were express: part of that lag was the tx
+    batch).
+  - Open: the emergency settle after an escalation exceeded its bound by
+    1.54 ms once (s6-in4: 4422.87 of 4421.33 from the direct path's first
+    command at 8.30 m/s; lag 269.37 ms over the profile 4153.49, against the
+    measured response 256 = 213.11 x 1.2, n 3). s6-in3 read 4400.38, and on
+    the image before the express publishers s6-in2 read 4426.44 and s6-in1
+    4405.22. The ramps of the direct path and of the operator's own path
+    are the same command for command; the overrun is the vehicle's response
+    at the top speed. The budget is not resized here; the response term
+    needs more runs at 8.3 m/s.
+  - Before this unit's decisions, the draft's image (d2b696c, pin
+    573490978d) showed the timer route catching the overrun of one long
+    callback (p11-s6-b1: route 1 fired at its due +0.033 ms; the executor
+    recorded only `route-latency-runtime` 327 of 149 ms, the hook was not
+    called) and route 0 catching the encore's (p11-s6-ov1).
 
 ### S7. The board check of a supervised overrun (this repo)
 
@@ -370,8 +437,34 @@ monitor that fires on time, and the rung it can still start, are.
 - Gate: hpc_loss with an overrun and with a stall, and odd_exit with a
   comfortable stop that does not decelerate: each lands in its safe state
   within the FTTI, the overrun row PASS.
-- Status (2026-10-16): hpc_loss done (overrun and stall); odd_exit not
-  done (S6's escalation does not exist). `island_debug_fault_overrun_ms`
+- Status (2026-10-16): done on branch `phase11-s6` with S6's direct
+  emergency path: hpc_loss overrun and stall, and odd_exit with a
+  comfortable stop that does not decelerate, each in its safe state within
+  the FTTI, every act PASS. Image 2b8a7985 (pin 7874373b01); run
+  directories /mnt/mx500/aeon/worktrees/p11-s6/build/timeline/s6-*.
+  Detection delay from the contract, tick 1 + switch 1:
+
+  | run | act, injected | entry m/s | due -> verdict / output / emergency command (ms) | command -> standstill / settle (ms) | total / overrun case (ms) | handover handler / operator (ms) | SUMMARY |
+  |---|---|---|---|---|---|---|---|
+  | s6-ov4 | encore, 300 ms | 4.16 | 0.03 / 0.05 / 0.70 | 3014.55 / 4421.33 | 3664.15 / 5316.67 | 235.23 / 232.70 | PASS, supervised 7/7 |
+  | s6-ov5 | encore, 300 ms | 4.16 | 0.03 / 0.04 / 0.57 | 3010.34 / 4421.33 | 3659.13 / 5316.67 | 238.82 / 235.84 | PASS, supervised 7/7 |
+  | s6-st4 | encore, stall | 4.16 | 0.03 / 0.04 / 0.57 | 2789.84 / 4421.33 | 3438.76 / 5316.67 | - / - | PASS, supervised 7/7 |
+  | s6-st5 | encore, stall | 4.16 | 0.03 / 0.04 / 0.57 | 2799.66 / 4421.33 | 3449.23 / 5316.67 | - / - | PASS, supervised 7/7 |
+  | s6-in3 | b, comfortable inert | 8.30 | 0.03 / - / 0.57 (call -> due 11095.53 of 11096) | 4400.38 / 4421.33 | 25698.03 / 26161.33 | 6.11 / 35.53 | PASS, supervised 6/6 |
+  | s6-in4 | b, comfortable inert | 8.30 | 0.03 / - / 0.56 (call -> due 11095.54 of 11096) | 4422.87 / 4421.33 FAIL | 25701.46 / 26161.33 | 6.99 / 36.04 | act PASS; 1 row FAIL |
+
+  The total is from the last sample (encore) or the ODD exit (b). In the
+  stall the handler never runs again: mrm_state stays MRM_OPERATING /
+  EMERGENCY_STOP from the direct path, which the encore act accepts at
+  standstill (nothing on the island can report MRM_SUCCEEDED), and the
+  vehicle stops on the island's command, which the host now receives at
+  30 Hz (the earlier stall runs stopped on the host's own heartbeat
+  timeout). The overrun case hands over once the spin thread resumes; its
+  command -> standstill is ~220 ms longer than the stall's on the same
+  ramp, not explained yet. s6-in4's row is S6's open item. The output
+  latched 648.26-649.04 ms after the last sample in the encores, within
+  the FTTI. The tools and the first runs (images 5fa405ff, 71e81adc), the
+  output an LED only: `island_debug_fault_overrun_ms`
   (`CONFIG_ISLAND_DEBUG_OVERRUN`): the next tick that runs call_mrm
   busy-waits N ms right after its ENTRY, before the reaction, or forever
   (0xffffffff). `RB_OVERRUN=<ms>|stall` on the encore: once the vehicle
@@ -428,6 +521,20 @@ S1 first (the keys). S2 and S3 in parallel after it. S5 any time after S1.
 S4 after S3 (it shares the due time). S6 after the rlm and play_launch
 releases carrying S1, S2 and S5, and the nano-ros pin carrying S3. S7 last,
 on the board. One agent owns the board.
+
+## Follow-ups
+
+- Derive an executor supervision's tick from its spin period in the
+  checker (S6 decision 3, option B): `supervision.tick` is one term per
+  contract, right for the timer mechanism only; an `executor` supervision
+  should be charged the spin period plus the longest callback on that
+  executor, read from the contract, not stated by hand.
+- Lower a supervised settle in the checker: a `supervise:` on a settle (or
+  its response) that the platform checks to standstill, with the overrun
+  row charging the whole settle (profile + response), not the response
+  alone. Until then the island's route 2 is stated in a contract comment.
+- The emergency response term at 8.3 m/s: more runs (s6-in4 read 269.37
+  ms of lag against 256).
 
 ## Not in this phase
 

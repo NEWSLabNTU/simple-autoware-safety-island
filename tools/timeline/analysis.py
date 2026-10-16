@@ -591,6 +591,13 @@ def verdicts(r):
             if o.get("sup_route") is None and o.get("sup_inject_ms") is None:
                 add("total (button -> standstill)", o.get("total"), cs.get("total"))
                 add("within the FTTI", o.get("total"), cs.get("ftti"))
+            if o.get("sup_inject_ms") == 0xFFFFFFFD:
+                # the comfortable stop made inert publishes no velocity limit:
+                # the rows that start at it have nothing to time
+                for row in out:
+                    if row["observed"] is None and row["ok"] is None and not row["note"].startswith("info"):
+                        row["note"] = ("the comfortable stop made inert (injected): judged by the supervised "
+                                       "rows (escalation)")
             escalation_rows(add, out, r)
     else:
         fl = dr.get("emergency_stop", {})
