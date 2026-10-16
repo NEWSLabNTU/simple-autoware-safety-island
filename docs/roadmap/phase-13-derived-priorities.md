@@ -5,11 +5,10 @@ nano-ros's priority allocation (nano-ros RFC-0079), not from numbers written
 in Kconfig and C. The build prints and records the derived plan, and a check
 holds the built image, and the running board, to it.
 
-**Status (2026-10-16): in progress.** D1-D5 implemented (nano-ros #2303,
-#2304, #2306, auto-merge armed; the island on branch `phase13-derived-prio`
-until the pin can move to a merged nano-ros). D6: both derivations measured
-on the board, every act PASS (tables below); the final run on the pinned
-image follows the merge.
+**Status (2026-10-16): done.** D1-D5 merged (nano-ros #2303, #2304, #2312;
+the island pins d4bf898409), D6 on the board: every act PASS on the pinned
+image e156e51d, and on the two images measured before the merge (tables
+below).
 
 ## Before and after
 
@@ -32,7 +31,7 @@ split the single tier loses as a degradation.
   on the board `transport [4, 4]`, `pool.app [5, 14]`.
 - **Ranks** from the contract (`chain_aware_rank` over rlm's derivation:
   timer rates, path deadlines, chains), realised into `pool.app`.
-- **Supervised deadlines above the transport** (nano-ros #2306, RFC-0079
+- **Supervised deadlines above the transport** (nano-ros #2312, RFC-0079
   section 6 in part): a node with a `supervise:`d path is allocated above the
   reserved transport band, keeping its relative rank, with one more priority
   above it reserved for the supervisor. The contract's `supervise:` is the
@@ -89,13 +88,14 @@ the plan and the priorities the kernel gave every thread at the first spin
 
 ### D6. The board
 
-Image RAM 280,640 B (main 280,632), DTCM 117,584 B (+280 B: the record's
-thread table), FLASH 574,236 B (+6,512 B: the tier runner).
+Pinned image e156e51d: RAM 280,672 B (main 280,632; +40), DTCM 117,584 B
+(+280 B: the record's thread table), FLASH 575,884 B (+8,160 B: the tier
+runner and the six nano-ros commits since the old pin).
 
 Runs on two images of this branch, the nano-ros changes applied to the pin
 b285c0b654 before they merged: **derived 5** (#2303 and #2304 only: the tier
 in `pool.app`, below the transport; the "before" of the supervised rule) and
-**derived 3** (with #2306: above the transport, supervisor 2). Run
+**derived 3** (with #2312, then open as #2306: above the transport, supervisor 2). Run
 directories /mnt/mx500/aeon/worktrees/p13-island/build/timeline/p13-* and
 p13-d3-*. The encores at Autoware's default `max_vel`, act b at 8.3 m/s, on
 the 315 m straight, as phase 11's S7. Every act PASS, and every act's
@@ -121,6 +121,18 @@ zpico_lease and zpico_flush 4).
 | b, comfortable inert | derived 5 | 2 | 8.30 | 0.03 / - / 0.57-0.61, 11073.91-11074.10, 4396.99-4401.92, handover 26.19-26.47 / 52.55-53.49 | 25650.59-25750.95 / 26204.33 | 12.43-13.32 |
 | b, comfortable inert | derived 3 | 2 | 8.30 | 0.03 / - / 0.57, 11074.07-11074.69, 4400.25-4412.35, handover 25.40-25.50 / 25.38-54.53 | 25552.88-25725.36 / 26204.33 | 12.69-13.16 |
 
+The pinned image (e156e51d: nano-ros d4bf898409, derived 3), one run of
+each act, run directories p13-f-*; every act PASS, `priorities: AGREE with
+the plan` (spin thread 3, reaction thread 2, zenoh-pico's tasks 4):
+
+| act | entry m/s | key terms (ms) | total / bound (ms) | spin gap max (ms) |
+|---|---|---|---|---|
+| encore | 4.14 | detect 569.60, route 15.56, settle 2696.01 | 3281.16 / 5228.67 | 12.54 |
+| b (comfortable working) | 8.30 | route 101.63, dwell 10100.72, settle 10802.55 | 21046.07 / 21393.67 | 13.16 |
+| encore, 300 ms overrun | 4.15 | 0.03 / 0.04 / 0.57, command -> standstill 2773.24, handover 225.43 / 223.05 | 3421.89 / 5379.67 | 308.38 |
+| encore, stall | 4.16 | 0.03 / 0.04 / 0.58, 2805.00 | 3453.91 / 5379.67 | 12.51 |
+| b, comfortable inert | 8.30 | 0.03 / - / 0.58, call -> due 11074.10 of 11076, 4395.57, handover 26.64 / 56.55 | 25574.76 / 26204.33 | 12.25 |
+
 (2b8a7985 is the newest image with plain encores at 4 m/s; its bound was
 5165.67 before the response was re-sized to 319 ms.)
 
@@ -137,12 +149,19 @@ What moved, and what did not:
   518-523 on 2b8a7985 (n = 2 each). Detect is last sample -> the handler's
   reaction tick, 500 ms max_age + the 10 Hz tick's phase, so it moves by up
   to a tick with the phase; not attributed to the priority.
-- Act b's `route` and `dwell` are bimodal on every image: 1-2 ms or ~99 ms
-  after the window's deadline, the handler's next 10 Hz tick. s7k-in3
-  (cc14139c, phase 11) read dwell 10100.10 the same way. Derived 3 drew the
-  late tick in both b runs, which puts their totals at 20949.63 and
-  21074.58 of 21393.67 (s7k-b8 20849.67 with the early tick); the settle
-  itself (10808-10859 against 10756) is the vehicle's.
+- Act b's `route` and `dwell` are bimodal: 1-2 ms or ~99 ms after the
+  window's deadline, the handler's next 10 Hz tick. The window opens on a
+  tick, so its deadline falls on a later tick, and whether that tick sees
+  the deadline passed depends on sub-millisecond phase. s7k-in3 (cc14139c,
+  phase 11) read dwell 10100.10 the same way, but the tier runner drew the
+  late tick in 4 of the 5 working-comfortable b runs (derived 5: 1 of 2;
+  derived 3 and the pinned image: 3 of 3) against 0 of 1 on 56b81ad6 (n is
+  small). It costs ~100 ms of act b's margin: totals 20949.63-21074.58 of
+  21393.67 with the late tick (s7k-b8 20849.67 with the early one); route
+  stays under its 149 ms. Open: whether the runner's spin loop (spin_once
+  with the 10 ms park plus the gap step, against run_components'
+  spin_once(10) and k_yield) shifts the tick's phase, or the window check
+  should compare with the tick's due time rather than its run time.
 - The overrun's handover (the executor taking the emergency back after the
   300 ms stall) is 227-255 ms on derived 3 against 166-194 on derived 5 and
   56b81ad6's family; it is information, not a term (the direct path holds
