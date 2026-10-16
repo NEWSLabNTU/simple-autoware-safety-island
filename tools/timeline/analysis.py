@@ -355,7 +355,12 @@ def analyze(ev, rows, explain="", windows=None, entry_speed=None):
                 obs["sup_due_to_safe"] = d(E["sup_due"], E["sup_safe_state"])
                 obs["sup_due_to_direct"] = d(E["sup_due"], E["sup_direct_cmd"])
                 obs["sup_direct_to_standstill"] = d(E["sup_direct_cmd"], E["standstill"])
-                obs["sup_call_to_due"] = d(E["call"], E["sup_due"])
+                # route 2's due is armed by the handler after it sends the
+                # request; the settle starts where the operator serves it and
+                # emits the limit, so the due is timed from that serve
+                E["serve"] = t_of(_first(ev, isl("PATH_MRM_COMFORTABLE_STOP_OPERATOR_OPERATE_ENTRY"),
+                                         after=E["call"] or after_on))
+                obs["sup_call_to_due"] = d(E["serve"] or E["call"], E["sup_due"])
                 obs["sup_cause"] = sse["value"] if sse else None
                 obs["sup_handover"] = {k: d(E["sup_direct_cmd"] if k == "cmd" else E["sup_direct_state"],
                                             E[f"sup_handover_{k}"]) for k in ("state", "cmd")}
@@ -732,9 +737,10 @@ def escalation_rows(add, out, r):
             2: "route 2, the comfortable stop's standstill (call + settle + response)"}.get(route, f"route {route}")
     if route == 2:
         sr = cs.get("settle")
-        add("escalation: comfortable call -> standstill due", o.get("sup_call_to_due"),
+        add("escalation: comfortable stop served -> standstill due", o.get("sup_call_to_due"),
             None if sr is None else float(math.ceil(sr)) + STANDSTILL_OBSERVE_MS,
-            "the comfortable settle + response at the entry speed bound, rounded up to the kernel's ms, "
+            "from the operator's operate path (where the settle starts); the comfortable settle + "
+            "response at the entry speed bound, rounded up to the kernel's ms, "
             f"+ {STANDSTILL_OBSERVE_MS:g} for the island to see the standstill (a kinematic_state period "
             "+ the link)", by=by)
     note = f"{what}; detection delay = tick {tick:g} + switch {switch:g} ({src})"
@@ -926,7 +932,9 @@ def selftest_supervised(check):
     evc = [dict(t_mono_ns=0, source="scenario", kind="inject", marker="odd_exit", value=None),
            vel(-10, 8.3), isl2(150, take, 0), isl2(200, "PUB_MRM_HANDLER_TAKEOVER_REQUEST_STATE", 2),
            isl2(10300, "PUB_MRM_HANDLER_TAKEOVER_REQUEST_STATE", 1),
-           isl2(10301, "CALL_MRM_HANDLER_COMFORTABLE_STOP_OPERATE", 1), isl2(10302, "SUPERVISOR_INJECT", 0xFFFFFFFD),
+           isl2(10301, "CALL_MRM_HANDLER_COMFORTABLE_STOP_OPERATE", 1),
+           isl2(10302, "PATH_MRM_COMFORTABLE_STOP_OPERATOR_OPERATE_ENTRY", 1),
+           isl2(10302.1, "SUPERVISOR_INJECT", 0xFFFFFFFD),
            vel(15000, 8.3), isl2(21397.4, "SUPERVISOR_DEADLINE", (2 << 28) | 21397),
            isl2(21397.45, "SUPERVISOR_SAFE_STATE", 1), isl2(21397.5, "SUPERVISOR_DIRECT", 1 << 28),
            isl2(21450, "SUPERVISOR_HANDOVER", 1), vel(25000, 0.0)]
@@ -936,9 +944,9 @@ def selftest_supervised(check):
                route=188.33, settle=4421.33, total=14914.67, ftti=30000.0)]
     r3 = analyze(sorted(evc, key=lambda e: e["t_mono_ns"]), rc)
     by3 = {v["term"]: v for v in r3["verdicts"]}
-    cd = by3.get("escalation: comfortable call -> standstill due")
+    cd = by3.get("escalation: comfortable stop served -> standstill due")
     check(f"escalation: call -> due {cd and cd['observed']} against settle + response 10939.67 -> 10940 + 156",
-          cd is not None and abs(cd["observed"] - 11096.0) < 1e-6 and cd["ok"] is True)
+          cd is not None and abs(cd["observed"] - 11095.0) < 1e-6 and cd["ok"] is True)
     tt = by3.get("escalation: total (fault -> standstill)")
     check(f"escalation: total {tt and tt['observed']} against {tt and tt['declared']} (21393.67 + 156 + 2 + "
           f"188.33 + 4421.33), PASS", tt is not None and abs(tt["declared"] - 26161.33) < 1e-6 and tt["ok"] is True)

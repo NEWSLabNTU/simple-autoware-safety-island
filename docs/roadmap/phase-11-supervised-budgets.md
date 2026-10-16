@@ -412,9 +412,9 @@ monitor that fires on time, and the rung it can still start, are.
   - Open: the emergency settle after an escalation exceeded its bound by
     1.54 ms once (s6-in4: 4422.87 of 4421.33 from the direct path's first
     command at 8.30 m/s; lag 269.37 ms over the profile 4153.49, against the
-    measured response 256 = 213.11 x 1.2, n 3). s6-in3 read 4400.38, and on
-    the image before the express publishers s6-in2 read 4426.44 and s6-in1
-    4405.22. The ramps of the direct path and of the operator's own path
+    measured response 256 = 213.11 x 1.2, n 3). s6-in3, in5 and in6 read
+    4400.38, 4408.66 and 4400.93, and on the image before the express
+    publishers s6-in2 read 4426.44 and s6-in1 4405.22. The ramps of the direct path and of the operator's own path
     are the same command for command; the overrun is the vehicle's response
     at the top speed. The budget is not resized here; the response term
     needs more runs at 8.3 m/s.
@@ -450,8 +450,10 @@ monitor that fires on time, and the rung it can still start, are.
   | s6-ov5 | encore, 300 ms | 4.16 | 0.03 / 0.04 / 0.57 | 3010.34 / 4421.33 | 3659.13 / 5316.67 | 238.82 / 235.84 | PASS, supervised 7/7 |
   | s6-st4 | encore, stall | 4.16 | 0.03 / 0.04 / 0.57 | 2789.84 / 4421.33 | 3438.76 / 5316.67 | - / - | PASS, supervised 7/7 |
   | s6-st5 | encore, stall | 4.16 | 0.03 / 0.04 / 0.57 | 2799.66 / 4421.33 | 3449.23 / 5316.67 | - / - | PASS, supervised 7/7 |
-  | s6-in3 | b, comfortable inert | 8.30 | 0.03 / - / 0.57 (call -> due 11095.53 of 11096) | 4400.38 / 4421.33 | 25698.03 / 26161.33 | 6.11 / 35.53 | PASS, supervised 6/6 |
-  | s6-in4 | b, comfortable inert | 8.30 | 0.03 / - / 0.56 (call -> due 11095.54 of 11096) | 4422.87 / 4421.33 FAIL | 25701.46 / 26161.33 | 6.99 / 36.04 | act PASS; 1 row FAIL |
+  | s6-in3 | b, comfortable inert | 8.30 | 0.03 / - / 0.57 (served -> due 11094.11 of 11096) | 4400.38 / 4421.33 | 25698.03 / 26161.33 | 6.11 / 35.53 | PASS, supervised 6/6 |
+  | s6-in4 | b, comfortable inert | 8.30 | 0.03 / - / 0.56 (served -> due 11093.91 of 11096) | 4422.87 / 4421.33 FAIL | 25701.46 / 26161.33 | 6.99 / 36.04 | act PASS; 1 row FAIL |
+  | s6-in5 | b, comfortable inert | 8.30 | 0.03 / - / 0.57 (served -> due 11094.13 of 11096) | 4408.66 / 4421.33 | 25674.78 / 26161.33 | 6.00 / 35.53 | PASS, supervised 6/6 |
+  | s6-in6 | b, comfortable inert | 8.30 | 0.03 / - / 0.57 (served -> due 11094.91 of 11096) | 4400.93 / 4421.33 | 25624.63 / 26161.33 | 5.83 / 35.54 | PASS, supervised 6/6 |
 
   The total is from the last sample (encore) or the ODD exit (b). In the
   stall the handler never runs again: mrm_state stays MRM_OPERATING /
@@ -461,7 +463,10 @@ monitor that fires on time, and the rung it can still start, are.
   30 Hz (the earlier stall runs stopped on the host's own heartbeat
   timeout). The overrun case hands over once the spin thread resumes; its
   command -> standstill is ~220 ms longer than the stall's on the same
-  ramp, not explained yet. s6-in4's row is S6's open item. The output
+  ramp, not explained yet. s6-in4's row is S6's open item. Route 2's due
+  is timed from the operator's operate path, where the settle starts: the
+  handler arms it after sending the request, up to ~1.4 ms after its call
+  marker (s6-in6 read 11096.42 from the call). The output
   latched 648.26-649.04 ms after the last sample in the encores, within
   the FTTI. The tools and the first runs (images 5fa405ff, 71e81adc), the
   output an LED only: `island_debug_fault_overrun_ms`
