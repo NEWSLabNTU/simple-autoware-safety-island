@@ -150,23 +150,60 @@ What moved, and what did not:
   reaction tick, 500 ms max_age + the 10 Hz tick's phase, so it moves by up
   to a tick with the phase; not attributed to the priority.
 - Act b's `route` and `dwell` are bimodal: 1-2 ms or ~99 ms after the
-  window's deadline, the handler's next 10 Hz tick. The window opens on a
-  tick, so its deadline falls on a later tick, and whether that tick sees
-  the deadline passed depends on sub-millisecond phase. s7k-in3 (cc14139c,
-  phase 11) read dwell 10100.10 the same way, but the tier runner drew the
-  late tick in 4 of the 5 working-comfortable b runs (derived 5: 1 of 2;
-  derived 3 and the pinned image: 3 of 3) against 0 of 1 on 56b81ad6 (n is
-  small). It costs ~100 ms of act b's margin: totals 20949.63-21074.58 of
-  21393.67 with the late tick (s7k-b8 20849.67 with the early one); route
-  stays under its 149 ms. Open: whether the runner's spin loop (spin_once
-  with the 10 ms park plus the gap step, against run_components'
-  spin_once(10) and k_yield) shifts the tick's phase, or the window check
-  should compare with the tick's due time rather than its run time.
+  window's deadline, the handler's next 10 Hz tick. Closed after the
+  phase: a coin flip of the 1 ms kernel tick, the same on both runners,
+  and budgeted. See "The window's tick phase" below.
 - The overrun's handover (the executor taking the emergency back after the
   300 ms stall) is 227-255 ms on derived 3 against 166-194 on derived 5 and
   56b81ad6's family; it is information, not a term (the direct path holds
   the emergency until then), and with n = 2 not separated from the
   overrun's own phase.
+
+### The window's tick phase (after the phase)
+
+The handler stamps the request inside the tick that turns it on (tick k)
+and expires it on the first tick with `now - stamp >= 10 s`. With a
+100 ms timer the deadline falls exactly on tick k+100, so the expiry tick
+is k+100 when that tick runs at least as late after its due time as tick
+k did, and k+101 otherwise. Read from the island traces (handler tick =
+`PATH_MRM_HANDLER_CALL_MRM_ENTRY` / `ON_TIMER_ENTRY`; dE = tick k+100's
+entry - tick k's entry - 10000 ms; the stamp is 0.22-0.38 ms after the
+entry on every run):
+
+| image | runs | dE (ms) when expiry is k+100 | dE (ms) when expiry is k+101 | late (k+101) |
+|---|---|---|---|---|
+| phase 11 (run_components): s6-b8-*, s7k-b8, s7k-in*, s6-in*, s6-g8i* | 22 | +0.005 .. +1.62 | -1.50 .. -0.004 | 10 of 22 |
+| phase 13 (tier runner): p13-b8*, p13-d3-b8*, p13-f-b8, p13-*in8* | 10 | +0.002 .. +1.00 | -1.53 .. -0.14 | 6 of 10 |
+
+The sign of dE decides every one of the 32 windows. dE is the difference
+of two tick latencies, and those are quantized by the 1 ms kernel tick
+(`SYS_CLOCK_TICKS_PER_SEC=1000`): the handler's tick runs at a fixed phase
+or 1 ms after it. 10 of 22 against 6 of 10 is no difference (Fisher two-
+sided p = 0.70); phase 13's "4 of 5 against 0 of 1" compared one old run
+(s7k-b8, which drew dE = +0.67) with five new ones.
+
+The timer does not drift on either runner. nano-ros's repeating timer
+carries the overshoot (`elapsed_ms -= period_ms` in `Timer::fire`), so it
+is phase-locked to its first release, whatever loop calls `spin_once`.
+Fitted over every handler tick in the act (260-313 ticks, 30-32 s), the
+period is 99.9995-100.0023 ms and the on-time phase moves -0.53 .. +0.14 ms
+end to end on the phase 11 runs, 99.9995-100.0015 ms and -0.08 .. +0.06 ms
+on the phase 13 runs. The tier runner's spin loop (the 10 ms park, the gap
+step) does not shift it.
+
+Why the late tick stays: the window is a LEAST time (the contract's
+`window` comment, phase8-W12). Expiring on tick k+100 regardless (the due
+time instead of the run time, or a tolerance of a tick) would end the
+request up to 1.5 ms before 10 000 ms on the island clock in the runs
+with dE < 0, and the dwell term's lower bound would fail. The contract
+already charges the late tick: `call_mrm`'s 149 ms holds the 100 ms tick
+plus the timer's 18 ms jitter, the dwell is checked in [10 000, 10 149] ms,
+and the total's bound 21 393.67 ms is summed with it. With the late tick
+the working-comfortable act b totals are 20 949.63-21 149.03 ms (s6-b8-a
+on phase 11's image the highest), 244.64 ms or more under the bound; route
+99.18-101.63 ms of 149. Removing the coin flip needs a deadline that is not on the tick (a one-shot at stamp + 10 s,
+another timer entity on the handler), worth ~100 ms in about half the runs;
+not done.
 
 
 ## Not in this phase
