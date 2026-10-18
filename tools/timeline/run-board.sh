@@ -255,6 +255,15 @@ fi
 if [ -n "${RB_OVERRUN:-}" ]; then
     case "$act" in encore|b) ;; *) echo "run-board: RB_OVERRUN is for the encore or b on the board" >&2; exit 2;; esac
     [ "$target" = board ] || { echo "run-board: RB_OVERRUN is for the board" >&2; exit 2; }
+    # The overrun must be armed before the fault tick. With the scenario's
+    # trigger (CARLA C4, or the board's buttons) the act learns of the fault
+    # only when it fires, so scenario.py armed it after: rg-ov1 (2026-10-18)
+    # took it 500 ms into the MRM, on a later call_mrm tick, and SWT0, not
+    # the supervised route, caught it. RB_TRIGGER=button presses the fault
+    # itself after DRIVE_SECS, with the overrun armed first.
+    if [ "$sim" = carla ] && [ "$rb_trigger" != button ]; then
+        echo "run-board: RB_OVERRUN with --sim carla needs RB_TRIGGER=button (the scenario's trigger fires before the overrun can be armed)" >&2; exit 2
+    fi
     case "$RB_OVERRUN" in stall|[1-9]|[1-9][0-9]|[1-9][0-9][0-9]|[1-9][0-9][0-9][0-9]) ;;
         *) echo "run-board: RB_OVERRUN is <ms> (1..2000) or stall" >&2; exit 2;; esac
     # The trace window is re-armed first (readout.py --rearm-only, attach, no
