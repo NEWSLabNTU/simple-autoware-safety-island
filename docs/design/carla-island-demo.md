@@ -52,6 +52,7 @@ contract checks stay exactly as they are.
 | C5, the booth image | `c5-e3`, `c5-a1`, `c5-b2` PASS; `led_vs_trace.py`: every edge within 0.7 ms of the trace (section 5, C5) |
 | C6, the board's buttons | `c6-a2` a PASS 6/6 (`trigger board SW1`), `c6-e1` encore PASS 8/8 (`trigger board SW2`), each press injected through the firmware path; act b on the same image still to run (section 5, C6). The physical press is not verified (nobody at the board) |
 | C8, the proof cast | /mnt/evo/aeon/casts/cast-b1.mp4 (act b: ODD exit -> takeover request -> island MRM -> stop) and cast-a1.mp4 (act a: MANUAL, no MRM), with stills (section 5, C8) |
+| regression round (2026-10-18), nano-ros pin d4bf898409, play_launch 0.18.3 (rlm v0.1.65), phases 11 and 13 in the image | gate image: `rg-e3` encore PASS 8/8, `rg-b1` b PASS 16/16, `rg-a1` a PASS 8/8; booth image: `rg-be2` encore PASS 8/8 (`trigger board SW2`), `rg-bb1` b PASS 16/16, `rg-ba1` a PASS 8/8 (`trigger board SW1`); each RTF 0.998-1.000, SSv2 junit PASS, LED vs trace PASS on the booth image (section 5, regression round) |
 
 ## 1. Architecture
 
@@ -681,7 +682,7 @@ Each unit ends in a gate that is a run, not a review.
 | C3 | the island attached: run-board.sh `--sim carla` (CARLA + scenario + ego instead of the container), RTF recorded per act | G2: encore, a, b each PASS with SUMMARY rows unchanged in meaning, RTF >= 0.95, SSv2 junit PASS | **[x] done 2026-10-14** (below) |
 | C4 | the scenarios: `town01_island_encore.xosc` (CustomCommandAction -> act daemon), `town01_island_odd.xosc` (written; ODD declared, 2.5) with `scenario_file:=` the same path; confirm SSv2 applies `Performance maxSpeed` as Autoware's velocity limit | each act triggered by the scenario at its place, three times back to back without a reflash (W2's re-arm); act a/b's `ODD EXIT` reason is `segment`, between x 239 and 241 | **[x] done 2026-10-14** (below) |
 | C5 | LEDs on by default for the booth image (`CONFIG_ISLAND_LED=y` in a booth conf, not the gate image) | the LED record shows the act's transitions with uptimes matching the trace's `mrm_operating` / `mrm_succeeded` edges within one tick | **[x] done 2026-10-14** (below) |
-| C6 | buttons: SW1 take over, SW2 HPC loss (3.4) | a visitor runs acts a and encore from the board alone | **[ ] gate passed 2026-10-15 for a and encore** (below; the press injected, the physical buttons not pressed); open: act b on the booth image with buttons (no-regression run) |
+| C6 | buttons: SW1 take over, SW2 HPC loss (3.4) | a visitor runs acts a and encore from the board alone | **[x] done** (gate passed 2026-10-15 for a and encore; act b on the booth image with the buttons on, rg-bb1, regression round 2026-10-18, below; the press injected, the physical buttons not pressed) |
 | C7 | the container (phase 2, also W10) | C3's gate with Autoware + acb in the image | |
 | C8 | proof cast: a screencast of one act run end to end. A new 1920x1080 TurboVNC display `:3` (`/opt/TurboVNC/bin/vncserver :3 -geometry 1920x1080`; `:1`/`:2` are the user's 1240x900 desktops and `:9` another user's: never touched), recorded with `ffmpeg -f x11grab` from `:3`. On screen and readable at 1080p: the CARLA chase view of the hero; a map panel with the ODD polygon (2.5), the ego pose and a marker where the ODD exit fired; the takeover request (`/system/operation_mode/availability`, the operation mode, `/system/takeover_request/state`); the island's MRM state with its LED colour mirrored on screen (section 3.2's mapping, from `/system/fail_safe/mrm_state`; the host has no webcam for the board itself); wall-clock and simulation timestamps | one cast in which ODD exit -> takeover request -> island MRM -> stop are visible in that order | **[x] done 2026-10-14** (below) |
 | L1-L3 | direct link, future (1.5): D0 one router on serial, then D1 Ethernet after a media converter | 1.5's gates | |
@@ -1152,3 +1153,113 @@ the physical LED on camera (no camera on the host; the LED on screen is
 mirrored from the topic, and led_vs_trace shows the board's LED changed in
 the same tick); a person's takeover at the booth (the act's scripted
 button presses MANUAL); the cast on a display other than TurboVNC.
+
+**Regression round (2026-10-18, evidence).** Main at `bac35cd` (phase 11's
+supervised budgets and emergency response, phase 13's derived priorities,
+nano-ros pin `d4bf898409`) with play_launch 0.18.3 (rlm v0.1.65), CSB
+`3883f86` (acb `9ec6343` era, unchanged since C6), on CARLA through
+`run-board.sh --sim carla`, each act on its own boot. Branch
+`carla-regression` (worktree under /mnt/mx500, its own `just setup-cli`,
+`just doctor` OK, host overlay built from the same tree). Images: the gate
+image (`just board-build`, sha256 `404524a32c664b24...`, FLASH 575,884,
+RAM 280,672, DTCM 117,584, ITCM 14,832, `# CONFIG_ISLAND_LED is not set`)
+and the booth image (`just board-build-booth`, `d4cf6c1aac543c56...`,
+FLASH 577,372, DTCM 117,792, ITCM 14,904, `CONFIG_ISLAND_LED=y`,
+`CONFIG_ISLAND_BUTTONS=y`); both `priority-check [ok]` (transport [4, 4],
+pool.app [5, 14], mrm 3, supervisor 2). Nothing in the contract or the
+run tooling needed a change for play_launch 0.18.3; the model check,
+`play_launch check --explain` and the SUMMARY read as on the planning
+simulator.
+
+| image | act | run | SUMMARY | table | trigger | trace window | RTF | junit | LED vs trace | load at act |
+|---|---|---|---|---|---|---|---|---|---|---|
+| gate | encore | rg-e3 | PASS | 8/8 (+1 n/a), total 3012.57 of 5228.67 ms; hazard_lights_on 545.49 ms | hpc-loss at (287.2, -129.4) | 11,900 B over 19.6 s, at the first drive | 1.000 | PASS | - | 12.04 |
+| gate | b | rg-b1 | PASS | 16/16 (+1 n/a), total 16052.68 of 21393.67 ms; hazard_lights_on 173.49 | ODD EXIT segment (239.9, -129.4) | 22,128 B over 30.6 s, re-armed 4.00 s before the exit (go -> ack 57.5 ms) | 1.000 | PASS | - | 10.82 |
+| gate | a | rg-a1 | PASS | 8/8; hazard_lights_on 295.63 | ODD EXIT segment (239.9, -129.4) | 19,874 B over 27.7 s, 4.00 s (52.7 ms) | 1.000 | PASS | - | 7.30 |
+| booth | encore | rg-be2 | PASS | 8/8 (+1 n/a), total 3025.13 of 5228.67 ms; hazard_lights_on 635.43 | board SW2 (injected, inject -> seen 186.5 ms, seen -> SIGSTOP 1.72 ms) at (286.6, -129.4) | 12,124 B over 19.9 s, at the first drive | 0.998 | PASS | PASS (mrm_operating +0.1 ms, mrm_succeeded -0.1, normal +0.1) | 18.62 |
+| booth | b | rg-bb1 | PASS | 16/16 (+1 n/a), total 14598.14 of 21393.67 ms; hazard_lights_on 243.93 | ODD EXIT segment (239.9, -129.4) | 21,066 B over 29.1 s, 4.00 s (105.9 ms) | 1.000 | PASS | PASS (operating -> succeeded LED 4498 ms, trace 4498.0) | 12.73 |
+| booth | a | rg-ba1 | PASS | 8/8; hazard_lights_on 291.69 | board SW1 (injected, inject -> seen 213.5 ms, seen -> MANUAL request 38.31 ms) after ODD EXIT segment (239.9, -129.4) | 19,824 B over 27.6 s, 4.00 s (54.2 ms) | 1.000 | PASS | PASS (tor_off +0.3 ms) | 14.11 |
+
+SUMMARY lines:
+
+    SUMMARY rg-e3 encore: PASS; load 12.04 at act; table 8/8 PASS (+1 n/a), total 3012.57 of 5228.67 ms; trace-check PASS (window 2 of the boot), trace 11,900 of 53,248 B over 19.6 s, re-armed when the ego drove; stored 1 (silence-runtime x1); serial in act 1/1 (overruns/bad frames); heap peak 66216 of 107008 B; supervisor not driven, SWT0 fires 0, spin gap max 12.708 ms, priorities spin 3 / reaction 2 AGREE with the plan; sim carla, RTF 1.000, SSv2 junit PASS, trigger hpc-loss at (287.2, -129.4), vlimit 7.00 m/s asked, 4.17 selected
+    SUMMARY rg-b1 b: PASS; load 10.82 at act; table 16/16 PASS (+1 n/a), total 16052.68 of 21393.67 ms; trace-check PASS (window 2 of the boot), trace 22,128 of 53,248 B over 30.6 s, re-armed 4.00 s before the ODD exit (go -> ack 57.5 ms); stored 1 (silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 66264 of 107008 B; supervisor not driven, SWT0 fires 0, spin gap max 13.226 ms, priorities spin 3 / reaction 2 AGREE with the plan; sim carla, RTF 1.000, SSv2 junit PASS, trigger ODD EXIT segment (239.9, -129.4) outside the ODD polygon, odd_monitor -> gate -0.24 ms, vlimit 7.00 m/s asked, 4.17 selected
+    SUMMARY rg-a1 a: PASS; load 7.30 at act; table 8/8 PASS; trace-check PASS (window 2 of the boot), trace 19,874 of 53,248 B over 27.7 s, re-armed 4.00 s before the ODD exit (go -> ack 52.7 ms); stored 1 (silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 65992 of 107008 B; supervisor not driven, SWT0 fires 0, spin gap max 12.703 ms, priorities spin 3 / reaction 2 AGREE with the plan; sim carla, RTF 1.000, SSv2 junit PASS, trigger ODD EXIT segment (239.9, -129.4) outside the ODD polygon, odd_monitor -> gate 0.88 ms, vlimit 7.00 m/s asked, 4.17 selected
+    SUMMARY rg-be2 encore: PASS; load 18.62 at act; table 8/8 PASS (+1 n/a), total 3025.13 of 5228.67 ms; trace-check PASS (window 2 of the boot), trace 12,124 of 53,248 B over 19.9 s, re-armed when the ego drove; stored 1 (silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 66216 of 107008 B; supervisor not driven, SWT0 fires 0, spin gap max 12.707 ms, priorities spin 3 / reaction 2 AGREE with the plan; sim carla, RTF 0.998, SSv2 junit PASS, trigger board SW2 (injected, island uptime 142568 ms, inject -> seen 186.5 ms, seen -> SIGSTOP 1.72 ms) at (286.6, -129.4), vlimit 7.00 m/s asked, 4.17 selected
+    SUMMARY rg-bb1 b: PASS; load 12.73 at act; table 16/16 PASS (+1 n/a), total 14598.14 of 21393.67 ms; trace-check PASS (window 2 of the boot), trace 21,066 of 53,248 B over 29.1 s, re-armed 4.00 s before the ODD exit (go -> ack 105.9 ms); stored 1 (silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 66264 of 107008 B; supervisor not driven, SWT0 fires 0, spin gap max 12.727 ms, priorities spin 3 / reaction 2 AGREE with the plan; sim carla, RTF 1.000, SSv2 junit PASS, trigger ODD EXIT segment (239.9, -129.4) outside the ODD polygon, odd_monitor -> gate -0.23 ms, vlimit 7.00 m/s asked, 4.17 selected
+    SUMMARY rg-ba1 a: PASS; load 14.11 at act; table 8/8 PASS; trace-check PASS (window 2 of the boot), trace 19,824 of 53,248 B over 27.6 s, re-armed 4.00 s before the ODD exit (go -> ack 54.2 ms); stored 1 (silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 65992 of 107008 B; supervisor not driven, SWT0 fires 0, spin gap max 12.727 ms, priorities spin 3 / reaction 2 AGREE with the plan; sim carla, RTF 1.000, SSv2 junit PASS, trigger board SW1 (injected, island uptime 127114 ms, inject -> seen 213.5 ms, seen -> MANUAL request 38.31 ms) after ODD EXIT segment (239.9, -129.4) outside the ODD polygon, odd_monitor -> gate 1.11 ms, vlimit 7.00 m/s asked, 4.17 selected
+
+The rows are the planning simulator's current terms: the a table has 8 rows
+and b 16 (phase 11 added the supervised route and the settle judged as one
+sum), and the encore and b budgets are the phase 11/13 derivations (5228.67
+and 21393.67 ms); every observed value is inside them with the margins of
+C3-C6. Phases 11 and 13 hold on CARLA: the supervisor record reads not
+driven and SWT0 fires 0 in every act (no route deadline missed), the
+longest feed-to-feed gap is 12.70-13.23 ms, and the kernel's thread
+priorities at the first spin agree with the derived plan in all six. Button
+records after the booth acts (`board_buttons.py show`): rg-be2 one press,
+SW2 accepted (NORMAL); rg-ba1 one press, SW1 accepted; rg-bb1 none;
+`gpio_errors 0`. `orphans: 0` after each.
+
+The open C6 item is closed: act b on the booth image with the buttons on
+(rg-bb1) passes with the same table and LED record as the gate image's b.
+`hazard_lights_on` read a value in all six acts (encore 545-635 ms, b
+174-244 ms, a 292-296 ms), each act on a fresh boot and a fresh ego.
+
+What it took:
+
+| run | what failed | fix |
+|---|---|---|
+| rg-e1, rg-e2 | flash failed: `Memory transfer fault (FAULT ACK) @ 0x20002c00` (the flash algorithm's RAM), then on the retry `@ 0x00423000` while erasing (the half-programmed sector); the booth image's first flash did the same (`@ 0x20004800`, then `@ 0x0041c800`) | `pyocd erase --sector` of that one 8 KiB sector, then the flash passed; run-board now does it (up to 3 tries; a RAM fault is retried, a fault inside the image's flash range erases that sector first). w9c-e1 exercised it: `flash try 1: FAULT ACK in RAM at 0x20004800`, `flash try 2: ... at 0x0041c400; erasing the sector 0x0041c000`, then programmed |
+| rg-be1 | no verdict: run-board.sh was edited while the run executed it (bash reads a script as it runs) and died with a syntax error at step 5, leaving its CARLA, csb, ego, router and gateway process groups running | those groups stopped by pgid (SIGINT, then SIGKILL), ports and GPU checked free; rerun (rg-be2). Never edit run-board.sh while an act runs |
+
+The three bugs carried from C5/C6:
+
+- **c6-a1's timer overruns** (3 `timer-overrun-runtime timer`, 29, 9 and 9
+  dropped activations, after arming and before the window): not
+  recurred, 0 in all six acts. nano-ros checks every timer's overrun
+  counter on each spin and stores the delta, so 29 is one spin gap of
+  about 29 periods (about 1 s on the 33 ms emergency operator, 2.9 s on a
+  100 ms timer). Two candidate causes were tested and ruled out on the
+  bench (router and gateway up, the island joined, no Autoware): a pyocd
+  attach (`readout.py --serial-only`, the act start's read and the re-arm
+  helper's attach): 20 attaches in 18 s left the longest feed-to-feed gap
+  at 11.6 ms and the serial counters at 0 overruns, 0 bad frames; and the
+  button bridge (it attaches only at the re-arm, after c6-a1's overruns).
+  One mechanism that does stall the spin was found: with the gateway gone,
+  about 90 s later (the 60 s lease, then the session lost), the spin
+  stalls about 12.3 s at a time (gaps 12263 and 12275 ms on the bench) and
+  SWT0 latches the safe-state output at the first timeout (uptime
+  180597 ms), as designed; the same 12.3 s gap was in the supervisor record
+  after rg-b1's teardown. It needs a lost session, which no act had. The
+  cause of c6-a1's overruns is not known; the supervisor record that the
+  C6 image lacked (longest gap with its end uptime) now dates any
+  recurrence.
+- **tm-b1's silent re-arm helper** (nothing in 22 s, act FATAL): the
+  helper is `python3 tools/timeline/readout.py`, whose imports (pyocd and
+  pyelftools, from ~/.local on /home, the spinning disk) block on that
+  disk under other jobs' I/O. Measured on 2026-10-18: `import
+  pyocd.core.helpers, elftools.elf.elffile` took 38 s, and an `import
+  pyocd` over 6 min at an I/O pressure of 87 % (`/proc/pressure/io` some
+  avg60), the process in D state in `read_extent_buffer_pages`; the probe
+  and the session take 0.1 s. tm-b1 ran from the main checkout on /home
+  too. The helper now prints a stamped line per phase (`re-arm helper
+  up`, `symbols read`, `pyocd imported`, `probe chosen`, `session open`,
+  each `at +<s> s` of its own start), the act keeps them in its `rearm`
+  event and prints them in the FATAL line, and pyocd's probe choice no
+  longer waits forever for a probe. In this round: up +0.01 s, symbols
+  +0.15, pyocd imported +0.33, probe +0.34, session +0.40 (rg-b1).
+- **In-run bad frames with no UART error** (docs/serial-link.md 10, 11.4,
+  11.5): 0 in this round. Over the six acts (15,762 frames received by the
+  island, 2,137-3,161 per act, read at each readout since boot): one bad
+  frame, in rg-e3, with one UART overrun in the same act window, so a byte
+  lost in the RX FIFO, not the case that is open; no ring overflow, no
+  framing, noise or parity error anywhere. The data does not allow a
+  cause for the open case (none occurred, and the gate image carries no
+  frame capture); the bench rules out the SWD attach as a source of
+  overruns.
+
+Not verified in the regression round: the physical presses (injected, as
+C6); `--keep-boot` chains; the encore and acts under the planning
+simulator with this image (phase 13's own rounds); the overrun in rg-e3
+(its instant is not recorded: the counters are read twice per act).
