@@ -560,10 +560,47 @@ if [ "$target" = board ] && [ "$flash" = 1 ]; then
     # read faults on ECC ("FAULT ACK @ 0x0041f000" while erasing, on every
     # retry, p11-s6-b1): `pyocd erase -t s32k344 --sector <address>` (one
     # sector; NEVER --chip on this part, see board-flash) clears it.
-    run pyocd reset -t s32k344 --halt >/dev/null 2>&1 || echo "   (pyocd reset --halt failed; flashing anyway)"
-    run pyocd flash -t s32k344 "$elf" || {
-        echo "run-board: flash failed (a FAULT ACK at a flash address on every retry: erase that one sector,"
-        echo "run-board:   pyocd erase -t s32k344 --sector <address>; never --chip)"; exit 1; }
+    #
+    # carla-regression (2026-10-18): the first flash after an act failed
+    # this way three times in a row (rg-e1, the booth image's first flash),
+    # each time in the flash algorithm's RAM (0x2000xxxx), and the next try
+    # then faulted on the half-programmed sector in flash; erasing that one
+    # sector and flashing again passed every time. So: up to 3 tries; a
+    # fault in RAM is retried as it is, a fault inside the image's own
+    # flash range erases that 8 KiB sector first (it is reprogrammed by the
+    # same flash). A fault anywhere else stops the run as before.
+    flash_board() {
+        local try out rc addr lo hi sector
+        read -r lo hi < <(python3 -c 'import sys
+from elftools.elf.elffile import ELFFile
+e = ELFFile(open(sys.argv[1], "rb"))
+r = [(s["p_paddr"], s["p_paddr"] + s["p_filesz"]) for s in e.iter_segments() if s["p_type"] == "PT_LOAD" and s["p_filesz"] and 0x00400000 <= s["p_paddr"] < 0x00800000]
+print(min(a for a, _ in r), max(b for _, b in r))' "$elf")
+        for try in 1 2 3; do
+            pyocd reset -t s32k344 --halt >/dev/null 2>&1 || echo "   (pyocd reset --halt failed; flashing anyway)"
+            out=$(pyocd flash -t s32k344 "$elf" 2>&1); rc=$?
+            printf '%s\n' "$out" | tr '\r' '\n' | sed -E 's/^\[[-=|]*\]?//' | grep -E ' [IWCE] |rror' | sed 's/^/   /'
+            [ "$rc" = 0 ] && return 0
+            addr=$(printf '%s' "$out" | grep -oE 'FAULT ACK\)\) @ 0x[0-9a-fA-F]+' | tail -n1 | grep -oE '0x[0-9a-fA-F]+$')
+            [ -n "$addr" ] || return 1
+            if [ $((addr)) -ge $((0x20000000)) ]; then
+                echo "   flash try $try: FAULT ACK in RAM at $addr (the flash algorithm); retrying"
+            elif [ -n "$lo" ] && [ $((addr)) -ge "$lo" ] && [ $((addr)) -lt "$hi" ]; then
+                sector=$(printf '0x%08x' $(( addr & ~0x1fff )))
+                echo "   flash try $try: FAULT ACK in the image's flash at $addr; erasing the sector $sector, retrying"
+                pyocd erase -t s32k344 --sector "$sector" 2>&1 | tr '\r' '\n' | grep -E 'Erasing|[0-9] [CE] ' | sed 's/^/   /'
+            else
+                return 1
+            fi
+        done
+        return 1
+    }
+    if [ "$dry" = 1 ]; then echo "   [dry-run] pyocd reset -t s32k344 --halt; pyocd flash -t s32k344 $elf (up to 3 tries)"
+    else
+        flash_board || {
+            echo "run-board: flash failed (a FAULT ACK at a flash address on every retry: erase that one sector,"
+            echo "run-board:   pyocd erase -t s32k344 --sector <address>; never --chip)"; exit 1; }
+    fi
 else
     echo "   (nothing to flash: target $target, flash=$flash)"
 fi
