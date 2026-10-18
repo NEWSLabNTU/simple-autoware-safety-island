@@ -1473,7 +1473,7 @@ reaction 2 AGREE with the plan, serial in act 0/0 (overruns/bad frames),
 heap peak 66,320-66,552 of 107,008 B.
 
 - **The planning encore's hazard lights**: the island published ENABLE on
-  `/system/hazard_lights_cmd` (probe `island_hazard_lights_cmd`, 4.2 s)
+  `/system/emergency/hazard_lights_cmd` (probe `island_hazard_lights_cmd`, 4.2 s)
   and hazard_relay logged `system hazard lights -> ENABLE`, but the
   simulator's `/vehicle/status/hazard_lights_status` stayed DISABLE
   through the act, so the row reads `-`. The CARLA encore and both
