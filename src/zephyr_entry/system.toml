@@ -54,3 +54,12 @@ graph_discovery = false
 
 [image.zephyr.knobs.executor]
 max_violations = 8
+
+# Parameter descriptions: none. No island node sets one, and the store pays
+# the capacity per slot whether a description is set or not (nano-ros Kconfig
+# NROS_MAX_PARAM_DESCRIPTION_LEN, default 256): 22 slots x 256 B = 5,632 B,
+# all of it in DTCM, because the parameter store is part of the executor
+# storage the entry relocates there (src/zephyr_entry/CMakeLists.txt).
+# `ros2 param describe` answers with an empty description.
+[image.zephyr.knobs.params]
+max_param_description_len = 0
