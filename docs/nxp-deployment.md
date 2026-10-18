@@ -547,9 +547,48 @@ written in a comment would survive the next appended field. The rule nano-ros
 applies there is the one this section applies everywhere -- **the size is known
 to the compiler, so read it from the compiler's output.**
 
-DTCM's 84,368 B is four symbols and change:
-`rclcpp::Node::GlobalStorageHolder<0>::storage` at 68,112 B, and the four
-`__nros_comp_buf_*` per-node component buffers at 6,688, 3,736, 2,856 and 2,064.
+### DTCM
+
+One section, `.dtcm_bss_reloc`, and nothing of Zephyr's own `.dtcm_*`
+sections. `nm -S` over the gate image (`just board-build`, nano-ros pin
+235a62e913) puts every byte in it into six groups:
+
+| bytes | % of 131,072 | owner | placed by |
+| ---: | ---: | --- | --- |
+| 53,253 | 40.63 | the RAM trace buffer `ram_tracing` (`CONFIG_RAM_TRACING_BUFFER_SIZE` 53,248) and its `pos` / `buffer_full` | `zephyr_code_relocate(FILES tracing_backend_ram.c)`, deliberately (docs/tracing.md section 8) |
+| 47,288 | 36.08 | `__nros_tier_executor_storage`: `NROS_CPP_EXECUTOR_STORAGE_SIZE`, the executor header (1,784), its inline backing (the derived arena, 25,724, plus the parameter store and the callback, sched-context and node tables) and the C++ wrapper | `zephyr_code_relocate(LIBRARY app)`, deliberately |
+| 10,052 | 7.67 | the three `__nros_comp_buf_*` component buffers: mrm_handler 5,136, comfortable stop 2,848, emergency stop 2,056, plus their pointers | the same library, deliberately |
+| 925 | 0.71 | the island supervisor: its thread object (272), `island_supervisor_record` (508), timers and state | rides with the library |
+| 888 | 0.68 | the contract's baked tables: monitors 432, modes 240, hazards 152, ages 64 | rides with the library |
+| 32 | 0.02 | `island_assert_record` | rides with the library |
+
+112,448 B used (85.79%), 18,624 B free. `linker/dtcm-headroom.ld` fails the
+link below 8 KiB free, so **10,432 B** is what a change can still add before
+the link refuses.
+
+Everything in the table is CPU-only; nothing a DMA master touches is in it.
+The two halves that matter for timing, the executor storage and the
+component buffers, are what the spin path reads and writes. The trace buffer
+is written by the CPU and read over SWD.
+
+Two knobs keep it at that size:
+
+- `max_param_description_len = 0` (`src/zephyr_entry/system.toml`). The
+  parameter store pays the description capacity per slot whatever the slot
+  holds, and the store is part of the executor storage: at the nano-ros
+  default of 256 it was 22 x 256 = 5,632 B of DTCM, and no island node sets a
+  description.
+- A contract mode whose numbers equal the base's bakes no rows (nano-ros issue
+  1958) and judges by the base table. The island's five modes all equal the
+  base row for row, so the mode storage is the six table headers, 240 B.
+
+What the next additions cost, from the same build (`nros_node_config.rs` and
+the generated entry): one more subscription grows the derived arena by about
+3,664 B (`PUBSUB_ENTRY`), one more service by about 4,016 B, a timer by 64 B;
+a monitored publisher row 72 B, an age row 64 B, a hazard about 76 B, a mode
+40 B (plus 48 B per row and 32 B per age row if its numbers differ from the
+base's). A new component costs `sizeof` its class. Two subscriptions fit
+under the guard; three do not.
 
 ### What this answers for the L4 design
 
@@ -564,10 +603,15 @@ about section 9.1's sizing note on P2.
 
 ### What is NOT in the map
 
-**The executor arena.** It is the largest single allocation in the image and it
-never appears as a symbol, because it is carved out of the TLSF heap at runtime
-rather than reserved in `.bss`. `CONFIG_NROS_EXECUTOR_ARENA_SIZE=0` means
-derive, and `nros-node`'s build script derived it for this image:
+**The executor arena, as a symbol of its own.** It is not in the SRAM
+table, and it is not a heap allocation either: on this image it is carved out
+of the executor's inline backing (`ExecutorInlineStorage`, an `Executor`
+header followed by the `ExecutorSizing::DEFAULT` backing, arena included), so
+it lives inside `__nros_tier_executor_storage` in DTCM (section "DTCM" above).
+The figures below are the derivation as it stood at the 2026-09-25 pin, when
+the arena was a heap allocation; at the current pin the build script derives
+14 callback slots and 25,724 B. The cmake gate quoted below applies only when
+an arena size is stated, and this image derives it.
 
 ```
 build-board/nros-rust/.../nros-node-*/out/nros_node_config.rs
@@ -598,15 +642,17 @@ parameter cost is in the 24 service queryables, not in the store.
 `src/zephyr_entry/CMakeLists.txt`:
 
 ```
-zephyr_code_relocate(LIBRARY app                            LOCATION DTCM_BSS)
+zephyr_code_relocate(LIBRARY app LOCATION DTCM_BSS)
+zephyr_code_relocate(FILES ${ZEPHYR_BASE}/subsys/tracing/tracing_backend_ram.c LOCATION DTCM_BSS)
 zephyr_code_relocate(LIBRARY mrm_handler_lib                   LOCATION ITCM_TEXT)
-zephyr_code_relocate(LIBRARY stop_mode_operator_lib            LOCATION ITCM_TEXT)
 zephyr_code_relocate(LIBRARY mrm_emergency_stop_operator_lib   LOCATION ITCM_TEXT)
 zephyr_code_relocate(LIBRARY mrm_comfortable_stop_operator_lib LOCATION ITCM_TEXT)
 ```
 
-DTCM takes the entry's `.bss` -- executor storage plus the four per-node
-component buffers. ITCM takes the four MRM node bodies. The constraint that
+DTCM takes the entry's `.bss` -- executor storage, the component buffers, the
+contract tables and the supervisor -- and, through a second line
+(`zephyr_code_relocate(FILES tracing_backend_ram.c LOCATION DTCM_BSS)`), the
+RAM trace buffer. ITCM takes the MRM node bodies. The constraint that
 decides what may move is **DMA reachability**: neither TCM is reachable by the
 DMA masters, so Ethernet descriptors and the `net_pkt` / `net_buf` pools must
 stay in SRAM. The relocation must not be extended to the net stack.
@@ -621,8 +667,10 @@ Both relocations depend on `patches/zephyr/0001-gen_relocate_app-fix-source-to-o
 Stock Zephyr 4.4 cannot relocate a source generated into the build root: on no
 match it writes an empty fragment, prints nothing, and exits 0. Without the
 patch these lines link fine and relocate nothing. **Verify by the region
-report, never by the build succeeding.** The report above is that verification:
-12,524 B in ITCM and 84,368 B in DTCM are not zero, so both relocations ran.
+report, never by the build succeeding.** On the current gate image the report
+reads ITCM 14,824 B and DTCM 112,448 B; neither is zero, so both relocations
+ran, and `ram_tracing` and `__nros_tier_executor_storage` both link at
+0x2000xxxx.
 
 ---
 
