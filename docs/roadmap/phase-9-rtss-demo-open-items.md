@@ -867,6 +867,18 @@ phases, this repository by fast-forward push.
   NORMAL: stock wiring FAILS on the wall clock (no ENABLE) and on /clock
   with a later boot stamp (latched after the stop), restamped wiring PASSES
   in wall, sim and sim with an earlier boot stamp.
+  Also on the branch: one publisher on the selector's system input,
+  /system/hazard_lights_cmd. W18's topic_tools relay (forwarding the
+  island's command) and takeover_demo's hazard_relay (DISABLE outside a
+  comfortable stop) both published there, and in a takeover request they
+  raced at the selector, which keeps the last sample: whichever timer phase
+  won a run decided act a's lights (`-` in w14-a, c4-a1, c4-a2, c5-a1,
+  tm-a2). The relay is removed; hazard_relay forwards the island's ENABLE
+  while fresh (1 s) in every MRM state and says DISABLE otherwise, at 10 Hz.
+  `test/test_hazard_relay.py` (pytest) and `test/hazard_chain_replay.py`
+  (the real selector and gate, normal / takeover request / comfortable stop
+  / emergency stop / normal): old wiring FAIL (takeover request), new
+  wiring PASS, twice.
 - **W10 - the Orin container.** The booth machine is an Orin, in
   Yokohama, after submission (branch `orin-arm64`): the
   `sai-l3-autoware` image built for arm64, with the same start checks
