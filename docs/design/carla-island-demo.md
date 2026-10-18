@@ -1352,6 +1352,13 @@ until N ms past its due before the supervisor hears of it. Board runs
 (sl-late-a1's release-jitter and timer-overrun verdicts and its 115.9 ms
 gap are the injected hold's.)
 
+Merged main `f8a3867` (pin ebf7140191), the gate image rebuilt and flashed:
+the island joins over the serial link and both acts pass, the supervisor
+not driven.
+
+    SUMMARY sl-main-e1 encore: PASS; load 7.32 at act; table 8/8 PASS (+1 n/a), total 3466.21 of 5228.67 ms; trace-check PASS, trace 19,278 of 53,248 B over 38.1 s; stored 5 (hazard-detected x2, hazard-recovered x2, silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 66312 of 107008 B; supervisor not driven, SWT0 fires 0, spin gap max 12.545 ms, priorities spin 3 / reaction 2 AGREE with the plan
+    SUMMARY sl-main-a1 a: PASS; load 16.78 at act; table 8/8 PASS; trace-check PASS, trace 28,636 of 53,248 B over 51.2 s; stored 5 (hazard-detected x2, hazard-recovered x2, silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 66144 of 107008 B; supervisor not driven, SWT0 fires 0, spin gap max 13.035 ms, priorities spin 3 / reaction 2 AGREE with the plan
+
 **The W9 gate on the board (2026-10-18).** Branch `w9-hazard-stamp`
 `73c6e59` (the island's hazard command restamped on the host for
 vehicle_cmd_gate, island_restamp; hazard_relay the one publisher of
