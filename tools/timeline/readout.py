@@ -85,6 +85,7 @@ import subprocess
 import sys
 import time
 
+T0 = time.monotonic()  # the helper's own start, for the re-arm's phase stamps
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, os.path.join(ROOT, "src/safety_island_tracing"))
@@ -242,14 +243,30 @@ class Qemu:
         self.s.close()
 
 
+def stamp(what):
+    print(f"readout: {what} at +{time.monotonic() - T0:.2f} s", flush=True)
+
+
 class Board:
     """pyocd on the MCU-Link, attach mode (phase8-W8 ran it; see the module doc)."""
 
-    def __init__(self, target="s32k344"):
+    def __init__(self, target="s32k344", stamps=False):
+        # stamps (the re-arm helper): one flushed line per phase, so a slow
+        # attach says where it is (tm-b1: nothing in 22 s; pyocd's import
+        # alone, from ~/.local on the loaded /home disk, measured 38 s to
+        # over 6 min under other jobs' I/O)
         from pyocd.core.helpers import ConnectHelper
+        if stamps:
+            stamp("pyocd imported")
         self.session = ConnectHelper.session_with_chosen_probe(
-            target_override=target, connect_mode="attach", options={"frequency": 4000000})
+            blocking=False, target_override=target, connect_mode="attach", options={"frequency": 4000000})
+        if self.session is None:
+            raise RuntimeError("no debug probe found (pyocd lists none; another process holds it, or it is unplugged)")
+        if stamps:
+            stamp("probe chosen")
         self.session.open()
+        if stamps:
+            stamp("session open")
         self.t = self.session.board.target
 
     def halt(self):
@@ -286,8 +303,8 @@ def rearm(a, syms):
         print(f"readout: write32 {REARM} @ {syms[REARM][0]:#010x} = 1, wait for 0")
         return 0
     if a.wait_go:
-        print("readout: re-arm attaching (symbols read)", flush=True)
-    dev = Board()
+        stamp("re-arm attaching (symbols read)")
+    dev = Board(stamps=a.wait_go)
     try:
         before = dev.read32(syms["island_trace_rearms"][0])
         if a.wait_go:
@@ -356,6 +373,8 @@ def main():
                     help="with --rearm-only: after the re-arm, stay attached as the act's button bridge "
                          "(board_buttons.py; CARLA demo C6) until `quit` or EOF on stdin")
     a = ap.parse_args()
+    if a.rearm_only and a.wait_go:
+        stamp("re-arm helper up (reading the ELF's symbols)")
     syms = symbols(a.elf, set(WORDS) | {BUFFER, violations.RECORD, SERIAL, BOOTREC, ASSERT, violations.SUPERVISOR} |
                    set(violations.ARM_WORDS) | {REARM, "island_button_record"})
     if a.rearm_only:

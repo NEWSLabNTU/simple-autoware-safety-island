@@ -377,7 +377,7 @@ class Rearm:
         return dict(rc=self.rc, out=self.done_line(), t_start_ns=self.t_start, t_ready_ns=self.t_ready,
                     t_done_ns=self.t_done, start_to_ready_ms=ms(self.t_start, self.t_ready),
                     go_to_done_ms=ms(self.t_go, self.t_done), start_to_done_ms=ms(self.t_start, self.t_done),
-                    lines_ms=self.stamped[-6:])
+                    lines_ms=self.stamped[:8] + self.stamped[8:][-8:])
 
 
 def read_odd_polygon(path):
