@@ -117,8 +117,9 @@
 # parameter file for Autoware, demo/l3/container/run.sh; phase10-B6 runs at
 # the declared entry speed with demo/l3/config/common-30kmh.param.yaml),
 # SAI_DEMO_LOCK,
-# RB_HAZARD_RELAY (1: start takeover_demo's hazard_relay at step 6, for an
-# overlay without W18's relay, phase9-W9; default 0),
+# RB_HAZARD_RELAY (1: start takeover_demo's hazard_relay at step 6, the one
+# publisher of the selector's system hazard input, phase9-W9; default 1;
+# 0 only for an overlay that still has W18's relay),
 # RB_HOST_WS (the host overlay; default build/l3-host-ws/install, else
 # demo/host_ws/install), RB_LOAD_MAX (the 1-min load ceiling, 35),
 # RB_EXPLAIN (a saved `play_launch check --explain` output whose budgets the
@@ -765,14 +766,14 @@ fi
 step "6. the gate and the probe"
 bg "$dir/gate.stdout" l3 "exec $RB_GATE"; gate_pid="${pids[*]: -1}"
 bg "$dir/probe.stdout" l3 "exec $RB_PROBE"; probe_pid="${pids[*]: -1}"
-if [ "${RB_HAZARD_RELAY:-0}" = 1 ]; then
+if [ "${RB_HAZARD_RELAY:-1}" = 1 ]; then
     # phase9-W9: takeover_demo's hazard_relay is the one publisher of the
     # selector's system hazard input (/system/hazard_lights_cmd) once W18's
     # topic_tools relay is gone from tier4_system_launch; nothing else in a
     # run starts it, and without it the island's ENABLE never reaches the
     # vehicle outside an EMERGENCY_STOP (w9c-a1 hazard_lights_on -, w9c-b1
-    # 25.8 s). Off by default: with W18's relay still in the overlay the two
-    # would race at the selector (W9's finding)
+    # 25.8 s). On by default since W18's relay left the overlay; set 0 only
+    # for an older overlay that still has it (the two race at the selector)
     bg "$dir/hazard_relay.log" l3 "RCUTILS_LOGGING_BUFFERED_STREAM=0 exec ros2 run takeover_demo hazard_relay"
 fi
 if [ "$sim" = carla ] && [ "$rb_trigger" != button ] && [ "$act" != encore ]; then
