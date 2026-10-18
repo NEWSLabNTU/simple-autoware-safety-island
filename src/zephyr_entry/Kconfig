@@ -164,6 +164,11 @@ config ISLAND_DEBUG_SPIN_STALL
 	  violations.py spin-stall). Inert while the word is 0, as it is
 	  from boot: only a debugger writes it.
 
+	  Also island_debug_late_return_ms (violations.py late-return N): the
+	  next spin that answered the executor's supervised route (route 1)
+	  before its due holds until N ms past that due before the supervisor
+	  hears of it, once: the late notice of a route answered in time.
+
 endif
 
 source "Kconfig.zephyr"

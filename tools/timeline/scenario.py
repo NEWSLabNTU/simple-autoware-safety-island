@@ -575,6 +575,21 @@ def run(act, log):
             say(f"FATAL: the overrun could not be armed (exit {rc_inj})")
             bye(2)
         spin_for(1.0)
+    # The late notice (run-board.sh RB_LATE_RETURN: violations.py late-return
+    # <ms> over SWD): a spin that answered route 1 in time holds past its due
+    # before the supervisor hears of it. Taken within one route (~100 ms),
+    # well before the fault; the act is judged as usual (no latch expected).
+    late = ENV("SCENARIO_LATE_CMD", "")
+    if late:
+        say(f"== 3c. late notice armed: {late} ==")
+        t_late = time.monotonic_ns()
+        rc_late = subprocess.run(late, shell=True).returncode
+        b.w.write("scenario", "late_return_armed", t_mono_ns=t_late,
+                  value=dict(cmd=late, rc=rc_late, took_s=round((time.monotonic_ns() - t_late) / 1e9, 3)))
+        if rc_late != 0:
+            say(f"FATAL: the late notice could not be armed (exit {rc_late})")
+            bye(2)
+        spin_for(1.0)
     v0 = st["v"]
     say(f"== 4. driving at {v0:.2f} m/s; mrm {st['mrm']}, TOR {st['tor']}, control mode {st['ctrl']} ==")
     if scen:

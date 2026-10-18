@@ -44,6 +44,10 @@ its ENTRY, before the reaction, so the route itself is late; `stall` writes
 0xffffffff, a busy-wait that never ends. `spin-stall` writes
 `island_debug_spin_stall` (CONFIG_ISLAND_DEBUG_SPIN_STALL, not in the gate
 image): the next spin never ends, with no route pending -- SWT0's case.
+`late-return N` writes N (1..100 ms) into `island_debug_late_return_ms`
+(the same Kconfig): the next spin that answered route 1 before its due holds
+until N ms past that due before the supervisor hears of it, once -- a route
+answered in time by a spin that runs past its due (the late notice).
 phase11-S6. `comfortable-inert` writes `island_debug_comfortable_inert`
 (the comfortable operator, CONFIG_ISLAND_DEBUG_OVERRUN): the next operate=1
 request is answered OPERATING and no velocity limit is published, once, so
@@ -75,6 +79,7 @@ OVERRUN = "island_debug_overrun_ms"
 FAULT_OVERRUN = "island_debug_fault_overrun_ms"
 SPIN_STALL = "island_debug_spin_stall"
 COMFORT_INERT = "island_debug_comfortable_inert"
+LATE_RETURN = "island_debug_late_return_ms"
 SUPERVISOR = "island_supervisor_record"
 STALL = 0xFFFFFFFF
 # island_supervisor.c's record, all u32: the header, then `routes` routes.
@@ -312,14 +317,15 @@ def board():
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("cmd", choices=["read", "decode", "overrun", "fault-overrun", "spin-stall",
-                                        "comfortable-inert", "supervisor"])
+                                        "comfortable-inert", "late-return", "supervisor"])
     ap.add_argument("arg", nargs="?", help="decode: the record dump; overrun: ms; fault-overrun: ms or stall")
     ap.add_argument("--elf", required=True)
     ap.add_argument("--out", help="read: output prefix (<out>.bin, <out>.txt)")
     ap.add_argument("--words", help="decode: a JSON file of the arming words read beside the dump")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_intermixed_args()
-    syms = symbols(a.elf, {RECORD, OVERRUN, FAULT_OVERRUN, SPIN_STALL, COMFORT_INERT, SUPERVISOR, *ARM_WORDS})
+    syms = symbols(a.elf, {RECORD, OVERRUN, FAULT_OVERRUN, SPIN_STALL, COMFORT_INERT, LATE_RETURN, SUPERVISOR,
+                           *ARM_WORDS})
     if a.cmd == "supervisor":
         if SUPERVISOR not in syms:
             sys.exit(f"violations: {a.elf} has no {SUPERVISOR} (built without CONFIG_ISLAND_SUPERVISOR)")
@@ -338,13 +344,17 @@ def main():
             open(a.out + ".txt", "w").write(text)
         sys.stdout.write(text)
         return 0
-    if a.cmd in ("fault-overrun", "spin-stall", "comfortable-inert"):
+    if a.cmd in ("fault-overrun", "spin-stall", "comfortable-inert", "late-return"):
         word = {"fault-overrun": FAULT_OVERRUN, "spin-stall": SPIN_STALL,
-                "comfortable-inert": COMFORT_INERT}[a.cmd]
+                "comfortable-inert": COMFORT_INERT, "late-return": LATE_RETURN}[a.cmd]
         if word not in syms:
             sys.exit(f"violations: {a.elf} has no {word}")
         if a.cmd in ("spin-stall", "comfortable-inert"):
             val = 1
+        elif a.cmd == "late-return":
+            val = int(a.arg or 0)
+            if not 0 < val <= 100:
+                sys.exit("violations: late-return takes 1..100 ms")
         elif (a.arg or "") == "stall":
             val = STALL
         else:

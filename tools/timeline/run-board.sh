@@ -101,6 +101,8 @@
 # RB_OVERRUN (phase11-S7, encore or b on the board: <ms> or stall, the
 # handler's fault tick overruns; see below), RB_INERT (phase11-S6, b on the
 # board: the comfortable stop does not decelerate; see below),
+# RB_LATE_RETURN (the board: a spin that answered route 1 in time holds
+# past its due before the supervisor hears of it; see below),
 # RB_ACT (the act command, $act and $dir expanded), RB_SETTLE (15 s after
 # Startup complete), RB_JOIN_TIMEOUT (120 s), RB_AW_TIMEOUT (300 s),
 # RB_QEMU_SECS (900, QEMU's own bound), L3_PEER_TTY (the gateway's tty),
@@ -274,6 +276,23 @@ if [ -n "${RB_OVERRUN:-}" ]; then
     # availability take, a few seconds before the fault.
     export SCENARIO_FAULT_CMD="python3 tools/timeline/readout.py --target board --elf '$(readlink -f "$elf")' --out /dev/null --rearm-only && python3 tools/timeline/violations.py fault-overrun --elf '$(readlink -f "$elf")' $RB_OVERRUN"
 fi
+# RB_LATE_RETURN=<ms> (1..100), any act on the board: once the vehicle
+# drives, before the fault, the act writes violations.py late-return <ms>
+# (CONFIG_ISLAND_DEBUG_SPIN_STALL): the next spin that answers the executor's
+# supervised route (route 1) before its due holds until <ms> past that due
+# before the supervisor hears of it. The route was answered in time, so the
+# supervisor must not latch: the record's route 1 line counts the expiry it
+# read as answered. Not with RB_OVERRUN / RB_INERT.
+if [ -n "${RB_LATE_RETURN:-}" ]; then
+    [ "$target" = board ] || { echo "run-board: RB_LATE_RETURN is for the board" >&2; exit 2; }
+    [ -z "${RB_OVERRUN:-}${RB_INERT:-}" ] || { echo "run-board: RB_LATE_RETURN is an act of its own (no RB_OVERRUN / RB_INERT)" >&2; exit 2; }
+    if [ "$sim" = carla ] && [ "$rb_trigger" != button ]; then
+        echo "run-board: RB_LATE_RETURN with --sim carla needs RB_TRIGGER=button (armed before the fault)" >&2; exit 2
+    fi
+    case "$RB_LATE_RETURN" in [1-9]|[1-9][0-9]|100) ;;
+        *) echo "run-board: RB_LATE_RETURN is <ms> (1..100)" >&2; exit 2;; esac
+    export SCENARIO_LATE_CMD="python3 tools/timeline/violations.py late-return --elf '$(readlink -f "$elf")' $RB_LATE_RETURN"
+fi
 # phase11-S6: RB_INERT=1, act b with a comfortable stop that does not
 # decelerate (violations.py comfortable-inert, written by the act like
 # RB_OVERRUN): the operator answers the request and publishes no velocity
@@ -434,7 +453,8 @@ if [ "$dry" = 0 ]; then
       [ -n "${L3_PLANNING_COMMON:-}" ] && echo "planning_common=$(readlink -f "$L3_PLANNING_COMMON") sha256=$(sha256sum "$L3_PLANNING_COMMON" | cut -d' ' -f1) max_vel=$(sed -n 's/^ *max_vel: *\([0-9.]*\).*/\1/p' "$L3_PLANNING_COMMON")"
       [ "$rb_trigger" = board ] && echo "button_inject=${SCENARIO_BUTTON_INJECT:-0}"
       [ -n "${RB_OVERRUN:-}" ] && echo "overrun=$RB_OVERRUN"
-      [ -n "${RB_INERT:-}" ] && echo "inert=comfortable"; } >> "$out.meta"
+      [ -n "${RB_INERT:-}" ] && echo "inert=comfortable"
+      [ -n "${RB_LATE_RETURN:-}" ] && echo "late_return=$RB_LATE_RETURN"; } >> "$out.meta"
 fi
 start=$SECONDS
 

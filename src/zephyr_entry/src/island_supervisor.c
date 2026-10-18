@@ -228,6 +228,12 @@ static int swt_feed(void)
 #if defined(CONFIG_ISLAND_DEBUG_SPIN_STALL)
 /* Test only (Kconfig): a debugger writes non-zero, the next spin never ends. */
 volatile uint32_t island_debug_spin_stall;
+/* Test only (Kconfig, violations.py late-return): a debugger writes N (ms,
+ * 1..100). The next spin that answered route 1 while its due was still ahead
+ * holds the spin thread until N ms past that due before the supervisor hears
+ * of the spin: a route answered in time by a spin that runs past its due (the
+ * late notice, carla-island-demo.md). Once; the word reads 0 when taken. */
+volatile uint32_t island_debug_late_return_ms;
 #endif
 
 /* The earliest armed due, or K_FOREVER: the lock is held. */
@@ -503,9 +509,41 @@ void nros_app_reaction_hook(const nros_cpp_reaction_event_t *event, void *ctx)
 	k_sem_give(&wake);
 }
 
+#if defined(CONFIG_ISLAND_DEBUG_SPIN_STALL)
+static void late_return(void *executor)
+{
+	const uint32_t n = island_debug_late_return_ms;
+	uint64_t us = 0u;
+
+	if (n == 0u || executor == NULL || nros_cpp_executor_route_next_due_us(executor, &us) != NROS_CPP_RET_OK ||
+	    us != UINT64_MAX) {
+		return; /* nothing asked, or route 1 not answered by this spin */
+	}
+	k_spinlock_key_t key = k_spin_lock(&lock);
+	const bool armed = due_valid[ISLAND_SUPERVISOR_ROUTE_EXECUTOR];
+	const int64_t due = due_ms[ISLAND_SUPERVISOR_ROUTE_EXECUTOR];
+
+	k_spin_unlock(&lock, key);
+	if (!armed || due <= k_uptime_get()) {
+		return;
+	}
+	island_debug_late_return_ms = 0u;
+	ISLAND_TRACE(ISLAND_MK_SUPERVISOR_INJECT, 0xFFFFFFFCu);
+	const uint32_t until_us = (uint32_t)((due + (int64_t)(n > 100u ? 100u : n)) * 1000);
+
+	while ((int32_t)(uptime_us32() - until_us) < 0) {
+		k_busy_wait(100);
+	}
+}
+#endif
+
 void island_supervisor_spin_after(void *executor)
 {
 	uint64_t us = UINT64_MAX;
+
+#if defined(CONFIG_ISLAND_DEBUG_SPIN_STALL)
+	late_return(executor);
+#endif
 
 	if (executor == NULL || nros_cpp_executor_route_next_due_us(executor, &us) != NROS_CPP_RET_OK ||
 	    us == UINT64_MAX) {
