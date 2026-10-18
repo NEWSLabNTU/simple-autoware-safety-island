@@ -1360,3 +1360,36 @@ hazard report ENABLE (the probe):
   emergency and no ENABLE before the act. Not established: why the
   availability started late in those three runs, and whether the hold is
   the gate's stamp rule on a paused `/clock`.
+
+**acb's MANUAL driver through the junction (c3-a6, 2026-10-18).** acb
+`d59ba64` (branch fix/manual-driver-junction: the driver commits to its
+lane, 4 m lookahead, a speed limit for curves and lane ends; it brings
+acb main 5f9c54c..7bd709c along, carla 0.15.1 and a command watchdog that
+disarms in MANUAL), checked out detached in the CSB checkout's
+src/autoware_carla_bridge and built with CSB's `just build` (51
+packages). Act a with c3-a6's case, the route's goal delayed 25 s (a
+temporary copy of `town01_island_takeover.xosc` with `delay="25"` on
+`reach_goal`, not committed), then the stock acts, each on the gate image
+with the supervisor fix:
+
+| run | act | SUMMARY | junit | `CARLA collision` in csb.log | newest ~/.ros/csb/contacts/*.json | hazard_lights_on (ms) |
+|---|---|---|---|---|---|---|
+| acb-a1 | a, goal delayed 25 s | PASS 8/8, RTF 1.000 | failures=0 errors=0 | 0 | `"contacts": []` | 360.79 |
+| acb-ra | a | PASS 8/8, RTF 1.000 | failures=0 errors=0 | 0 | `[]` | 262.83 |
+| acb-rencore | encore | PASS 8/8 (+1 n/a), total 3065.30 of 5228.67 ms, RTF 1.013 | failures=0 errors=0 | 0 | `[]` | 660.74 |
+| acb-rb | b | PASS 16/16 (+1 n/a), total 14750.43 of 21393.67 ms, RTF 1.000 | failures=0 errors=0 | 0 | `[]` | 392.09 |
+
+The goal-delayed act a, where c3-a6's driver ran wide in the T-junction
+past the goal and hit a pole, now ends at the goal with no contact. The
+CSB checkout's acb is back on `b463171` (its main, the CSB gitlink) and
+rebuilt; d59ba64 stays on its branch.
+
+**Serial over the whole day** (21 acts with a verdict or not, the injected
+stall of rg-ov2 left out): 64,571 frames received by the island; 8 bad
+frames, each in an act with one UART overrun (rg-e3, w9c-e1, w9c-a1,
+w9c-e2, w9c-b3, w9p-e1, acb-ra, acb-rencore), no ring overflow, no
+framing, noise or parity error. The open case of docs/serial-link.md (a
+bad frame with no error at all) did not occur. The overruns themselves
+are not rare on this image: one in 5 of the 7 encores, 2 of 7 a and 1 of
+7 b acts; each loses one frame. When in the act they fall is not
+recorded (two counter reads per act).
