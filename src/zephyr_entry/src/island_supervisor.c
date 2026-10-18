@@ -514,8 +514,28 @@ void island_supervisor_spin_after(void *executor)
 		}
 		return;
 	}
+	/*
+	 * The due in whole ms, never before the executor's own (take +
+	 * route_deadline_ms, in us). Was k_uptime_get() + ceil(us / 1000): the
+	 * floor of now plus the ceiling of the rest falls up to 1 ms BEFORE the
+	 * executor's due whenever now's sub-ms part exceeds the rest's, so a
+	 * route answered in its last ms was a verdict here and on time for the
+	 * executor (w9c-b2, CARLA 2026-10-18: route 1 fired at its due
+	 * 279000 ms +1.028 ms, the executor stored no route-deadline-runtime or
+	 * route-latency-runtime verdict and never called the hook; the latch
+	 * stopped the car before the act). Now: now in us from the cycle
+	 * counter (the clock the executor's due is on; the kernel tick is
+	 * 1 ms, so k_uptime_ticks() carries the same floor) plus the rest,
+	 * rounded up, so the k_timer is at or after the executor's due.
+	 */
+#if defined(CONFIG_TIMER_HAS_64BIT_CYCLE_COUNTER)
+	const int64_t now_us = (int64_t)k_cyc_to_us_floor64(k_cycle_get_64());
+#else
+	const int64_t now_us = (k_uptime_get() + 1) * 1000; /* ms clock: assume the tick's end */
+#endif
+
 	island_supervisor_arm(ISLAND_SUPERVISOR_ROUTE_EXECUTOR,
-			      k_uptime_get() + (int64_t)((us + 999u) / 1000u));
+			      (now_us + (int64_t)us + 999) / 1000);
 }
 
 void island_supervisor_spin(void)
