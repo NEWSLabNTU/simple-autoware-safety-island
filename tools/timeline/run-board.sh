@@ -352,6 +352,7 @@ l3() {
         SCENARIO_ACT_SOCKET="${SCENARIO_ACT_SOCKET:-}" TRIGGER_SECS="${TRIGGER_SECS:-180}" \
         SCENARIO_ODD_FILE="${SCENARIO_ODD_FILE:-}" SCENARIO_REARM_LEAD_S="${SCENARIO_REARM_LEAD_S:-4.0}" \
         SCENARIO_BUTTON_INJECT="${SCENARIO_BUTTON_INJECT:-0}" SCENARIO_FAULT_CMD="${SCENARIO_FAULT_CMD:-}" \
+        SCENARIO_LATE_CMD="${SCENARIO_LATE_CMD:-}" \
         bash -c "cd '$repo'; source demo/l3/container/bin/l3-env >/dev/null 2>&1; $*"
 }
 export -f l3
