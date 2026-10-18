@@ -831,6 +831,42 @@ phases, this repository by fast-forward push.
   the board, the simulator's hazard-lights status shows ENABLE in act B and
   the encore (the `hazard_lights_on` row is no longer `-`).
   DX: see DX-UX-GAPS 5.4, 6.8.
+  Status (2026-10-18, branch `w9-hazard-stamp`): implemented on the host,
+  board gate open. Where it is dropped: vehicle_cmd_gate's
+  `getContinuousTopic` (autoware_vehicle_cmd_gate 1.5.0
+  vehicle_cmd_gate.cpp:393-408, called at 537-540) keeps its last hazard
+  command when the new one is stamped earlier. It reads the island's
+  /system/emergency/hazard_lights_cmd only in an EMERGENCY_STOP (onMrmState,
+  816-823); in a takeover request or a comfortable stop the hazard comes
+  from autoware_hazard_lights_selector, which restamps (node.cpp, on_timer),
+  through W18's relay, which is why act b already showed it (`s6-in*`,
+  `p13-*-b8`, 100-400 ms) and the encore did not. Two failures, one cause:
+  - planning simulator (wall clock): every island ENABLE in the encore is
+    older than the gate's last output and is dropped; the gate logs "The
+    operation mode is changed, but the HazardLightsCommand is not received
+    yet" (p13-f-ov4's control_container log). The 4.4-6.2 s values in some
+    encores are the AUTO path after the SIGCONT, not the island's command;
+  - CARLA (`use_sim_time`, /clock from acb): the gate compares a boot stamp
+    with a simulation stamp. When the boot stamp is later, the island's
+    command gets through (c3-e1 556 ms) and then latches the gate's output
+    at the island's last command, since every later planner command is
+    "older" (30 such lines in c5-b2's ego log); acb ignores NO_COMMAND, so the
+    lights stay ENABLE into the next act and the probe, which records
+    changes, sees no ENABLE in it (`-` in c4-e2, c5-a1, c5-b2).
+  No clock on the island fixes the second: the island cannot follow /clock.
+  So the gate gets one clock: `island_restamp` (demo/host_ws) republishes
+  the island's hazard command at receipt with the host node's clock
+  (simulation time under `use_sim_time`), and the overlay's
+  tier4_control_launch (a shadow of 1.5.0, one argument and one remap
+  changed) points the gate's emergency hazard input at
+  /system/emergency/hazard_lights_cmd_restamped. One message out per
+  message in. The island, its trace and its stamps are unchanged; no board
+  image change. Tests without the board: `test_restamp` (gtest: the stamp
+  replaced, the command kept, wall and /clock); `test/gate_replay.py`
+  drives the installed vehicle_cmd_gate through NORMAL, EMERGENCY_STOP,
+  NORMAL: stock wiring FAILS on the wall clock (no ENABLE) and on /clock
+  with a later boot stamp (latched after the stop), restamped wiring PASSES
+  in wall, sim and sim with an earlier boot stamp.
 - **W10 - the Orin container.** The booth machine is an Orin, in
   Yokohama, after submission (branch `orin-arm64`): the
   `sai-l3-autoware` image built for arm64, with the same start checks

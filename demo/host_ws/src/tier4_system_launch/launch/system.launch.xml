@@ -190,6 +190,21 @@
       <param name="input_topic" value="/system/emergency/hazard_lights_cmd"/>
       <param name="output_topic" value="/system/hazard_lights_cmd"/>
     </node>
+
+    <!-- phase9-W9: the island's hazard command, restamped with this host's
+         clock at receipt, for vehicle_cmd_gate's emergency input (the
+         overlay's tier4_control_launch remaps it here). The gate drops a
+         hazard command stamped earlier than its last output
+         (getContinuousTopic), and the board stamps from boot: on the planning
+         simulator every island ENABLE in an EMERGENCY_STOP was dropped, and on
+         CARLA (/clock) a boot stamp later than the simulation time latched the
+         gate's output at the island's last command. One message out per
+         message in, the command unchanged. The relay above needs none of
+         this: the selector restamps. -->
+    <node pkg="island_restamp" exec="hazard_lights_restamp" name="island_hazard_lights_restamp">
+      <remap from="input" to="/system/emergency/hazard_lights_cmd"/>
+      <remap from="output" to="/system/emergency/hazard_lights_cmd_restamped"/>
+    </node>
   </group>
 
   <!-- Dummy Diag Publisher -->
