@@ -175,21 +175,12 @@
 
     <!-- MRM Handler — DISABLED: provided by the safety island. -->
 
-    <!-- phase8-W18: the island's hazard lights, into the path that is live in
-         every MRM. vehicle_cmd_gate takes /system/emergency/hazard_lights_cmd
-         ONLY while mrm_state.behavior == EMERGENCY_STOP (onMrmState); in a
-         takeover request (MRM NORMAL) and in COMFORTABLE_STOP it forwards the
-         AUTO hazard command, /planning/hazard_lights_cmd, which
-         autoware_hazard_lights_selector ORs from the path planner and from
-         `input/system/hazard_lights_command` = /system/hazard_lights_cmd. Stock
-         1.5.0 publishes nothing on that input, so the island's ENABLE never
-         reached the vehicle outside an emergency stop. The relay feeds it; the
-         selector restamps with host time, so no clock question arises on this
-         path. The emergency-stop path is unchanged. -->
-    <node pkg="topic_tools" exec="relay" name="island_hazard_lights_relay">
-      <param name="input_topic" value="/system/emergency/hazard_lights_cmd"/>
-      <param name="output_topic" value="/system/hazard_lights_cmd"/>
-    </node>
+    <!-- phase8-W18's topic_tools relay of /system/emergency/hazard_lights_cmd
+         into /system/hazard_lights_cmd (the selector's system input) is gone
+         (phase9-W9): takeover_demo's hazard_relay also published there, and
+         in a takeover request the two raced at the selector. hazard_relay is
+         now the input's one publisher and forwards the island's ENABLE in
+         every MRM state (takeover_demo/hazard_relay.py). -->
 
     <!-- phase9-W9: the island's hazard command, restamped with this host's
          clock at receipt, for vehicle_cmd_gate's emergency input (the
@@ -199,7 +190,7 @@
          simulator every island ENABLE in an EMERGENCY_STOP was dropped, and on
          CARLA (/clock) a boot stamp later than the simulation time latched the
          gate's output at the island's last command. One message out per
-         message in, the command unchanged. The relay above needs none of
+         message in, the command unchanged. The AUTO path needs none of
          this: the selector restamps. -->
     <node pkg="island_restamp" exec="hazard_lights_restamp" name="island_hazard_lights_restamp">
       <remap from="input" to="/system/emergency/hazard_lights_cmd"/>

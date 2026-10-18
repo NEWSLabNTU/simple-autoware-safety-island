@@ -103,7 +103,6 @@ nodes:
         trigger: { timer: { rate_hz: 10 } }
         output: [system_hazard_lights_cmd]
     sub:
-      mrm_state: { min_rate_hz: 10, qos: { depth: 1 }, state: true }
       emergency_hazard_lights_cmd: { min_rate_hz: 10, qos: { depth: 1 }, state: true }
     pub:
       system_hazard_lights_cmd: { qos: { depth: 1, durability: volatile } }
@@ -154,7 +153,7 @@ topics:
   /system/fail_safe/mrm_state:
     type: autoware_adapi_v1_msgs/msg/MrmState
     external: pub
-    sub: [takeover_hmi/mrm_state, hazard_relay/mrm_state]
+    sub: [takeover_hmi/mrm_state]
     rate_hz: 10
   /system/emergency/hazard_lights_cmd:
     type: autoware_vehicle_msgs/msg/HazardLightsCommand
