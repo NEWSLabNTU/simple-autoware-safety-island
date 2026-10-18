@@ -53,6 +53,21 @@
  * with the state it had computed before the latch; the next tick reads the
  * latch.
  *
+ * Route 1 at its expiry (the late notice, carla-island-demo.md). The k_timer
+ * is armed after every spin from the executor's earliest pending due, but the
+ * route is answered when the dispatch that publishes its output ENDS, inside
+ * the spin: a spin that answered in time and then ran past the due used to
+ * find route 1 still armed here and latched, though the executor judged it on
+ * time. So at the expiry the thread asks the executor's own route cells
+ * (nano-ros RouteWatch, phase-503 W7: atomics the executor clears at the
+ * answer, on its microsecond clock; read from this thread, never touching the
+ * executor): a take still unanswered at or after its deadline is the miss,
+ * judged at the same instant as before; an answered route is not; a later
+ * take re-arms the timer to its own due. An answer between the executor's due
+ * and the timer's (at most 1 ms, the rounding up) reads as answered here, and
+ * the executor judged it overdue at completion and called the reaction hook,
+ * which latches.
+ *
  * Route 2 (phase11-S6, decision 4): the comfortable stop's standstill. Its
  * due is the comfortable call + settle + response at the entry speed + how
  * late the island sees a standstill (a kinematic_state period + the link); at
@@ -179,6 +194,13 @@ struct island_supervisor_record {
 		char name[16];
 		int32_t prio;
 	} thread[ISLAND_SUPERVISOR_PRIO_THREADS];
+	/* The late notice, after the threads so every offset above holds: route
+	 * 1 judged at its expiry from the executor's route cells. */
+	uint32_t watch_ok;              /* 1 once the route watch is filled */
+	uint32_t answered_at_expiry;    /* route 1 expiries the watch read answered */
+	uint32_t answered_first_due_ms; /* the first one's armed due */
+	uint32_t answered_first_us;     /* when it was read, us (low 32) */
+	uint32_t later_take_at_expiry;  /* route 1 expiries re-armed to a later take */
 };
 
 volatile struct island_supervisor_record island_supervisor_record;
@@ -194,6 +216,10 @@ static int64_t due_ms[ISLAND_SUPERVISOR_ROUTES];
 static island_supervisor_direct_fn direct_fn[ISLAND_SUPERVISOR_DIRECT_SLOTS];
 static void *direct_ctx[ISLAND_SUPERVISOR_DIRECT_SLOTS];
 static int64_t latch_ms;
+/* The executor's route cells, read at route 1's expiry (filled on the first
+ * spin_after, before route 1 is ever armed). */
+static nros_cpp_route_watch_t route_watch;
+static volatile bool route_watch_ok;
 /* A kinematic_state sample older than this is not a standstill (10 Hz). */
 #define STANDSTILL_FRESH_MS 300
 
@@ -210,6 +236,28 @@ static inline uint32_t uptime_us32(void)
 #else
 	return (uint32_t)(k_uptime_get() * 1000);
 #endif
+}
+
+/*
+ * The uptime ms of an executor due `us` from now, never before the executor's
+ * own (take + route_deadline_ms, in us). Was k_uptime_get() + ceil(us / 1000):
+ * the floor of now plus the ceiling of the rest falls up to 1 ms BEFORE the
+ * executor's due whenever now's sub-ms part exceeds the rest's, so a route
+ * answered in its last ms was a verdict here and on time for the executor
+ * (w9c-b2, CARLA 2026-10-18). Now: now in us from the cycle counter (the clock
+ * the executor's due is on; the kernel tick is 1 ms, so k_uptime_ticks()
+ * carries the same floor) plus the rest, rounded up, so the k_timer is at or
+ * after the executor's due and at most 1 ms later.
+ */
+static int64_t executor_due_ms(uint64_t us)
+{
+#if defined(CONFIG_TIMER_HAS_64BIT_CYCLE_COUNTER)
+	const int64_t now_us = (int64_t)k_cyc_to_us_floor64(k_cycle_get_64());
+#else
+	const int64_t now_us = (k_uptime_get() + 1) * 1000; /* ms clock: assume the tick's end */
+#endif
+
+	return (now_us + (int64_t)us + 999) / 1000;
 }
 
 #if defined(CONFIG_ISLAND_SUPERVISOR_SWT)
@@ -401,6 +449,16 @@ static void reaction_thread(void *a, void *b, void *c)
 		}
 		island_supervisor_record.wakes++;
 
+		/* Route 1's answer, from the executor's cells, now: 0 = a take
+		 * unanswered at or after its deadline (the miss), UINT64_MAX =
+		 * answered, else the time to a later take's due. Without a watch
+		 * the armed due stands (0). */
+		uint64_t route1_left = 0u;
+
+		if (route_watch_ok &&
+		    nros_cpp_route_watch_next_due_us(&route_watch, &route1_left) != NROS_CPP_RET_OK) {
+			route1_left = 0u;
+		}
 		const int64_t now = k_uptime_get();
 		uint32_t fired_routes = 0u;
 		k_spinlock_key_t key = k_spin_lock(&lock);
@@ -411,6 +469,24 @@ static void reaction_thread(void *a, void *b, void *c)
 
 				due_valid[i] = false;
 				r->armed = 0u;
+				if (i == ISLAND_SUPERVISOR_ROUTE_EXECUTOR && route1_left == UINT64_MAX) {
+					/* answered inside a spin still running: not a miss */
+					r->dones++;
+					if (island_supervisor_record.answered_at_expiry++ == 0u) {
+						island_supervisor_record.answered_first_due_ms = (uint32_t)due_ms[i];
+						island_supervisor_record.answered_first_us = uptime_us32();
+					}
+					continue;
+				}
+				if (i == ISLAND_SUPERVISOR_ROUTE_EXECUTOR && route1_left != 0u) {
+					/* answered, and a later take waits: its own due */
+					due_valid[i] = true;
+					due_ms[i] = executor_due_ms(route1_left);
+					r->armed = 1u;
+					r->due_ms = (uint32_t)due_ms[i];
+					island_supervisor_record.later_take_at_expiry++;
+					continue;
+				}
 				if (i == ISLAND_SUPERVISOR_ROUTE_COMFORTABLE_STANDSTILL && standstill_now(now)) {
 					/* stopped in time: met at the due, not a miss */
 					r->dones++;
@@ -544,7 +620,14 @@ void island_supervisor_spin_after(void *executor)
 #if defined(CONFIG_ISLAND_DEBUG_SPIN_STALL)
 	late_return(executor);
 #endif
-
+	/* Once, on the spin thread, after the monitors are installed: the watch
+	 * the reaction thread reads route 1 through at its expiry. */
+	if (!route_watch_ok && executor != NULL &&
+	    nros_cpp_executor_route_watch(executor, &route_watch) == NROS_CPP_RET_OK) {
+		compiler_barrier(); /* the watch is whole before the flag says so */
+		route_watch_ok = true;
+		island_supervisor_record.watch_ok = 1u;
+	}
 	if (executor == NULL || nros_cpp_executor_route_next_due_us(executor, &us) != NROS_CPP_RET_OK ||
 	    us == UINT64_MAX) {
 		if (due_valid[ISLAND_SUPERVISOR_ROUTE_EXECUTOR]) {
@@ -552,28 +635,7 @@ void island_supervisor_spin_after(void *executor)
 		}
 		return;
 	}
-	/*
-	 * The due in whole ms, never before the executor's own (take +
-	 * route_deadline_ms, in us). Was k_uptime_get() + ceil(us / 1000): the
-	 * floor of now plus the ceiling of the rest falls up to 1 ms BEFORE the
-	 * executor's due whenever now's sub-ms part exceeds the rest's, so a
-	 * route answered in its last ms was a verdict here and on time for the
-	 * executor (w9c-b2, CARLA 2026-10-18: route 1 fired at its due
-	 * 279000 ms +1.028 ms, the executor stored no route-deadline-runtime or
-	 * route-latency-runtime verdict and never called the hook; the latch
-	 * stopped the car before the act). Now: now in us from the cycle
-	 * counter (the clock the executor's due is on; the kernel tick is
-	 * 1 ms, so k_uptime_ticks() carries the same floor) plus the rest,
-	 * rounded up, so the k_timer is at or after the executor's due.
-	 */
-#if defined(CONFIG_TIMER_HAS_64BIT_CYCLE_COUNTER)
-	const int64_t now_us = (int64_t)k_cyc_to_us_floor64(k_cycle_get_64());
-#else
-	const int64_t now_us = (k_uptime_get() + 1) * 1000; /* ms clock: assume the tick's end */
-#endif
-
-	island_supervisor_arm(ISLAND_SUPERVISOR_ROUTE_EXECUTOR,
-			      (now_us + (int64_t)us + 999) / 1000);
+	island_supervisor_arm(ISLAND_SUPERVISOR_ROUTE_EXECUTOR, executor_due_ms(us));
 }
 
 void island_supervisor_spin(void)

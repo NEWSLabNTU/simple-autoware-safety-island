@@ -101,6 +101,10 @@ SUP_PRIO = ["prio_taken", "prio_plan_transport_lo", "prio_plan_transport_hi", "p
             "prio_plan_app_hi", "prio_plan_tier", "prio_plan_reaction", "prio_spin", "prio_reaction",
             "prio_threads"]
 SUP_PRIO_THREADS = 12
+# The late notice (carla-island-demo.md), after the threads: route 1 judged at
+# its expiry from the executor's route cells (nano-ros RouteWatch).
+SUP_LATE = ["watch_ok", "answered_at_expiry", "answered_first_due_ms", "answered_first_us",
+            "later_take_at_expiry"]
 # zenoh-pico's tasks, by the name the platform gives them, sit in the
 # transport band (read, lease and the tx flush task).
 TRANSPORT_THREADS = ("zpico_read", "zpico_lease", "zpico_flush")
@@ -224,6 +228,9 @@ def supervisor_decode(blob):
             name = e[:16].split(b"\0", 1)[0].decode("ascii", "replace")
             threads.append((name, struct.unpack("<i", e[16:20])[0]))
         hdr["threads"] = threads
+        o2 = o + len(SUP_PRIO) + SUP_PRIO_THREADS * 5
+        if o2 + len(SUP_LATE) <= n:
+            hdr.update(zip(SUP_LATE, w[o2:o2 + len(SUP_LATE)]))
     return hdr
 
 
@@ -282,6 +289,14 @@ def supervisor_report(blob):
         if r["fired"]:
             line += (f"; first verdict at {r['fire_verdict_us'] / 1000:.3f} ms for the due at "
                      f"{r['fire_due_ms']} ms ({r['fire_verdict_us'] / 1000 - r['fire_due_ms']:+.3f} ms)")
+        lines.append(line)
+    if "watch_ok" in d:
+        line = (f"  route 1 at its expiry: {'read from the executor' + chr(39) + 's route cells' if d['watch_ok'] else 'NO route watch (the armed due stands)'}"
+                f"; expiries answered by then={d['answered_at_expiry']}")
+        if d["answered_at_expiry"]:
+            line += (f" (first read at {d['answered_first_us'] / 1000:.3f} ms for the due at "
+                     f"{d['answered_first_due_ms']} ms)")
+        line += f"; re-armed to a later take={d['later_take_at_expiry']}"
         lines.append(line)
     for i, dd in enumerate(d.get("direct") or []):
         if not dd["registered"]:

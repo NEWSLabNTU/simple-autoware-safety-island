@@ -308,6 +308,10 @@ def supervisor(d):
         s += f", SWT0 fires {swt.group(1)}"
     if gap:
         s += f", spin gap max {gap.group(1)} ms"
+    # the late notice: route 1 expiries the executor's cells read as answered
+    late = re.search(r"expiries answered by then=(\d+)", t)
+    if late and late.group(1) != "0":
+        s += f", route 1 answered by its expiry {late.group(1)}"
     # phase13-D4: the derived priorities against what the kernel gave
     pr = re.search(r"priorities at the first spin: spin thread (-?\d+), reaction thread (-?\d+)", t)
     agree = re.search(r"  priorities: (AGREE|DISAGREE)", t)
