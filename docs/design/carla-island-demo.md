@@ -1263,3 +1263,100 @@ Not verified in the regression round: the physical presses (injected, as
 C6); `--keep-boot` chains; the encore and acts under the planning
 simulator with this image (phase 13's own rounds); the overrun in rg-e3
 (its instant is not recorded: the counters are read twice per act).
+
+**Found in the round: a supervisor latch while driving (fixed).** w9c-b2
+(the W9 gate below, gate image of this round) ended with no verdict: the
+ego stopped at x 251.9, 12 m before the ODD exit, because the island had
+latched its safe-state output and its direct path commanded the emergency
+stop. The supervisor record: `safe-state output LATCHED by route deadline
+at uptime 279001.045 ms`; route 1 (the executor's supervised route,
+mrm_handler/call_mrm, `mechanism: timer`) `deadline verdicts=1 ... first
+verdict at 279001.028 ms for the due at 279000 ms (+1.028 ms)`, one in
+27,299 arms; the executor stored no `route-deadline-runtime` or
+`route-latency-runtime` verdict and never called the reaction hook (`hook
+calls=0`), so on its own clock the route was answered in time; the
+longest feed-to-feed gap was 12.35 ms and no timer overran. Cause: the
+supervisor armed route 1 at `k_uptime_get() + ceil(us / 1000)`, and with
+a 1 ms kernel tick `k_uptime_get()` is the floor of now, so the armed due
+fell up to 1 ms before the executor's (take + route_deadline_ms on its
+microsecond clock) whenever now's sub-millisecond part exceeded the
+rest's. A route answered in its last millisecond was a verdict there and
+on time for the executor. island_supervisor.c now computes the due from
+the cycle counter in microseconds (the executor's clock), rounded up, so
+the k_timer is at or after the executor's due and at most 1 ms later. Not
+changed: the supervisor learns that a route is done only after the spin
+that answered it returns, so a spin that answers in the route's last part
+and runs past its due is still a verdict there. The supervised path still
+catches an overrun on the fixed image: rg-ov2, the encore on CARLA with a
+300 ms fault-tick overrun (`RB_OVERRUN=300 RB_TRIGGER=button`), PASS,
+table 9/9 (+5 n/a), supervised 7/7 PASS, route 0's verdict 0.03 ms after
+its due, the safe-state output 0.04 ms, the direct braking command
+0.58 ms, total 3562.44 of 5379.67 ms.
+
+    SUMMARY rg-ov2 encore: PASS; load 13.78 at act; table 9/9 PASS (+5 n/a), supervised 7/7 PASS; trace-check PASS (window 3 of the boot), trace 11,264 of 53,248 B over 16.6 s, re-armed when the ego drove; stored 8 (max-latency-runtime x3, release-jitter-runtime x1, silence-runtime x1, timer-overrun-runtime x3); serial in act 2/3 (overruns/bad frames); heap peak 66256 of 107008 B; supervisor latched (route deadline), SWT0 fires 0, spin gap max 308.056 ms, priorities spin 3 / reaction 2 AGREE with the plan; sim carla, RTF 0.999, SSv2 junit PASS, trigger button
+
+(Its 3 timer overruns, 754 ring overflows and 2 UART overruns are the
+injected 300 ms stall's.) rg-ov1, the same with the scenario's trigger,
+took the overrun about 500 ms into the MRM, on a later call_mrm tick:
+scenario.py armed it only after the scenario's trigger had fired, and
+SWT0 caught the stall instead (still PASS). run-board now refuses
+`RB_OVERRUN` with `--sim carla` unless `RB_TRIGGER=button`.
+
+**The W9 gate on the board (2026-10-18).** Branch `w9-hazard-stamp`
+`73c6e59` (the island's hazard command restamped on the host for
+vehicle_cmd_gate, island_restamp; hazard_relay the one publisher of
+`/system/hazard_lights_cmd`, W18's topic_tools relay removed), host only;
+the board image unchanged in what it publishes (this round's gate image;
+w9c-b3 and the planning-simulator runs on the image with the supervisor
+fix). CARLA: the W9 host overlay (`just l3-host-ws` from that branch) in
+place of build/l3-host-ws; planning simulator: `L3_IMAGE=
+sai-l3-autoware:1.5.0-w9` (built from the branch) and `RB_HOST_WS` the W9
+overlay. `hazard_lights_on` is from the hazard event to the vehicle's
+hazard report ENABLE (the probe):
+
+| sim | act | run | RB_HAZARD_RELAY | SUMMARY | hazard_lights_on (ms) | RTF / junit | load at act |
+|---|---|---|---|---|---|---|---|
+| CARLA | encore | w9c-e1 | - | PASS 8/8 (+1 n/a), total 2991.04 | 560.89 | 1.005 / PASS | 19.14 |
+| CARLA | a | w9c-a1 | - | PASS 8/8 | **-** | 1.000 / PASS | 17.75 |
+| CARLA | b | w9c-b1 | - | PASS 16/16 (+1 n/a) | **25810.85** (the vehicle lit after the act) | 1.000 / PASS | 22.39 |
+| CARLA | a | w9c-a2 | 1 | PASS 8/8 | 341.93 | 0.999 / PASS | 17.09 |
+| CARLA | b | w9c-b2 | 1 | no verdict (the supervisor latch above) | - | - / PASS | 32.36 |
+| CARLA | encore | w9c-e2 | 1 | PASS 8/8 (+1 n/a), total 3014.07 | 572.07 | 1.004 / PASS | 10.82 |
+| CARLA | b | w9c-b3 | 1 | PASS 16/16 (+1 n/a), total 14642.80 | 368.04 | 1.000 / PASS | 6.24 |
+| planning | encore | w9p-e1 | 1 | PASS 8/8 (+1 n/a), total 3519.83 | 599.78 | - | 10.04 |
+| planning | a | w9p-a1 | 1 | PASS 8/8 | 299.64 | - | 10.65 |
+| planning | b | w9p-b1 | 1 | PASS 16/16 (+1 n/a), total 15668.37 | 442.42 | - | 31.94 |
+
+- **hazard_relay must run.** No run-board run started takeover_demo's
+  hazard_relay (the container starts Autoware only; `--sim carla` starts
+  the gate, the probe and odd_monitor). With W18's relay gone,
+  `ros2 topic info /system/hazard_lights_cmd` during w9c-e1 read
+  `Publisher count: 0` (one subscriber, the selector), and outside an
+  EMERGENCY_STOP the island's ENABLE never reached the vehicle: w9c-a1
+  `-`, w9c-b1 25.8 s. `RB_HAZARD_RELAY=1` (carla-regression) starts it at
+  step 6; with it every act reads a value and its log has `system hazard
+  lights -> ENABLE` at each takeover request. The variable is off by
+  default because with W18's relay still in the overlay the two race; it
+  should default on when W9 merges.
+- **The emergency path**: the restamp's log line per change (`hazard
+  lights 2: island stamp 111.772625687, host stamp 0.000000000` ... on
+  CARLA, sim-time host stamps; on the planning simulator `island stamp
+  3.473045418, host stamp 1792297565.516803475`), and no `HazardLightsCommand
+  is not received yet` line in any container log of the three planning
+  acts.
+- **Against the expectations**: encore 561-600 ms and a 300-342 ms are in
+  range; b 368 ms on CARLA, 442 ms on the planning simulator (expected
+  100-400). Before W9, this round's own CARLA acts read encore 545-635 ms,
+  b 174-244 ms, a 292-296 ms (W18's relay forwarding the island's
+  command).
+- **A hazard ENABLE before the act on CARLA**: in w9c-e1, w9c-a1 and
+  w9c-b1 the island raised its init-timeout EMERGENCY_STOP before the act
+  (the availability's first raw sample 28.0-34.8 s after the probe
+  started, the braking stream at 24.2-26.0 s; in the six acts before W9
+  both came together at 18.2-24.7 s and the island stayed NORMAL), and
+  the vehicle's hazards then read ENABLE for 20-49 s after the island
+  went back to NO_COMMAND (w9c-a1: 27.94-76.95 s), cleared before the
+  act's fault each time. w9c-a2, w9c-e2 and w9c-b3 had no such
+  emergency and no ENABLE before the act. Not established: why the
+  availability started late in those three runs, and whether the hold is
+  the gate's stamp rule on a paused `/clock`.
