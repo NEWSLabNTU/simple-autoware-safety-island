@@ -198,6 +198,12 @@ monitor that fires on time, and the rung it can still start, are.
   input, out of scope here. SWT0 fed once per spin, its timeout above the
   longest spin, its first-timeout callback the same action: a hung
   executor is caught even with no route pending.
+- Route 1 at its expiry (2026-10-18): judged from the executor's own route
+  cells (nano-ros phase-503 W7 `RouteWatch`, read from the reaction thread),
+  not from the due armed after the last spin, so a route answered in time by
+  a spin that runs past its due is not a miss; a real miss still latches at
+  the due. Finding, fix and board runs: carla-island-demo.md, "the late
+  notice of an answered route".
 - Gate: on the board, a stall that never ends inside the handler's tick
   drives the safe-state output within budget + 1 tick + the switch; SWT0
   catches a stuck spin and the output follows.

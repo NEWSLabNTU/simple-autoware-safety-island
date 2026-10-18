@@ -1283,11 +1283,8 @@ microsecond clock) whenever now's sub-millisecond part exceeded the
 rest's. A route answered in its last millisecond was a verdict there and
 on time for the executor. island_supervisor.c now computes the due from
 the cycle counter in microseconds (the executor's clock), rounded up, so
-the k_timer is at or after the executor's due and at most 1 ms later. Not
-changed: the supervisor learns that a route is done only after the spin
-that answered it returns, so a spin that answers in the route's last part
-and runs past its due is still a verdict there. The supervised path still
-catches an overrun on the fixed image: rg-ov2, the encore on CARLA with a
+the k_timer is at or after the executor's due and at most 1 ms later.
+The supervised path still catches an overrun on that image: rg-ov2, the encore on CARLA with a
 300 ms fault-tick overrun (`RB_OVERRUN=300 RB_TRIGGER=button`), PASS,
 table 9/9 (+5 n/a), supervised 7/7 PASS, route 0's verdict 0.03 ms after
 its due, the safe-state output 0.04 ms, the direct braking command
@@ -1301,6 +1298,59 @@ took the overrun about 500 ms into the MRM, on a later call_mrm tick:
 scenario.py armed it only after the scenario's trigger had fired, and
 SWT0 caught the stall instead (still PASS). run-board now refuses
 `RB_OVERRUN` with `--sim carla` unless `RB_TRIGGER=button`.
+
+**Found after it: the late notice of an answered route (fixed).** Route
+1's k_timer was armed after every spin from the executor's earliest pending
+due (`island_supervisor_spin_after`, called by the `nros_cpp_spin_once`
+wrapper in spin_hook.c after the real spin returns), and nothing else
+cleared it. The executor answers a route earlier: `route_judge` clears the
+row's `ROUTE_PENDING` (an atomic in its monitor cell) at the end of the
+dispatch that publishes the output, on its microsecond clock. A route
+answered before its due by a spin that then ran past the due (other
+callbacks, transport work; spin gaps up to ~13 ms) found route 1 still
+armed at the expiry, so the supervisor latched and the direct path
+commanded the emergency stop while the executor judged the route on time
+and recorded nothing. Routes 0 and 2 do not share it: the handler clears
+route 0 itself at call_mrm's EXIT inside the tick (`island_supervisor_done`),
+and route 2 is judged at its due from the speed the kinematic_state take
+noted, also inside its callback; neither waits for a spin to return.
+
+Fix: nano-ros phase-503 W7 (PR #2379, `RouteWatch`;
+`nros_cpp_executor_route_watch` / `nros_cpp_route_watch_next_due_us`) reads
+the executor's route cells from any thread without touching the executor.
+The supervisor fills the watch once on the spin thread and asks it at route
+1's expiry: a take still unanswered at or after its deadline is the miss,
+judged at the same instant as before; an answered route is not a miss
+(`answered_at_expiry` in the record); a later take re-arms the timer to its
+own due. An answer between the executor's due and the timer's (the at most
+1 ms rounding) reads as answered there, and the executor judged it overdue
+at completion and called the reaction hook, which latches. Memory: the
+record grows 20 B and the watch 13 B (DTCM). The image needs nano-ros PR
+#2381 too: since issue 1299 the Zephyr module forwarded the zenoh locator
+as a compile definition, which CMake drops when it contains `#` (every
+serial locator), so a serial image opened no session (issue 1955; bisected
+on the board to 2ccf662c0d).
+
+The late notice is injectable: `violations.py late-return N`
+(`island_debug_late_return_ms`, CONFIG_ISLAND_DEBUG_SPIN_STALL), or
+`RB_LATE_RETURN=<ms>` on run-board.sh, holds the spin that answered route 1
+until N ms past its due before the supervisor hears of it. Board runs
+(2026-10-18, planning simulator unless noted):
+
+| run | image | case | result |
+| --- | --- | --- | --- |
+| sl-before-a2 | main's supervisor + the knob (pin d4bf898409) | a, `RB_LATE_RETURN=5` | FAIL: latched by route 1 at its due +0.031 ms, executor no `route-deadline-runtime`, hook calls 0 (the round's finding, reproduced) |
+| sl-late-a1 | fixed | a, `RB_LATE_RETURN=5` | PASS 8/8; not driven; the expiry read the route answered 0.027 ms after its due |
+| sl-miss-a2 | fixed | a, the handler's tick overruns 200 ms after its publishes (`violations.py overrun 200`): route 1 answered late | latched by route 1 at its due +0.035 ms, output +0.051 ms; executor `route-deadline-runtime` and the hook at completion (the act stops by design) |
+| sl-e1, sl-a1, sl-b1 | fixed | encore, a, b | PASS 8/8, 8/8, 16/16; not driven |
+| sl-ov2 | fixed, CARLA | encore, `RB_OVERRUN=300 RB_TRIGGER=button` | PASS, supervised 7/7; route 0 verdict 0.04 ms after its due, output 0.06 ms, direct braking 0.82 ms |
+| sl-ce1 | fixed, CARLA | encore | PASS 8/8; not driven |
+
+    SUMMARY sl-late-a1 a: PASS; load 10.26 at act; table 8/8 PASS; trace-check PASS, trace 29,544 of 53,248 B over 52.8 s; stored 7 (hazard-detected x2, hazard-recovered x2, release-jitter-runtime x1, silence-runtime x1, timer-overrun-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 66144 of 107008 B; supervisor not driven, SWT0 fires 0, spin gap max 115.856 ms, route 1 answered by its expiry 1, priorities spin 3 / reaction 2 AGREE with the plan
+    SUMMARY sl-ov2 encore: PASS; load 8.28 at act; table 9/9 PASS (+5 n/a), supervised 7/7 PASS; trace-check PASS (window 3 of the boot), trace 11,326 of 53,248 B over 16.7 s, re-armed when the ego drove; stored 12 (hazard-detected x1, max-latency-runtime x3, release-jitter-runtime x1, timer-overrun-runtime x3); serial in act 0/1 (overruns/bad frames); heap peak 66352 of 107008 B; supervisor latched (route deadline), SWT0 fires 0, spin gap max 312.139 ms, priorities spin 3 / reaction 2 AGREE with the plan; sim carla, RTF 1.000, SSv2 junit PASS, trigger button
+
+(sl-late-a1's release-jitter and timer-overrun verdicts and its 115.9 ms
+gap are the injected hold's.)
 
 **The W9 gate on the board (2026-10-18).** Branch `w9-hazard-stamp`
 `73c6e59` (the island's hazard command restamped on the host for
