@@ -88,13 +88,13 @@ group_tiers = { main = "mrm" }
 # 103,224 B for this one tier, inside the 8 KiB guard (phase-13 doc). The
 # image keeps one tier.
 #
-# `spin_period` is the spin loop's park timeout, not a priority: 10 ms is what
-# `run_components` used (spin_once(10)), so moving to the tier runner changes
-# the priority and nothing else. Unset, nano-ros derives it from the tier's
-# fastest release (33,333 us here, the 30 Hz operator); the authored 10 ms is
-# kept as an override, and the build prints a note saying so (RFC-0079).
+# `spin_period` is the spin loop's park timeout, not a priority, and it is not
+# authored: nano-ros derives it from the tier's fastest release (33,333 us
+# here, the 30 Hz operator; RFC-0079). It bounds only an idle park: a message
+# or service arrival breaks the park, and a timer or a supervised route's due
+# ends it, so it sets idle wakeups, not latency. The 10 ms override carried
+# over from `run_components` (spin_once(10)) is gone (island issue 8).
 [tiers.mrm]
-spin_period = "10ms"
 
 # No [deploy.*] target blocks: nodes stay UNPLACED in the model, i.e.
 # board-agnostic (#236 semantics) — the SAME model bakes into the native

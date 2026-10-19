@@ -1533,3 +1533,39 @@ Planning simulator, one fresh boot per act, `tools/timeline/run-board.sh
 Every act: supervisor not driven, SWT0 fires 0, priorities spin 5 /
 reaction 3 AGREE with the plan, heap peak 66,320-66,536 of 107,008 B. The
 planning encore's hazard lights are late, the case above.
+
+**The derived spin period (2026-10-20, island issue 8).** The same pin
+(77e4175e77) with `spin_period = "10ms"` removed from `[tiers.mrm]`: the
+build prints `tier mrm spin period 33333 us, derived from member
+mrm_emergency_stop_operator's release period` and no override note. DTCM
+103,224 B (FLASH 598,728, RAM 280,680, ITCM 14,824). The spin period only
+bounds an idle park: the executor parks on min(the period, the next timer,
+the session's next event, a supervised route's due), and a subscription or
+service arrival signals the wake object the park waits on, so arrivals do
+not wait for it. Route 1 is re-armed after every spin from the executor's
+own due and judged at its expiry from the executor's route cells, not from
+the gap between spins, so a longer park cannot latch it. The longest
+feed-to-feed gap is now ~34 ms (the 33.3 ms park plus the spin), still
+about a ninth of SWT0's 300 ms. Planning simulator, one fresh boot per act,
+`tools/timeline/run-board.sh --sim planning`, two rounds:
+
+| act | run | SUMMARY | hazard_lights_on (ms) |
+|---|---|---|---|
+| encore | s1-pe | PASS 8/8 (+1 n/a), total 3427.84 of 5228.67 ms; spin gap max 34.425 ms; serial 0/0 | 4675.04 |
+| a | s1-pa | PASS 8/8; spin gap max 34.583 ms; serial 0/0 | 125.74 |
+| b | s1-pb | PASS 16/16 (+1 n/a), total 15700.10 of 21393.67 ms; spin gap max 34.341 ms; serial 0/0 | 200.04 |
+| encore | s1-pe2 | PASS 8/8 (+1 n/a), total 3465.05 of 5228.67 ms; spin gap max 34.016 ms; serial 0/0 | 4675.11 |
+| a | s1-pa2 | PASS 8/8; spin gap max 34.163 ms; serial 0/0 | 175.02 |
+| b | s1-pb2 | PASS 16/16 (+1 n/a), total 15900.09 of 21393.67 ms; spin gap max 33.812 ms; serial 0/0 | 173.81 |
+
+Every act: supervisor not driven (reaction thread wakes 0, timer expiries
+0, deadline verdicts 0), SWT0 fires 0, priorities spin 5 / reaction 3 AGREE
+with the plan, heap peak 66,488-66,680 of 107,008 B. The island spins about
+28 % less (6,077-8,732 spins an act against 8,548-11,333 for r7). The
+island's take - stamp medians (control_cmd 7.3-12.0 ms, kinematic_state
+13.4-18.6 ms) sit inside the range of the planning runs at 10 ms; a park
+that arrivals did not break would add about half a period (~17 ms) to
+them. The b totals (15,700 and 15,900 ms against r7's 15,050) follow the
+entry speed (3.04-3.06 m/s against 2.61) and the 10 Hz handler tick's phase
+at the deadline (route 2.18 or ~101 ms, both seen at 10 ms). The planning
+encore's hazard lights are late, the case above.
