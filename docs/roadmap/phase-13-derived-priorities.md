@@ -292,8 +292,8 @@ supervised 0.03 / 0.04 / 0.57 ms). Run directories:
   one more executor value (5,360 against 2,680 B), the tier thread (272 B)
   and its monitor rows (240 B). Its 16 KiB stack is in RAM.
 - The derived spin period: nano-ros derives one (#1968, #2399), 33,333 us
-  for the mrm tier (its fastest release); the island keeps `spin_period =
-  "10ms"` as an authored override, and the build notes it.
+  for the mrm tier (its fastest release). The island uses it since e600ab4
+  (island issue 8); the 10 ms override is gone.
 - `above = "transport"`: nano-ros reads the key (#2398, rlm v0.1.67 in
   #2414); the island does not set it (recommendation B above), so the plan
   stays transport 4, mrm 5, supervisor 3.
