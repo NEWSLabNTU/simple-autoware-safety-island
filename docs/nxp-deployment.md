@@ -551,19 +551,19 @@ to the compiler, so read it from the compiler's output.**
 
 One section, `.dtcm_bss_reloc`, and nothing of Zephyr's own `.dtcm_*`
 sections. `nm -S` over the gate image (`just board-build`, nano-ros pin
-628675932) puts every byte in it into six groups:
+54a1146d67) puts every byte in it into six groups:
 
 | bytes | % of 131,072 | owner | placed by |
 | ---: | ---: | --- | --- |
 | 53,253 | 40.63 | the RAM trace buffer `ram_tracing` (`CONFIG_RAM_TRACING_BUFFER_SIZE` 53,248) and its `pos` / `buffer_full` | `zephyr_code_relocate(FILES tracing_backend_ram.c)`, deliberately (docs/tracing.md section 8) |
-| 47,296 | 36.08 | `__nros_tier_executor_storage`: `NROS_CPP_EXECUTOR_STORAGE_SIZE`, the executor header, its inline backing (the derived arena, 25,724, plus the parameter store and the callback, sched-context and node tables, and the 8 B mask of entry slots holding an entity waker) and the C++ wrapper | `zephyr_code_relocate(LIBRARY app)`, deliberately |
+| 47,304 | 36.09 | `__nros_tier_executor_storage`: `NROS_CPP_EXECUTOR_STORAGE_SIZE`, the executor header, its inline backing (the derived arena, 25,724, plus the parameter store and the callback, sched-context and node tables, and the per-entity wake state of phase-397 W2/W3, 16 B) and the C++ wrapper | `zephyr_code_relocate(LIBRARY app)`, deliberately |
 | 10,052 | 7.67 | the three `__nros_comp_buf_*` component buffers: mrm_handler 5,136, comfortable stop 2,848, emergency stop 2,056, plus their pointers | the same library, deliberately |
 | 925 | 0.71 | the island supervisor: its thread object (272), `island_supervisor_record` (508), timers and state | rides with the library |
 | 888 | 0.68 | the contract's baked tables: monitors 432, modes 240, hazards 152, ages 64 | rides with the library |
 | 32 | 0.02 | `island_assert_record` | rides with the library |
 
-112,456 B used (85.80%), 18,616 B free. `linker/dtcm-headroom.ld` fails the
-link below 8 KiB free, so **10,424 B** is what a change can still add before
+112,464 B used (85.80%), 18,608 B free. `linker/dtcm-headroom.ld` fails the
+link below 8 KiB free, so **10,416 B** is what a change can still add before
 the link refuses.
 
 Everything in the table is CPU-only; nothing a DMA master touches is in it.
@@ -668,7 +668,7 @@ Stock Zephyr 4.4 cannot relocate a source generated into the build root: on no
 match it writes an empty fragment, prints nothing, and exits 0. Without the
 patch these lines link fine and relocate nothing. **Verify by the region
 report, never by the build succeeding.** On the current gate image the report
-reads ITCM 14,824 B and DTCM 112,456 B; neither is zero, so both relocations
+reads ITCM 14,824 B and DTCM 112,464 B; neither is zero, so both relocations
 ran, and `ram_tracing` and `__nros_tier_executor_storage` both link at
 0x2000xxxx.
 

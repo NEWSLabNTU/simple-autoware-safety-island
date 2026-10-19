@@ -1451,9 +1451,10 @@ are not rare on this image: one in 5 of the 7 encores, 2 of 7 a and 1 of
 7 b acts; each loses one frame. When in the act they fall is not
 recorded (two counter reads per act).
 
-**nano-ros 628675932 and CSB 0b80299 (2026-10-19).** The gate image on
-nano-ros pin 628675932 (DTCM 112,456 B; plan transport 4, mrm 3,
-supervisor 2), the CSB checkout at 0b80299 with acb 7d1b1ce (its
+**nano-ros 54a1146d67 and CSB 0b80299 (2026-10-19).** The gate image on
+nano-ros pin 54a1146d67 (DTCM 112,464 B; plan transport 4, mrm 5 in
+pool.app, supervisor 3: the mrm tier names no `above = "transport"`,
+nano-ros #1967), the CSB checkout at 0b80299 with acb 7d1b1ce (its
 gitlink; acb's `max_velocity` stays at Autoware's 4.17 m/s; CSB's
 Autoware fix overlay of roadmap 042 is not built, so the ego runs stock
 Autoware 1.5.0), built with CSB's `just build` (51 packages). One fresh
@@ -1461,27 +1462,33 @@ boot per act, `tools/timeline/run-board.sh --sim planning|carla`:
 
 | sim | act | run | SUMMARY | junit | hazard_lights_on (ms) |
 |---|---|---|---|---|---|
-| planning | encore | pl-pe | PASS 8/8 (+1 n/a), total 3506.94 of 5228.67 ms; spin gap max 13.243 ms | - | - |
-| planning | a | pl-pa | PASS 8/8; spin gap max 12.327 ms | - | 224.67 |
-| planning | b | pl-pb | PASS 16/16 (+1 n/a), total 16150.76 of 21393.67 ms; spin gap max 12.254 ms | - | 201.36 |
-| CARLA | encore | pl-ce | PASS 8/8 (+1 n/a), total 3113.15 of 5228.67 ms; RTF 1.005; spin gap max 12.802 ms | failures=0 errors=0 | 598.48 |
-| CARLA | a | pl-ca | PASS 8/8; RTF 1.000; spin gap max 12.678 ms | failures=0 errors=0 | 198.43 |
-| CARLA | b | pl-cb | PASS 16/16 (+1 n/a), total 14551.37 of 21393.67 ms; RTF 1.000; spin gap max 12.124 ms | failures=0 errors=0 | 210.79 |
+| planning | encore | fn-pe | PASS 8/8 (+1 n/a), total 3481.62 of 5228.67 ms; spin gap max 13.239 ms; serial 0/0 | - | 4726.18 |
+| planning | a | fn-pa | PASS 8/8; spin gap max 13.423 ms; serial 0/0 | - | 249.97 |
+| planning | b | fn-pb | PASS 16/16 (+1 n/a), total 15800.75 of 21393.67 ms; spin gap max 12.717 ms; serial 0/0 | - | 275.28 |
+| CARLA | encore | fn-ce | PASS 8/8 (+1 n/a), total 3102.72 of 5228.67 ms; RTF 1.004; spin gap max 13.244 ms; serial 0/0 | failures=0 errors=0 | 658.03 |
+| CARLA | a | fn-ca | PASS 8/8; RTF 1.000; spin gap max 13.084 ms; serial 1/1 | failures=0 errors=0 | 363.26 |
+| CARLA | b | fn-cb | PASS 16/16 (+1 n/a), total 14650.42 of 21393.67 ms; RTF 1.000; spin gap max 12.726 ms; serial 0/0 | failures=0 errors=0 | 292.15 |
 
-Every act: supervisor not driven, SWT0 fires 0, priorities spin 3 /
-reaction 2 AGREE with the plan, serial in act 0/0 (overruns/bad frames),
-heap peak 66,320-66,552 of 107,008 B.
+Every act: supervisor not driven, SWT0 fires 0, priorities spin 5 /
+reaction 3 AGREE with the plan, heap peak 66,320-66,536 of 107,008 B.
+Serial is overruns/bad frames in the act; fn-ca's one overrun lost one
+frame, with no ring overflow.
 
-- **The planning encore's hazard lights**: the island published ENABLE on
-  `/system/emergency/hazard_lights_cmd` (probe `island_hazard_lights_cmd`, 4.2 s)
-  and hazard_relay logged `system hazard lights -> ENABLE`, but the
-  simulator's `/vehicle/status/hazard_lights_status` stayed DISABLE
-  through the act, so the row reads `-`. The CARLA encore and both
-  planning a and b read a value. Not established: which stage between the
-  selector and the simulator drops it while the gate is stopped.
+- **The planning encore's hazard lights are late or absent**: fn-pe's
+  vehicle status reads ENABLE 4726.18 ms after the stop, near standstill.
+  Over the day's seven other plain planning encores on this host side (pin
+  628675932, with and without #2398's tier change: mrm above or below the
+  transport), two read 4624-4721 ms and five `-`: the island's ENABLE on
+  `/system/emergency/hazard_lights_cmd` and hazard_relay's `system hazard
+  lights -> ENABLE` happen in every one, but the simulator's
+  `/vehicle/status/hazard_lights_status` stays DISABLE until about
+  standstill or through the act. The CARLA encore and the planning a and
+  b read 250-365 ms. Not established: which stage between the selector
+  and the simulator holds it while the gate is stopped.
 - **nano-ros 941132a82c does not boot on the board**: phase-397 W2 put the
   executor's `WakeCtx` (`repr(align(64))`) in an `Arc`, and the platform
   global allocator answered `align > 8` with null. The island panicked at
   boot (`memory allocation of 128 bytes failed`, boot record stuck at
   ExecutorReady, no arena allocation) and never joined. nano-ros #2400
-  (in 628675932) carves over-aligned blocks out of the platform heap.
+  (in 628675932 and later) carves over-aligned blocks out of the platform
+  heap.

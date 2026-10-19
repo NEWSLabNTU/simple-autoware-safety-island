@@ -206,14 +206,84 @@ another timer entity on the handler), worth ~100 ms in about half the runs;
 not done.
 
 
+### The mrm tier above or below the transport (after the phase)
+
+nano-ros #2398 (#1967) ended the implicit lift: a tier crosses the
+transport band only when its `[tiers.*]` table says `above =
+"transport"`, and the supervisor's priority stays above the transport
+either way. Two gate images, the planning simulator, one fresh boot per
+act:
+
+- **A**, mrm above the transport: nano-ros 628675932 (the lift still
+  implicit; the same plan an authored key gives): transport 4, mrm 3,
+  supervisor 2.
+- **B**, mrm below the transport: 628675932 with #2398 applied: transport
+  4, mrm 5 in pool.app, supervisor 3.
+
+Serial is the island's UART counters (`_z_zephyr_serial_stats`): UART
+overruns / bad frames in the act (boot to the act's start was 0/0 in
+every run, so the boot-to-end count is the same), the RX ring's overflows
+in the act and its high water (the ring is 4,096 B).
+
+| act | image | runs | serial in act | ring overflows | ring high water (B) | key terms (ms) | total / bound (ms) | spin gap max (ms) |
+|---|---|---|---|---|---|---|---|---|
+| encore | A | 3 (pl-pe, A-e2, A-e3) | 0/0 x3 | 0 | 1006-1111 | detect 538.54-559.23, route 1.75-4.53 | 3449.45-3506.94 / 5228.67 | 12.24-13.24 |
+| encore | B | 3 (B-e1..3) | 0/0 x3 | 0 | 1006-1106 | detect 521.63-568.83, route 1.71-1.99 | 3475.54-3503.50 / 5228.67 | 12.70-12.89 |
+| a | A | 1 (pl-pa) | 0/0 | 0 | 1006 | | 8/8 PASS | 12.33 |
+| a | B | 1 (B-a1) | 0/0 | 0 | 1045 | | 8/8 PASS | 13.21 |
+| b | A | 1 (pl-pb) | 0/0 | 0 | 1106 | route 102.21 | 16150.76 / 21393.67 | 12.25 |
+| b | B | 1 (B-b1) | 0/0 | 0 | 1105 | route 2.01 | 15399.67 / 21393.67 | 12.89 |
+| encore, 300 ms overrun | A | 3 (A-ov1..3) | 1/2, 1/2, 0/1 | 1163, 962, 1615 | 4096 (full) x3 | due -> verdict / output / command 0.03 / 0.04 / 0.57-0.58, command -> standstill 2713.51-2728.16 | 3362.28-3377.33 / 5379.67 | 309.78-311.65 |
+| encore, 300 ms overrun | B | 3 (B-ov1..3) | 0/0, 0/0, 1/1 | 0 | 1006-1212 | 0.03-0.04 / 0.05 / 0.57-0.71, 2714.17-2729.51 | 3363.11-3378.32 / 5379.67 | 303.02-311.91 |
+
+Every act PASS. The supervisor is not driven in any plain act; in every
+overrun act it latches on the route deadline, the case the act injects,
+and its supervised rows PASS. On the board the kernel ran each image's
+plan: A spin 3 / reaction 2, B spin 5 / reaction 3, zpico_read,
+zpico_lease and zpico_flush 4 on both. (The B runs printed `priorities:
+DISAGREE` only under violations.py's former rule that the spin thread
+must be above the transport; the rule went with #1967, see below.)
+
+What it shows:
+
+- **Mrm above the transport starves the RX drain while a spin overruns.**
+  In every A overrun act the 4,096 B RX ring fills and overflows
+  962-1,615 times, costing one or two bad frames (and in two of the three
+  a UART overrun): for 300 ms the tier at 3 holds the CPU and zpico_read at 4
+  never drains. In B the same 300 ms busy-wait runs at 5, below
+  zpico_read; the ring peaks at 1,212 B and never overflows. B-ov3's one
+  UART overrun (one bad frame) came with no ring overflow, so it is the
+  hardware FIFO, not the drain; fn-ca on the final pin shows the same in
+  a plain CARLA act. This is the mechanism behind rg-ov2's serial 2/3.
+- **The supervised terms do not move.** The supervisor is above the
+  transport on both images (2 or 3), and due -> verdict / output /
+  command is 0.03 / 0.04-0.05 / 0.57-0.71 ms on both; command ->
+  standstill and the totals are within 16 ms of each other.
+- **Plain acts do not separate.** No overflow on either image, detect
+  521-569 ms and route 1.7-4.5 ms on both. Act b's route is the known
+  1-2 ms or ~100 ms coin flip of the window's tick phase (above), not the
+  priority. The longest plain spin gap is 12.2-13.2 ms on both.
+
+Recommendation: **B**, mrm below the transport, the plan nano-ros now
+derives without the key. It keeps the link draining through a spin
+overrun at no cost to the supervised path, and the supervisor, not the
+tier, is what has to preempt the transport. The island takes it on pin
+54a1146d67 (island_supervisor.c no longer asserts the tier above the
+transport, and violations.py no longer requires it); that round, all
+PASS with priorities spin 5 / reaction 3 AGREE, is in
+docs/design/carla-island-demo.md, plus one overrun encore on the final
+image (fn-ov1: serial 0/0, no ring overflow, high water 1,212 B,
+supervised 0.03 / 0.04 / 0.57 ms). Run directories:
+/mnt/mx500/aeon/worktrees/pin-latest/build/timeline/{pl-*,A-*,B-*,fn-*}.
+
 ## Not in this phase
 
 - Two tiers (the 30 Hz emergency operator on a thread of its own): each tier
   is another executor block (53,776 B on this image, in DTCM with 13,488 B
   free) and a stack; it does not fit without per-tier executor sizing in
   nano-ros.
-- The derived spin period (RFC-0079's table): unset, the C tier runner spins
-  with a 1 ms timeout, so the island states 10 ms.
-- `above = "transport"` as an authored key (rlm schema + resolver release).
-- The `nros sync` metadata probes fail on main as before this phase (exit 240
-  and `ExecutorFull`); the build proceeds without them.
+- The derived spin period: nano-ros derives one since #1968; the island
+  still states 10 ms.
+- `above = "transport"` as an authored key: nano-ros reads it (#2398), but
+  only from an rlm release that carries it; the island does not set it
+  (recommendation B above).
