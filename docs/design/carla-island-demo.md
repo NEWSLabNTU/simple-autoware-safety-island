@@ -1514,3 +1514,22 @@ fastest release, the 30 Hz operator). `just sync` exits 0 with no
 Every act: supervisor not driven, SWT0 fires 0, priorities spin 5 /
 reaction 3 AGREE with the plan, heap peak 66,488-66,536 of 107,008 B. The
 planning encore's hazard lights read `-`, the case above.
+
+**nano-ros 77e4175e77 (2026-10-19).** The gate image on nano-ros pin
+77e4175e77, main after RFC-0107 steps 1-3 (#2421 the arena floor only where
+demand is unknown, #2423 launch remaps one const table in flash with no
+runtime remap table on bare metal, #2424 extra sessions sized from the
+backend count): DTCM 103,224 B (FLASH 598,512, RAM 280,680, ITCM 14,824).
+The plan is unchanged: transport 4, mrm 5 in pool.app, supervisor 3.
+Planning simulator, one fresh boot per act, `tools/timeline/run-board.sh
+--sim planning`:
+
+| act | run | SUMMARY | hazard_lights_on (ms) |
+|---|---|---|---|
+| encore | r7-pe | PASS 8/8 (+1 n/a), total 3448.50 of 5228.67 ms; spin gap max 12.871 ms; serial 0/0 | 4650.83 |
+| a | r7-pa | PASS 8/8; spin gap max 13.249 ms; serial 0/0 | 249.26 |
+| b | r7-pb | PASS 16/16 (+1 n/a), total 15050.16 of 21393.67 ms; spin gap max 12.475 ms; serial 0/0 | 149.47 |
+
+Every act: supervisor not driven, SWT0 fires 0, priorities spin 5 /
+reaction 3 AGREE with the plan, heap peak 66,320-66,536 of 107,008 B. The
+planning encore's hazard lights are late, the case above.
