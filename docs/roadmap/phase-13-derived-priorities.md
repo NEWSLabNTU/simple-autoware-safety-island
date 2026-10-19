@@ -282,8 +282,9 @@ supervised 0.03 / 0.04 / 0.57 ms). Run directories:
   is another executor block (53,776 B on this image, in DTCM with 13,488 B
   free) and a stack; it does not fit without per-tier executor sizing in
   nano-ros.
-- The derived spin period: nano-ros derives one since #1968; the island
-  still states 10 ms.
-- `above = "transport"` as an authored key: nano-ros reads it (#2398), but
-  only from an rlm release that carries it; the island does not set it
-  (recommendation B above).
+- The derived spin period: nano-ros derives one (#1968, #2399), 33,333 us
+  for the mrm tier (its fastest release); the island keeps `spin_period =
+  "10ms"` as an authored override, and the build notes it.
+- `above = "transport"`: nano-ros reads the key (#2398, rlm v0.1.67 in
+  #2414); the island does not set it (recommendation B above), so the plan
+  stays transport 4, mrm 5, supervisor 3.

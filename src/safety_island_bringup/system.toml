@@ -87,8 +87,9 @@ group_tiers = { main = "mrm" }
 #
 # `spin_period` is the spin loop's park timeout, not a priority: 10 ms is what
 # `run_components` used (spin_once(10)), so moving to the tier runner changes
-# the priority and nothing else. Unset, the C tier runner would spin with a
-# 1 ms timeout (nano-ros derives no spin period yet).
+# the priority and nothing else. Unset, nano-ros derives it from the tier's
+# fastest release (33,333 us here, the 30 Hz operator); the authored 10 ms is
+# kept as an override, and the build prints a note saying so (RFC-0079).
 [tiers.mrm]
 spin_period = "10ms"
 
