@@ -100,10 +100,12 @@
  * phase13-D4: the reaction thread's priority comes from the priority plan the
  * executor's tier was allocated from (nano-ros RFC-0079; the header is written
  * beside the generated entry by `nros codegen entry`). The contract supervises
- * mrm_handler/call_mrm, so nano-ros allocates the tier holding the handler
- * ABOVE the transport band and reserves one priority above it for the
- * supervisor of that deadline: NROS_PRIORITY_PLAN_SUPERVISOR_PRIORITY. On this
- * image: transport 4, tier 3, reaction 2.
+ * mrm_handler/call_mrm, so nano-ros reserves a priority above the transport
+ * band for the supervisor of that deadline:
+ * NROS_PRIORITY_PLAN_SUPERVISOR_PRIORITY. The tier itself goes above the
+ * transport only when system.toml's [tiers.mrm] names it (`above =
+ * "transport"`, nano-ros #1967); it does not, so on this image: tier 5 in
+ * pool.app, transport 4, reaction 3.
  */
 #include <nros_priority_plan.h>
 
@@ -122,8 +124,6 @@
 #define ISLAND_SUPERVISOR_PRIORITY NROS_PRIORITY_PLAN_SUPERVISOR_PRIORITY
 BUILD_ASSERT(ISLAND_SUPERVISOR_PRIORITY < NROS_ENTRY_TIERS_MOST_URGENT_PRIORITY,
 	     "the reaction thread must run above every executor tier");
-BUILD_ASSERT(NROS_ENTRY_TIERS_MOST_URGENT_PRIORITY < NROS_PRIORITY_PLAN_RESERVED_TRANSPORT_LO,
-	     "the executor's tier hosts a supervised deadline and must run above the transport");
 BUILD_ASSERT(ISLAND_SUPERVISOR_PRIORITY < NROS_PRIORITY_PLAN_RESERVED_TRANSPORT_LO,
 	     "the reaction thread must run above the transport band");
 BUILD_ASSERT(ISLAND_SUPERVISOR_PRIORITY < CONFIG_MAIN_THREAD_PRIORITY,

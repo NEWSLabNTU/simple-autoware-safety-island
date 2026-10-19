@@ -74,11 +74,13 @@ group_tiers = { main = "mrm" }
 # being built (its .config: the transport band, pool.app). A tier is one
 # thread, so it takes the most urgent of its members' ranks, and the build
 # prints the split it loses as a degradation. The contract supervises
-# mrm_handler/call_mrm (`supervise:`), so the handler's rank is allocated
-# ABOVE the transport band, with one priority above it reserved for the
-# supervisor's reaction thread (RFC-0079 section 6): on the board image the
-# tier runs at 3 over the transport's 4 and the reaction thread at 2. `nros codegen entry` records the
-# plan and the tier beside the generated entry (nros_priority_plan.json, .h).
+# mrm_handler/call_mrm (`supervise:`), so a priority above the transport band
+# is reserved for the supervisor's reaction thread (RFC-0079 section 6). The
+# tier crosses the transport only if this table says `above = "transport"`
+# (nano-ros #1967); it does not, so on the board image the tier runs at 5 in
+# pool.app, below the transport's 4, and the reaction thread at 3. `nros
+# codegen entry` records the plan and the tier beside the generated entry
+# (nros_priority_plan.json, .h).
 #
 # One tier, not one per rate: each tier is an executor of its own, 53,776 B of
 # storage on the board image, which does not fit (phase-13 doc).
