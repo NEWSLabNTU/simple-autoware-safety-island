@@ -1492,3 +1492,25 @@ frame, with no ring overflow.
   ExecutorReady, no arena allocation) and never joined. nano-ros #2400
   (in 628675932 and later) carves over-aligned blocks out of the platform
   heap.
+
+**nano-ros fbd27da76d (2026-10-19).** The gate image on nano-ros pin
+fbd27da76d (main after #2414: rlm v0.1.67 with the tier key `above =
+"transport"`, play_launch d109f2ec, the derived spin period #2399, probe
+sizing #2401, per-tier executor sizing #2404): DTCM 112,464 B, the same as
+54a1146d67. The plan is unchanged: transport 4, mrm 5 in pool.app,
+supervisor 3 (`[tiers.mrm]` names no `above`). The build notes the authored
+`spin_period = "10ms"` as an override of the derived 33,333 us (the tier's
+fastest release, the 30 Hz operator). `just sync` exits 0 with no
+`ExecutorFull` and writes the four components' source metadata
+(mrm_handler.json among them). Planning simulator, one fresh boot per act,
+`tools/timeline/run-board.sh --sim planning`:
+
+| act | run | SUMMARY | hazard_lights_on (ms) |
+|---|---|---|---|
+| encore | p4-pe1 | PASS 8/8 (+1 n/a), total 3490.93 of 5228.67 ms; spin gap max 12.535 ms; serial 0/0 | - |
+| a | p4-pa | PASS 8/8; spin gap max 13.712 ms; serial 0/0 | 299.66 |
+| b | p4-pb | PASS 16/16 (+1 n/a), total 15375.02 of 21393.67 ms; spin gap max 12.811 ms; serial 0/0 | 275.48 |
+
+Every act: supervisor not driven, SWT0 fires 0, priorities spin 5 /
+reaction 3 AGREE with the plan, heap peak 66,488-66,536 of 107,008 B. The
+planning encore's hazard lights read `-`, the case above.
