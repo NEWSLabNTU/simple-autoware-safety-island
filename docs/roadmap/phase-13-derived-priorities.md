@@ -36,14 +36,18 @@ split the single tier loses as a degradation.
   reserved transport band, keeping its relative rank, with one more priority
   above it reserved for the supervisor. The contract's `supervise:` is the
   statement that names the crossing; a contract without one keeps every tier
-  below the transport. `above = "transport"` (the key the RFC sketches) is
-  not implemented: `[tiers.*]` is rlm's `TierDef` (`deny_unknown_fields`), so
-  it needs an rlm schema change and a resolver release.
+  below the transport. Since nano-ros #1967 (rlm v0.1.67, #2414) only the
+  supervisor's priority crosses on `supervise:`; a tier crosses the band only
+  when its `[tiers.*]` table says `above = "transport"`. The island's does not
+  (see "The mrm tier above or below the transport" below), so the tier runs
+  at 5 in `pool.app`, below the transport's 4, and the supervisor at 3.
 - **The tier** (`src/safety_island_bringup/system.toml`): `[tiers.mrm]` with
   no platform sub-table, `group_tiers = { main = "mrm" }` on the three
   components (issue 1426 rule 2: an authored, unplaced tier is ALLOCATED).
   `spin_period = "10ms"` is the park timeout `run_components` used, so the
-  spin loop is unchanged (nano-ros derives no spin period yet).
+  spin loop is unchanged. nano-ros derives a spin period from the tier's
+  fastest release (33,333 us, the 30 Hz operator; #1968, #2399); the
+  authored 10 ms is kept as an override and the build notes it.
 - **The runner.** `run_tiers` registers on the main thread at
   `CONFIG_MAIN_THREAD_PRIORITY` and adopts the tier's priority before the
   first spin: what `spin_priority.c` did by hand. It is now `spin_hook.c`,
@@ -278,10 +282,15 @@ supervised 0.03 / 0.04 / 0.57 ms). Run directories:
 
 ## Not in this phase
 
-- Two tiers (the 30 Hz emergency operator on a thread of its own): each tier
-  is another executor block (53,776 B on this image, in DTCM with 13,488 B
-  free) and a stack; it does not fit without per-tier executor sizing in
-  nano-ros.
+- Two tiers (the 30 Hz emergency operator on a thread of its own, tier
+  `estop` at 7): measured, not adopted. With per-tier executor sizing
+  (nano-ros #2404) and RFC-0107 steps 1-3 (#2421 arena floor only for
+  unknown demand, #2423 launch remaps in flash, #2424 extra sessions sized
+  from the backend count) the split builds at DTCM 110,320 B against
+  103,224 B for one tier, 20,752 B free, inside the 8 KiB guard. The second
+  tier costs 7,096 B: the two backings 11,112 + 28,176 B against 35,384 B,
+  one more executor value (5,360 against 2,680 B), the tier thread (272 B)
+  and its monitor rows (240 B). Its 16 KiB stack is in RAM.
 - The derived spin period: nano-ros derives one (#1968, #2399), 33,333 us
   for the mrm tier (its fastest release); the island keeps `spin_period =
   "10ms"` as an authored override, and the build notes it.

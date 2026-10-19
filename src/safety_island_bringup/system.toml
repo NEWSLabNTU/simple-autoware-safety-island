@@ -82,8 +82,11 @@ group_tiers = { main = "mrm" }
 # codegen entry` records the plan and the tier beside the generated entry
 # (nros_priority_plan.json, .h).
 #
-# One tier, not one per rate: each tier is an executor of its own, 53,776 B of
-# storage on the board image, which does not fit (phase-13 doc).
+# One tier, not one per rate: a second tier is an executor of its own. Since
+# nano-ros RFC-0107 steps 1-3 (#2421, #2423, #2424) it fits: the split with
+# the 30 Hz operator on an `estop` tier measures DTCM 110,320 B against
+# 103,224 B for this one tier, inside the 8 KiB guard (phase-13 doc). The
+# image keeps one tier.
 #
 # `spin_period` is the spin loop's park timeout, not a priority: 10 ms is what
 # `run_components` used (spin_once(10)), so moving to the tier runner changes
