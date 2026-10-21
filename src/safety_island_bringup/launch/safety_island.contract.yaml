@@ -513,7 +513,14 @@ nodes:
       max_jerk: { type: double }
       min_jerk: { type: double }
     srv:
-      operate: {}
+      # What bounds the requests (nano-ros RFC-0108 D1, rlm v0.1.68): the one
+      # client is mrm_handler, whose `call_mrm` calls this on a 10 Hz input
+      # (`operation_mode_availability`), one request per release at most.
+      # Stated at half that period, 50 ms: the arrivals are bunched by the
+      # handler's release jitter and the transport, which no key bounds. On
+      # an image that supervises a deadline, a server with no such bound is
+      # refused at build.
+      operate: { min_interarrival: 50ms }
     paths:
       # `onTimer` -> `publishStatus()`. The velocity-limit publishers are not
       # here: they fire on an operate/cancel service transition, not on the
@@ -590,7 +597,9 @@ nodes:
       target_acceleration: { type: double }
       target_jerk: { type: double }
     srv:
-      operate: {}
+      # Requests as for the comfortable operator's `operate` above: one per
+      # `call_mrm` release at most (10 Hz), stated at half its period.
+      operate: { min_interarrival: 50ms }
     paths:
       # `onTimer` -> `publishControlCommand()` + `publishStatus()`.
       on_timer:
@@ -889,13 +898,25 @@ nodes:
           duration: 143ms
           source: { measured: { max: 118.78ms, n: 5, margin: 0.2 } }
         qos: { depth: 1 }
-      comfortable_stop_status: { min_rate_hz: 9, qos: { depth: 1 } }
-      emergency_stop_status: { min_rate_hz: 9, qos: { depth: 1 } }
+      # What bounds the two statuses' arrivals (nano-ros RFC-0108 D1, rlm
+      # v0.1.68): each is published by its operator's tick, 10 Hz and 30 Hz.
+      # `min_rate_hz` is the floor the handler needs and bounds nothing, so
+      # the least gap is stated, at half the tick's period: release jitter
+      # (6 ms on the 30 Hz tick) and the transport can bunch two arrivals,
+      # and no key bounds that.
+      comfortable_stop_status: { min_rate_hz: 9, min_interarrival: 50ms, qos: { depth: 1 } }
+      emergency_stop_status: { min_rate_hz: 9, min_interarrival: 15ms, qos: { depth: 1 } }
       # Latched, published on CHANGE by default_adapi: no rate is claimed.
       # TRANSIENT_LOCAL as upstream since phase8-W14 (nano-ros phase-473 W2
       # serves a transient-local subscription from the publisher's cache), so
       # a late joiner reads the current mode instead of waiting for a change.
-      operation_mode_state: { qos: { depth: 1, durability: transient_local } }
+      # A change has no least gap either, so the callback is SERVED instead
+      # (RFC-0108 D1): 2 ms of execution per 100 ms. The callback only stores
+      # the mode. Recorded in the task record; nothing enforces it yet.
+      operation_mode_state:
+        qos: { depth: 1, durability: transient_local }
+        budget: 2ms
+        budget_period: 100ms
     pub:
       # VOLATILE, stated on every publisher of the island (phase7-W8). The
       # source creates these with the default profile, which is volatile; but
