@@ -1569,3 +1569,55 @@ them. The b totals (15,700 and 15,900 ms against r7's 15,050) follow the
 entry speed (3.04-3.06 m/s against 2.61) and the 10 Hz handler tick's phase
 at the deadline (route 2.18 or ~101 ms, both seen at 10 ms). The planning
 encore's hazard lights are late, the case above.
+
+**Rank-ordered dispatch, nano-ros f43cfb2249 (2026-10-21, phase-509 I1 +
+I2).** The gate image on nano-ros pin f43cfb2249, main after phase-509 P1
+(#2469: every member that loses its rank is reported), P2 (#2470: inside
+one executor, ready callbacks dispatch in rank order, not registration
+order) and P3 (#2471: after every callback the executor picks again, so a
+callback made ready mid-pass joins in rank order). Still one tier, one
+thread: the entry seeds `mrm_handler` rank 0, the emergency operator 1 and
+the comfortable operator 2 before each node is created, so the handler's
+callbacks no longer wait behind the operators registered before it. The
+build reports both operators' rank loss (7 and 8 against the tier's 5).
+DTCM 103,536 B (FLASH 619,792, RAM 281,208, ITCM 15,036); `priority-check`
+agrees (transport 4, mrm 5 in pool.app, supervisor 3).
+
+The supervisor is now safe for N executor levels (island I1): a level is a
+thread that spins an executor; route 1 belongs to the first level whose
+executor reports a supervised due, and only that level arms or clears it;
+SWT0 is fed once every level has checked in since the last feed; the feed
+and gap statistics are written under the lock. On this one-level image the
+record reads one level (`main`, priority 5) owning route 1, a feed per
+spin, and no foreign route-1 dues.
+
+Planning simulator, one fresh boot per act, `tools/timeline/run-board.sh
+--sim planning`, two rounds:
+
+| act | run | SUMMARY | hazard_lights_on (ms) | handler tick: gaps, grid lateness max |
+|---|---|---|---|---|
+| encore | p509-r1-pe | PASS 8/8 (+1 n/a), total 3466.51 of 5228.67 ms; spin gap max 34.201 ms; serial 0/0 | 4674.59 | 98.79-101.21, 2.11 ms |
+| a | p509-r1-pa | PASS 8/8; spin gap max 34.222 ms; serial 0/0 | 224.66 | 97.99-101.14, 2.76 ms |
+| b | p509-r1-pb | PASS 16/16 (+1 n/a), total 16048.71 of 21393.67 ms; spin gap max 33.776 ms; serial 0/0 | 198.29 | 98.32-102.22, 2.86 ms |
+| encore | pe | PASS 8/8 (+1 n/a), total 3450.63 of 5228.67 ms; spin gap max 34.024 ms; serial 0/0 | - | 98.15-101.83, 2.01 ms |
+| a | pa | PASS 8/8; spin gap max 34.498 ms; serial 0/0 | 249.00 | 98.18-101.74, 2.05 ms |
+| b | pb | PASS 16/16 (+1 n/a), total 15549.39 of 21393.67 ms; spin gap max 34.584 ms; serial 0/0 | 203.93 | 98.11-101.84, 2.57 ms |
+
+Every act: supervisor not driven (reaction thread wakes 0, timer expiries
+0), SWT0 fires 0, priorities spin 5 / reaction 3 AGREE with the plan, heap
+peak 67,040-67,400 of 107,008 B. The handler's tick is read from its
+`call_mrm` entries (10 Hz, one per tick; the `on_timer` marker is traced
+once a second): lateness against the 100 ms grid peaks at 2.01-2.86 ms,
+against 14.84 ms in the contract's `jitter` (the phase-8 W8 runs) and
+1.78-2.60 ms for the spin-derived round above (s1-*, the same method).
+At one tier the image runs the operators and the handler on one thread
+either way; what rank order removes is the handler waiting behind
+operator callbacks that are ready in the same pass, which on this load
+was already within the ~2 ms spread. The planning encore's hazard lights
+are late (or absent), the case above.
+
+SUMMARY lines:
+
+    SUMMARY p509-r1-pe encore: PASS; load 4.48 at act; table 8/8 PASS (+1 n/a), total 3466.51 of 5228.67 ms; trace-check PASS, trace 18,972 of 53,248 B over 37.8 s; stored 5 (hazard-detected x2, hazard-recovered x2, silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 67400 of 107008 B; supervisor not driven, SWT0 fires 0, spin gap max 34.201 ms, priorities spin 5 / reaction 3 AGREE with the plan
+    SUMMARY p509-r1-pa a: PASS; load 13.94 at act; table 8/8 PASS; trace-check PASS, trace 28,750 of 53,248 B over 51.4 s; stored 5 (hazard-detected x2, hazard-recovered x2, silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 67040 of 107008 B; supervisor not driven, SWT0 fires 0, spin gap max 34.222 ms, priorities spin 5 / reaction 3 AGREE with the plan
+    SUMMARY p509-r1-pb b: PASS; load 7.77 at act; table 16/16 PASS (+1 n/a), total 16048.71 of 21393.67 ms; trace-check PASS, trace 31,294 of 53,248 B over 54.4 s; stored 5 (hazard-detected x2, hazard-recovered x2, silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 67256 of 107008 B; supervisor not driven, SWT0 fires 0, spin gap max 33.776 ms, priorities spin 5 / reaction 3 AGREE with the plan
