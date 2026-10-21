@@ -105,6 +105,12 @@ SUP_PRIO_THREADS = 12
 # its expiry from the executor's route cells (nano-ros RouteWatch).
 SUP_LATE = ["watch_ok", "answered_at_expiry", "answered_first_due_ms", "answered_first_us",
             "later_take_at_expiry"]
+# nano-ros phase-509 I1, after the late notice: the executor levels (one per
+# spinning thread), then `levels` x (spins, gap_max_us, gap_max_at_ms,
+# int32 prio, route_foreign, name[16]).
+SUP_LEVELS = ["levels", "level_count", "level_overflow", "checkin_mask", "feeds", "route_owner"]
+SUP_LEVEL = ["spins", "gap_max_us", "gap_max_at_ms", "prio", "route_foreign"]
+SUP_LEVEL_BYTES = len(SUP_LEVEL) * 4 + 16
 # zenoh-pico's tasks, by the name the platform gives them, sit in the
 # transport band (read, lease and the tx flush task).
 TRANSPORT_THREADS = ("zpico_read", "zpico_lease", "zpico_flush")
@@ -231,6 +237,19 @@ def supervisor_decode(blob):
         o2 = o + len(SUP_PRIO) + SUP_PRIO_THREADS * 5
         if o2 + len(SUP_LATE) <= n:
             hdr.update(zip(SUP_LATE, w[o2:o2 + len(SUP_LATE)]))
+        o3 = o2 + len(SUP_LATE)
+        if o3 + len(SUP_LEVELS) <= n:
+            hdr.update(zip(SUP_LEVELS, w[o3:o3 + len(SUP_LEVELS)]))
+            b = (o3 + len(SUP_LEVELS)) * 4
+            levels = []
+            for i in range(min(hdr["level_count"], hdr["levels"])):
+                e = blob[b + i * SUP_LEVEL_BYTES:b + (i + 1) * SUP_LEVEL_BYTES]
+                if len(e) < SUP_LEVEL_BYTES:
+                    break
+                lv = dict(zip(SUP_LEVEL, struct.unpack("<IIIiI", e[:20])))
+                lv["name"] = e[20:36].split(b"\0", 1)[0].decode("ascii", "replace")
+                levels.append(lv)
+            hdr["level"] = levels
     return hdr
 
 
@@ -307,6 +326,15 @@ def supervisor_report(blob):
         line += (f"; handed over to the executor at uptime {dd['handover_uptime_ms']} ms" if dd["handover"]
                  else "; not handed over")
         lines.append(line)
+    if "level_count" in d:
+        owner = d["route_owner"]
+        lines.append(f"  levels={d['level_count']} of {d['levels']} (overflow spins {d['level_overflow']}); "
+                     f"SWT0 fed {d['feeds']} times, each once every level had checked in; route 1 owned by "
+                     + (f"level {owner - 1}" if owner else "no level yet"))
+        for i, lv in enumerate(d.get("level") or []):
+            lines.append(f"  level {i} {lv['name'] or '?'} prio {lv['prio']}: spins={lv['spins']}; longest "
+                         f"spin-to-spin gap {lv['gap_max_us'] / 1000:.3f} ms (ended at uptime "
+                         f"{lv['gap_max_at_ms']} ms); foreign route-1 dues {lv['route_foreign']}")
     if "standstill_met" in d:
         lines.append(f"  route 2 dues met at standstill={d['standstill_met']}; last speed {d['speed_mm_s']} mm/s "
                      f"at uptime {d['speed_at_ms']} ms")

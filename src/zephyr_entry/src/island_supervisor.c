@@ -13,9 +13,22 @@
  * thread-safe and may be what is stuck: its action bypasses the stack.
  *
  * SWT0 (CONFIG_ISLAND_SUPERVISOR_SWT): the S32K344's software watchdog is
- * started at the first spin and fed at the start of every spin; its first
- * timeout interrupts, and the callback wakes the same thread for the same
- * action, so a hung executor is caught with no route pending. The second
+ * started at the first spin; its first timeout interrupts, and the callback
+ * wakes the same thread for the same action, so a hung executor is caught
+ * with no route pending.
+ *
+ * Levels (nano-ros phase-509 I1, RFC-0108 D8). Every thread that spins an
+ * executor is a level: a tier today, a preemption level once RFC-0108 lands.
+ * Each spin checks its level in, and SWT0 is fed only once every level that
+ * has spun has checked in since the last feed, so a level blocked behind a
+ * stuck callback starves the watchdog even while another level spins on.
+ * With one level that is a feed per spin, as before. Route 1 belongs to one
+ * level: the first whose executor reports a supervised due (until nano-ros
+ * phase-509 P7 names a node's level, the latch is the owner's identity). Only
+ * that level arms or clears it, and its executor is the one whose route cells
+ * the reaction thread reads; a level with no supervised rows can no longer
+ * disarm the route another level armed. The feed and gap statistics are
+ * written under the lock, since several threads write them. The second
  * consecutive timeout resets the MCU; once the output is latched the
  * reaction thread feeds SWT0 itself, leaving the reset to a reaction thread
  * that cannot run (a reset would also release the output).
@@ -151,6 +164,16 @@ struct island_supervisor_direct {
 	uint32_t handover_uptime_ms; /* when */
 };
 
+/* nano-ros phase-509 I1: one executor level (a thread that spins one). */
+struct island_supervisor_level {
+	uint32_t spins;          /* this level's spins */
+	uint32_t gap_max_us;     /* its longest spin-to-spin gap */
+	uint32_t gap_max_at_ms;  /* when it ended */
+	int32_t prio;            /* its thread's priority at its first spin */
+	uint32_t route_foreign;  /* supervised dues it reported for route 1, not its own */
+	char name[16];           /* its thread's name */
+};
+
 struct island_supervisor_record {
 	uint32_t magic;
 	uint32_t latched;            /* the safe-state output is driven */
@@ -201,6 +224,15 @@ struct island_supervisor_record {
 	uint32_t answered_first_due_ms; /* the first one's armed due */
 	uint32_t answered_first_us;     /* when it was read, us (low 32) */
 	uint32_t later_take_at_expiry;  /* route 1 expiries re-armed to a later take */
+	/* nano-ros phase-509 I1, after the late notice so every offset above
+	 * holds: the executor levels (one per spinning thread). */
+	uint32_t levels;                /* ISLAND_SUPERVISOR_LEVELS */
+	uint32_t level_count;           /* level slots taken */
+	uint32_t level_overflow;        /* spins from a thread with no slot left */
+	uint32_t checkin_mask;          /* levels checked in since the last feed */
+	uint32_t feeds;                 /* SWT0 feeds from the spin path */
+	uint32_t route_owner;           /* level index + 1 that owns route 1, 0 none */
+	struct island_supervisor_level level[ISLAND_SUPERVISOR_LEVELS];
 };
 
 volatile struct island_supervisor_record island_supervisor_record;
@@ -216,17 +248,22 @@ static int64_t due_ms[ISLAND_SUPERVISOR_ROUTES];
 static island_supervisor_direct_fn direct_fn[ISLAND_SUPERVISOR_DIRECT_SLOTS];
 static void *direct_ctx[ISLAND_SUPERVISOR_DIRECT_SLOTS];
 static int64_t latch_ms;
-/* The executor's route cells, read at route 1's expiry (filled on the first
- * spin_after, before route 1 is ever armed). */
+/* The executor's route cells, read at route 1's expiry (filled when route 1
+ * gets its owner, from the owner's executor, before route 1 is ever armed). */
 static nros_cpp_route_watch_t route_watch;
 static volatile bool route_watch_ok;
+/* phase-509 I1: the levels, by spinning thread; written under `lock`. */
+static k_tid_t level_tid[ISLAND_SUPERVISOR_LEVELS];
+static uint32_t level_last_cyc[ISLAND_SUPERVISOR_LEVELS];
+static int route_owner = -1; /* the level that owns route 1 */
 /* A kinematic_state sample older than this is not a standstill (10 Hz). */
 #define STANDSTILL_FRESH_MS 300
 
 #if defined(CONFIG_ISLAND_SUPERVISOR_SWT)
 static const struct device *const swt = DEVICE_DT_GET(DT_NODELABEL(swt0));
-static bool swt_running;
-static uint32_t last_feed_cyc;
+static volatile bool swt_running;
+static volatile bool swt_starting;
+static uint32_t last_feed_cyc; /* the last feed; written under `lock` */
 #endif
 
 static inline uint32_t uptime_us32(void)
@@ -283,6 +320,32 @@ volatile uint32_t island_debug_spin_stall;
  * late notice, carla-island-demo.md). Once; the word reads 0 when taken. */
 volatile uint32_t island_debug_late_return_ms;
 #endif
+
+/* The calling thread's level, taking a free slot on its first spin (the lock
+ * is held); -1 when every slot is taken. */
+static int level_of_locked(k_tid_t self, bool take)
+{
+	const uint32_t n = island_supervisor_record.level_count;
+
+	for (uint32_t i = 0u; i < n; i++) {
+		if (level_tid[i] == self) {
+			return (int)i;
+		}
+	}
+	if (!take || n >= ISLAND_SUPERVISOR_LEVELS) {
+		return -1;
+	}
+	level_tid[n] = self;
+	island_supervisor_record.level[n].prio = k_thread_priority_get(self);
+	const char *name = k_thread_name_get(self);
+
+	if (name != NULL) {
+		strncpy((char *)island_supervisor_record.level[n].name, name,
+			sizeof(island_supervisor_record.level[n].name) - 1u);
+	}
+	island_supervisor_record.level_count = n + 1u;
+	return (int)n;
+}
 
 /* The earliest armed due, or K_FOREVER: the lock is held. */
 static void rearm_locked(void)
@@ -620,26 +683,67 @@ void island_supervisor_spin_after(void *executor)
 #if defined(CONFIG_ISLAND_DEBUG_SPIN_STALL)
 	late_return(executor);
 #endif
-	/* Once, on the spin thread, after the monitors are installed: the watch
+	const bool reported = executor != NULL &&
+			      nros_cpp_executor_route_next_due_us(executor, &us) == NROS_CPP_RET_OK;
+	k_spinlock_key_t key = k_spin_lock(&lock);
+	const int self = level_of_locked(k_current_get(), false);
+	bool take_watch = false;
+
+	/* phase-509 I1: route 1 is owned by the first level whose executor
+	 * reports a supervised due. Until then nothing is armed, so nothing
+	 * needs clearing. */
+	if (route_owner < 0 && self >= 0 && reported && us != UINT64_MAX) {
+		route_owner = self;
+		island_supervisor_record.route_owner = (uint32_t)self + 1u;
+		take_watch = true;
+	}
+	if (self < 0 || self != route_owner) {
+		if (self >= 0 && reported && us != UINT64_MAX) {
+			island_supervisor_record.level[self].route_foreign++;
+		}
+		k_spin_unlock(&lock, key);
+		return;
+	}
+	k_spin_unlock(&lock, key);
+	/* Once, on the owner's thread, before route 1 is first armed: the watch
 	 * the reaction thread reads route 1 through at its expiry. */
-	if (!route_watch_ok && executor != NULL &&
-	    nros_cpp_executor_route_watch(executor, &route_watch) == NROS_CPP_RET_OK) {
+	if (take_watch && nros_cpp_executor_route_watch(executor, &route_watch) == NROS_CPP_RET_OK) {
 		compiler_barrier(); /* the watch is whole before the flag says so */
 		route_watch_ok = true;
 		island_supervisor_record.watch_ok = 1u;
 	}
-	if (executor == NULL || nros_cpp_executor_route_next_due_us(executor, &us) != NROS_CPP_RET_OK ||
-	    us == UINT64_MAX) {
-		if (due_valid[ISLAND_SUPERVISOR_ROUTE_EXECUTOR]) {
-			island_supervisor_done(ISLAND_SUPERVISOR_ROUTE_EXECUTOR);
-		}
+	if (!reported || us == UINT64_MAX) {
+		island_supervisor_done(ISLAND_SUPERVISOR_ROUTE_EXECUTOR);
 		return;
 	}
 	island_supervisor_arm(ISLAND_SUPERVISOR_ROUTE_EXECUTOR, executor_due_ms(us));
 }
 
-void island_supervisor_spin(void)
+#if defined(CONFIG_ISLAND_SUPERVISOR_SWT)
+/* SWT0's start, once, outside the lock (the driver's setup is not a lock
+ * holder's business); true when it runs. */
+static bool swt_start(void)
 {
+	const struct wdt_timeout_cfg cfg = {
+		.window = {.min = 0U, .max = CONFIG_ISLAND_SUPERVISOR_SWT_MS},
+		.callback = swt_first_timeout,
+		.flags = WDT_FLAG_RESET_SOC,
+	};
+
+	if (!device_is_ready(swt) || wdt_install_timeout(swt, &cfg) < 0 ||
+	    wdt_setup(swt, WDT_OPT_PAUSE_HALTED_BY_DBG) != 0) {
+		island_supervisor_record.swt_errors++;
+		return false;
+	}
+	island_supervisor_record.swt_started = 1u;
+	island_supervisor_record.swt_timeout_ms = CONFIG_ISLAND_SUPERVISOR_SWT_MS;
+	return true;
+}
+#endif
+
+void island_supervisor_spin(void *executor)
+{
+	ARG_UNUSED(executor);
 	if (island_supervisor_record.prio_taken == 0u) {
 		prio_take();
 	}
@@ -651,29 +755,50 @@ void island_supervisor_spin(void)
 		}
 	}
 #endif
-#if defined(CONFIG_ISLAND_SUPERVISOR_SWT)
 	const uint32_t now = k_cycle_get_32();
+	k_spinlock_key_t key = k_spin_lock(&lock);
+	const int self = level_of_locked(k_current_get(), true);
 
+	island_supervisor_record.spins++;
+	if (self < 0) {
+		/* No slot: this thread cannot check in, so it never feeds; the
+		 * levels that have slots still decide. */
+		island_supervisor_record.level_overflow++;
+		k_spin_unlock(&lock, key);
+		return;
+	}
+	volatile struct island_supervisor_level *lv = &island_supervisor_record.level[self];
+
+	if (lv->spins != 0u) {
+		const uint32_t gap = (uint32_t)k_cyc_to_us_floor64(now - level_last_cyc[self]);
+
+		if (gap > lv->gap_max_us) {
+			lv->gap_max_us = gap;
+			lv->gap_max_at_ms = k_uptime_get_32();
+		}
+	}
+	level_last_cyc[self] = now;
+	lv->spins++;
+#if defined(CONFIG_ISLAND_SUPERVISOR_SWT)
 	if (!swt_running) {
-		if (island_supervisor_record.swt_errors != 0u) {
-			return; /* gave up once; the record says so */
+		k_spin_unlock(&lock, key);
+		if (island_supervisor_record.swt_errors != 0u || swt_starting) {
+			return; /* gave up once (the record says so), or another level is starting it */
 		}
-		const struct wdt_timeout_cfg cfg = {
-			.window = {.min = 0U, .max = CONFIG_ISLAND_SUPERVISOR_SWT_MS},
-			.callback = swt_first_timeout,
-			.flags = WDT_FLAG_RESET_SOC,
-		};
+		swt_starting = true;
+		if (swt_start()) {
+			key = k_spin_lock(&lock);
+			last_feed_cyc = now;
+			island_supervisor_record.checkin_mask = 0u;
+			swt_running = true;
+			k_spin_unlock(&lock, key);
+		}
+		return;
+	}
+	const uint32_t all = BIT(island_supervisor_record.level_count) - 1u;
 
-		if (!device_is_ready(swt) || wdt_install_timeout(swt, &cfg) < 0 ||
-		    wdt_setup(swt, WDT_OPT_PAUSE_HALTED_BY_DBG) != 0) {
-			island_supervisor_record.swt_errors++;
-			return;
-		}
-		swt_running = true;
-		island_supervisor_record.swt_started = 1u;
-		island_supervisor_record.swt_timeout_ms = CONFIG_ISLAND_SUPERVISOR_SWT_MS;
-		last_feed_cyc = now;
-	} else {
+	island_supervisor_record.checkin_mask |= BIT(self);
+	if ((island_supervisor_record.checkin_mask & all) == all) {
 		const uint32_t gap = (uint32_t)k_cyc_to_us_floor64(now - last_feed_cyc);
 
 		if (gap > island_supervisor_record.spin_gap_max_us) {
@@ -681,12 +806,14 @@ void island_supervisor_spin(void)
 			island_supervisor_record.spin_gap_max_at_ms = k_uptime_get_32();
 		}
 		last_feed_cyc = now;
+		island_supervisor_record.checkin_mask = 0u;
+		island_supervisor_record.feeds++;
 		if (swt_feed() != 0) {
 			island_supervisor_record.swt_errors++;
 		}
 	}
 #endif
-	island_supervisor_record.spins++;
+	k_spin_unlock(&lock, key);
 }
 
 uint32_t island_supervisor_latched(void)
@@ -728,6 +855,7 @@ static int island_supervisor_init(void)
 	}
 	k_timer_init(&due_timer, due_expiry, NULL);
 	island_supervisor_record.routes = ISLAND_SUPERVISOR_ROUTES;
+	island_supervisor_record.levels = ISLAND_SUPERVISOR_LEVELS;
 	island_supervisor_record.magic = ISLAND_SUPERVISOR_MAGIC;
 	return 0;
 }

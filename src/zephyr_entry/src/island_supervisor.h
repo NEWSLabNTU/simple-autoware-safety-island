@@ -11,6 +11,11 @@
 #define ISLAND_SUPERVISOR_ROUTES 3
 /* phase13-D4: threads listed in the record (the image has about eight). */
 #define ISLAND_SUPERVISOR_PRIO_THREADS 12
+/* nano-ros phase-509 I1: executor levels the supervisor tracks, one per
+ * thread that spins an executor (a tier today, a preemption level once
+ * nano-ros RFC-0108 lands). The image runs one; four leave room for the
+ * three-level split (I3) and a spare. */
+#define ISLAND_SUPERVISOR_LEVELS 4
 
 /* Route ids. 0: the hpc_loss reaction (mrm_handler/call_mrm on a tick that
  * sees the availability lost), armed from the handler's availability take. */
@@ -55,10 +60,13 @@ extern "C" {
 void island_supervisor_arm(uint32_t route, int64_t due_ms);
 /* The route's output came in time: clear its due. */
 void island_supervisor_done(uint32_t route);
-/* Once per spin, from the spin thread (spin_hook.c): starts SWT0 on the
- * first call, feeds it after. */
-void island_supervisor_spin(void);
-/* After each spin: re-arm route 1 from the executor's next due. */
+/* Once per spin, from the spinning thread (spin_hook.c), with the executor it
+ * spins: starts SWT0 on the first call; after that the level checks in, and
+ * SWT0 is fed once every level has checked in since the last feed. */
+void island_supervisor_spin(void *executor);
+/* After each spin: the level that owns route 1 (the first whose executor
+ * reported a supervised due) re-arms it from that executor's next due; no
+ * other level arms or clears it. */
 void island_supervisor_spin_after(void *executor);
 /* 1 once the safe-state output is latched (never cleared before reset). The
  * handler reads it every tick and then holds the emergency stop. */
