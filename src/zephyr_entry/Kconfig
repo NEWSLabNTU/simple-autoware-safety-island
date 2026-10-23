@@ -58,6 +58,25 @@ config ISLAND_BUTTONS
 	  does not act on a press. Off by default: the gate image does not
 	  carry it.
 
+config ISLAND_LOCK_PROBE
+	bool "Price the executor lock on target (nano-ros phase-509 I4)"
+	depends on THREAD_ANALYZER && INIT_STACKS && THREAD_NAME
+	help
+	  A measurement image only (src/island_lock_probe.c): the k_mutex
+	  lock cost at boot, every hold of the executor's lock (wrapping
+	  nros_cpp_executor_set_lock) for L_max, and each thread's stack
+	  high-water, into island_lock_probe_record for an SWD readout
+	  (tools/timeline/lock_probe.py). Off in the gate image.
+
+config ISLAND_LOCK_PROBE_STEADY_MS
+	int "Uptime from which a hold counts as steady state (ms)"
+	depends on ISLAND_LOCK_PROBE
+	default 8000
+	help
+	  Holds and waits before this uptime (registration, the levels'
+	  bring-up, the session's join) are kept apart from the steady-state
+	  maxima.
+
 config ISLAND_SUPERVISOR
 	bool "Supervised deadlines: a timer and a thread outside the executor (phase11-S4)"
 	depends on GPIO

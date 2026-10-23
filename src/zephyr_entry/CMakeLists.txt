@@ -265,6 +265,13 @@ if(CONFIG_ISLAND_SUPERVISOR)
     zephyr_ld_options(-Wl,--wrap=nros_cpp_level_spin_once)
 endif()
 
+# nano-ros phase-509 I4: the executor lock's price on target (a measurement
+# image only; src/island_lock_probe.c).
+if(CONFIG_ISLAND_LOCK_PROBE)
+    target_sources(app PRIVATE src/island_lock_probe.c)
+    zephyr_ld_options(-Wl,--wrap=nros_cpp_executor_set_lock)
+endif()
+
 # phase11-S4: the supervised deadline's timer, reaction thread and SWT0
 # (src/island_supervisor.c). The handler arms its route through
 # island_supervisor.h.

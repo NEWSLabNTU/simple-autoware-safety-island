@@ -137,6 +137,11 @@
 #if !defined(NROS_ENTRY_LEVEL_OF_MRM_HANDLER)
 #error "nros_priority_plan.h names no level for mrm_handler (nano-ros phase-509 P7)"
 #endif
+/* The handler's level is the most urgent one (level 0), so the plan's most
+ * urgent priority is the one the record checks its thread against. */
+#if NROS_ENTRY_LEVEL_OF_MRM_HANDLER != 0
+#error "mrm_handler is not on the most urgent level: prio_plan_tier would name another level"
+#endif
 #if NROS_ENTRY_TIER_COUNT < 1
 #error "the entry runs no tier: the executor's priority is not from the plan"
 #endif
@@ -211,16 +216,17 @@ struct island_supervisor_record {
 	uint32_t speed_at_ms;        /* its uptime */
 	/* phase13-D4, after route 2's words so every offset above holds: the
 	 * plan this image was built from and what the kernel gave the threads,
-	 * taken on the first spin (the tier has adopted its priority by then).
+	 * taken on the first spin of mrm_handler's level (it has adopted its
+	 * priority by then).
 	 * Signed values stored as int32. */
 	uint32_t prio_taken;           /* 1 once the words below are set */
 	int32_t prio_plan_transport_lo;
 	int32_t prio_plan_transport_hi;
 	int32_t prio_plan_app_lo;
 	int32_t prio_plan_app_hi;
-	int32_t prio_plan_tier;        /* the most urgent tier's planned priority */
+	int32_t prio_plan_tier;        /* mrm_handler's level, planned (the most urgent) */
 	int32_t prio_plan_reaction;    /* NROS_PRIORITY_PLAN_SUPERVISOR_PRIORITY */
-	int32_t prio_spin;             /* the spin thread, observed */
+	int32_t prio_spin;             /* mrm_handler's level thread, observed */
 	int32_t prio_reaction;         /* the reaction thread, observed */
 	uint32_t prio_threads;         /* entries of thread[] filled */
 	struct {
@@ -760,7 +766,8 @@ static bool swt_start(void)
 void island_supervisor_spin(void *executor, uint8_t nros_level)
 {
 	ARG_UNUSED(executor);
-	if (island_supervisor_record.prio_taken == 0u) {
+	if (island_supervisor_record.prio_taken == 0u &&
+	    nros_level == (uint8_t)NROS_ENTRY_LEVEL_OF_MRM_HANDLER) {
 		prio_take();
 	}
 #if defined(CONFIG_ISLAND_DEBUG_SPIN_STALL)
