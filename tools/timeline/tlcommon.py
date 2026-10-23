@@ -203,7 +203,7 @@ def declared(model=None):
         hazards[name] = dict(on=hz.get("on"), ftti_ms=duration_ms(hz.get("ftti")),
                              severity=hz.get("severity"), guards=hz.get("guards", []))
         if hz.get("entry_speed") is not None:
-            entry[name] = float(hz["entry_speed"])
+            entry[name] = speed_mps(hz["entry_speed"])
         if hz.get("when"):
             for t in hz.get("guards", []):
                 preds.append(dict(name=name, kind="hazard", topic=t, **_pred(hz["when"])))
@@ -217,6 +217,18 @@ def declared(model=None):
             exits[name] = dict(m["exit"])
     return dict(topics=topics, predicates=preds, windows=windows, exits=exits,
                 entry_speed=entry, hazards=hazards, contract=contract_path(model))
+
+
+def speed_mps(v):
+    """A contract speed in m/s: a bare number, or since ros-launch-manifest
+    v0.2.0 (`vehicle.braking`, island 0f58446) a string carrying its unit,
+    `8.33 m/s`."""
+    if isinstance(v, str):
+        t = v.strip()
+        if t.endswith("m/s"):
+            t = t[:-3].strip()
+        return float(t)
+    return float(v)
 
 
 def path_latency_ms(node, path, contract=None):
