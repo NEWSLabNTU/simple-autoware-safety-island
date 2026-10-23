@@ -84,6 +84,47 @@ the plan and the priorities the kernel gave every thread at the first spin
 (`k_thread_foreach`): `violations.py supervisor` and every act's
 `supervisor.txt` judge them, and the act summary prints the verdict.
 
+**SWT0 and a feed gap above its timeout.** The 300 ms overrun encore on
+the derived levels (p509-r4-ov, 2026-10-24) recorded a longest
+"feed-to-feed gap" of 365.13 ms against SWT0's 300 ms timeout, and SWT0 did
+not fire; the one-tier overrun rows above show 303-311 ms and no fire
+either. This is the design, not a hole the watchdog leaves:
+
+- The timeout is 300 ms of real time. SWT0 is clocked by SIRC (32 kHz;
+  `clocks = <&clock NXP_S32_SIRC_CLK>` on `swt0` in nxp_s32k344_m7.dtsi),
+  and the Zephyr driver programs `TO = rate / 1000 * window.max` =
+  32 x 300 = 9,600 ticks (`wdt_nxp_s32.c`, `swt_nxp_s32_install_timeout`;
+  `window.max = CONFIG_ISLAND_SUPERVISOR_SWT_MS` = 300, `min = 0`, no
+  window mode). Measured: the CARLA overrun rg-ov1 (2026-10-19, one tier,
+  no route latch before the stall) fired its first timeout at uptime
+  115,471.988 ms, 299.1 ms after the last feed (the gap of 303.115 ms ended
+  at the feed after the fire, uptime 115,476 ms); the stall test p11-swt1
+  fired it the same way.
+- The statistic is the SPIN path's only. `spin_gap_max_us` is taken from
+  `last_feed_cyc`, which only the spin path's feed writes (the feed once
+  every level has checked in, `nros_cpp_levels_take_alive`). The reaction
+  thread's feeds do not touch it, so after a latch the number is how long
+  the levels did not feed, not how long SWT0 went unfed.
+- After the latch the reaction thread feeds SWT0 itself, on purpose
+  (`reaction_thread`: while latched it wakes every
+  `CONFIG_ISLAND_SUPERVISOR_DIRECT_PERIOD_MS` = 33 ms while a direct
+  emergency publisher is still pending, else every SWT_MS / 4 = 75 ms, and
+  feeds on each wake). The output is already driven and latches until
+  reset; SWT0's second timeout would reset the MCU and release it, so the
+  supervisor keeps the reset for a reaction thread that cannot run.
+- On p509-r4-ov the order was: the last spin-path feed at uptime about
+  41,402 ms (41,767 - 365.13); the 300 ms overrun on the handler's level,
+  the most urgent, which stalls every level; route 0's deadline latched the
+  output at 41,539.04 ms (137 ms after that feed); the reaction thread then
+  fed SWT0 on each of its direct-publish periods (7 direct calls from
+  41,539.050 ms to the handover at 41,762 ms, one feed before each periodic
+  one). SWT0's longest unfed span was therefore about 170 ms (41,402 to
+  about 41,572), well inside 300 ms. The spin path resumed at 41,767 ms.
+
+So SWT0 catches a stall that no route catches first (rg-ov1, p11-swt1),
+and once a route has latched the safe state it is held off by design. The
+record's "longest feed-to-feed gap" reads as the spin path's gap.
+
 ### D5. The check (this repo)
 
 `just priority-check` (also at the end of `just board-build`): nano-ros's
