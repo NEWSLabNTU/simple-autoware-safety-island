@@ -46,13 +46,11 @@ features = ["params"]
 pkg = "autoware_mrm_emergency_stop_operator"
 class = "autoware::mrm_emergency_stop_operator::MrmEmergencyStopOperator"
 name = "mrm_emergency_stop_operator"
-group_tiers = { main = "mrm" }
 
 [[component]]
 pkg = "autoware_mrm_comfortable_stop_operator"
 class = "autoware::mrm_comfortable_stop_operator::MrmComfortableStopOperator"
 name = "mrm_comfortable_stop_operator"
-group_tiers = { main = "mrm" }
 
 # stop_mode_operator left the image in phase8-W8a (phase-8 doc D4): Autoware
 # 1.5.0 launches it only with the control-command gate, the demo runs
@@ -63,38 +61,26 @@ group_tiers = { main = "mrm" }
 pkg = "autoware_mrm_handler"
 class = "autoware::mrm_handler::MrmHandler"
 name = "mrm_handler"
-group_tiers = { main = "mrm" }
 
-# ── The executor's tier (phase 13) ─────────────────────────────────────────
-# One tier, `mrm`, and every component's node-level group `main` bound to it
-# (`group_tiers` above). It states NO priority and no platform sub-table: the
-# priority is ALLOCATED by nano-ros (RFC-0079, issue 1426 rule 2) from the
-# contract's ranks (launch/safety_island.contract.yaml: the timer rates, the
-# path deadlines, the reaction chains), inside the priority plan of the image
-# being built (its .config: the transport band, pool.app). A tier is one
-# thread, so it takes the most urgent of its members' ranks, and the build
-# prints the split it loses as a degradation. The contract supervises
-# mrm_handler/call_mrm (`supervise:`), so a priority above the transport band
-# is reserved for the supervisor's reaction thread (RFC-0079 section 6). The
-# tier crosses the transport only if this table says `above = "transport"`
-# (nano-ros #1967); it does not, so on the board image the tier runs at 5 in
-# pool.app, below the transport's 4, and the reaction thread at 3. `nros
-# codegen entry` records the plan and the tier beside the generated entry
-# (nros_priority_plan.json, .h).
+# ── The executor's levels (phase 13, nano-ros phase-509) ──────────────────
+# No `[tiers.*]` table and no `group_tiers`: the levels are DERIVED by
+# nano-ros (RFC-0108) from the contract's ranks (launch/
+# safety_island.contract.yaml: the timer rates, the path deadlines, the
+# reaction chains), one preemption level per band of ranks, inside the
+# priority plan of the image being built (its .config: the transport band,
+# pool.app). Each level is a worker thread over the core's ONE executor
+# (nano-ros P9b), at its own kernel priority with a derived stack; a more
+# urgent level preempts a running callback of a less urgent one. The
+# contract supervises mrm_handler/call_mrm (`supervise:`), so a priority
+# above the transport band is reserved for the supervisor's reaction thread
+# (RFC-0079 section 6). `nros codegen entry` records the plan, the levels
+# and each node's level beside the generated entry (nros_priority_plan.json,
+# .h; NROS_ENTRY_LEVEL_OF_<node>); the supervisor's route 1 belongs to
+# mrm_handler's level.
 #
-# One tier, not one per rate: a second tier is an executor of its own. Since
-# nano-ros RFC-0107 steps 1-3 (#2421, #2423, #2424) it fits: the split with
-# the 30 Hz operator on an `estop` tier measures DTCM 110,320 B against
-# 103,224 B for this one tier, inside the 8 KiB guard (phase-13 doc). The
-# image keeps one tier.
-#
-# `spin_period` is the spin loop's park timeout, not a priority, and it is not
-# authored: nano-ros derives it from the tier's fastest release (33,333 us
-# here, the 30 Hz operator; RFC-0079). It bounds only an idle park: a message
-# or service arrival breaks the park, and a timer or a supervised route's due
-# ends it, so it sets idle wakeups, not latency. The 10 ms override carried
-# over from `run_components` (spin_once(10)) is gone (island issue 8).
-[tiers.mrm]
+# Each level's spin period is derived from its fastest release (RFC-0079); it
+# bounds only an idle park: an arrival in the level's band, the band's next
+# timer or a supervised route's due ends it.
 
 # No [deploy.*] target blocks: nodes stay UNPLACED in the model, i.e.
 # board-agnostic (#236 semantics) — the SAME model bakes into the native

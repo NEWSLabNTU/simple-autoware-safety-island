@@ -17,6 +17,10 @@ nros_components_register_node(mrm_handler_lib
     PLUGIN autoware::mrm_handler::MrmHandler
     EXECUTABLE mrm_handler
     HEADER autoware/mrm_handler/mrm_handler_core.hpp
+    # nano-ros phase-509: the node-level group `main` (every callback of the
+    # node). With no `[tiers.*]` or `group_tiers`, the build derives the
+    # image's preemption levels from the contract's ranks over these groups.
+    CALLBACK_GROUPS main
     # phase-412 -- `ENTITIES` is retired. This node's subscriptions,
     # publishers and timer are stated in
     # safety_island_bringup/launch/safety_island.contract.yaml, beside the

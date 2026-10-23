@@ -5,15 +5,14 @@
  * (-Wl,--wrap) so that every spin checks
  * its level in for SWT0 and, after it, the level that owns route 1 re-arms it
  * from its executor's earliest supervised due (island_supervisor.c). The
- * handle names the executor; the calling thread names the level (nano-ros
- * phase-509 I1).
+ * handle names the core's one executor; the entry point names the level.
  *
  * phase13-D3: this file used to be spin_priority.c and also raised the spin
  * thread to CONFIG_ISLAND_SPIN_THREAD_PRIORITY (3) on the first spin. The
- * executor now runs as the bringup's tier `mrm`, whose priority nano-ros
- * allocates from the contract and the image's priority plan; the tier runner
- * registers at CONFIG_MAIN_THREAD_PRIORITY and adopts the tier's priority
- * before the first spin, which is what the raise did by hand.
+ * executor's levels are derived by nano-ros, each at a priority allocated
+ * from the contract and the image's priority plan; the runner registers at
+ * CONFIG_MAIN_THREAD_PRIORITY and each level adopts its priority before its
+ * first spin, which is what the raise did by hand.
  */
 #include <stdint.h>
 #include <zephyr/kernel.h>

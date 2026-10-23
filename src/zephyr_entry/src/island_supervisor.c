@@ -120,10 +120,10 @@
  * beside the generated entry by `nros codegen entry`). The contract supervises
  * mrm_handler/call_mrm, so nano-ros reserves a priority above the transport
  * band for the supervisor of that deadline:
- * NROS_PRIORITY_PLAN_SUPERVISOR_PRIORITY. The tier itself goes above the
- * transport only when system.toml's [tiers.mrm] names it (`above =
- * "transport"`, nano-ros #1967); it does not, so on this image: tier 5 in
- * pool.app, transport 4, reaction 3.
+ * NROS_PRIORITY_PLAN_SUPERVISOR_PRIORITY. A level goes above the transport
+ * only when a tier names it (`above = "transport"`, nano-ros #1967); the
+ * levels are derived (no tier table), so on this image: mrm_handler's level
+ * 5, the operators' 7 and 8 in pool.app, transport 4, reaction 3.
  */
 #include <nros_priority_plan.h>
 

@@ -257,8 +257,8 @@ if(CONFIG_ISLAND_BUTTONS)
 endif()
 
 # phase11-S4: the supervisor's per-spin hook (src/spin_hook.c). The spin
-# thread's priority is not set here: the executor is the bringup's tier `mrm`,
-# its priority allocated by nano-ros (phase13-D3).
+# thread's priority is not set here: the executor's levels are derived by
+# nano-ros, each at its allocated priority (phase13-D3, nano-ros phase-509).
 if(CONFIG_ISLAND_SUPERVISOR)
     target_sources(app PRIVATE src/spin_hook.c)
     zephyr_ld_options(-Wl,--wrap=nros_cpp_spin_once)
