@@ -1621,3 +1621,76 @@ SUMMARY lines:
     SUMMARY p509-r1-pe encore: PASS; load 4.48 at act; table 8/8 PASS (+1 n/a), total 3466.51 of 5228.67 ms; trace-check PASS, trace 18,972 of 53,248 B over 37.8 s; stored 5 (hazard-detected x2, hazard-recovered x2, silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 67400 of 107008 B; supervisor not driven, SWT0 fires 0, spin gap max 34.201 ms, priorities spin 5 / reaction 3 AGREE with the plan
     SUMMARY p509-r1-pa a: PASS; load 13.94 at act; table 8/8 PASS; trace-check PASS, trace 28,750 of 53,248 B over 51.4 s; stored 5 (hazard-detected x2, hazard-recovered x2, silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 67040 of 107008 B; supervisor not driven, SWT0 fires 0, spin gap max 34.222 ms, priorities spin 5 / reaction 3 AGREE with the plan
     SUMMARY p509-r1-pb b: PASS; load 7.77 at act; table 16/16 PASS (+1 n/a), total 16048.71 of 21393.67 ms; trace-check PASS, trace 31,294 of 53,248 B over 54.4 s; stored 5 (hazard-detected x2, hazard-recovered x2, silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 67256 of 107008 B; supervisor not driven, SWT0 fires 0, spin gap max 33.776 ms, priorities spin 5 / reaction 3 AGREE with the plan
+
+**Derived levels, nano-ros 3f9c3571ce (2026-10-24, phase-509 I2-I4).** The
+gate image without `[tiers.mrm]` or `group_tiers` (each component declares
+`CALLBACK_GROUPS main`): the build derives three preemption levels, one per
+contract rank, as workers over the core's ONE executor (nano-ros P9b) in
+pool.app below the transport [4, 4], with the supervisor's reaction thread
+at 3:
+
+| level | member | kernel priority | spin period | stack |
+|---|---|---|---|---|
+| 0 | mrm_handler | 5 | 100 ms | 16,384 B, spawned worker |
+| 1 | mrm_emergency_stop_operator | 7 | 33.3 ms | 16,384 B, spawned worker |
+| 2 | mrm_comfortable_stop_operator | 8 | 100 ms | `main()`, adopted; drives the transport |
+
+`priority-check` agrees and `mem-report --levels --check` passes (executor
+context 2,784 B and backing 40,576 B in DTCM, scheduler 232 B, the two
+spawned stacks 32,768 B in RAM). DTCM 109,588 B of the 122,880 B ceiling,
+13,292 B headroom (103,536 B with one tier); RAM 310,024 of 327,680 B
+(94.6 %, from 281,208: the two level stacks); FLASH 637,208 B. The
+supervisor gives route 1 to the level that hosts mrm_handler
+(`NROS_ENTRY_LEVEL_OF_MRM_HANDLER`; the spin hook wraps both
+`nros_cpp_spin_once` and `nros_cpp_level_spin_once`, since every level
+spins the same executor) and feeds SWT0 when `nros_cpp_levels_take_alive()`
+says every level spun. The first board round on nano-ros 70d1d098c2 never
+joined: every level's setup seeded its launch parameters as node 0 of the
+shared executor, the emergency operator's level refused its seed and parked,
+and the handler's level never spawned (SWT0 latched at 574 ms). nano-ros
+#2545 fixed it (seeds name their node; one monitor table per image; a
+failed level setup fails the boot).
+
+Planning simulator, one fresh boot per act, `tools/timeline/run-board.sh
+--sim planning`; hazard lights against p509-r1 (one tier, rank-ordered):
+
+| act | run | SUMMARY | hazard_lights_on (ms) | p509-r1 (ms) |
+|---|---|---|---|---|
+| encore | p509-r4-pe | PASS 8/8, total 3446.50 of 5228.67 ms; spin gap max 98.907 ms; serial 0/0 | 4673.73 | 4674.59 |
+| a | p509-r4-pa | PASS 8/8; spin gap max 99.549 ms; serial 0/0 | 225.14 | 224.66, 249.00 |
+| b | p509-r4-pb | PASS 16/16, total 15174.43 of 21393.67 ms; spin gap max 97.488 ms; serial 0/0 | 124.86 | 198.29, 203.93 |
+| encore, 300 ms overrun | p509-r4-ov | PASS 9/9 (+5 n/a), supervised 7/7; total 3375.33 of 5379.67 ms; spin gap max 365.130 ms | - | - |
+| encore, lock probe image | p509-r4-lp | PASS 8/8, total 3447.02 of 5228.67 ms; spin gap max 96.064 ms | - | - |
+
+Every act: priorities spin 5 / reaction 3 AGREE with the plan (the record
+reads the handler's level at 5, the emergency operator's at 7, `main` at
+8), SWT0 fires 0, heap peak 67,440-67,640 of 107,008 B. The spin gap is now
+per level and a level with nothing ready parks until its band's next
+timer, so the longest gap is the 100 ms levels' period (it was the 30 Hz
+operator's 33 ms when one thread spun everything). The encore and a match
+p509-r1's hazard-light times; b's hazard lights are 73-79 ms earlier.
+
+The overrun encore: due -> verdict 0.03 ms, -> output 0.04 ms, -> braking
+command 0.57 ms, command -> standstill 2,726.17 ms, handover 223.83 (state)
+/ 234.52 (command) ms; route 0 latched the output on its deadline. The
+300 ms overrun is the handler's own callback on the MOST urgent level, so
+every level stalls behind it: spin-to-spin gaps 309.5 (handler), 305.2
+(emergency operator) and 372.2 ms (comfortable operator), the longest
+feed-to-feed gap 365.13 ms; SWT0 did not fire.
+
+Measured on the lock probe image (`CONFIG_ISLAND_LOCK_PROBE`; one encore,
+56 thread-analyzer scans): stack high-water of the handler's level 12,480,
+the emergency operator's 12,248 and `main` 12,496 of 16,384 B each (3.9-4.1
+KiB spare); the executor lock (a `k_mutex`, priority inheriting) costs
+1.74 us per uncontended pair, 0.94 us nested, and 8.63 us through the
+recursive entries the runner installs; the longest hold by a less urgent
+level, `L_max`, is the comfortable level's 77.5 us (its transport drive),
+and the longest wait to acquire 11.9 us (nano-ros RFC-0108, D3).
+
+SUMMARY lines:
+
+    SUMMARY p509-r4-pe encore: PASS; load 4.53 at act; table 8/8 PASS, total 3446.50 of 5228.67 ms; trace-check PASS, trace 18,846 of 53,248 B over 37.5 s; stored 5 (hazard-detected x2, hazard-recovered x2, silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 67440 of 107008 B; supervisor not driven, SWT0 fires 0, spin gap max 98.907 ms, priorities spin 5 / reaction 3 AGREE with the plan
+    SUMMARY p509-r4-pa a: PASS; load 5.35 at act; table 8/8 PASS; trace-check PASS, trace 28,650 of 53,248 B over 51.3 s; stored 5 (hazard-detected x2, hazard-recovered x2, silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 67440 of 107008 B; supervisor not driven, SWT0 fires 0, spin gap max 99.549 ms, priorities spin 5 / reaction 3 AGREE with the plan
+    SUMMARY p509-r4-pb b: PASS; load 6.48 at act; table 16/16 PASS, total 15174.43 of 21393.67 ms; trace-check PASS, trace 30,628 of 53,248 B over 53.6 s; stored 5 (hazard-detected x2, hazard-recovered x2, silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 67640 of 107008 B; supervisor not driven, SWT0 fires 0, spin gap max 97.488 ms, priorities spin 5 / reaction 3 AGREE with the plan
+    SUMMARY p509-r4-ov encore: PASS; load 5.70 at act; table 9/9 PASS (+5 n/a), supervised 7/7 PASS; trace-check PASS (window 2 of the boot), trace 8,676 of 53,248 B over 11.3 s; stored 8 (hazard-detected x2, hazard-recovered x2, max-latency-runtime x3, silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 67568 of 107008 B; supervisor latched (route deadline), SWT0 fires 0, spin gap max 365.130 ms, priorities spin 5 / reaction 3 AGREE with the plan
+    SUMMARY p509-r4-lp encore: PASS; load 6.24 at act; table 8/8 PASS, total 3447.02 of 5228.67 ms; trace-check PASS, trace 18,914 of 53,248 B over 37.9 s; stored 5 (hazard-detected x2, hazard-recovered x2, silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 67440 of 107008 B; supervisor not driven, SWT0 fires 0, spin gap max 96.064 ms, priorities spin 5 / reaction 3 AGREE with the plan

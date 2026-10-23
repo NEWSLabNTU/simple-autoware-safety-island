@@ -280,10 +280,37 @@ image (fn-ov1: serial 0/0, no ring overflow, high water 1,212 B,
 supervised 0.03 / 0.04 / 0.57 ms). Run directories:
 /mnt/mx500/aeon/worktrees/pin-latest/build/timeline/{pl-*,A-*,B-*,fn-*}.
 
+### The executor's levels (after the phase, nano-ros phase-509)
+
+Since nano-ros 3f9c3571ce (phase-509 P9b and its fix, #2545) the island
+authors no tier: `[tiers.mrm]` and the three `group_tiers` are gone, and
+each component declares its node-level group (`CALLBACK_GROUPS main`), so
+the build derives one preemption level per contract rank. All three levels
+are workers over the core's ONE executor (a recursive priority-inheriting
+`k_mutex` released around each callback), so a more urgent level preempts a
+less urgent level's running callback:
+
+| level | member | priority | spin period | stack |
+|---|---|---|---|---|
+| 0 | mrm_handler | 5 | 100 ms | 16,384 B (spawned) |
+| 1 | mrm_emergency_stop_operator | 7 | 33.3 ms | 16,384 B (spawned) |
+| 2 | mrm_comfortable_stop_operator | 8 | 100 ms | `main()` (adopted; drives the transport) |
+
+The plan is unchanged otherwise: transport [4, 4], pool.app [5, 14],
+supervisor 3; `priority-check` agrees. DTCM 109,588 B (13,292 B under the
+122,880 B ceiling); RAM 310,024 of 327,680 B, the two spawned stacks
+32,768 B of it. Measured on the board (island lock probe image): stack
+high-water 12,480 / 12,248 / 12,496 B of 16,384 B (handler, emergency
+operator, `main`); the lock costs 1.74 us per uncontended `k_mutex` pair
+(8.63 us through the installed recursive entries) and `L_max`, the longest
+hold by a less urgent level, is 77.5 us. The board rows (encore, a, b, the
+300 ms overrun, all PASS, SWT0 0) are in docs/design/carla-island-demo.md.
+
 ## Not in this phase
 
 - Two tiers (the 30 Hz emergency operator on a thread of its own, tier
-  `estop` at 7): measured, not adopted. With per-tier executor sizing
+  `estop` at 7): measured, not adopted (superseded by the derived levels
+  above). With per-tier executor sizing
   (nano-ros #2404) and RFC-0107 steps 1-3 (#2421 arena floor only for
   unknown demand, #2423 launch remaps in flash, #2424 extra sessions sized
   from the backend count) the split builds at DTCM 110,320 B against
@@ -293,7 +320,8 @@ supervised 0.03 / 0.04 / 0.57 ms). Run directories:
   and its monitor rows (240 B). Its 16 KiB stack is in RAM.
 - The derived spin period: nano-ros derives one (#1968, #2399), 33,333 us
   for the mrm tier (its fastest release). The island uses it since e600ab4
-  (island issue 8); the 10 ms override is gone.
+  (island issue 8); the 10 ms override is gone. With derived levels each
+  level has its own (100, 33.3 and 100 ms).
 - `above = "transport"`: nano-ros reads the key (#2398, rlm v0.1.67 in
   #2414); the island does not set it (recommendation B above), so the plan
   stays transport 4, mrm 5, supervisor 3.
