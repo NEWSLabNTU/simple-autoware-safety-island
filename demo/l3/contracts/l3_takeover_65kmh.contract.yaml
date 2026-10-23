@@ -86,6 +86,8 @@
 # window) and l3_takeover_65kmh.* (a 65 km/h bound).
 
 version: 1
+use:
+  vehicle.braking: "^1"
 
 severity_levels: [QM, ASIL_A, ASIL_B, ASIL_C, ASIL_D]
 
@@ -117,7 +119,7 @@ hazards:
     when: { field: autonomous, equals: false }
     # The ODD speed bound, once: both hazards read it through the anchor,
     # so changing it is one line.
-    entry_speed: &odd_speed_bound 18.06  # m/s = 65 km/h
+    entry_speed: &odd_speed_bound 18.06 m/s  # m/s = 65 km/h
     ftti: 30s
     enters: l3_engaged
   hpc_loss:

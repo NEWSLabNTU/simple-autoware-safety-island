@@ -108,6 +108,8 @@
 # array parameter would be a board fact, never stated here.
 
 version: 1
+use:
+  vehicle.braking: "^1"
 
 # ---------------------------------------------------------------------------
 # WHAT HAPPENS WHEN THE INPUT STOPS, AND WHEN IT SAYS "NOT HERE"
@@ -473,7 +475,7 @@ hazards:
       hazardous event
     guards: [/system/operation_mode/availability]
     on: omission
-    entry_speed: &odd_speed_bound 18.06  # m/s = 65 km/h (VARIANT)
+    entry_speed: &odd_speed_bound 18.06 m/s  # m/s = 65 km/h (VARIANT)
     ftti: { duration: 10s, source: requirement }
     enters: l3_engaged
   odd_exit:
