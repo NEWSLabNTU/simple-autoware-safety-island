@@ -23,11 +23,16 @@
  * has spun has checked in since the last feed, so a level blocked behind a
  * stuck callback starves the watchdog even while another level spins on.
  * With one level that is a feed per spin, as before. Route 1 belongs to one
- * level: the first whose executor reports a supervised due (until nano-ros
- * phase-509 P7 names a node's level, the latch is the owner's identity). Only
- * that level arms or clears it, and its executor is the one whose route cells
- * the reaction thread reads; a level with no supervised rows can no longer
- * disarm the route another level armed. The feed and gap statistics are
+ * level: the one that hosts mrm_handler, named by nano-ros (phase-509 P7):
+ * the generated NROS_ENTRY_LEVEL_OF_MRM_HANDLER against the level the spin
+ * runs (spin_hook.c: the adopted level's nros_cpp_spin_once, a spawned
+ * level's nros_cpp_level_spin_once; since P9b every level works on the core's
+ * one executor, so the executor cannot say). Only that level arms
+ * or clears it, and its executor is the one whose route cells the reaction
+ * thread reads; a level with no supervised rows can no longer disarm the
+ * route another level armed. Whether every level is alive is nano-ros's
+ * aggregate too (nros_cpp_levels_take_alive): every executor spin checks its
+ * level in, and the feed takes the round only once all of them have. The feed and gap statistics are
  * written under the lock, since several threads write them. The second
  * consecutive timeout resets the MCU; once the output is latched the
  * reaction thread feeds SWT0 itself, leaving the reset to a reaction thread
@@ -128,6 +133,10 @@
 #if !NROS_PRIORITY_PLAN_SMALLER_IS_URGENT
 #error "the supervisor's arithmetic assumes Zephyr's smaller-is-urgent priorities"
 #endif
+/* nano-ros phase-509 P7: the level that hosts the supervised node owns route 1. */
+#if !defined(NROS_ENTRY_LEVEL_OF_MRM_HANDLER)
+#error "nros_priority_plan.h names no level for mrm_handler (nano-ros phase-509 P7)"
+#endif
 #if NROS_ENTRY_TIER_COUNT < 1
 #error "the entry runs no tier: the executor's priority is not from the plan"
 #endif
@@ -172,6 +181,7 @@ struct island_supervisor_level {
 	int32_t prio;            /* its thread's priority at its first spin */
 	uint32_t route_foreign;  /* supervised dues it reported for route 1, not its own */
 	char name[16];           /* its thread's name */
+	uint32_t nros_level;     /* nano-ros level it spins (P9b), 0xFF unknown */
 };
 
 struct island_supervisor_record {
@@ -232,6 +242,10 @@ struct island_supervisor_record {
 	uint32_t checkin_mask;          /* levels checked in since the last feed */
 	uint32_t feeds;                 /* SWT0 feeds from the spin path */
 	uint32_t route_owner;           /* level index + 1 that owns route 1, 0 none */
+	/* nano-ros phase-509 P9b: the level that hosts mrm_handler
+	 * (NROS_ENTRY_LEVEL_OF_MRM_HANDLER) and the image's level count. */
+	uint32_t route_nros_level;
+	uint32_t nros_level_count;
 	struct island_supervisor_level level[ISLAND_SUPERVISOR_LEVELS];
 };
 
@@ -676,7 +690,7 @@ static void late_return(void *executor)
 }
 #endif
 
-void island_supervisor_spin_after(void *executor)
+void island_supervisor_spin_after(void *executor, uint8_t nros_level)
 {
 	uint64_t us = UINT64_MAX;
 
@@ -685,14 +699,16 @@ void island_supervisor_spin_after(void *executor)
 #endif
 	const bool reported = executor != NULL &&
 			      nros_cpp_executor_route_next_due_us(executor, &us) == NROS_CPP_RET_OK;
+	/* nano-ros phase-509 P9b: every level works on the core's one executor,
+	 * so the level is the spin's (spin_hook.c), not the executor's. */
+	const bool hosts_handler = nros_level == (uint8_t)NROS_ENTRY_LEVEL_OF_MRM_HANDLER;
 	k_spinlock_key_t key = k_spin_lock(&lock);
 	const int self = level_of_locked(k_current_get(), false);
 	bool take_watch = false;
 
-	/* phase-509 I1: route 1 is owned by the first level whose executor
-	 * reports a supervised due. Until then nothing is armed, so nothing
-	 * needs clearing. */
-	if (route_owner < 0 && self >= 0 && reported && us != UINT64_MAX) {
+	/* phase-509 P7: route 1 is owned by the level nano-ros names as
+	 * mrm_handler's, from its first spin. */
+	if (route_owner < 0 && self >= 0 && hosts_handler) {
 		route_owner = self;
 		island_supervisor_record.route_owner = (uint32_t)self + 1u;
 		take_watch = true;
@@ -741,7 +757,7 @@ static bool swt_start(void)
 }
 #endif
 
-void island_supervisor_spin(void *executor)
+void island_supervisor_spin(void *executor, uint8_t nros_level)
 {
 	ARG_UNUSED(executor);
 	if (island_supervisor_record.prio_taken == 0u) {
@@ -769,6 +785,8 @@ void island_supervisor_spin(void *executor)
 	}
 	volatile struct island_supervisor_level *lv = &island_supervisor_record.level[self];
 
+	lv->nros_level = nros_level;
+
 	if (lv->spins != 0u) {
 		const uint32_t gap = (uint32_t)k_cyc_to_us_floor64(now - level_last_cyc[self]);
 
@@ -795,10 +813,11 @@ void island_supervisor_spin(void *executor)
 		}
 		return;
 	}
-	const uint32_t all = BIT(island_supervisor_record.level_count) - 1u;
-
+	/* The island's own mask stays as the record of which threads spun; the
+	 * feed is nano-ros's aggregate (phase-509 P7): every level of the image
+	 * checked in since the last feed. */
 	island_supervisor_record.checkin_mask |= BIT(self);
-	if ((island_supervisor_record.checkin_mask & all) == all) {
+	if (nros_cpp_levels_take_alive()) {
 		const uint32_t gap = (uint32_t)k_cyc_to_us_floor64(now - last_feed_cyc);
 
 		if (gap > island_supervisor_record.spin_gap_max_us) {
@@ -856,6 +875,8 @@ static int island_supervisor_init(void)
 	k_timer_init(&due_timer, due_expiry, NULL);
 	island_supervisor_record.routes = ISLAND_SUPERVISOR_ROUTES;
 	island_supervisor_record.levels = ISLAND_SUPERVISOR_LEVELS;
+	island_supervisor_record.route_nros_level = NROS_ENTRY_LEVEL_OF_MRM_HANDLER;
+	island_supervisor_record.nros_level_count = NROS_ENTRY_TIER_COUNT;
 	island_supervisor_record.magic = ISLAND_SUPERVISOR_MAGIC;
 	return 0;
 }

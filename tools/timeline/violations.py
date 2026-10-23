@@ -106,11 +106,13 @@ SUP_PRIO_THREADS = 12
 SUP_LATE = ["watch_ok", "answered_at_expiry", "answered_first_due_ms", "answered_first_us",
             "later_take_at_expiry"]
 # nano-ros phase-509 I1, after the late notice: the executor levels (one per
-# spinning thread), then `levels` x (spins, gap_max_us, gap_max_at_ms,
-# int32 prio, route_foreign, name[16]).
-SUP_LEVELS = ["levels", "level_count", "level_overflow", "checkin_mask", "feeds", "route_owner"]
+# spinning thread), then (P9b) the nano-ros level that hosts mrm_handler and
+# the image's level count, then `levels` x (spins, gap_max_us, gap_max_at_ms,
+# int32 prio, route_foreign, name[16], nros_level).
+SUP_LEVELS = ["levels", "level_count", "level_overflow", "checkin_mask", "feeds", "route_owner",
+              "route_nros_level", "nros_level_count"]
 SUP_LEVEL = ["spins", "gap_max_us", "gap_max_at_ms", "prio", "route_foreign"]
-SUP_LEVEL_BYTES = len(SUP_LEVEL) * 4 + 16
+SUP_LEVEL_BYTES = len(SUP_LEVEL) * 4 + 16 + 4
 # zenoh-pico's tasks, by the name the platform gives them, sit in the
 # transport band (read, lease and the tx flush task).
 TRANSPORT_THREADS = ("zpico_read", "zpico_lease", "zpico_flush")
@@ -248,6 +250,7 @@ def supervisor_decode(blob):
                     break
                 lv = dict(zip(SUP_LEVEL, struct.unpack("<IIIiI", e[:20])))
                 lv["name"] = e[20:36].split(b"\0", 1)[0].decode("ascii", "replace")
+                lv["nros_level"] = struct.unpack("<I", e[36:40])[0]
                 levels.append(lv)
             hdr["level"] = levels
     return hdr
@@ -329,10 +332,13 @@ def supervisor_report(blob):
     if "level_count" in d:
         owner = d["route_owner"]
         lines.append(f"  levels={d['level_count']} of {d['levels']} (overflow spins {d['level_overflow']}); "
+                     f"nano-ros levels {d['nros_level_count']}, mrm_handler's level {d['route_nros_level']}; "
                      f"SWT0 fed {d['feeds']} times, each once every level had checked in; route 1 owned by "
                      + (f"level {owner - 1}" if owner else "no level yet"))
         for i, lv in enumerate(d.get("level") or []):
-            lines.append(f"  level {i} {lv['name'] or '?'} prio {lv['prio']}: spins={lv['spins']}; longest "
+            nl = lv.get("nros_level", 0xFF)
+            lines.append(f"  level {i} {lv['name'] or '?'} prio {lv['prio']} (nano-ros level "
+                         f"{nl if nl != 0xFF else '?'}): spins={lv['spins']}; longest "
                          f"spin-to-spin gap {lv['gap_max_us'] / 1000:.3f} ms (ended at uptime "
                          f"{lv['gap_max_at_ms']} ms); foreign route-1 dues {lv['route_foreign']}")
     if "standstill_met" in d:

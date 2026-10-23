@@ -262,6 +262,7 @@ endif()
 if(CONFIG_ISLAND_SUPERVISOR)
     target_sources(app PRIVATE src/spin_hook.c)
     zephyr_ld_options(-Wl,--wrap=nros_cpp_spin_once)
+    zephyr_ld_options(-Wl,--wrap=nros_cpp_level_spin_once)
 endif()
 
 # phase11-S4: the supervised deadline's timer, reaction thread and SWT0

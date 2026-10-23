@@ -63,11 +63,12 @@ void island_supervisor_done(uint32_t route);
 /* Once per spin, from the spinning thread (spin_hook.c), with the executor it
  * spins: starts SWT0 on the first call; after that the level checks in, and
  * SWT0 is fed once every level has checked in since the last feed. */
-void island_supervisor_spin(void *executor);
-/* After each spin: the level that owns route 1 (the first whose executor
- * reported a supervised due) re-arms it from that executor's next due; no
- * other level arms or clears it. */
-void island_supervisor_spin_after(void *executor);
+void island_supervisor_spin(void *executor, uint8_t nros_level);
+/* After each spin: the level that owns route 1 (the nano-ros level that
+ * hosts mrm_handler, NROS_ENTRY_LEVEL_OF_MRM_HANDLER) re-arms it from the
+ * executor's next supervised due; no other level arms or clears it.
+ * `nros_level` is the nano-ros level the spin ran. */
+void island_supervisor_spin_after(void *executor, uint8_t nros_level);
 /* 1 once the safe-state output is latched (never cleared before reset). The
  * handler reads it every tick and then holds the emergency stop. */
 uint32_t island_supervisor_latched(void);
