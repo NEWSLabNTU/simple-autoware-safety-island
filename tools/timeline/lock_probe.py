@@ -47,7 +47,11 @@ def decode(blob):
     if magic != MAGIC:
         raise SystemExit(f"lock_probe: bad magic {magic:#x} (not the probe image, or not booted)")
     bench = {}
-    for k in ("kmutex_pair", "kmutex_nested", "rec_pair"):
+    keys = ["kmutex_pair", "kmutex_nested", "rec_pair"]
+    # nano-ros phase-509 P10: the exec_pair bench, in records 840 + 12 B on.
+    if len(blob) >= 852:
+        keys.append("exec_pair")
+    for k in keys:
         mn, avg, mx = struct.unpack_from(BENCH, blob, o); o += struct.calcsize(BENCH)
         bench[k] = {"min": mn, "avg": avg, "max": mx}
     installed, overflow, depth_err, steady_ms, scans = struct.unpack_from(TAIL, blob, o); o += struct.calcsize(TAIL)
@@ -80,15 +84,18 @@ def report(d):
          f"  lock cost, {d['n']} pairs each (cycles min/avg/max, us avg):"]
     for k, label in (("kmutex_pair", "k_mutex lock+unlock, uncontended"),
                      ("kmutex_nested", "k_mutex nested pair (already held)"),
-                     ("rec_pair", "nros_platform_mutex_rec lock+unlock")):
-        b = d["bench"][k]
+                     ("rec_pair", "nros_platform_mutex_rec lock+unlock"),
+                     ("exec_pair", "nros_zephyr_exec_lock+unlock (P10)")):
+        b = d["bench"].get(k)
+        if b is None or b["min"] == 0 and b["avg"] == 0:
+            continue
         L.append(f"    {label:38s} {b['min']}/{b['avg']}/{b['max']}  ({us(b['avg']):.3f} us)")
     L.append(f"  executor lock wrapped: {'yes' if d['installed'] else 'NO'}; holder overflow {d['holder_overflow']}, "
              f"depth errors {d['depth_errors']}; steady from {d['steady_ms']} ms")
     edges = ["<2", "2-5", "5-10", "10-50", "50-100", "100-500", "500-1000", ">=1000"]
     for h in d["holders"]:
         avg = h["hold_sum"] / h["holds"] if h["holds"] else 0
-        L.append(f"  holder {h['name'] or hex(h['tid'])} prio {h['prio']}: holds {h['holds']}, avg {us(avg):.1f} us, "
+        L.append(f"  holder {h['name'] or hex(h['tid'])} prio {h['prio']}: holds {h['holds']}, avg {us(avg):.3f} us, "
                  f"max {us(h['hold_max']):.1f} us (uptime {h['hold_max_ms']} ms), "
                  f"steady max {us(h['steady_hold_max']):.1f} us (uptime {h['steady_hold_max_ms']} ms); "
                  f"wait max {us(h['wait_max']):.1f} us, steady {us(h['steady_wait_max']):.1f} us, "
@@ -99,6 +106,7 @@ def report(d):
         L.append(f"    {s['name']:16s} {s['used']:6d} of {s['size']:6d} B ({100.0 * s['used'] / s['size'] if s['size'] else 0:.0f}%), "
                  f"{s['size'] - s['used']} spare")
     return "\n".join(L) + "\n"
+
 
 
 def main():

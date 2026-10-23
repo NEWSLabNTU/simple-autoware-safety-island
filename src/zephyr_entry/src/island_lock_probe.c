@@ -78,6 +78,7 @@ struct island_lock_probe {
 	struct lp_bench kmutex_pair;  /* k_mutex_lock + unlock, uncontended */
 	struct lp_bench kmutex_nested; /* the same pair while already held */
 	struct lp_bench rec_pair;     /* nros_platform_mutex_rec_lock + unlock */
+	struct lp_bench exec_pair;    /* nros_zephyr_exec_lock + unlock (nano-ros P10), 0 if absent */
 	uint32_t installed;           /* the executor's lock was wrapped */
 	uint32_t holder_overflow;     /* holds by a thread past LP_HOLDERS */
 	uint32_t depth_errors;        /* unlock at depth 0 */
@@ -109,6 +110,13 @@ extern int8_t nros_platform_mutex_rec_init(void *m);
 extern int8_t nros_platform_mutex_rec_lock(void *m);
 extern int8_t nros_platform_mutex_rec_unlock(void *m);
 extern size_t nros_platform_mutex_rec_storage_size(void);
+/* nano-ros phase-509 P10: the runner's own executor lock (a bare k_mutex);
+ * weak, so an older nano-ros links and benches nothing. */
+extern size_t nros_zephyr_exec_lock_size(void) __attribute__((weak));
+extern int8_t nros_zephyr_exec_lock_init(void *m) __attribute__((weak));
+extern int8_t nros_zephyr_exec_lock(void *m) __attribute__((weak));
+extern int8_t nros_zephyr_exec_unlock(void *m) __attribute__((weak));
+static uint64_t lp_exec_storage[64u / 8u];
 
 static uint64_t lp_rec_storage[256u / 8u];
 static struct k_mutex lp_mutex;
@@ -133,13 +141,14 @@ static int island_lock_probe_bench(void)
 {
 	struct island_lock_probe *r = &island_lock_probe_record;
 	uint32_t empty = UINT32_MAX;
-	uint64_t s1 = 0, s2 = 0, s3 = 0;
+	uint64_t s1 = 0, s2 = 0, s3 = 0, s4 = 0;
 
 	lp_dwt_on();
 	r->cyc_per_sec = (uint32_t)sys_clock_hw_cycles_per_sec();
 	r->bench_n = LP_BENCH_N;
 	r->steady_ms = CONFIG_ISLAND_LOCK_PROBE_STEADY_MS;
 	r->kmutex_pair.min_cyc = r->kmutex_nested.min_cyc = r->rec_pair.min_cyc = UINT32_MAX;
+	r->exec_pair.min_cyc = UINT32_MAX;
 
 	for (uint32_t i = 0; i < LP_BENCH_N; i++) {
 		const uint32_t t0 = cyc();
@@ -178,6 +187,20 @@ static int island_lock_probe_bench(void)
 			(void)nros_platform_mutex_rec_unlock(lp_rec_storage);
 			lp_fold(&r->rec_pair, lp_net(cyc() - t0, empty), &s3);
 		}
+	}
+	if (nros_zephyr_exec_lock_size != NULL &&
+	    nros_zephyr_exec_lock_size() <= sizeof(lp_exec_storage) &&
+	    nros_zephyr_exec_lock_init(lp_exec_storage) == 0) {
+		for (uint32_t i = 0; i < LP_BENCH_N; i++) {
+			const uint32_t t0 = cyc();
+
+			(void)nros_zephyr_exec_lock(lp_exec_storage);
+			(void)nros_zephyr_exec_unlock(lp_exec_storage);
+			lp_fold(&r->exec_pair, lp_net(cyc() - t0, empty), &s4);
+		}
+		r->exec_pair.avg_cyc = (uint32_t)(s4 / LP_BENCH_N);
+	} else {
+		r->exec_pair.min_cyc = 0u;
 	}
 	r->kmutex_pair.avg_cyc = (uint32_t)(s1 / LP_BENCH_N);
 	r->kmutex_nested.avg_cyc = (uint32_t)(s2 / LP_BENCH_N);
@@ -240,6 +263,14 @@ static int8_t lp_lock(void *m)
 		lp_owner = h;
 		lp_start = cyc();
 		if (h != NULL) {
+			/* A thread's name is set after it starts and a level adopts
+			 * its priority after its first holds: refresh both. */
+			const char *n = k_thread_name_get(k_current_get());
+
+			if (n != NULL && h->name[0] == '\0') {
+				strncpy(h->name, n, sizeof(h->name) - 1u);
+			}
+			h->prio = k_thread_priority_get(k_current_get());
 			if (w > h->wait_max_cyc) {
 				h->wait_max_cyc = w;
 			}
