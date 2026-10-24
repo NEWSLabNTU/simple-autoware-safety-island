@@ -1730,3 +1730,33 @@ SUMMARY lines:
     SUMMARY p509-final-pa a: PASS; load 13.83 at act; table 8/8 PASS; trace-check PASS, trace 28,676 of 53,248 B over 51.4 s; stored 5 (hazard-detected x2, hazard-recovered x2, silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 67432 of 107008 B; supervisor not driven, SWT0 fires 0, spin gap max 99.029 ms, priorities spin 5 / reaction 3 AGREE with the plan
     SUMMARY p509-final-pb b: PASS; load 13.42 at act; table 16/16 PASS, total 15600.68 of 21393.67 ms; trace-check PASS, trace 31,086 of 53,248 B over 54.2 s; stored 5 (hazard-detected x2, hazard-recovered x2, silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 67624 of 107008 B; supervisor not driven, SWT0 fires 0, spin gap max 99.311 ms, priorities spin 5 / reaction 3 AGREE with the plan
     SUMMARY p509-final-ov encore: PASS; load 20.88 at act; table 9/9 PASS (+5 n/a), supervised 7/7 PASS; trace-check PASS (window 2 of the boot), trace 8,544 of 53,248 B over 11.4 s; stored 8 (hazard-detected x2, hazard-recovered x2, max-latency-runtime x3, silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 67568 of 107008 B; supervisor latched (route deadline), SWT0 fires 0, spin gap max 358.755 ms, priorities spin 5 / reaction 3 AGREE with the plan
+
+**Pin 4f545011ff (2026-10-25, phase-509 follow-ups).** nano-ros issues
+2016-2021 and the `release_entry` sporadic-state fix (#2617) merged: Rust
+Linux/FreeRTOS/NuttX arms on levels, component ticks on their own level,
+member-derived level stacks with measured worker frames (FreeRTOS, NuttX;
+Zephyr stays at the 4,096 B estimate, `CONFIG_NROS_ZEPHYR_LEVEL_WORKER_FRAME`),
+per-level sched contexts with kernel budget hand-off (NuttX, Linux), and
+FreeRTOS level images without time slicing. The island states no member
+stacks and no kernel budget, so its levels keep their 16,384 B stacks. Same
+three levels (5 / 7 / 8, supervisor 3; `priority-check` agrees): DTCM
+109,660 B (+72 B), RAM 309,832 B (94.55 %, unchanged), FLASH 642,820 B.
+
+| act | run | SUMMARY | hazard_lights_on (ms) | handler tick: gaps, grid spread |
+|---|---|---|---|---|
+| encore | p2618-pe | PASS 8/8, total 3472.98 of 5228.67 ms; spin gap max 98.924 ms; serial 0/0 | 4675.85 | 99.86-100.15, 0.23 ms |
+| a | p2618-pa | PASS 8/8; spin gap max 98.916 ms; serial 0/0 | 151.58 | 99.46-100.37, 0.72 ms |
+| b | p2618-pb | PASS 16/16, total 17150.00 of 21393.67 ms; spin gap max 99.017 ms; serial 0/0 | 254.87 | 99.68-100.33, 0.60 ms |
+| encore, 300 ms overrun | p2618-ov | PASS 9/9 (+5 n/a), supervised 7/7; spin gap max 370.858 ms | - | - |
+
+Every act: priorities spin 5 / reaction 3 AGREE with the plan, SWT0 fires 0,
+heap peak 67,440-67,624 of 107,008 B; host load 5-9 at the act. The
+handler's grid spread (same method) is 0.23-0.72 ms, inside the 0.30-0.67 ms
+band of p509-r4 and the final pin, against 2.11-2.86 ms with one thread.
+
+SUMMARY lines:
+
+    SUMMARY p2618-pe encore: PASS; load 8.93 at act; table 8/8 PASS, total 3472.98 of 5228.67 ms; trace-check PASS, trace 18,964 of 53,248 B over 38.0 s; stored 5 (hazard-detected x2, hazard-recovered x2, silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 67440 of 107008 B; supervisor not driven, SWT0 fires 0, spin gap max 98.924 ms, priorities spin 5 / reaction 3 AGREE with the plan
+    SUMMARY p2618-pa a: PASS; load 7.53 at act; table 8/8 PASS; trace-check PASS, trace 28,664 of 53,248 B over 51.4 s; stored 5 (hazard-detected x2, hazard-recovered x2, silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 67504 of 107008 B; supervisor not driven, SWT0 fires 0, spin gap max 98.916 ms, priorities spin 5 / reaction 3 AGREE with the plan
+    SUMMARY p2618-pb b: PASS; load 5.49 at act; table 16/16 PASS, total 17150.00 of 21393.67 ms; trace-check PASS, trace 32,156 of 53,248 B over 55.6 s; stored 5 (hazard-detected x2, hazard-recovered x2, silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 67624 of 107008 B; supervisor not driven, SWT0 fires 0, spin gap max 99.017 ms, priorities spin 5 / reaction 3 AGREE with the plan
+    SUMMARY p2618-ov encore: PASS; load 4.95 at act; table 9/9 PASS (+5 n/a), supervised 7/7 PASS; trace-check PASS (window 2 of the boot), trace 8,638 of 53,248 B over 11.2 s; stored 8 (hazard-detected x2, hazard-recovered x2, max-latency-runtime x3, silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 67568 of 107008 B; supervisor latched (route deadline), SWT0 fires 0, spin gap max 370.858 ms, priorities spin 5 / reaction 3 AGREE with the plan
