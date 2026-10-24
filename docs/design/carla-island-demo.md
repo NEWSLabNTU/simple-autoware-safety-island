@@ -1694,3 +1694,39 @@ SUMMARY lines:
     SUMMARY p509-r4-pb b: PASS; load 6.48 at act; table 16/16 PASS, total 15174.43 of 21393.67 ms; trace-check PASS, trace 30,628 of 53,248 B over 53.6 s; stored 5 (hazard-detected x2, hazard-recovered x2, silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 67640 of 107008 B; supervisor not driven, SWT0 fires 0, spin gap max 97.488 ms, priorities spin 5 / reaction 3 AGREE with the plan
     SUMMARY p509-r4-ov encore: PASS; load 5.70 at act; table 9/9 PASS (+5 n/a), supervised 7/7 PASS; trace-check PASS (window 2 of the boot), trace 8,676 of 53,248 B over 11.3 s; stored 8 (hazard-detected x2, hazard-recovered x2, max-latency-runtime x3, silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 67568 of 107008 B; supervisor latched (route deadline), SWT0 fires 0, spin gap max 365.130 ms, priorities spin 5 / reaction 3 AGREE with the plan
     SUMMARY p509-r4-lp encore: PASS; load 6.24 at act; table 8/8 PASS, total 3447.02 of 5228.67 ms; trace-check PASS, trace 18,914 of 53,248 B over 37.9 s; stored 5 (hazard-detected x2, hazard-recovered x2, silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 67440 of 107008 B; supervisor not driven, SWT0 fires 0, spin gap max 96.064 ms, priorities spin 5 / reaction 3 AGREE with the plan
+
+**Final pin, nano-ros c602d4d504 (2026-10-24, phase-509 complete).** Every
+P10 runner merged; the Zephyr level runner's executor lock is a bare
+`k_mutex` (nano-ros #2547; 2.35 us per pair on the lock probe image, from
+8.58 us through the POSIX recursive mutex). The image is the same three
+levels (5 / 7 / 8, supervisor 3; `priority-check` agrees): DTCM 109,588 B
+(13,292 B headroom), RAM 309,832 of 327,680 B (94.55 %), FLASH 637,928 B.
+
+| act | run | SUMMARY | hazard_lights_on (ms) | handler tick: gaps, grid spread |
+|---|---|---|---|---|
+| encore | p509-final-pe2 | PASS 8/8, total 3440.08 of 5228.67 ms; spin gap max 97.267 ms; serial 0/0 | 4672.62 | 99.85-100.18, 0.31 ms |
+| a | p509-final-pa | PASS 8/8; spin gap max 99.029 ms; serial 0/0 | 273.73 | 99.79-100.21, 0.30 ms |
+| b | p509-final-pb | PASS 16/16, total 15600.68 of 21393.67 ms; spin gap max 99.311 ms; serial 0/0 | 225.48 | 99.78-100.30, 0.30 ms |
+| encore, 300 ms overrun | p509-final-ov | PASS 9/9 (+5 n/a), supervised 7/7; spin gap max 358.755 ms | - | - |
+
+Every act: priorities spin 5 / reaction 3 AGREE with the plan, SWT0 fires 0,
+heap peak 67,432-67,624 of 107,008 B. (A first encore, p509-final-pe, was
+refused before flashing: `pyocd list` over 30 s at host load ~40.) The
+hazard lights of a and b came 48 and 101 ms later than on p509-r4 (225.14,
+124.86 ms) and within 25-49 ms of p509-r1's; host load at the act was 13-21
+here against 4-7 there. The handler's own tick (below) is tighter than on
+either round.
+
+The handler's tick, read as for p509-r1 (its `call_mrm` ENTRY markers,
+island clock; the spread is the largest minus the smallest offset from the
+100 ms grid): 0.30-0.31 ms here and 0.40-0.67 ms on p509-r4 (nano-ros
+3f9c3571ce), against 2.11-2.86 ms on p509-r1, where one thread ran the
+handler and both operators. On its own level at the most urgent priority
+the handler no longer waits behind an operator callback already running.
+
+SUMMARY lines:
+
+    SUMMARY p509-final-pe2 encore: PASS; load 14.19 at act; table 8/8 PASS, total 3440.08 of 5228.67 ms; trace-check PASS, trace 20,062 of 53,248 B over 40.7 s; stored 5 (hazard-detected x2, hazard-recovered x2, silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 67440 of 107008 B; supervisor not driven, SWT0 fires 0, spin gap max 97.267 ms, priorities spin 5 / reaction 3 AGREE with the plan
+    SUMMARY p509-final-pa a: PASS; load 13.83 at act; table 8/8 PASS; trace-check PASS, trace 28,676 of 53,248 B over 51.4 s; stored 5 (hazard-detected x2, hazard-recovered x2, silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 67432 of 107008 B; supervisor not driven, SWT0 fires 0, spin gap max 99.029 ms, priorities spin 5 / reaction 3 AGREE with the plan
+    SUMMARY p509-final-pb b: PASS; load 13.42 at act; table 16/16 PASS, total 15600.68 of 21393.67 ms; trace-check PASS, trace 31,086 of 53,248 B over 54.2 s; stored 5 (hazard-detected x2, hazard-recovered x2, silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 67624 of 107008 B; supervisor not driven, SWT0 fires 0, spin gap max 99.311 ms, priorities spin 5 / reaction 3 AGREE with the plan
+    SUMMARY p509-final-ov encore: PASS; load 20.88 at act; table 9/9 PASS (+5 n/a), supervised 7/7 PASS; trace-check PASS (window 2 of the boot), trace 8,544 of 53,248 B over 11.4 s; stored 8 (hazard-detected x2, hazard-recovered x2, max-latency-runtime x3, silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 67568 of 107008 B; supervisor latched (route deadline), SWT0 fires 0, spin gap max 358.755 ms, priorities spin 5 / reaction 3 AGREE with the plan
