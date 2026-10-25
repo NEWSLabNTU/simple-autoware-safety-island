@@ -109,12 +109,15 @@ config ISLAND_SUPERVISOR_CALL_MRM_MS
 
 config ISLAND_SUPERVISOR_STACK_SIZE
 	int "Reaction thread stack (bytes)"
-	default 4096
+	default 6144
 	help
 	  The reaction thread runs the direct emergency path (phase11-S6):
 	  the handler's and the emergency operator's publishes, CDR
 	  serialisation and the zenoh-pico put included. 1024 sufficed while it
 	  only drove the output.
+	  4096 was 99 % used: the lock-probe image read 4,048 of 4,096 B on
+	  the 300 ms overrun encore (supervisor latched; run mt-lp-ov,
+	  2026-10-25), 240 B when the supervisor is not driven.
 
 config ISLAND_SUPERVISOR_DIRECT_PERIOD_MS
 	int "Direct emergency path period (ms)"

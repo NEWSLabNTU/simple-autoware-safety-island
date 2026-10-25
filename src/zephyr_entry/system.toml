@@ -43,7 +43,10 @@ entry = "zephyr_entry"
 # unchanged.
 
 [image.zephyr.knobs.zephyr]
-heap_size = 106496
+# 2026-10-25 memory trim: the boot record of p2618-pb (nano-ros 4f545011ff)
+# read peak 67,624 B and named 91,688 as the floor-keeping minimum
+# (peak + 24,576 floor - 512 slab); rounded up to 1 KiB.
+heap_size = 92160
 
 [image.zephyr.knobs.zenoh]
 graph_cache_size = 4096

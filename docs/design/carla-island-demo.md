@@ -1760,3 +1760,51 @@ SUMMARY lines:
     SUMMARY p2618-pa a: PASS; load 7.53 at act; table 8/8 PASS; trace-check PASS, trace 28,664 of 53,248 B over 51.4 s; stored 5 (hazard-detected x2, hazard-recovered x2, silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 67504 of 107008 B; supervisor not driven, SWT0 fires 0, spin gap max 98.916 ms, priorities spin 5 / reaction 3 AGREE with the plan
     SUMMARY p2618-pb b: PASS; load 5.49 at act; table 16/16 PASS, total 17150.00 of 21393.67 ms; trace-check PASS, trace 32,156 of 53,248 B over 55.6 s; stored 5 (hazard-detected x2, hazard-recovered x2, silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 67624 of 107008 B; supervisor not driven, SWT0 fires 0, spin gap max 99.017 ms, priorities spin 5 / reaction 3 AGREE with the plan
     SUMMARY p2618-ov encore: PASS; load 4.95 at act; table 9/9 PASS (+5 n/a), supervised 7/7 PASS; trace-check PASS (window 2 of the boot), trace 8,638 of 53,248 B over 11.2 s; stored 8 (hazard-detected x2, hazard-recovered x2, max-latency-runtime x3, silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 67568 of 107008 B; supervisor latched (route deadline), SWT0 fires 0, spin gap max 370.858 ms, priorities spin 5 / reaction 3 AGREE with the plan
+
+**Memory trim (2026-10-25, nano-ros 4f545011ff).** RAM 309,832 -> 269,384 B
+(94.55 -> 82.21 %, 40,448 B freed); DTCM 109,660 B and FLASH unchanged. The
+cuts are sized from thread-analyzer high-water read on the lock-probe image
+(`CONFIG_ISLAND_LOCK_PROBE`) over the `b` act and the 300 ms overrun encore,
+which drives the supervisor's direct emergency path:
+
+| knob | was | now | high-water (worst act) |
+|---|---|---|---|
+| `heap_size` (system.toml) | 106,496 | 92,160 | peak 67,832 of 92,672 B, 24,840 spare (floor 24,576) |
+| `CONFIG_NROS_ZEPHYR_TASK_STACK_SIZE` (5 slots) | 8,192 | 4,096 | zpico_read 1,772, flush 392, lease 320 |
+| `CONFIG_SYSTEM_WORKQUEUE_STACK_SIZE` | 4,096 | 1,024 | 216 |
+| `CONFIG_LOG_PROCESS_THREAD_STACK_SIZE` | 2,048 | 1,024 | 208 |
+| `CONFIG_ISR_STACK_SIZE` | 2,048 | 1,024 | 288 |
+| `CONFIG_POSIX_THREAD_THREADS_MAX` | 16 | 8 | zenoh-pico tasks only (<= 5 slots) |
+| `CONFIG_ISLAND_SUPERVISOR_STACK_SIZE` | 4,096 | **6,144** | **4,040** latched (240 when not driven) |
+
+The supervisor's reaction thread was 99 % used before this change: 4,048 of
+4,096 B on the overrun encore (run mt-lp-ov), 48 B from its guard. Earlier
+measurements (p509-r4-lp) never drove it. With 6,144 B it reads 4,040 B
+(mt-lp2-ov), 2,104 spare. The three levels are unchanged (12.3-12.5 KB of
+16,384 B).
+
+| act | run | SUMMARY | hazard_lights_on (ms) | handler tick grid spread |
+|---|---|---|---|---|
+| encore | mt-pe2 | PASS 8/8, total 3451.04 of 5228.67 ms; serial 0/0 | 4624.77 | - |
+| a | mt-pa | PASS 8/8; spin gap max 99.113 ms; serial 0/0 | 124.69 | 0.26 ms |
+| b | mt-pb | PASS 16/16, total 15800.58 of 21393.67 ms; spin gap max 99.128 ms; serial 0/0 | 325.91 | 0.27 ms |
+| encore, 300 ms overrun | mt-ov | PASS 9/9 (+5 n/a), supervised 7/7; spin gap max 360.698 ms | - | - |
+
+Every act: priorities spin 5 / reaction 3 AGREE with the plan, SWT0 fires 0,
+HEAP HEADROOM ok. A first encore (mt-pe, host load 24.3) also passed 8/8
+with grid spread 0.49 ms but its readout window closed before the hazard
+lights; the rerun at load 8.5 saw them at 4,624.77 ms, as before.
+
+Not cut, and why: the serial RX ring (4,096 B; a 60 min soak peaked at
+1,226 B), the trace buffer (53,248 B in DTCM; the measurement instrument),
+the shell, and the executor arena inside `__nros_levels_backing` (40 % used,
+nano-ros issue 2041). nano-ros issue 2040: `mem-report` files the level
+backing, level stacks and task-stack pool outside nano-ros storage.
+
+SUMMARY lines:
+
+    SUMMARY mt-pe2 encore: PASS; load 8.51 at act; table 8/8 PASS, total 3451.04 of 5228.67 ms; trace-check PASS, trace 18,914 of 53,248 B over 37.9 s; stored 5 (hazard-detected x2, hazard-recovered x2, silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 67440 of 92672 B; supervisor not driven, SWT0 fires 0, spin gap max 99.043 ms, priorities spin 5 / reaction 3 AGREE with the plan
+    SUMMARY mt-pa a: PASS; load 17.31 at act; table 8/8 PASS; trace-check PASS, trace 28,778 of 53,248 B over 51.7 s; stored 5 (hazard-detected x2, hazard-recovered x2, silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 67408 of 92672 B; supervisor not driven, SWT0 fires 0, spin gap max 99.113 ms, priorities spin 5 / reaction 3 AGREE with the plan
+    SUMMARY mt-pb b: PASS; load 25.59 at act; table 16/16 PASS, total 15800.58 of 21393.67 ms; trace-check PASS, trace 31,302 of 53,248 B over 54.8 s; stored 5 (hazard-detected x2, hazard-recovered x2, silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 67832 of 92672 B; supervisor not driven, SWT0 fires 0, spin gap max 99.128 ms, priorities spin 5 / reaction 3 AGREE with the plan
+    SUMMARY mt-ov encore: PASS; load 33.64 at act; table 9/9 PASS (+5 n/a), supervised 7/7 PASS; trace-check PASS (window 2 of the boot), trace 8,518 of 53,248 B over 11.3 s; stored 8 (hazard-detected x2, hazard-recovered x2, max-latency-runtime x3, silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 67568 of 92672 B; supervisor latched (route deadline), SWT0 fires 0, spin gap max 360.698 ms, priorities spin 5 / reaction 3 AGREE with the plan
+    SUMMARY mt-pe encore: PASS; load 24.27 at act; table 8/8 PASS, total 3508.71 of 5228.67 ms; trace-check PASS, trace 18,896 of 53,248 B over 37.6 s; stored 5 (hazard-detected x2, hazard-recovered x2, silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 67440 of 92672 B; supervisor not driven, SWT0 fires 0, spin gap max 99.813 ms, priorities spin 5 / reaction 3 AGREE with the plan
