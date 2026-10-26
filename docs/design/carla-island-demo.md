@@ -1808,3 +1808,24 @@ SUMMARY lines:
     SUMMARY mt-pb b: PASS; load 25.59 at act; table 16/16 PASS, total 15800.58 of 21393.67 ms; trace-check PASS, trace 31,302 of 53,248 B over 54.8 s; stored 5 (hazard-detected x2, hazard-recovered x2, silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 67832 of 92672 B; supervisor not driven, SWT0 fires 0, spin gap max 99.128 ms, priorities spin 5 / reaction 3 AGREE with the plan
     SUMMARY mt-ov encore: PASS; load 33.64 at act; table 9/9 PASS (+5 n/a), supervised 7/7 PASS; trace-check PASS (window 2 of the boot), trace 8,518 of 53,248 B over 11.3 s; stored 8 (hazard-detected x2, hazard-recovered x2, max-latency-runtime x3, silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 67568 of 92672 B; supervisor latched (route deadline), SWT0 fires 0, spin gap max 360.698 ms, priorities spin 5 / reaction 3 AGREE with the plan
     SUMMARY mt-pe encore: PASS; load 24.27 at act; table 8/8 PASS, total 3508.71 of 5228.67 ms; trace-check PASS, trace 18,896 of 53,248 B over 37.6 s; stored 5 (hazard-detected x2, hazard-recovered x2, silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 67440 of 92672 B; supervisor not driven, SWT0 fires 0, spin gap max 99.813 ms, priorities spin 5 / reaction 3 AGREE with the plan
+
+**Open after phase 509 (2026-10-26).** What the board image still states
+without a measurement:
+
+- **The contract's arrival bounds and served budget are judgement.**
+  `comfortable_stop_status` `min_interarrival: 50ms`, `emergency_stop_status`
+  15 ms, both `operate` servers 50 ms (half the publisher's period), and
+  `operation_mode_state` served at `budget: 2ms` per `budget_period: 100ms`.
+  To close: read the least arrival gap of each input from the board trace
+  over the three acts, and the callback's execution time for the served
+  budget. Then state each value with a `measured:` source, as
+  `control_mode`'s `max_transport` is.
+- **RFC-0108's band division (P5) never runs.** No member has a WCET, so
+  the levels are split by rank alone.
+- **Level stacks are set by hand** to 16,384 B (peak 12.3-12.5 KB). They are
+  not derived from member `stack_bytes`, because nano-ros's Zephyr worker
+  frame is still an estimate (nano-ros issue 2065).
+- **RAM not yet cut:** the subscriber handle slots (7 x 1,024 B; handle size
+  not measured), and the executor arena (nano-ros issue 2041, about 17 KB of
+  DTCM). At RAM 82.5 % a fourth level no longer looks ruled out by RAM, but
+  it has not been tried.
