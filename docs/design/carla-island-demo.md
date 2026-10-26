@@ -1809,6 +1809,62 @@ SUMMARY lines:
     SUMMARY mt-ov encore: PASS; load 33.64 at act; table 9/9 PASS (+5 n/a), supervised 7/7 PASS; trace-check PASS (window 2 of the boot), trace 8,518 of 53,248 B over 11.3 s; stored 8 (hazard-detected x2, hazard-recovered x2, max-latency-runtime x3, silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 67568 of 92672 B; supervisor latched (route deadline), SWT0 fires 0, spin gap max 360.698 ms, priorities spin 5 / reaction 3 AGREE with the plan
     SUMMARY mt-pe encore: PASS; load 24.27 at act; table 8/8 PASS, total 3508.71 of 5228.67 ms; trace-check PASS, trace 18,896 of 53,248 B over 37.6 s; stored 5 (hazard-detected x2, hazard-recovered x2, silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 67440 of 92672 B; supervisor not driven, SWT0 fires 0, spin gap max 99.813 ms, priorities spin 5 / reaction 3 AGREE with the plan
 
+**Pin 5feeb32a7b (2026-10-26, nano-ros issues 2041 and 2065).** Two
+nano-ros changes, each measured on this board.
+
+*The level arena (issue 2041).* The one level executor's arena is now sized
+from the per-type claims with one base (nano-ros c6486a6124). Before, it was
+one base per level, and `in_place` subscriptions were priced at a receive
+region. `__nros_levels_backing` falls from 40,640 to 33,176 B and DTCM from
+109,660 to 102,196 B. The arena capacity is 22,352 B, which equals
+`NROS_EXECUTOR_ARENA_SIZE`; the boot record shows 11,992 B used. Runs are in
+/mnt/mx500/aeon/archive/2026-10-26/i2041 (SUMMARY lines `i2041-*`: e1, e2,
+a1, b1 and ov1, all PASS).
+
+*The level worker frame (issue 2065).* Each spawned level runs its setup on
+its own stack: opening the level, its nodes' registration, and the next
+level's spawn. The lock-probe image (`CONFIG_ISLAND_LOCK_PROBE`) now reads
+each level's paint high-water at its first pass, which is the setup peak.
+It then repaints the stack below its frame, so the later scans show the
+passes alone (`spin_once` and the member callbacks). That is the steady
+peak. Both levels (runs i2065-lp-e, i2065-lp-ov):
+
+| level | setup peak | steady peak | passes | stack |
+|---|---|---|---|---|
+| derived-mrm_eme | 12,328-12,368 B | 6,920 B | 3,463-3,755 | 16,384 B |
+| derived-mrm_han | 12,408-12,464 B | 5,584-5,600 B | 4,474-4,777 | 16,384 B |
+
+Setup, not the passes, is the peak. 12,464 B rounded up to the next KiB is
+13,312 B, which is now the nano-ros default for
+`CONFIG_NROS_ZEPHYR_LEVEL_WORKER_FRAME`. That number covers the C runner and
+this image's own node registration, so it is an upper bound for this
+fixture. The Rust runner was measured separately on mps2/an385 under QEMU:
+setup 50,968 B (47,456 B release), so its frame is 51,200 B.
+
+The island does not set the frame and states no member `stack_bytes`; its
+levels keep `CONFIG_NROS_ZEPHYR_TIER_STACK_SIZE`, 16,384 B, 3,920 B above
+the highest peak. Deriving the stacks from members would make them larger,
+not smaller: a level would be its largest member's stated stack plus the
+13,312 B frame. A member's callbacks go as deep as the steady peak, up to
+6,920 B, so a level would get up to 20,232 B, against 16,384 B now. The
+frame is sized for setup, which the passes never reach. So 16,384 B stays,
+now justified by the measurement.
+
+The gate image is the pristine build at this pin, with
+`CONFIG_NROS_ZEPHYR_LEVEL_WORKER_FRAME` 13,312 B. `board-size`: FLASH
+655,812 B, RAM 269,384 B (82.21 %), DTCM 102,204 B, ITCM 14,868 B.
+`priority-check`: levels 5 / 7 / 8 and supervisor 3, which agree with the
+plan. The arena is 22,352 B, with 11,992 B used. Every act: PASS, SWT0
+fires 0, priorities AGREE.
+Runs are in /mnt/mx500/aeon/archive/2026-10-26/i2065.
+
+SUMMARY lines:
+
+    SUMMARY i2065-e1 encore: PASS; load 10.49 at act; table 8/8 PASS, total 3541.56 of 5228.67 ms; trace-check PASS, trace 19,022 of 53,248 B over 37.9 s; stored 5 (hazard-detected x2, hazard-recovered x2, silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 67440 of 92672 B; supervisor not driven, SWT0 fires 0, spin gap max 99.034 ms, priorities spin 5 / reaction 3 AGREE with the plan
+    SUMMARY i2065-a1 a: PASS; load 6.39 at act; table 8/8 PASS; trace-check PASS, trace 28,624 of 53,248 B over 51.2 s; stored 5 (hazard-detected x2, hazard-recovered x2, silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 67440 of 92672 B; supervisor not driven, SWT0 fires 0, spin gap max 99.031 ms, priorities spin 5 / reaction 3 AGREE with the plan
+    SUMMARY i2065-b1 b: PASS; load 5.75 at act; table 16/16 PASS, total 16450.55 of 21393.67 ms; trace-check PASS, trace 31,686 of 53,248 B over 54.8 s; stored 5 (hazard-detected x2, hazard-recovered x2, silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 67624 of 92672 B; supervisor not driven, SWT0 fires 0, spin gap max 99.152 ms, priorities spin 5 / reaction 3 AGREE with the plan
+    SUMMARY i2065-ov1 encore: PASS; load 5.83 at act; table 9/9 PASS (+5 n/a), supervised 7/7 PASS; trace-check PASS (window 2 of the boot), trace 8,592 of 53,248 B over 11.4 s; stored 8 (hazard-detected x2, hazard-recovered x2, max-latency-runtime x3, silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 67440 of 92672 B; supervisor latched (route deadline), SWT0 fires 0, spin gap max 374.747 ms, priorities spin 5 / reaction 3 AGREE with the plan
+
 **Open after phase 509 (2026-10-26).** What the board image still states
 without a measurement:
 
@@ -1822,10 +1878,12 @@ without a measurement:
   `control_mode`'s `max_transport` is.
 - **RFC-0108's band division (P5) never runs.** No member has a WCET, so
   the levels are split by rank alone.
-- **Level stacks are set by hand** to 16,384 B (peak 12.3-12.5 KB). They are
-  not derived from member `stack_bytes`, because nano-ros's Zephyr worker
-  frame is still an estimate (nano-ros issue 2065).
-- **RAM not yet cut:** the subscriber handle slots (7 x 1,024 B; handle size
-  not measured), and the executor arena (nano-ros issue 2041, about 17 KB of
-  DTCM). At RAM 82.5 % a fourth level no longer looks ruled out by RAM, but
-  it has not been tried.
+- **Level stacks: closed (2026-10-26).** Nano-ros issue 2065 measured the
+  worker frame on this board: setup peak 12,464 B, steady peak 6,920 B,
+  frame 13,312 B. The levels stay at the 16,384 B knob, now on a
+  measurement. Deriving them from member `stack_bytes` would make them
+  larger, not smaller (see "Pin 5feeb32a7b" above).
+- **RAM not yet cut:** the subscriber handle slots (7 x 1,024 B; the handle
+  size is not measured). The executor arena is done (nano-ros issue 2041,
+  DTCM 109,660 -> 102,196 B). At RAM 82.2 % a fourth level no longer looks
+  ruled out by RAM, but it has not been tried.
