@@ -114,8 +114,12 @@ SUP_LEVELS = ["levels", "level_count", "level_overflow", "checkin_mask", "feeds"
 SUP_LEVEL = ["spins", "gap_max_us", "gap_max_at_ms", "prio", "route_foreign"]
 SUP_LEVEL_BYTES = len(SUP_LEVEL) * 4 + 16 + 4
 # zenoh-pico's tasks, by the name the platform gives them, sit in the
-# transport band (read, lease and the tx flush task).
-TRANSPORT_THREADS = ("zpico_read", "zpico_lease", "zpico_flush")
+# transport band. Since zenoh-pico 1.9 (nano-ros phase-508, RFC-0110 D2) one
+# executor thread, `zpico_exec`, runs the read path, the lease and every
+# callback, beside the tx flush task; before it, `zpico_read` and
+# `zpico_lease` were two tasks. A record names one set or the other.
+TRANSPORT_THREADS = ("zpico_exec", "zpico_flush")
+TRANSPORT_THREADS_PRE_1_9 = ("zpico_read", "zpico_lease", "zpico_flush")
 SUP_MAGIC = 0x56505553
 SUP_CAUSE = {0: "-", 1: "route deadline", 2: "SWT0 first timeout", 3: "the executor's reaction hook"}
 SUP_ROUTE_NAME = {0: "hpc_loss reaction (mrm_handler/call_mrm)",
@@ -269,7 +273,8 @@ def priority_findings(d):
         out.append(f"reaction thread at {d['prio_reaction']}, planned {d['prio_plan_reaction']}")
     lo, hi = d["prio_plan_transport_lo"], d["prio_plan_transport_hi"]
     seen = {n: p for n, p in d.get("threads", [])}
-    for name in TRANSPORT_THREADS:
+    names = TRANSPORT_THREADS if "zpico_exec" in seen else TRANSPORT_THREADS_PRE_1_9
+    for name in names:
         if name not in seen:
             out.append(f"no thread named {name} in the record")
         elif not lo <= seen[name] <= hi:
