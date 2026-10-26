@@ -24,6 +24,9 @@ BENCH = "<3I"
 TAIL = "<5I"
 HOLDER = "<Ii16s" + "10I" + f"{BUCKETS}I"
 STACK = "<16s2I"
+LEVELS = 4
+LEVEL_MAGIC = 0x4C564C46
+LEVEL = "<I16s6I"
 
 
 def symbols(elf, names):
@@ -73,7 +76,15 @@ def decode(blob):
         name, size, used = struct.unpack_from(STACK, blob, o); o += struct.calcsize(STACK)
         if name[0]:
             stacks.append({"name": cstr(name), "size": size, "used": used})
-    return {"hz": hz, "n": n, "empty": empty, "bench": bench, "installed": installed,
+    levels = []
+    if len(blob) >= o + 4 + LEVELS * struct.calcsize(LEVEL):
+        (lmagic,) = struct.unpack_from("<I", blob, o); o += 4
+        for _ in range(LEVELS):
+            v = struct.unpack_from(LEVEL, blob, o); o += struct.calcsize(LEVEL)
+            if lmagic == LEVEL_MAGIC and v[0]:
+                levels.append({"name": cstr(v[1]), "size": v[2], "setup": v[3], "entry": v[4],
+                               "steady": v[5], "passes": v[6], "scans": v[7]})
+    return {"levels": levels, "hz": hz, "n": n, "empty": empty, "bench": bench, "installed": installed,
             "holder_overflow": overflow, "depth_errors": depth_err, "steady_ms": steady_ms,
             "stack_scans": scans, "holders": holders, "stacks": stacks}
 
@@ -105,6 +116,14 @@ def report(d):
     for s in sorted(d["stacks"], key=lambda s: s["name"]):
         L.append(f"    {s['name']:16s} {s['used']:6d} of {s['size']:6d} B ({100.0 * s['used'] / s['size'] if s['size'] else 0:.0f}%), "
                  f"{s['size'] - s['used']} spare")
+    if d.get("levels"):
+        L.append("  spawned level worker frame (nano-ros issue 2065; setup = high-water at the first pass,")
+        L.append("  steady = high-water of the stack repainted at the first pass, passes only):")
+        for l in d["levels"]:
+            peak = max(l["setup"], l["steady"])
+            L.append(f"    {l['name']:16s} setup {l['setup']:6d} B, steady {l['steady']:6d} B "
+                     f"(first-pass entry depth {l['entry']} B; {l['passes']} passes, {l['scans']} scans) "
+                     f"of {l['size']} B; peak {peak} B, next KiB {-(-peak // 1024) * 1024} B")
     return "\n".join(L) + "\n"
 
 

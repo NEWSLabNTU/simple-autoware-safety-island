@@ -21,6 +21,11 @@
 int __real_nros_cpp_spin_once(void *handle, int32_t timeout_ms);
 int __real_nros_cpp_level_spin_once(void *scheduler, uint8_t level, int32_t timeout_ms);
 int nros_cpp_executor_level(void *handle, uint8_t *out_level);
+#ifdef CONFIG_ISLAND_LOCK_PROBE
+/* nano-ros issue 2065: a spawned level's setup and steady stack peaks
+ * (island_lock_probe.c, section 4). */
+void island_lock_probe_level_pass(void);
+#endif
 void *nros_cpp_scheduler_owner(void *scheduler);
 
 /* The adopted level (it owns the core's executor and runs on main()). */
@@ -39,6 +44,9 @@ int __wrap_nros_cpp_spin_once(void *handle, int32_t timeout_ms)
 /* nano-ros phase-509 P9b: a spawned level, a worker over the same executor. */
 int __wrap_nros_cpp_level_spin_once(void *scheduler, uint8_t level, int32_t timeout_ms)
 {
+#ifdef CONFIG_ISLAND_LOCK_PROBE
+	island_lock_probe_level_pass();
+#endif
 	void *executor = nros_cpp_scheduler_owner(scheduler);
 
 	island_supervisor_spin(executor, level);

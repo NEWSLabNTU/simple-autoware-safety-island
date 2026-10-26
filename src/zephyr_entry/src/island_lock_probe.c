@@ -22,9 +22,22 @@
  *    runs the thread analyzer (CONFIG_INIT_STACKS paint) every second and
  *    keeps each thread's largest use.
  *
+ * 4. A spawned level's worker frame (nano-ros issue 2065): the supervisor's
+ *    wrapper of nros_cpp_level_spin_once (spin_hook.c, -Wl,--wrap) calls
+ *    island_lock_probe_level_pass() first on every pass. On a level thread's
+ *    first pass, before it runs, the stack's paint high-water is the SETUP
+ *    peak (nros_cpp_level_open, the level's node setup, the next level's
+ *    spawn; no callback has run yet). The wrapper then repaints the stack
+ *    below its own frame (less LP_REPAINT_MARGIN for an exception frame), so
+ *    the high-water the scan thread reads from then on is the STEADY peak:
+ *    the passes alone, spin_once plus the member callbacks it dispatches.
+ *    The level's stack table row in 3 is then the larger of the two, as
+ *    scanned.
+ *
  * Read over SWD after the run (island_lock_probe_record; the decoder is
  * tools/timeline/lock_probe.py).
  */
+#include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
 #include <zephyr/kernel.h>
@@ -37,6 +50,8 @@
 #define LP_STACKS 16
 #define LP_BUCKETS 8
 #define LP_BENCH_N 1000u
+#define LP_LEVELS 4
+#define LP_REPAINT_MARGIN 256u
 
 /* histogram edges, us: [0,2) [2,5) [5,10) [10,50) [50,100) [100,500) [500,1000) [1000,) */
 static const uint32_t lp_edge_us[LP_BUCKETS - 1] = {2u, 5u, 10u, 50u, 100u, 500u, 1000u};
@@ -70,6 +85,17 @@ struct lp_stack {
 	uint32_t used_max;
 };
 
+struct lp_level {
+	uint32_t tid;
+	char name[16];
+	uint32_t size;
+	uint32_t setup_used;  /* high-water at the first pass's entry */
+	uint32_t entry_depth; /* stack in use at the wrapper's entry (SP) */
+	uint32_t steady_used; /* high-water of the repainted stack, passes only */
+	uint32_t passes;
+	uint32_t steady_scans;
+};
+
 struct island_lock_probe {
 	uint32_t magic;
 	uint32_t cyc_per_sec;
@@ -86,7 +112,11 @@ struct island_lock_probe {
 	uint32_t stack_scans;
 	struct lp_holder holder[LP_HOLDERS];
 	struct lp_stack stack[LP_STACKS];
+	uint32_t level_magic; /* LP_LEVEL_MAGIC once section 4 is in the image */
+	struct lp_level level[LP_LEVELS];
 };
+
+#define LP_LEVEL_MAGIC 0x4C564C46u /* "LVLF" */
 
 struct island_lock_probe island_lock_probe_record;
 
@@ -349,6 +379,82 @@ static void lp_stack_cb(struct thread_analyzer_info *info)
 	}
 }
 
+/* ---- 4. a spawned level's worker frame (nano-ros issue 2065) -------- */
+
+static struct lp_level *lp_level_of(k_tid_t t, bool *first)
+{
+	struct island_lock_probe *r = &island_lock_probe_record;
+
+	*first = false;
+	for (int i = 0; i < LP_LEVELS; i++) {
+		struct lp_level *l = &r->level[i];
+
+		if (l->tid == (uint32_t)(uintptr_t)t) {
+			return l;
+		}
+		if (l->tid == 0u) {
+			l->tid = (uint32_t)(uintptr_t)t;
+			*first = true;
+			return l;
+		}
+	}
+	return NULL;
+}
+
+void island_lock_probe_level_pass(void)
+{
+	bool first;
+	k_tid_t self = k_current_get();
+	struct lp_level *l = lp_level_of(self, &first);
+
+	if (l != NULL && first) {
+		const char *n = k_thread_name_get(self);
+		size_t unused = 0;
+		uintptr_t sp;
+		const uintptr_t start = self->stack_info.start;
+
+		__asm__ volatile("mov %0, sp" : "=r"(sp));
+		if (n != NULL) {
+			strncpy(l->name, n, sizeof(l->name) - 1u);
+		}
+		l->size = (uint32_t)self->stack_info.size;
+		if (k_thread_stack_space_get(self, &unused) == 0) {
+			l->setup_used = l->size - (uint32_t)unused;
+		}
+		l->entry_depth = (uint32_t)(start + self->stack_info.size - sp);
+		/* Repaint below this frame: a plain loop, so nothing it calls
+		 * lands in the region it writes; an exception's stacked frame
+		 * (at most 104 B with the FPU) lands in the margin. */
+		for (volatile uint8_t *p = (volatile uint8_t *)start;
+		     (uintptr_t)p < sp - LP_REPAINT_MARGIN; p++) {
+			*p = 0xaau;
+		}
+		island_lock_probe_record.level_magic = LP_LEVEL_MAGIC;
+	}
+	if (l != NULL) {
+		l->passes++;
+	}
+}
+
+static void lp_level_scan(void)
+{
+	struct island_lock_probe *r = &island_lock_probe_record;
+
+	for (int i = 0; i < LP_LEVELS; i++) {
+		struct lp_level *l = &r->level[i];
+		size_t unused = 0;
+
+		if (l->tid == 0u || l->passes == 0u) {
+			continue;
+		}
+		if (k_thread_stack_space_get((k_tid_t)(uintptr_t)l->tid, &unused) == 0 &&
+		    l->size - (uint32_t)unused > l->steady_used) {
+			l->steady_used = l->size - (uint32_t)unused;
+		}
+		l->steady_scans++;
+	}
+}
+
 static void lp_stack_thread(void *a, void *b, void *c)
 {
 	ARG_UNUSED(a);
@@ -357,6 +463,7 @@ static void lp_stack_thread(void *a, void *b, void *c)
 	for (;;) {
 		k_sleep(K_MSEC(1000));
 		thread_analyzer_run(lp_stack_cb, 0);
+		lp_level_scan();
 		island_lock_probe_record.stack_scans++;
 	}
 }
