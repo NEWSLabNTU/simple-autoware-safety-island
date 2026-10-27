@@ -397,7 +397,9 @@ let:
 #     could notice a STALLED manoeuvre is Autoware proper. Who watches the
 #     watcher is a real open question here, and the honest answer is
 #     "something outside this image, and it is not declared anywhere yet".
-#     Silencing it would be worse than carrying it.
+#     Silencing it would be worse than carrying it, so it is acknowledged
+#     (root `acknowledged:` below, play_launch 0.20.2), not removed: the
+#     checker still prints it, counted as acknowledged, with that reason.
 #
 #   info[path-exclusion]: `on_timer` may wait up to 149 ms for `call_mrm`
 #     and `driver_exit`, because every path of a node is assumed to
@@ -427,6 +429,24 @@ let:
 # checker's default; writing it out is what makes `severity: ASIL_D` below a
 # reference to a named scale rather than a string nobody validates.
 severity_levels: [QM, ASIL_A, ASIL_B, ASIL_C, ASIL_D]
+
+# The two reaction-unguarded warnings, kept on purpose (see "WHAT THE
+# CHECKER STILL COMPLAINS ABOUT" above): each reaction ends at an
+# `external: sub` topic, and only something outside this image could notice
+# a stalled manoeuvre.
+acknowledged:
+  - rule: reaction-unguarded
+    at: hazards.hpc_loss.enters
+    reason: >-
+      the emergency stop ends at /system/emergency/control_cmd, an external
+      topic; only Autoware or the vehicle outside this image could notice a
+      stalled manoeuvre, and nothing there is declared yet
+  - rule: reaction-unguarded
+    at: hazards.odd_exit.enters
+    reason: >-
+      the emergency stop ends at /system/emergency/control_cmd, an external
+      topic; only Autoware or the vehicle outside this image could notice a
+      stalled manoeuvre, and nothing there is declared yet
 
 # phase11-S6: the platform terms of a supervision's detection delay (rlm
 # 0.1.61's `supervision:`). tick: the kernel tick the board's k_timer expires
