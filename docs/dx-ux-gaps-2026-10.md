@@ -318,6 +318,13 @@ checkout is itself gap 3.1.
 - Evidence: VERIFIED 2026-10-03 output; CON:307-318.
 - Sev: COSMETIC to HOURS in CI adoption. Owner: PL/RLM. Tracked:
   UNTRACKED.
+- Status (2026-10-28): the warning half is closed by play_launch 0.20.2
+  (rlm v0.2.4). The island contract's root `acknowledged:` names both
+  `reaction-unguarded` findings, with the reason its own note gives, and
+  `check` counts them apart: 0 errors, 7 warnings, 2 acknowledged with
+  Autoware's `.msg` files on the index (10 + 2 with ROS only, as CI).
+  `nros sync` no longer prints them; the model keeps each in place in
+  `meta.diagnostics`, marked acknowledged. The infos half is open.
 
 ### 2.10 Bare-filename quirk (re-verify)
 

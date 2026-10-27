@@ -308,12 +308,15 @@ let:
 #
 # EACH TIMER NAMES ITS PARAMETER (phase10-B1)
 #
-# `trigger: { timer: { rate_hz, param: update_rate } }` on every timer, and
 # `max_age: { duration: 500ms, param: timeout_operation_mode_availability }`
-# on the detector: `timer-param` and `max-age-param` resolve the parameter
-# from the launch file's parameter files and refuse the file when the two
-# disagree, as `window-param` does for the window. A rate typed here and
-# not in the parameter file used to check clean.
+# on the detector: `max-age-param` resolves the parameter from the launch
+# file's parameter files and refuses the file when the two disagree, as
+# `window-param` does for the window. A value typed here and not in the
+# parameter file used to check clean. Since play_launch 0.20.2 every timer
+# and every braking profile reads its value from the parameter instead of
+# restating it: `rate_hz: $(param update_rate) Hz`, `decel: $(param
+# target_acceleration) m/s^2`; `check --explain` lists each value read and
+# the parameter file it came from, and the model carries it in `sources:`.
 #
 # WHY THE INTERVALS ARE 10 s AND 30 s
 #
