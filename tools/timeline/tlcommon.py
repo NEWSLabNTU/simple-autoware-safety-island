@@ -203,7 +203,7 @@ def declared(model=None):
         hazards[name] = dict(on=hz.get("on"), ftti_ms=duration_ms(hz.get("ftti")),
                              severity=hz.get("severity"), guards=hz.get("guards", []))
         if hz.get("entry_speed") is not None:
-            entry[name] = speed_mps(hz["entry_speed"])
+            entry[name] = speed_mps(let_value(hz["entry_speed"], c.get("let")))
         if hz.get("when"):
             for t in hz.get("guards", []):
                 preds.append(dict(name=name, kind="hazard", topic=t, **_pred(hz["when"])))
@@ -217,6 +217,27 @@ def declared(model=None):
             exits[name] = dict(m["exit"])
     return dict(topics=topics, predicates=preds, windows=windows, exits=exits,
                 entry_speed=entry, hazards=hazards, contract=contract_path(model))
+
+
+LET_RE = re.compile(r"\$\(let\s+([A-Za-z_][A-Za-z0-9_]*)\s*\)")
+
+
+def let_value(v, lets):
+    """A contract value with each `$(let name)` replaced by the contract's
+    root `let:` entry (play_launch 0.20.2: the island's `entry_speed` is
+    `$(let odd_speed_bound)`). Anything else is returned as it is."""
+    if not isinstance(v, str) or "$(let" not in v:
+        return v
+    lets = lets or {}
+
+    def one(m):
+        if m.group(1) not in lets:
+            raise SystemExit(f"timeline: the contract names $(let {m.group(1)}) and its root `let:` has no such entry")
+        return str(lets[m.group(1)])
+    whole = LET_RE.fullmatch(v.strip())
+    if whole:
+        return lets[whole.group(1)] if whole.group(1) in lets else one(whole)
+    return LET_RE.sub(one, v)
 
 
 def speed_mps(v):
@@ -467,6 +488,9 @@ def selftest(path=os.path.join(HERE, "testdata/explain.txt")):
     check("duration_ms reads a budget's map form (phase10-B7)",
           duration_ms({"duration": "149ms", "source": "derived"}) == 149.0
           and duration_ms("10s") == 10000.0)
+    check("speed_mps reads a root `let:` value (play_launch 0.20.2)",
+          speed_mps(let_value("$(let odd_speed_bound)", {"odd_speed_bound": "8.33 m/s"})) == 8.33
+          and speed_mps(let_value("8.33 m/s", None)) == 8.33)
     for (hz, rung), r in sorted(by.items()):
         if r["role"] in ("rung", "floor"):
             s = r["detect"] + r["windows"] + r["route"] + r["settle"]

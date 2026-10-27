@@ -1,8 +1,8 @@
 # VARIANT of src/safety_island_bringup/launch/safety_island.contract.yaml
 # (phase10-B5): the ODD entry speed is 65 km/h (18.06 m/s), one line below
-# (`entry_speed:`); the parameters are the island's own. Expected: `play_launch
-# check` rejects it with ladder-rung-budget on the comfortable-stop rung only
-# (exit 1). Kept in step with the island contract by hand: regenerate with
+# (`odd_speed_bound:` in the root `let:`); the parameters are the island's
+# own. Expected: `play_launch check` rejects it with ladder-rung-budget on
+# the comfortable-stop rung only (exit 1). Kept in step with the island contract by hand: regenerate with
 # one sed from it.
 
 # Node interface contract for safety_island.launch.xml.
@@ -110,6 +110,11 @@
 version: 1
 use:
   vehicle.braking: "^1"
+
+# The ODD speed bound (30 km/h, decision 2), read by both hazards'
+# `entry_speed`: whichever fault occurs, the vehicle is at most here.
+let:
+  odd_speed_bound: 18.06 m/s  # 65 km/h (VARIANT)
 
 # ---------------------------------------------------------------------------
 # WHAT HAPPENS WHEN THE INPUT STOPS, AND WHEN IT SAYS "NOT HERE"
@@ -242,8 +247,8 @@ use:
 #     tick twice (docs/takeover-trace.md, finding 1 and section 6).
 #
 #   entry_speed = 8.33 m/s.
-#     30 km/h, decision 2: the ODD speed bound. One YAML anchor, read by both
-#     hazards: whichever fault occurs, the vehicle is at most here.
+#     30 km/h, decision 2: the ODD speed bound. One root `let:`, read by
+#     both hazards: whichever fault occurs, the vehicle is at most here.
 #
 #   settle = the profile, DERIVED, + the vehicle's response, MEASURED.
 #     `settle-derived` prints the profile's arithmetic from each operator's
@@ -475,7 +480,7 @@ hazards:
       hazardous event
     guards: [/system/operation_mode/availability]
     on: omission
-    entry_speed: &odd_speed_bound 18.06 m/s  # m/s = 65 km/h (VARIANT)
+    entry_speed: $(let odd_speed_bound)
     ftti: { duration: 10s, source: requirement }
     enters: l3_engaged
   odd_exit:
@@ -487,7 +492,7 @@ hazards:
     guards: [/system/operation_mode/availability]
     on: reported
     when: { field: autonomous, equals: false }
-    entry_speed: *odd_speed_bound
+    entry_speed: $(let odd_speed_bound)
     ftti: { duration: 30s, source: requirement }
     enters: l3_engaged
 
@@ -536,7 +541,7 @@ nodes:
       # tick, so listing them would claim a periodic output the node does not
       # produce.
       on_timer:
-        trigger: { timer: { rate_hz: 10, param: update_rate } }
+        trigger: { timer: { rate_hz: $(param update_rate) Hz } }
         output: [status]
       # `onOperate` -> `publishVelocityLimit()` (phase8-W7): the service
       # callback publishes the limit itself, so the comfortable rung's walk
@@ -558,8 +563,8 @@ nodes:
         safe_state:
           emits: max_velocity_candidates
           settle:
-            decel: min_acceleration
-            jerk: min_jerk
+            decel: $(param min_acceleration) m/s^2
+            jerk: $(param min_jerk) m/s^3
             response:
               duration: 943ms
               source: { measured: { max: 785.43ms, n: 3, margin: 0.2 } }
@@ -614,8 +619,7 @@ nodes:
       on_timer:
         trigger:
           timer:
-            rate_hz: 30
-            param: update_rate
+            rate_hz: $(param update_rate) Hz
             jitter:
               duration: 6ms
               source: { measured: { max: 4.34ms, n: 1073, margin: 0.2 } }
@@ -634,8 +638,8 @@ nodes:
         safe_state:
           emits: emergency_control_cmd
           settle:
-            decel: target_acceleration
-            jerk: target_jerk
+            decel: $(param target_acceleration) m/s^2
+            jerk: $(param target_jerk) m/s^3
             response:
               duration: 319ms
               source: { measured: { max: 265.34ms, n: 16, margin: 0.2 } }
@@ -692,8 +696,7 @@ nodes:
       on_timer:
         trigger:
           timer:
-            rate_hz: 10
-            param: update_rate
+            rate_hz: $(param update_rate) Hz
             jitter:
               duration: 18ms
               source: { measured: { max: 14.84ms, n: 1641, margin: 0.2 } }
