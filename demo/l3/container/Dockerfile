@@ -209,6 +209,7 @@ RUN source /opt/ros/humble/setup.bash \
     && cd /opt/demo_ws \
     && colcon build --merge-install --event-handlers console_direct- \
     && rm -rf build log
+# Fetched, not tracked: demo/fetch-map.sh (run by `just l3-container`).
 COPY demo/map/sample-map-planning/ /opt/demo/map/sample-map-planning/
 
 # The patched rclcpp (stage `rclcpp` above), over the packaged one. Fails

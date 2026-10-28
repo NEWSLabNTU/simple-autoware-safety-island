@@ -181,7 +181,7 @@ sync:
 # Interface codegen runs at cmake-configure time, so `just build` is next.
 #
 # One-time workspace prep (play_launch, demo overlay, generated inputs).
-setup: setup-play-launch doctor demo-host-ws sync
+setup: setup-play-launch doctor demo-host-ws demo-map sync
 
 # Put play_launch (>= {{PLAY_LAUNCH_MIN}}) on PATH. Two sources:
 #   * default          — pip install the published package
@@ -923,6 +923,7 @@ _svc-sim:
     # whenever direnv had not, and died on "Package 'autoware_launch' not found".
     source scripts/env.sh
     set -e
+    demo/fetch-map.sh
     PL="$(command -v {{PLAY_LAUNCH}})"
     export DISPLAY="${DISPLAY:-{{VNC_DISPLAY}}}"
     ps -o pgid= -p $$ | tr -d ' ' > demo/.sim.pgid
@@ -1185,6 +1186,13 @@ _sweep-orphans dry="":
 # (phase8-W16), which needs Autoware's tier4_system_msgs. Under `env -i`: the
 # login shell carries another checkout's overlay ahead of /opt/autoware.
 #
+# Autoware's sample map is a pinned download, not tracked bytes (phase14-P0.3):
+# NEWSLabNTU/autoware-safety-island@6998300c, sha256-checked, into demo/map/.
+#
+# Fetch the sample map (pinned commit + sha256) into demo/map (gitignored).
+demo-map:
+    demo/fetch-map.sh
+
 # Build the demo overlay (MRM-shadowed tier4_system_launch, availability gate).
 demo-host-ws:
     #!/usr/bin/env bash

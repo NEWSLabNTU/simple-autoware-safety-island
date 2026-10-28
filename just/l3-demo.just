@@ -110,6 +110,7 @@ L3_HOST_WS := "build/l3-host-ws"
 _l3-host cmd:
     #!/usr/bin/env bash
     [ -f {{L3_HOST_WS}}/install/setup.bash ] || { echo "no host overlay -- run: just l3-host-ws"; exit 1; }
+    demo/fetch-map.sh >/dev/null
     exec env -i HOME="$HOME" USER="$USER" PATH=/usr/bin:/bin:$HOME/.local/bin \
         DISPLAY="${DISPLAY:-}" XAUTHORITY="${XAUTHORITY:-}" ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-10}" \
         L3_WS="$PWD/{{L3_HOST_WS}}/install" L3_MAP="$PWD/demo/map/sample-map-planning" \
@@ -123,6 +124,7 @@ l3-container:
     #!/usr/bin/env bash
     set -eo pipefail
     start=$(date +%s)
+    demo/fetch-map.sh
     DOCKER_BUILDKIT=1 docker build -f demo/l3/container/Dockerfile -t {{L3_IMAGE}} .
     echo "l3-container: {{L3_IMAGE}} in $(( $(date +%s) - start )) s, $(docker image inspect -f '{{{{.Size}}' {{L3_IMAGE}} | awk '{printf "%.2f GB", $1/1e9}')"
     docker image prune -f --filter label=org.newslab.sai.image=l3-autoware

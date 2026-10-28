@@ -14,6 +14,8 @@ demo/.bridge.pgid
 play_log/
 tmp_*.log
 demo/.*.pgid
+# Autoware sample map: fetched by demo/fetch-map.sh (just demo-map), not tracked.
+demo/map/
 
 # `nros sync` writes a source-metadata probe cache beside each node package.
 # Generated per host from that host's build, and `.unprobeable` when the node

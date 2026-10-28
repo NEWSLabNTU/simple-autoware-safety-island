@@ -22,6 +22,7 @@ out="$dir/island.trace"
 mkdir -p "$dir"
 rm -f "$dir"/*.jsonl
 just _not-running demo/.sim.pgid sim && just _not-running demo/.island.pgid island || exit 1
+demo/fetch-map.sh >/dev/null || exit 1
 rm -f tmp_sim.log tmp_island.log build/timeline/gate.pid
 : > "$out"
 just _trace-meta "$out" build-zephyr/zephyr/zephyr.exe

@@ -80,7 +80,8 @@ l3-autoware` (`run.sh` passes both through), with another `ROS_DOMAIN_ID`.
   Net runtime gets 8 workers instead of 1 (W11, trap 2c);
 - `play_launch==0.12.0` from the package index;
 - the `demo/host_ws` overlay and `takeover_demo`, colcon-built to
-  `/opt/demo_ws/install`; the sample map at `/opt/demo/map`;
+  `/opt/demo_ws/install`; the sample map at `/opt/demo/map` (fetched into `demo/map` by
+  `demo/fetch-map.sh`, pinned commit and sha256, before the build);
 - `RMW_IMPLEMENTATION=rmw_zenoh_cpp`, `ROS_DOMAIN_ID=10` in the image ENV;
   `autoware-env.bash` is never sourced (it forces Cyclone).
 
