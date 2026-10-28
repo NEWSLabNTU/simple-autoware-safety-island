@@ -7,7 +7,7 @@ demo, the acts, the experiment runs, the figures) moves to a new private repo,
 `NEWSLabNTU/rtss-work-2026-demo`, which consumes this one as a submodule.
 Write-ups and slides leave with it. The legacy Cyclone demo is retired.
 
-**Status (2026-10-29): planned.** Decisions taken:
+**Status (2026-10-29): P0 and P1 done; P2 and P3 open.** Decisions taken:
 
 - **History is kept.** Paths leave the tree, not the history; nothing is
   rewritten or force-pushed.
@@ -45,7 +45,18 @@ Write-ups and slides leave with it. The legacy Cyclone demo is retired.
 
 ## Units
 
-**P0. Clean up in place**
+**P0. Clean up in place** -- done (2026-10-29)
+
+Status: `record.json`, `demo/README.md` and `docs/topic-contract.md` are
+gone; the topic contract is the `topics:` section of
+`safety_island.contract.yaml`. Live code names no `/home/aeon` or
+`/mnt/evo` path (`CSB_DIR` defaults to a sibling checkout, `CAST_DIR` to
+`build/casts`, `PLAY_LAUNCH_WHEELHOUSE` names a wheelhouse); captured tool
+output and dated run logs keep theirs. `demo/map` is gitignored and fetched
+by `demo/fetch-map.sh` (`just demo-map`, also run by `just setup`,
+`_svc-sim`, `run-native.sh`, `l3-container` and the L3 host run) from
+NEWSLabNTU/autoware-safety-island@6998300c with a sha256 per file; the
+four files were byte-identical to that commit's.
 
 - P0.1 Delete `record.json`, `demo/README.md`, `docs/topic-contract.md`;
   repoint their links.
@@ -54,7 +65,25 @@ Write-ups and slides leave with it. The legacy Cyclone demo is retired.
 - P0.3 `demo/map` becomes a pinned download (URL plus checksum, fetched by a
   recipe into an ignored directory) instead of tracked bytes.
 
-**P1. Re-layout in this repo**
+**P1. Re-layout in this repo** -- done (2026-10-29)
+
+Status: `tools/board/` holds tlcommon, readout, violations, board_buttons,
+led_readout, lock_probe, probe, stamp, terms, spin_diag and
+`testdata/`; `tools/eval/` holds analysis, render, merge, timeline,
+scenario, scenario_driver, actseg, diaggraph, led_vs_trace, run_summary
+and the `run-*.sh`. Eval modules put `tools/board` on `sys.path`; no
+board module imports an eval one. Selftests: `tools/board/tlcommon.py
+selftest` and `tools/eval/selftest.py` (runs the board one first); CI runs
+both. `config/router-serial.json5`; `tools/diag/` holds build-diag.sh,
+the two diag patches, the SWD scripts and late_records.py. The contract
+table is `EXPECT_CORE` (src/) and `EXPECT_EVAL`, picked by
+`CONTRACTS=core|evaluation|all`, two CI steps; `just contract-check` (was
+`l3-check`, kept as an alias) runs it locally. `just/l3-demo.just` and
+`just/carla.just` are `import?`; `diag-run` and `diag-actseg` moved into
+`just/l3-demo.just`. Left for P2: the legacy recipes in the root justfile
+(`_scenario`, `_svc-sim`, `demo-map`) still call into `demo/` and
+`tools/eval/` and go with the legacy demo's retirement; tools/diag's README
+names the eval act runners.
 
 - P1.1 `tools/timeline` splits into `tools/board/` (readout, violations,
   buttons, LED, lock probe, probe, `tlcommon`, stamp, terms) and `tools/eval/`
