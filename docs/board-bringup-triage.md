@@ -5,7 +5,7 @@ right.
 
 **Read this first:** the image fits 320 KiB because a dozen pools were cut to
 measured need. The image has run on silicon since phase8-W8 (13 + 9 board acts
-through phase8-W31, docs/takeover-trace.md sections 9 and 11), but every cut is
+through phase8-W31, rtss-work-2026-demo:docs/takeover-trace.md sections 9 and 11), but every cut is
 still sized to the acts that ran, not to a worst case. When the board misbehaves, the cause is far more likely to be one of
 these values than a logic bug in a node that already ran green on native and
 native_sim.
@@ -336,7 +336,7 @@ grep '^CONFIG_<NAME>' build-board/zephyr/.config
 ## 6. Current footprint
 
 The phase8-W31 image (main `71743c3`) uses RAM 290,728 of 327,680 B
-(88.72 %; docs/takeover-trace.md section 11). The breakdown below is an
+(88.72 %; rtss-work-2026-demo:docs/takeover-trace.md section 11). The breakdown below is an
 earlier image's.
 
 ```
@@ -352,7 +352,7 @@ tune back down afterwards with a measurement, not before.
 ## 7. What is known-unvalidated
 
 - Executed on silicon since phase8-W8 (13 + 9 board acts through phase8-W31,
-  docs/takeover-trace.md sections 9 and 11); validated only as far as those
+  rtss-work-2026-demo:docs/takeover-trace.md sections 9 and 11); validated only as far as those
   acts reach.
 - The RNG is `TEST_RANDOM_GENERATOR` — timer-seeded, not cryptographic. Bench
   networks only; see [phase-4](roadmap/phase-4-link-security.md).

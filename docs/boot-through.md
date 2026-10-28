@@ -557,13 +557,13 @@ Against W8's 323,112 B with the services on, the board's SRAM drops by
 ## The demo image
 
 phase8-W8a, 2026-09-29. The island is sized for the RTSS@Work demo
-(`docs/roadmap/phase-8-rtss-work-demo.md`: acts A, B and the encore, the
+(`rtss-work-2026-demo:docs/roadmap/phase-8-rtss-work-demo.md`: acts A, B and the encore, the
 live timeline, and what the host's Autoware reads), not as a complete
 safety island. Island pin bec9aecb8, `features = []` as in W1.
 
 **What left the image, and the reader checked first** (Autoware 1.5.0
-source under `~/repos/autoware/1.5.0-ws`, the demo's `demo/host_ws`
-overlay, `tools/board` and `tools/eval`, `demo/l3/takeover_demo`):
+source under `~/repos/autoware/1.5.0-ws`, the demo's `rtss-work-2026-demo:demo/host_ws`
+overlay, `tools/board` and `rtss-work-2026-demo:tools/eval`, `rtss-work-2026-demo:demo/l3/takeover_demo`):
 
 | cut | reader in the demo | why it can go |
 |---|---|---|
@@ -583,7 +583,7 @@ the upstream code).
 
 The contract, the launch file, `system.toml`, the three entries' builds
 (the `add_subdirectory` lines and the board's ITCM relocation), the bringup
-`package.xml`, the demo composition contracts (`demo/l3/contracts/`, three
+`package.xml`, the demo composition contracts (`rtss-work-2026-demo:demo/l3/contracts/`, three
 files) and `takeover_demo`'s island node list changed together.
 `play_launch check` (92043c82, built from the nano-ros vendored copy) on
 the island contract: `1 manifest(s) checked: 1 clean, 0 with errors (0
@@ -748,7 +748,7 @@ the bound races the drop, which is why some runs list the nodes and some
 do not. On the board the W2 gateway keeps liveliness away from the
 island, and W4 turns discovery off; this was not run against HEAD.
 
-**Regression, W7's acts on native_sim** (`tools/eval/run-native.sh`,
+**Regression, W7's acts on native_sim** (`rtss-work-2026-demo:tools/eval/run-native.sh`,
 one run each, sequential, under the demo lock, load 16-27 at the start;
 the declared side from play_launch 92043c82):
 
@@ -836,7 +836,7 @@ refused this image first (`CONFIG_NROS_DOMAIN_ID = 0 (what the image bakes;
 from the Kconfig default ...)` against system.toml's 10): its conf stated
 only `CONFIG_NROS_CYCLONE_DOMAIN_ID=10`. prj-cyclonedds.conf now states
 `CONFIG_NROS_DOMAIN_ID=10` as well. W7's acts on it
-(`tools/eval/run-native.sh`, under the demo lock, load 20-31 at the
+(`rtss-work-2026-demo:tools/eval/run-native.sh`, under the demo lock, load 20-31 at the
 start; the declared side from play_launch bbf9c044):
 
     VERDICT: FAIL a: v at the fault 3.92 m/s; TOR on True, TOR now 1, control mode 4, mrm (3, 2)

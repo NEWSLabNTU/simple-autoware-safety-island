@@ -272,7 +272,7 @@ would have produced.
 ## 4. The gate, native_sim demo
 
 `just trace-demo`: host Autoware 1.5.0 planning_simulator, the traced
-native_sim island on domain 10, `tools/eval/scenario_driver.py`.
+native_sim island on domain 10, `rtss-work-2026-demo:tools/eval/scenario_driver.py`.
 
 The gate run is `just trace-demo build/trace/demo3.trace`, on the final
 image (with the single-read timestamp fix). Output verbatim:
@@ -448,7 +448,7 @@ string and the marker call sites.
 
 ## 8. The trace window (phase8-W17)
 
-Gap G9 of docs/roadmap/phase-8-rtss-work-demo.md: the board's RAM buffer
+Gap G9 of rtss-work-2026-demo:docs/roadmap/phase-8-rtss-work-demo.md: the board's RAM buffer
 filled from boot and held seconds, but act B lasts 20-30 s and the encore
 about 10 s. The fix is in `include/island_trace.h`, switched on by
 `CONFIG_ISLAND_TRACE_WINDOW` (`src/safety_island_tracing/Kconfig.island_trace`,
@@ -624,8 +624,8 @@ with `HEAP EXHAUSTED` in `_z_slice_init` from `zpico_read`, both straight
 into the stock router and behind the gateway (runs w17-qb1, w17-qb2). Over
 TCP nothing paces Autoware's traffic the way the board's UART does.
 
-`tools/eval/run-board.sh --target qemu` puts the QEMU island behind the
-gateway router exactly as the board is: `demo/l3/router/island-gateway.json5`
+`rtss-work-2026-demo:tools/eval/run-board.sh --target qemu` puts the QEMU island behind the
+gateway router exactly as the board is: `rtss-work-2026-demo:demo/l3/router/island-gateway.json5`
 with its island face moved from `serial` to `unixsock-stream` (so the
 no-graph rule and the downsampling apply to it), and QEMU's `guestfwd` piped
 into that socket by `socat`. The trace is read over QEMU's monitor
@@ -635,7 +635,7 @@ ELF symbols the board read uses.
 ### What is not verified
 
 - W17 did not touch the board. phase8-W8 has since run the board steps
-  (docs/takeover-trace.md section 9): the flash (`pyocd flash`), the
+  (rtss-work-2026-demo:docs/takeover-trace.md section 9): the flash (`pyocd flash`), the
   gateway on the UART and the reset, and the SWD read (`readout.py
   --target board`) worked unchanged in 13 acts and one bring-up run.
   Every trace gave `trace-check: PASS`. After the trigger the board wrote
@@ -649,16 +649,16 @@ ELF symbols the board read uses.
   `run-board.sh` does (it flashes and resets for every act). Since
   phase9-W2 the window can be re-armed instead ("Re-arming" below).
 
-### One traced act off the host: `tools/eval/run-board.sh`
+### One traced act off the host: `rtss-work-2026-demo:tools/eval/run-board.sh`
 
 ```
 just board-build                                   # the image with the window
-tools/eval/run-board.sh b <id>          # the board (phase8-W8)
-tools/eval/run-board.sh --dry-run b <id> # print the steps, resolve the addresses
-tools/eval/run-board.sh --keep-link encore <id1>  # leave the link up (phase9-W2)
-tools/eval/run-board.sh --keep-boot b <id2>       # the next act on the same boot, re-armed
+rtss-work-2026-demo:tools/eval/run-board.sh b <id>          # the board (phase8-W8)
+rtss-work-2026-demo:tools/eval/run-board.sh --dry-run b <id> # print the steps, resolve the addresses
+rtss-work-2026-demo:tools/eval/run-board.sh --keep-link encore <id1>  # leave the link up (phase9-W2)
+rtss-work-2026-demo:tools/eval/run-board.sh --keep-boot b <id2>       # the next act on the same boot, re-armed
 just trace-qemu-build
-tools/eval/run-board.sh --target qemu b <id>   # the rehearsal
+rtss-work-2026-demo:tools/eval/run-board.sh --target qemu b <id>   # the rehearsal
 just l3-traced-act b <id> [target] [elf] [flags]   # the same, as a recipe
 ```
 
@@ -670,7 +670,7 @@ The script takes the demo lock itself (phase9-W22); do not wrap it in
 
 | check | refused with |
 | --- | --- |
-| the host overlay (`RB_HOST_WS`, else build/l3-host-ws, else demo/host_ws) | `no host overlay: <ws>/setup.bash missing -- run \`just l3-host-ws\`` |
+| the host overlay (`RB_HOST_WS`, else build/l3-host-ws, else rtss-work-2026-demo:demo/host_ws) | `no host overlay: <ws>/setup.bash missing -- run \`just l3-host-ws\`` |
 | the SystemModel fresh against its inputs (probe.py's own check) | `timeline: the model is STALE against <input> -- run \`just sync\`` |
 | no `sai-l3*` container running | `container(s) running: <names> -- another act or a leftover; ...` |
 | board: no other pyocd user (pyocd CLI, readout.py, spin_diag.py) | `the probe is in use by another process: <pid> <cmd>` |
@@ -712,7 +712,7 @@ are its output.
 Also changed with the window: the component libraries of the two 4.4 entries
 are ordered after Zephyr's generated headers (a parallel build compiled a
 component, which includes `<zephyr/kernel.h>` once tracing is on, before
-`zephyr/heap_constants.h` existed); and `experiments/reaction-trace/stop-island.sh`
+`zephyr/heap_constants.h` existed); and `rtss-work-2026-demo:experiments/reaction-trace/stop-island.sh`
 signals the island that writes this run's trace instead of the first
 `build-zephyr/zephyr/zephyr.exe` on the host (run w17-nb3 signalled another
 process and lost its dump).
@@ -720,7 +720,7 @@ process and lost its dump).
 ### The buffer in DTCM, 52 KiB (phase9-C2)
 
 The 40,960 B SRAM buffer filled before the readout on 7 of the 9 passing
-board runs of the I14 round (docs/roadmap/phase-9-rtss-demo-open-items.md
+board runs of the I14 round (rtss-work-2026-demo:docs/roadmap/phase-9-rtss-demo-open-items.md
 section 7): `check` failed `complete` only, every table edge was inside the
 window. The cause is the window, not the act. A stored violation opens it
 (section 9), and on this image the arming-time `silence-runtime` verdict
@@ -787,7 +787,7 @@ SRAM instead. DTCM now holds the buffer (53,248 B), the app library's .bss
 (the executor storage 53,776 B, the component buffers 10,008 B, the monitor
 and age tables 448 B) and the assert record (32 B): 117,536 B, 13,536 B
 free. `src/zephyr_entry/linker/dtcm-headroom.ld` fails the link below 8 KiB
-free. Section 8 of docs/roadmap/phase-9-rtss-demo-open-items.md (C10) has
+free. Section 8 of rtss-work-2026-demo:docs/roadmap/phase-9-rtss-demo-open-items.md (C10) has
 the table and the runs; the buffer used 20,520 B (encore) and 32,623 B (b)
 on that image.
 
@@ -942,7 +942,7 @@ stream, and the TRIGGER record names `NROS_VIOLATION` (id 277). An act that
 follows is still recorded whole: in run `w4-encore` the window opened at the
 first post-arming verdict (6.8 s after boot), the act came 31 s later, and
 the 32 KiB buffer held 17,062 B of it with every row of the analysis
-present (docs/takeover-trace.md section 12).
+present (rtss-work-2026-demo:docs/takeover-trace.md section 12).
 
 **Decoding.** `island_trace.py` joins each run of 277-280 into one
 violation and names it: the rule from `rule_ids`, the endpoint from

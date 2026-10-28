@@ -1,5 +1,5 @@
 /*
- * The visitor's buttons on the board (docs/design/carla-island-demo.md,
+ * The visitor's buttons on the board (rtss-work-2026-demo:docs/design/carla-island-demo.md,
  * section 3.4, unit C6; CONFIG_ISLAND_BUTTONS, off by default, on in the
  * booth image).
  *

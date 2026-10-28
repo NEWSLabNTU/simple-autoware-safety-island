@@ -4,21 +4,21 @@
 # The island image's zenoh locator is serial/uart@40330000#baudrate=921600 (was
 # 115200 until phase8-W2), the board's only wired UART (P6 -> FTDI ->
 # /dev/ttyUSB0). This peer's baud must match the image's; PEER_BAUD says it.
-# For the phase-8 demo the island gateway is `just l3-peer` (just/l3-demo.just):
+# For the phase-8 demo the island gateway is `just l3-peer` (rtss-work-2026-demo:just/l3-demo.just):
 # the same router, plus a link to Autoware's stock router, downsampling and the
 # liveliness ACL. This recipe stays the board-only peer. With no peer the image
 # waits in the session open-retry loop and no node ever starts (docs/board-facts.md,
-# Z1a). This is experiments/serial-interop's host side as a recipe: rmw_zenohd
+# Z1a). This is rtss-work-2026-demo:experiments/serial-interop's host side as a recipe: rmw_zenohd
 # LISTENING on the serial line, bridging to TCP for the ROS 2 CLI.
 #
-# The traps experiments/serial-interop/README.md records, and what this does
+# The traps rtss-work-2026-demo:experiments/serial-interop/README.md records, and what this does
 # about each:
 #   * router-serial.json5 is a full copy of rmw_zenoh's router default with
 #     keep_alive 6, so the board (20 s zenoh-pico lease) is not expired every
 #     20 s. The listen endpoints must come from ZENOH_CONFIG_OVERRIDE.
 #   * libzenohc.so must be on LD_LIBRARY_PATH (zenoh_cpp_vendor). An inherited
 #     environment can predate that package, and the login shell here also
-#     resolves ROS packages to demo/host_ws. So the router runs under `env -i`
+#     resolves ROS packages to rtss-work-2026-demo:demo/host_ws. So the router runs under `env -i`
 #     with ROS 2 sourced fresh, and the recipe checks the vendor path is there.
 #   * the ROS 2 CLI must be told RMW_IMPLEMENTATION=rmw_zenoh_cpp or it talks
 #     DDS and silently sees nothing of the board (`board-peer-nodes` sets it),

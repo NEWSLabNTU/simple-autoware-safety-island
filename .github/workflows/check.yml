@@ -1,6 +1,6 @@
 # phase8-W3: `play_launch check` on every contract in the repository, each
-# against the verdict it is meant to give (.github/check-contracts.sh), in
-# two lists: core (the island) and evaluation (phase14-P1.4).
+# against the verdict it is meant to give (.github/check-contracts.sh). The
+# evaluation's contracts are checked by NEWSLabNTU/rtss-work-2026-demo.
 # Builds nothing: `check` reads launch files and their contract sidecars.
 # play_launch is installed the way the runbook installs it (pip), pinned to
 # the version the demo host runs.
@@ -31,33 +31,19 @@ jobs:
           # carries every distribution its Python serves and picks Humble here.
           pip3 install --no-cache-dir "play_launch==${PLAY_LAUNCH_VERSION}"
           play_launch --version
-      # Two lists (.github/check-contracts.sh, phase14-P1.4): the island's
-      # own contracts (src/) and the evaluation's (demo/l3, docs/demo-l4,
-      # docs/island-variants), which leave in phase 14 P2.
-      - name: play_launch check, core contracts
+      - name: play_launch check, the island's contracts
         shell: bash
         run: |
           source /opt/ros/humble/setup.bash
-          CONTRACTS=core .github/check-contracts.sh
-      - name: play_launch check, evaluation contracts (moves out in phase 14 P2)
-        shell: bash
-        run: |
-          source /opt/ros/humble/setup.bash
-          CONTRACTS=evaluation .github/check-contracts.sh
+          .github/check-contracts.sh
       # phase8-W7: the timeline draws its declared bars from the checker's
       # `--explain` table and its stop curve from the same braking-profile
       # arithmetic. The board half's selftest parses a captured table
-      # (tools/board/testdata/explain.txt) and checks every row's terms; the
-      # evaluation half's (tools/eval, phase 14: leaves with the evaluation in
-      # P2) recomputes every settle and checks merge and the run summary.
+      # (tools/board/testdata/explain.txt) and checks every row's terms. The
+      # evaluation half (rtss-work-2026-demo, tools/eval) runs it again in
+      # that repo's CI before its own.
       - name: board tools read the checker's table
         shell: bash
         run: |
           python3 -m py_compile tools/board/*.py
           python3 tools/board/tlcommon.py selftest
-      - name: evaluation tools (tools/eval; moves out in phase 14 P2)
-        shell: bash
-        run: |
-          python3 -m py_compile tools/eval/*.py
-          for s in tools/eval/*.sh; do bash -n "$s"; done
-          python3 tools/eval/selftest.py

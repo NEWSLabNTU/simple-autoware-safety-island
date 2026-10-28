@@ -73,7 +73,7 @@ _job-traced-island out:
     ps -o pgid= -p $$ | tr -d ' ' > demo/.island.pgid
     python3 scripts/sntp-server.py >> tmp_sntp.log 2>&1 &  # phase8-W18: the epoch (prj.conf)
     # phase8-W29: the console also goes to tmp_island.stamped.log with host
-    # stamps, which show the island clock's lag (docs/takeover-trace.md, 8)
+    # stamps, which show the island clock's lag (rtss-work-2026-demo:docs/takeover-trace.md, 8)
     exec ./build-zephyr/zephyr/zephyr.exe --trace-out="{{out}}" 2>&1 | python3 -u tools/board/stamp.py tmp_island.log tmp_island.stamped.log
 
 [private]
@@ -106,7 +106,7 @@ trace-window-native-build:
 # phase8-W17: the QEMU island with the board's tracing block and window, into
 # build-qemu-trace (src/qemu_entry/trace.conf). Its buffer is read over the
 # QEMU monitor (tools/board/readout.py --target qemu); one traced act:
-#   tools/eval/run-board.sh --target qemu --elf build-qemu-trace/zephyr/zephyr.elf b <id>
+#   rtss-work-2026-demo:tools/eval/run-board.sh --target qemu --elf build-qemu-trace/zephyr/zephyr.elf b <id>
 # The heap is 1 MiB, through qemu-build's triage lever (W3's precedent): at
 # the stated 102,400 B the QEMU island died of HEAP EXHAUSTED in zpico_read
 # when Autoware joined, over a TCP link that nothing paces (docs/tracing.md

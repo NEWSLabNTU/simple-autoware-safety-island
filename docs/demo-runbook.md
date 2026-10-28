@@ -6,15 +6,21 @@ the MR-CANHUBK344; the SUMMARY lines are under "Validation record" at the end.
 This is the path the RTSS demo runs: the island on the board, its zenoh
 session over the serial link to a gateway router on the host, Autoware 1.5.0
 on rmw_zenoh_cpp in a container, everything driven by
-`tools/eval/run-board.sh`. The measurements and the traps behind each
-setting are in demo/l3/README.md; the earlier Cyclone/native_sim demo is
+`tools/eval/run-board.sh` of NEWSLabNTU/rtss-work-2026-demo, the demo and
+evaluation repo, which holds this repo as its submodule
+`third-party/safety-island`. Sections 2-6 and 8 set up and build the island
+here; sections 7 and 9 run in a rtss-work-2026-demo checkout (its README
+says how to clone it), where `just island::<recipe>` runs this repo's
+recipes. A path written `rtss-work-2026-demo:<path>` is in that repo. The
+measurements and the traps behind each setting are in
+rtss-work-2026-demo:demo/l3/README.md; the earlier Cyclone/native_sim demo is
 labelled "Legacy" at the end of this file.
 
 ## 0. The one rule: a clean shell
 
 This host's login shell is not a clean one. `.envrc` (through
 `scripts/env.sh`) exports the Cyclone RMW and `CYCLONEDDS_URI`, and, once
-`just demo-host-ws` has been built, puts `demo/host_ws/install` (the
+`just demo-host-ws` has been built, puts `rtss-work-2026-demo:demo/host_ws/install` (the
 Cyclone-era overlay with the MRM nodes commented out) ahead of
 `/opt/autoware/1.5.0`. From such a shell an Autoware contract check parses
 163 scopes / 33 nodes / 2 manifests instead of 169 / 34 / 4 and every MRM
@@ -27,8 +33,8 @@ hazard reads `hazard-unguarded`, with no message saying why.
 - Run every Autoware check under `env -i` with only
   `/opt/ros/humble/setup.bash` and `/opt/autoware/1.5.0/setup.bash` sourced,
   never from a direnv shell. `just l3-check`, the `l3-*` recipes and
-  run-board.sh already do this themselves (just/l3-demo.just `_l3-host`,
-  `l3-check`; demo/l3/container/bin/l3-env).
+  run-board.sh already do this themselves (rtss-work-2026-demo:just/l3-demo.just `_l3-host`,
+  `l3-check`; rtss-work-2026-demo:demo/l3/container/bin/l3-env).
 - The zenoh path does not need `just demo-host-ws` or `just setup` (both
   build the Cyclone overlay above); its own overlay is `build/l3-host-ws`.
 
@@ -37,7 +43,7 @@ hazard reads `hazard-unguarded`, with no message saying why.
 | Thing | Where / check | Notes |
 | --- | --- | --- |
 | Ubuntu 22.04 + ROS 2 Humble | `/opt/ros/humble` | |
-| rmw_zenoh_cpp 0.1.10 | `dpkg-query -W ros-humble-rmw-zenoh-cpp ros-humble-zenoh-cpp-vendor` -> `0.1.10-1jammy.20260915.*` | from ROS apt **testing**, held (`apt-mark hold`): 0.1.9 loses wakeups (demo/l3/README.md trap 2a). The host runs the stock router, the island gateway and run-board.sh's gate, probe and scenario on it |
+| rmw_zenoh_cpp 0.1.10 | `dpkg-query -W ros-humble-rmw-zenoh-cpp ros-humble-zenoh-cpp-vendor` -> `0.1.10-1jammy.20260915.*` | from ROS apt **testing**, held (`apt-mark hold`): 0.1.9 loses wakeups (rtss-work-2026-demo:demo/l3/README.md trap 2a). The host runs the stock router, the island gateway and run-board.sh's gate, probe and scenario on it |
 | Autoware 1.5.0 | `/opt/autoware/1.5.0` | `just l3-host-ws` and `just l3-rviz` build and run against it. Its own `setup.bash` exports the Cyclone RMW and a `CYCLONEDDS_URI` (trap 8); the `l3-*` scripts override both |
 | Docker with BuildKit | `docker buildx version`; your user in `docker` | the Autoware image is 5.3 GB |
 | `just`, `git`, `uv` | `command -v` | uv makes the Zephyr 4.4 py3.12 venv |
@@ -148,24 +154,28 @@ scripts/ienv.sh 'just board-build'   # build-board/zephyr/zephyr.elf (runs sync 
 
 ## 7. The host side
 
+In the rtss-work-2026-demo checkout, its submodule at this repo's commit
+(`git -C third-party/safety-island log -1`), the island built there by
+sections 3-6 (`just island::<recipe>`):
+
 ```sh
-scripts/ienv.sh 'just l3-host-ws'     # build/l3-host-ws: overlay, takeover_demo, the C++ gate (~20 s)
-scripts/ienv.sh 'just l3-container'   # the Autoware image, sai-l3-autoware:1.5.0-c8
-scripts/ienv.sh 'just l3-check'       # 14 contracts, the CI job, under env -i
+just l3-host-ws        # build/l3-host-ws: overlay, takeover_demo, the C++ gate (~20 s)
+just l3-container      # the Autoware image, sai-l3-autoware:1.5.0-c8
+just contract-check    # the evaluation contracts, its CI job, under env -i
 ```
 
 - `l3-host-ws` is what run-board.sh's gate needs (its preflight refuses
   without it).
 - `l3-container` tags `sai-l3-autoware:1.5.0-c8` (main's overlay with
   phase9-C8's diagnostic graph timeout), the tag `just l3-autoware`,
-  `demo/l3/container/run.sh` and run-board.sh all default to. A cold build is
+  `rtss-work-2026-demo:demo/l3/container/run.sh` and run-board.sh all default to. A cold build is
   about 7.7 min (the 1.85 GiB localrepo download is most of it); cached, a
   few seconds. The bare `sai-l3-autoware:1.5.0` tag on the demo host is W3's
   old image (no rmw_zenoh 0.1.10, no rclcpp patch): do not run it.
-- `l3-check` ends `14 contract(s) checked; every verdict as expected`.
+- `contract-check` ends `<n> contract(s) checked; every verdict as expected`.
 - The image launches Autoware with its own play_launch (0.12.0, the
   Dockerfile's `PLAY_LAUNCH_VERSION`): a launcher only. The checker of record
-  is `l3-check`'s pinned 0.16.0 in `build/l3-ci`.
+  is `contract-check`'s pinned wheel in `build/l3-ci`.
 
 ## 8. Real-time limits (optional, measured without)
 
@@ -200,13 +210,15 @@ Check that nothing else uses the board or the demo: `docker ps` shows no
 preflight refuses either, and takes the demo lock
 `${XDG_RUNTIME_DIR:-/tmp}/sai-demo.lock` itself; do not wrap it in `flock`).
 
+In the rtss-work-2026-demo checkout:
+
 ```sh
-scripts/ienv.sh 'tools/eval/run-board.sh encore w21-e1'
-scripts/ienv.sh 'tools/eval/run-board.sh a w21-a1'
-scripts/ienv.sh 'tools/eval/run-board.sh b w21-b1'
+tools/eval/run-board.sh encore w21-e1
+tools/eval/run-board.sh a w21-a1
+tools/eval/run-board.sh b w21-b1
 ```
 
-Each run flashes `build-board/zephyr/zephyr.elf`, starts the stock router
+Each run flashes `third-party/safety-island/build-board/zephyr/zephyr.elf`, starts the stock router
 (7447) and the gateway (`just l3-peer`, the serial link at 921,600 baud),
 resets the board, waits for the island to join, starts Autoware in the
 container until `Startup complete`, then the gate and the probe, settles
@@ -228,7 +240,7 @@ About 70-80 s per act on a warm host (validation: encore 71 s, a 79 s, b
 - `--dry-run` prints every step; `--no-flash` keeps the image on the board
   (but still resets it; `--keep-boot` below does not);
   `--target qemu` runs the same act against the QEMU island
-  (`just trace-qemu-build` first). `tools/eval/run-board.sh --help` has
+  (`just island::trace-qemu-build` first). `tools/eval/run-board.sh --help` has
   every option and variable.
 
 ### Several acts on one boot (phase9-W2)
@@ -238,9 +250,9 @@ back on one boot (the booth), keep the island's link up between them and
 re-arm the trace window instead:
 
 ```sh
-scripts/ienv.sh 'tools/eval/run-board.sh --keep-link encore w2-e2'
-scripts/ienv.sh 'tools/eval/run-board.sh --keep-boot --keep-link a w2-a2'
-scripts/ienv.sh 'tools/eval/run-board.sh --keep-boot b w2-b2'
+tools/eval/run-board.sh --keep-link encore w2-e2
+tools/eval/run-board.sh --keep-boot --keep-link a w2-a2
+tools/eval/run-board.sh --keep-boot b w2-b2
 ```
 
 - `--keep-link` leaves the gateway (and the router, if the run started it)
@@ -271,7 +283,7 @@ island joins a running Autoware.
 
 The presenter's manual path (one terminal per part: `just l3-router`,
 `l3-autoware`, `l3-takeover`, `l3-peer` then reset the board, `l3-run`,
-`l3-rviz`, `l3-button`) is in demo/l3/README.md, "Run it". It uses the same
+`l3-rviz`, `l3-button`) is in rtss-work-2026-demo:demo/l3/README.md, "Run it". It uses the same
 image and the same `L3_PEER_TTY`; run-board.sh is the path that records
 evidence.
 
@@ -279,7 +291,7 @@ evidence.
 
 Each of these cost a session on the demo host:
 
-- `:1` is a user's desktop, not the demo's VNC (demo/l3/README.md trap 12).
+- `:1` is a user's desktop, not the demo's VNC (rtss-work-2026-demo:demo/l3/README.md trap 12).
 - `ros2 topic echo` without `--no-daemon` answers for the wrong RMW: a daemon
   started under Cyclone answers for itself ("does not appear to be
   published" for a topic at 10 Hz; trap 9). Use `--no-daemon` or `just
@@ -291,7 +303,7 @@ Each of these cost a session on the demo host:
   Cyclone, two stacks on one domain leave no participant creatable and every
   host node dies with `rcl node's rmw handle is invalid` (legacy item below);
   on zenoh, a second stack on one host needs its own router port and domain
-  (demo/l3/README.md, "Run it": `just l3-router 7461`).
+  (rtss-work-2026-demo:demo/l3/README.md, "Run it": `just l3-router 7461`).
 - `pkill -f play_launch` (or any name pattern) hits every project on the
   box, and kills the shell running it when the pattern is in its own command
   line (trap 11). run-board.sh tears down only its own process groups; for
@@ -338,7 +350,7 @@ board path above for the RTSS demo and **not re-validated since
 defaults keep it working in principle. Prerequisites beyond section 1: the
 nano-ros SDK CycloneDDS (`~/.nros/sdk/cyclonedds/0.10.5-nros1`, `nros setup`
 provisions it; `$NROS_CYCLONEDDS_HOME` overrides) and `just setup` (which
-also builds the `demo/host_ws` overlay of section 0).
+also builds the `rtss-work-2026-demo:demo/host_ws` overlay of section 0).
 
 ### Island images
 
@@ -371,7 +383,7 @@ finish.
 just demo-host-ws   # colcon-builds the MRM-shadowed tier4_system_launch
 ```
 
-This overlay is what disables Autoware's stock MRM: `demo/host_ws/src/
+This overlay is what disables Autoware's stock MRM: `rtss-work-2026-demo:demo/host_ws/src/
 tier4_system_launch/launch/system.launch.xml` keeps the upstream file shape
 with the MRM operator and handler nodes commented out, so the island is the
 only MRM path. (The domain_bridge checkout is gone -- the direct-connection

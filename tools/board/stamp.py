@@ -8,7 +8,7 @@ prefixed by the host CLOCK_MONOTONIC ns at which it was read (the clock of
 every tlcommon event). native_sim line-buffers its stdout, so the stamp is
 when the island printed the line, in host time: set beside the simulated
 time the line carries, it shows how far the island's clock is from the
-host's (docs/takeover-trace.md, section 8).
+host's (rtss-work-2026-demo:docs/takeover-trace.md, section 8).
 """
 import sys
 import time

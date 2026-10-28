@@ -32,7 +32,7 @@
  * about 40 ms of host time, during which, of course, nothing arrived. The
  * island's timers, and its 500 ms availability bound, run on that clock.
  * A board has no such clock: its boot costs the same work, but in real time,
- * before its first spin (experiments/serial-interop/w10: each 10 Hz input
+ * before its first spin (rtss-work-2026-demo:experiments/serial-interop/w10: each 10 Hz input
  * taken 20-21 times in the first 2 s after a cold reset).
  *
  * THE FIX. The first call into the executor waits, in simulated time, until the

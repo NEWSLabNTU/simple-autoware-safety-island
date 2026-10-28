@@ -4,7 +4,7 @@ What the island repo needs to read and drive the board and to check its
 contract: the event schema and the declared side (`tlcommon.py`), the SWD
 readers (pyocd, attach without halting unless a tool says otherwise), the
 contract probe, and the console stamp. The evaluation (the timeline, the
-acts, the analysis, the run scripts) is `tools/eval/` and imports
+acts, the analysis, the run scripts) is `rtss-work-2026-demo:tools/eval/` and imports
 `tlcommon` from here.
 
 | file | what it is |

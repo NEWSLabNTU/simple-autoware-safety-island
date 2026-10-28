@@ -1,5 +1,5 @@
 /*
- * The island's MRM state on the board's LEDs (docs/design/carla-island-demo.md,
+ * The island's MRM state on the board's LEDs (rtss-work-2026-demo:docs/design/carla-island-demo.md,
  * section 3; CONFIG_ISLAND_LED, off by default).
  *
  * The user RGB LED (DT aliases led0/led1/led2: red PTE14, green PTA27, blue

@@ -101,7 +101,7 @@ SUP_PRIO = ["prio_taken", "prio_plan_transport_lo", "prio_plan_transport_hi", "p
             "prio_plan_app_hi", "prio_plan_tier", "prio_plan_reaction", "prio_spin", "prio_reaction",
             "prio_threads"]
 SUP_PRIO_THREADS = 12
-# The late notice (carla-island-demo.md), after the threads: route 1 judged at
+# The late notice (rtss-work-2026-demo:carla-island-demo.md), after the threads: route 1 judged at
 # its expiry from the executor's route cells (nano-ros RouteWatch).
 SUP_LATE = ["watch_ok", "answered_at_expiry", "answered_first_due_ms", "answered_first_us",
             "later_take_at_expiry"]

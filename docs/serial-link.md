@@ -5,7 +5,7 @@ DCD-LZ cable (FT232R, `0403:6001`) on the board's LPUART2, host `rmw_zenohd`
 from ros-humble-rmw-zenoh-cpp 0.1.9 (zenoh 1.8.0). Everything below was
 measured on the board today unless a line says otherwise. Raw data, the
 scripts that produced it and the flashed image are under
-`experiments/serial-interop/w2/` (`runs/<run>/`, `tools/`).
+`rtss-work-2026-demo:experiments/serial-interop/w2/` (`runs/<run>/`, `tools/`).
 
 ## 0. Short answer
 
@@ -39,7 +39,7 @@ scripts that produced it and the flashed image are under
   909,091 (-1.36 %, read back from LPUART2 BAUD), the FT232R 923,077
   (+0.16 %). 0 bad frames in either direction over 10 min through a wire tap.
   1,000,000 would be exact on both.
-- **The gateway** (`just l3-peer`, `demo/l3/router/island-gateway.json5`):
+- **The gateway** (`just l3-peer`, `rtss-work-2026-demo:demo/l3/router/island-gateway.json5`):
   its own `rmw_zenohd` on the serial port by its `/dev/serial/by-id` path,
   connected to the stock router, keep_alive 6, egress downsampling of
   kinematic_state / control_mode (and gear_cmd until phase8-W25, after the
@@ -237,7 +237,7 @@ The image on the board for every 921,600 run below is `build-board-d8q`
 with only the 37-byte locator string changed in place, `115200` -> `921600`
 (ELF offset 415546, flash 0x46559a; ELF sha256 `3cd33b59...` from
 `41332317...`). The source edits above make a fresh build say the same; the
-patched ELF is `experiments/serial-interop/w2/zephyr-d8q-921600.elf.xz`.
+patched ELF is `rtss-work-2026-demo:experiments/serial-interop/w2/zephyr-d8q-921600.elf.xz`.
 
 Measured load at contract rates (soak3, 620 s on the tap): router -> board
 27.9 KB/s = **30.3 %** of the line, board -> router 8.1 KB/s = **8.8 %**. A
@@ -251,7 +251,7 @@ status topics also cross the link (`emergency_stop/status` 30.9/s,
 
 ## 4. The island gateway router
 
-`just l3-peer` (just/l3-demo.just), config `demo/l3/router/island-gateway.json5`
+`just l3-peer` (rtss-work-2026-demo:just/l3-demo.just), config `rtss-work-2026-demo:demo/l3/router/island-gateway.json5`
 (a full copy of the stock router config, because `ZENOH_ROUTER_CONFIG_URI`
 replaces rather than merges; its header lists the four deltas and the diff
 command):
@@ -438,6 +438,7 @@ publish, consistent with waiting for a flush batch to finish transmitting.
     # router first, then the board
     just l3-peer                                     # or: just l3-peer <tty> 921600 tcp/127.0.0.1:7457 7449 <log>
     pyocd reset -t s32k344
+    # the next line(s): in a rtss-work-2026-demo checkout
     experiments/serial-interop/w2/tools/soak.sh <name> <elf> 600       # the gate run (uses just l3-peer)
     experiments/serial-interop/w2/tools/soak_tap.sh <name> <elf> 600   # the same through a socat tap
     ISLAND_FIRST=1 experiments/serial-interop/w2/tools/reaction.sh <name> <elf>
@@ -482,7 +483,7 @@ stock router on 7471 and `just l3-peer` on 7479. Every run below starts the
 inputs of section 6 FIRST and resets the board 20 s later (a cold join: the
 board was halted, so the gateway had never seen it), and the runs with a
 mid-run reset reset it again 600 s later while the gateway still holds the old
-session. Tools and run summaries: `experiments/serial-interop/w10/`
+session. Tools and run summaries: `rtss-work-2026-demo:experiments/serial-interop/w10/`
 (`tools/gate.sh`, `tools/poll.py`, `tools/analyze.py`; `poll.py` reads
 `_z_zephyr_serial_stats` and the subscription rings by symbol and gdb-derived
 offsets, `analyze.py` prints one verdict per join).

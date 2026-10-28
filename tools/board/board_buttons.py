@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """The board's SW1/SW2, off the board over SWD (CONFIG_ISLAND_BUTTONS,
-src/zephyr_entry/src/island_buttons.c; docs/design/carla-island-demo.md 3.4, C6).
+src/zephyr_entry/src/island_buttons.c; rtss-work-2026-demo:docs/design/carla-island-demo.md 3.4, C6).
 
   board_buttons.py watch  --elf <zephyr.elf> [--secs N]   the on-site check: attach (no halt)
                           and print every SW1/SW2 pin edge and every press the island records,

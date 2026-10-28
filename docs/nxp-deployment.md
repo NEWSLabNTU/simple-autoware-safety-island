@@ -1295,12 +1295,12 @@ Two things this did NOT do, which is the honest half:
 - ~~`CONFIG_NROS_ZEPHYR_HEAP_SIZE=94208` was chosen without a measurement.~~
   Measured since: the board runs at 102,400 configured, and the boot record
   read over SWD gives a FirstSpin peak of 77,160 of 102,912 B, 25,752 spare
-  (docs/takeover-trace.md sections 9 and 11). The value is still hand-set
+  (rtss-work-2026-demo:docs/takeover-trace.md sections 9 and 11). The value is still hand-set
   (DX 3.4, nano-ros issue 1424).
 
 **Executed on silicon since phase8-W8.** This section was written while the
 board was blocked on the MCU-Link probe; 13 + 9 board acts have run since
-(phase8-W8 to W31, docs/takeover-trace.md sections 9 and 11).
+(phase8-W8 to W31, rtss-work-2026-demo:docs/takeover-trace.md sections 9 and 11).
 
 **Scheduling is available and unused.** The tier derivation is complete and
 gated only on components declaring callback groups. Declaring them would put the

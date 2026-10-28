@@ -10,7 +10,7 @@ runs is a lower bound on the worst case.
 2026-09-25, MR-CANHUBK344 (S32K344, Cortex-M7 at 160 MHz), the island image
 with the phase7-W1 tracing, a host `rmw_zenohd` on the board's only wired UART
 (`just board-peer`, `just/board-peer.just`). Raw reads, router logs and CSVs
-are in `experiments/serial-interop/w7/`.
+are in `rtss-work-2026-demo:experiments/serial-interop/w7/`.
 
 ### Result: no callback ran, so there are no durations yet
 
@@ -33,7 +33,7 @@ No number from native_sim or QEMU is put in them (docs/tracing.md section 7).
 
 Provenance of the empty rows: the flashed image `build-board/zephyr/zephyr.hex`
 sha256 `828ea599...0bcef74` (ELF `4dbf4163...d1d094`), run 3, trace
-`experiments/serial-interop/w7/board-peer-3.bin`: 1,115 records, 1,114
+`rtss-work-2026-demo:experiments/serial-interop/w7/board-peer-3.bin`: 1,115 records, 1,114
 heartbeats, 0 markers.
 
 ### Why the executor never starts
@@ -74,7 +74,7 @@ read off a console: the board's console UART is not wired.
 
 Ruled out on the board in run 4, by polling RAM over SWD every 40 ms or so
 while the image registered, on two of its three resets
-(`experiments/serial-interop/w7/poll-zpico-tables.py` and `poll-posix-pools.py`):
+(`rtss-work-2026-demo:experiments/serial-interop/w7/poll-zpico-tables.py` and `poll-posix-pools.py`):
 
 - zenoh-pico's tables were not full: at most 6 of 14 publishers, 4 of 31
   queryables and 15 of 58 liveliness tokens;
@@ -84,7 +84,7 @@ while the image registered, on two of its three resets
   report.
 
 The boot report reads `stage 4 RegisteringEntities` with no error recorded
-(`experiments/serial-interop/w7/boot-report-run3.bin`). It does not capture a
+(`rtss-work-2026-demo:experiments/serial-interop/w7/boot-report-run3.bin`). It does not capture a
 constructor failure.
 
 A rebuild with the pool raised from the environment (`ZPICO_MAX_TL_PUBLISHERS=5`,
@@ -164,6 +164,7 @@ completes before the EXIT stamp is taken.
     pyocd reset -t s32k344                # terminal 2
     just board-peer-nodes                 # ros2 node list via the router (port 7449)
     just trace-board build/trace/board-peer-N.bin
+    # the next line(s): in a rtss-work-2026-demo checkout
     python3 experiments/serial-interop/w7_pairs.py build/trace/board-peer-N.bin \
         --csv-dir experiments/serial-interop/w7 --timeline 40
 

@@ -15,12 +15,12 @@ buffer and the counters are one instant, then resumed.
 
   board  pyocd's Python API on the MCU-Link (target s32k344), attach mode: no
          reset. Exercised on the board by phase8-W8 (13 acts, the core
-         halted 0.18-0.23 s per read). It uses the calls experiments/serial-interop/w2/tools/swd_poll.py
+         halted 0.18-0.23 s per read). It uses the calls rtss-work-2026-demo:experiments/serial-interop/w2/tools/swd_poll.py
          ran against this board (session_with_chosen_probe, read32,
          read_memory_block8) plus halt/resume.
   qemu   the QEMU human monitor on a unix socket (`-monitor
          unix:<sock>,server,nowait`): `stop`, `pmemsave`, `xp /1wx`, `cont`.
-         Exercised against the QEMU island (tools/eval/run-board.sh
+         Exercised against the QEMU island (rtss-work-2026-demo:tools/eval/run-board.sh
          --target qemu).
 
 The raw buffer is written beside the output as <out>.raw, and <out> is that
@@ -58,7 +58,7 @@ after resetting the buffer, writing the provenance again and clearing the
 trigger (src/safety_island_tracing/include/island_trace.h, "RE-ARMING").
 The re-armed window opens at the first take of the guarded input after it,
 so re-arm with the HPC down, after the previous act's readout and teardown
-(tools/eval/run-board.sh --keep-boot does it at its start). Every full
+(rtss-work-2026-demo:tools/eval/run-board.sh --keep-boot does it at its start). Every full
 read also reports the window's re-arm count (`rearms`, 0 = the first window
 since boot) and the uptime of the last re-arm.
 

@@ -465,7 +465,7 @@ def selftest(path=os.path.join(HERE, "testdata/explain.txt")):
 
     The checks that need the evaluation's analysis (the overrun rows by key,
     the settle-derived profiles, merge, the run summary) are
-    tools/eval/selftest.py, which runs this one first.
+    rtss-work-2026-demo:tools/eval/selftest.py, which runs this one first.
     """
     text = open(path).read()
     rows = parse_explain(text)

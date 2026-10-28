@@ -161,7 +161,7 @@ with its evidence. Two were confirmed by experiment on 2026-10-15:
   149 ms is a wait for the next tick plus the work, measured from the
   input's take. A route made of a full tick wait and a slow dispatch can
   exceed its budget while every callback passes. Route budgets are today
-  checked only after the run, from the trace (`tools/eval/analysis.py`).
+  checked only after the run, from the trace (`rtss-work-2026-demo:tools/eval/analysis.py`).
 - Fix: nano-ros stamps the take of a path's trigger and checks
   take-to-last-output against the path's `max_latency` at the output,
   recording a `route-latency-runtime` violation (record only; no fallback).
@@ -262,7 +262,7 @@ with its evidence. Two were confirmed by experiment on 2026-10-15:
     ms, act load 7.1-9.0) and b6-b1..3 (107.02-111.09 ms, act load
     14.8-19.5); b3-b1/b2 ran at act load 30.6 and 25.5, under the
     RB_LOAD_MAX of 35 but with other builds on the host. Same symptom as runs b3 and b4 in
-    section 3 of docs/takeover-trace.md: the host probe, not the stream,
+    section 3 of rtss-work-2026-demo:docs/takeover-trace.md: the host probe, not the stream,
     and not B3.
 
 ### B4. The tool applies the measurement rule (this repo) - done
@@ -289,7 +289,7 @@ with its evidence. Two were confirmed by experiment on 2026-10-15:
   `ladder-rung-budget` only (the 20 s variant raises the handler's
   `takeover_request_timeout` with it, so `window-param` stays quiet).
 - Gate: `just l3-check` lists both with the expected verdicts.
-- Status (2026-10-15): done. `docs/island-variants/`, expected
+- Status (2026-10-15): done. `rtss-work-2026-demo:docs/island-variants/`, expected
   `ladder-rung-budget` as the only error (check-contracts `!`). Totals on
   main's contract (link 56): 30450.67 (20 s) and 30180.67 (65 km/h); with
   the link at 81: 30475.67 and 30205.67. `just l3-check` 16/16. With
@@ -310,7 +310,7 @@ with its evidence. Two were confirmed by experiment on 2026-10-15:
   budget silently.
 - Status (2026-10-15): done. Six runs (b6-e1..3, b6-b1..3; image
   df1bf38a, the fr round's explain.txt via `RB_EXPLAIN`; `max_vel` 8.3 via
-  `L3_PLANNING_COMMON=demo/l3/config/common-30kmh.param.yaml`; a 315 m
+  `L3_PLANNING_COMMON=rtss-work-2026-demo:demo/l3/config/common-30kmh.param.yaml`; a 315 m
   straight, `INIT` 3916.96 73771.77, `GOAL` 3649.19 73632.10), all acts
   PASS at 8.30 m/s. Every settle row exceeds its term: the difference to
   the profile at the entry speed is 204-213 ms (emergency) and 587-785 ms

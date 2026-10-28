@@ -316,7 +316,7 @@ tier, is what has to preempt the transport. The island takes it on pin
 54a1146d67 (island_supervisor.c no longer asserts the tier above the
 transport, and violations.py no longer requires it); that round, all
 PASS with priorities spin 5 / reaction 3 AGREE, is in
-docs/design/carla-island-demo.md, plus one overrun encore on the final
+rtss-work-2026-demo:docs/design/carla-island-demo.md, plus one overrun encore on the final
 image (fn-ov1: serial 0/0, no ring overflow, high water 1,212 B,
 supervised 0.03 / 0.04 / 0.57 ms). Run directories:
 /mnt/mx500/aeon/worktrees/pin-latest/build/timeline/{pl-*,A-*,B-*,fn-*}.
@@ -345,7 +345,7 @@ high-water 12,480 / 12,248 / 12,496 B of 16,384 B (handler, emergency
 operator, `main`); the lock costs 1.74 us per uncontended `k_mutex` pair
 (8.63 us through the installed recursive entries) and `L_max`, the longest
 hold by a less urgent level, is 77.5 us. The board rows (encore, a, b, the
-300 ms overrun, all PASS, SWT0 0) are in docs/design/carla-island-demo.md.
+300 ms overrun, all PASS, SWT0 0) are in rtss-work-2026-demo:docs/design/carla-island-demo.md.
 
 ## Not in this phase
 

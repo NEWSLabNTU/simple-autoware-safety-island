@@ -202,7 +202,7 @@ monitor that fires on time, and the rung it can still start, are.
   cells (nano-ros phase-503 W7 `RouteWatch`, read from the reaction thread),
   not from the due armed after the last spin, so a route answered in time by
   a spin that runs past its due is not a miss; a real miss still latches at
-  the due. Finding, fix and board runs: carla-island-demo.md, "the late
+  the due. Finding, fix and board runs: rtss-work-2026-demo:carla-island-demo.md, "the late
   notice of an answered route".
 - Gate: on the board, a stall that never ends inside the handler's tick
   drives the safe-state output within budget + 1 tick + the switch; SWT0
@@ -307,7 +307,7 @@ monitor that fires on time, and the rung it can still start, are.
   input), and on `driver_exit` (level only). Left unsupervised with a
   reason in the contract: the availability hop (no shared clock; total
   loss is `max_age`), `control_mode` (phase 10), the emergency response
-  (the floor; the vehicle's own). The variants in `docs/island-variants/`
+  (the floor; the vehicle's own). The variants in `rtss-work-2026-demo:docs/island-variants/`
   follow.
 - Gate: `play_launch check --explain` lists every budget with its level;
   the unsupervised ones carry their reason; CI on the next play_launch

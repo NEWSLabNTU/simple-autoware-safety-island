@@ -82,7 +82,7 @@ double abs_d(double v) { return v < 0 ? -v : v; }
 //   ARM_VIA_INIT_DONE      INIT -> RUN (marker INIT_DONE);
 //   ARM_VIA_INIT_RECOVERY  RUN + init failure -> RUN, the failure cleared.
 // NOT at INIT_TIMEOUT. On the board the island boots minutes before Autoware
-// (tools/eval/run-board.sh: reset at step 3, Autoware at step 5), so
+// (rtss-work-2026-demo:tools/eval/run-board.sh: reset at step 3, Autoware at step 5), so
 // init_timeout (3.0 s) always passes first; arming there would store the
 // availability's silence-runtime for the minutes Autoware takes to start,
 // a start-up wait the handler already reports as its own fault (init

@@ -47,14 +47,14 @@ settle 2034.00ms) = 2677.33ms fits the fault-tolerant time interval
 ```
 
 **Injection.** The injection is the one the demo already uses
-(`tools/eval/scenario_driver.py`). The driver drives the vehicle on the sample
+(`rtss-work-2026-demo:tools/eval/scenario_driver.py`). The driver drives the vehicle on the sample
 route for 15 s. It then finds the process publishing
 `/system/operation_mode/availability` (Autoware's `/system/converter`) from
 the live graph and sends it SIGSTOP. That stops the stream at a known wall
 time. The island's handler sees the sample go stale and stops the vehicle.
 After 10 s the driver sends SIGCONT.
 
-`experiments/reaction-trace/inject.py` runs the same sequence, using the same
+`rtss-work-2026-demo:experiments/reaction-trace/inject.py` runs the same sequence, using the same
 helpers. It adds a time-stamped JSON-lines log with these records:
 
 - the wall time just before and just after the `os.kill`;
@@ -62,7 +62,7 @@ helpers. It adds a time-stamped JSON-lines log with these records:
 - every island `mrm_state` and island emergency `control_cmd`;
 - `/localization/kinematic_state` from 5 s before the fault to 20 s after it.
 
-`experiments/reaction-trace/run.sh <id>` runs one traced run: host Autoware,
+`rtss-work-2026-demo:experiments/reaction-trace/run.sh <id>` runs one traced run: host Autoware,
 the traced island, and the injector. It is `just trace-demo` with the
 injector in place of the scenario.
 
@@ -156,7 +156,7 @@ The events, in order:
 - `stopped_state` is the first `mrm_state` publish with MRM_SUCCEEDED. The
   handler sets that state once its odometry input shows |v| < 0.001 m/s.
 
-The same walk for every run is in `experiments/reaction-trace/events.csv`
+The same walk for every run is in `rtss-work-2026-demo:experiments/reaction-trace/events.csv`
 and `runs/*.json`.
 
 What the order shows, in every trace:
@@ -175,7 +175,7 @@ All values are ms of native_sim SIMULATED time. In the plant rows, the host
 wall clock is mapped onto simulated time with the error given in the last
 row. "Zero-time artefact" means an interval inside one callback, which
 native_sim runs in zero simulated time. Output of `extract.py summary`,
-verbatim (also `experiments/reaction-trace/summary.csv`):
+verbatim (also `rtss-work-2026-demo:experiments/reaction-trace/summary.csv`):
 
 ```
 All values in native_sim SIMULATED ms (plant rows: host wall clock mapped onto it).
@@ -284,7 +284,7 @@ board so that the buffer covers the whole reaction.
 
 ## 6. Files
 
-`experiments/reaction-trace/`:
+`rtss-work-2026-demo:experiments/reaction-trace/`:
 
 - `inject.py` is the injector: the demo sequence plus the time-stamped log.
 - `run.sh` runs one traced run.
@@ -301,6 +301,7 @@ board so that the buffer covers the whole reaction.
 The traces themselves (11-12 MB each) and the injector logs stay under
 `build/trace/` and are not committed. To reproduce:
 
+    # the next line(s): in a rtss-work-2026-demo checkout
     experiments/reaction-trace/run.sh r8
     python3 experiments/reaction-trace/extract.py summary experiments/reaction-trace/runs/*.json
 

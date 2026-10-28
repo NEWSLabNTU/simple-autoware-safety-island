@@ -420,7 +420,7 @@ sourced fresh, and on TCP port 7449, not 7447). The board then opened a zenoh
 session on every boot, 6 of 6, each within a second of reset, and began
 registering entities (the router log shows the island's liveliness tokens on
 `@ros2_lv/10/...`). The "one run in three" flakiness recorded for the talker
-in `experiments/serial-interop/README.md` did not appear with this image and
+in `rtss-work-2026-demo:experiments/serial-interop/README.md` did not appear with this image and
 router. Registration then failed in `stop_mode_operator`'s `gear` publisher, the
 image's third TRANSIENT_LOCAL publisher. nano-ros's retention pool is 2 when
 the contract states no durability. The component object read over SWD holds
@@ -439,7 +439,7 @@ record that they were declared.
 /rosout
 ```
 
-Two trace reads, both in `experiments/serial-interop/w7/`:
+Two trace reads, both in `rtss-work-2026-demo:experiments/serial-interop/w7/`:
 
 - The W1 image (thread switches on) filled its 16 KiB buffer 31 ms after
   boot, before the first heartbeat. In that window `main` is woken once per

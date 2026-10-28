@@ -6,7 +6,7 @@ ITCM (odd, in 0x400000-0x5fffff or 0x100-0xffff) with addr2line.
   swd_stackwalk.py <zephyr.elf> [bytes]
 
 Heuristic: stale frames show up too; read it top down from the current SP.
-It found the C4 assert recursion (docs/roadmap/phase-9-rtss-demo-open-items.md
+It found the C4 assert recursion (rtss-work-2026-demo:docs/roadmap/phase-9-rtss-demo-open-items.md
 section 8, C4). Attaches without reset (pyocd, MCU-Link).
 """
 import os

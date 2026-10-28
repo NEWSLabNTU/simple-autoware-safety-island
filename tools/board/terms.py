@@ -29,7 +29,7 @@ Runs: the named ones, else every directory under <timeline_dir> whose name
 starts with --prefix (default: every directory with an island.jsonl).
 
 --propose prints, per budget, the value the contract's measurement rule
-gives (docs/takeover-trace.md section 10): the observed maximum plus 20 %,
+gives (rtss-work-2026-demo:docs/takeover-trace.md section 10): the observed maximum plus 20 %,
 rounded up to the next ms. A timer's period takes no margin: the tick is
 the period (--period, ms; 100 = mrm_handler update_rate 10) plus the
 largest lateness (spacing - period) x 1.2, rounded up. So

@@ -86,9 +86,9 @@ sim + bridges + relay + island and runs the scenario to a VERDICT;
 verify-then-retry LoadNode fix (landed upstream in play_launch main).
 
 - Host tooling: source the env — the `tmp/host_msgs_ws` overlay is obsolete.
-- `domain_bridge` is NOT in the install → built in `demo/host_ws` (colcon,
+- `domain_bridge` is NOT in the install → built in `rtss-work-2026-demo:demo/host_ws` (colcon,
   from ros2/domain_bridge, humble).
-- Stock MRM disable: `demo/host_ws` also shadows `tier4_system_launch` with
+- Stock MRM disable: `rtss-work-2026-demo:demo/host_ws` also shadows `tier4_system_launch` with
   a copy whose MRM operator/handler includes are removed (no disable args
   exist in 1.5.0; overlay-shadowing beats patching /opt).
 

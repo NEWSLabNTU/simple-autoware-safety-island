@@ -39,7 +39,7 @@ config ISLAND_LED
 	help
 	  The user RGB LED (aliases led0..led2) shows the handler's MRM state
 	  and CAN LED0 is a 1 Hz heartbeat, both set from the handler's own
-	  10 Hz tick (src/island_led.c; docs/design/carla-island-demo.md,
+	  10 Hz tick (src/island_led.c; rtss-work-2026-demo:docs/design/carla-island-demo.md,
 	  section 3). island_led_record keeps the shown pattern and its last
 	  transitions for the SWD readout (tools/board/led_readout.py).
 	  Off by default: the gate image does not carry it.
@@ -53,7 +53,7 @@ config ISLAND_BUTTONS
 	  GPIO driver's port read (no CTF record, no ISR), debounced over two
 	  ticks, and recorded with the handler's state in island_button_record
 	  (src/island_buttons.c); the act on the host reads the record over
-	  SWD and does the rest (docs/design/carla-island-demo.md, section
+	  SWD and does the rest (rtss-work-2026-demo:docs/design/carla-island-demo.md, section
 	  3.4, unit C6). A demo affordance, not a safety function: the island
 	  does not act on a press. Off by default: the gate image does not
 	  carry it.
@@ -104,7 +104,7 @@ config ISLAND_SUPERVISOR_CALL_MRM_MS
 	  board: tick 118 + work 31). The handler adds it to the
 	  availability's max_age (its own timeout_operation_mode_availability
 	  parameter) for the hpc_loss reaction's due from the last take.
-	  tools/eval/analysis.py reads the due back from the trace and
+	  rtss-work-2026-demo:tools/eval/analysis.py reads the due back from the trace and
 	  compares it with the contract's.
 
 config ISLAND_SUPERVISOR_STACK_SIZE

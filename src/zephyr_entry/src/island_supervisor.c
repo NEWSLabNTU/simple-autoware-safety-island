@@ -71,7 +71,7 @@
  * with the state it had computed before the latch; the next tick reads the
  * latch.
  *
- * Route 1 at its expiry (the late notice, carla-island-demo.md). The k_timer
+ * Route 1 at its expiry (the late notice, rtss-work-2026-demo:carla-island-demo.md). The k_timer
  * is armed after every spin from the executor's earliest pending due, but the
  * route is answered when the dispatch that publishes its output ENDS, inside
  * the spin: a spin that answered in time and then ran past the due used to
@@ -337,7 +337,7 @@ volatile uint32_t island_debug_spin_stall;
  * 1..100). The next spin that answered route 1 while its due was still ahead
  * holds the spin thread until N ms past that due before the supervisor hears
  * of the spin: a route answered in time by a spin that runs past its due (the
- * late notice, carla-island-demo.md). Once; the word reads 0 when taken. */
+ * late notice, rtss-work-2026-demo:carla-island-demo.md). Once; the word reads 0 when taken. */
 volatile uint32_t island_debug_late_return_ms;
 #endif
 

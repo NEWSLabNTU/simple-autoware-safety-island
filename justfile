@@ -778,7 +778,8 @@ priority-check board="0":
 # CARLA demo C5: the booth image, the gate image plus snippet island-booth
 # (src/zephyr_entry/snippets/island-booth: CONFIG_ISLAND_LED=y, the MRM state on
 # the board's RGB LED and a heartbeat on CAN LED0; C6: CONFIG_ISLAND_BUTTONS=y,
-# SW1/SW2 recorded for the act; docs/design/carla-island-demo.md section 3),
+# SW1/SW2 recorded for the act; rtss-work-2026-demo:docs/design/carla-island-demo.md
+# section 3),
 # into build-board-booth. build-board, the gate image, is not touched.
 #
 # Build the booth image (LEDs and buttons on) into build-board-booth.
@@ -1217,8 +1218,7 @@ topics:
 
 # The CI job locally (.github/check-contracts.sh): `play_launch check` on every
 # contract with check.yml's pinned wheel, in build/l3-ci, under env -i.
-# CONTRACTS=core|evaluation|all (default all) picks the list (phase14-P1.4).
-# Was `l3-check` (just/l3-demo.just) before phase 14; the alias stays.
+# Was `l3-check` before phase 14; the alias stays.
 #
 # play_launch check on every contract with the CI's pinned wheel (build/l3-ci). phase8-W3
 contract-check:
@@ -1233,7 +1233,7 @@ contract-check:
     wh="${PLAY_LAUNCH_WHEELHOUSE:-}"
     [ -n "$wh" ] && [ -d "$wh/play_launch-$ver" ] && links="$wh/play_launch-$ver"
     [ -x $venv/bin/play_launch ] || { python3 -m venv $venv && $venv/bin/pip install -q "play_launch[humble]==$ver" --find-links "$links"; }
-    env -i HOME="$HOME" USER="$USER" PATH=/usr/bin:/bin CONTRACTS="${CONTRACTS:-all}" PLAY_LAUNCH="$PWD/$venv/bin/play_launch" \
+    env -i HOME="$HOME" USER="$USER" PATH=/usr/bin:/bin PLAY_LAUNCH="$PWD/$venv/bin/play_launch" \
         bash -c 'source /opt/ros/humble/setup.bash && exec .github/check-contracts.sh'
 
 alias l3-check := contract-check
@@ -1241,7 +1241,3 @@ alias l3-check := contract-check
 import 'just/emulation.just'
 import 'just/tracing.just'
 import 'just/board-peer.just'
-# The evaluation's modules (the L3 container and its acts, CARLA) leave this
-# repo in phase 14 P2; `import?` keeps `just` working once they are gone.
-import? 'just/l3-demo.just'
-import? 'just/carla.just'

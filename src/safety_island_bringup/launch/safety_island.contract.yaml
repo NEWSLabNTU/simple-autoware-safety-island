@@ -46,7 +46,7 @@
 # WHAT THE IMAGE LEAVES OUT (phase8-W8a). The island is sized for the RTSS@Work
 # demo, not as a complete safety island: every endpoint below has a reader in
 # the demo or a place in a hazard's walk. Out, with the reader checked in the
-# Autoware 1.5.0 source first (docs/roadmap/phase-8-rtss-work-demo.md, W8a):
+# Autoware 1.5.0 source first (rtss-work-2026-demo:docs/roadmap/phase-8-rtss-work-demo.md, W8a):
 #   stop_mode_operator, whole (decision D4): launched in 1.5.0 only with the
 #     control-command gate; the demo runs vehicle_cmd_gate; nothing reads
 #     /system/stop_mode/*; its three 30 Hz inputs crossed the link for nothing.
@@ -57,7 +57,7 @@
 #     (getContinuousTopic), which is DRIVE and the planner's indicator, the
 #     same values the island sent (use_parking_after_stopped: false).
 #   mrm_handler /system/fail_safe/emergency_holding: read only by the host's
-#     hazard_status_converter (demo/host_ws remap, gap G10), which reads a
+#     hazard_status_converter (rtss-work-2026-demo:demo/host_ws remap, gap G10), which reads a
 #     missing sample as false, the only value the island could send with
 #     use_emergency_holding: false.
 # Kept although the simulator never shows it: /system/emergency/hazard_lights_cmd,
@@ -134,8 +134,8 @@ let:
 # physics and a hazard analysis rather than from code.
 #
 # THE TWO HAZARDS (phase8-W7, from the phase-8 demo contract of W6,
-# demo/l3/contracts/l3_takeover.contract.yaml, and the user's decisions in
-# docs/roadmap/phase-8-rtss-work-demo.md section 7)
+# rtss-work-2026-demo:demo/l3/contracts/l3_takeover.contract.yaml, and the user's decisions in
+# rtss-work-2026-demo:docs/roadmap/phase-8-rtss-work-demo.md section 7)
 #
 #   hpc_loss   the HPC stops: the availability stream goes SILENT. ASIL_D,
 #              10 s. This is the hazard this file called
@@ -234,10 +234,10 @@ let:
 #     on and the late notice is charged exactly once. After the deadline no
 #     message crosses the link (the handler reads its own clock): since
 #     play_launch 0.14.0 the link is charged on the guard edge only, which
-#     is why it left `call_mrm` (docs/takeover-trace.md section 10, F1,
+#     is why it left `call_mrm` (rtss-work-2026-demo:docs/takeover-trace.md section 10, F1,
 #     done). The W7 runs cut
 #     at the request-off edge instead of the deadline and so counted the
-#     tick twice (docs/takeover-trace.md, finding 1 and section 6).
+#     tick twice (rtss-work-2026-demo:docs/takeover-trace.md, finding 1 and section 6).
 #
 #   entry_speed = 8.33 m/s.
 #     30 km/h, decision 2: the ODD speed bound. One root `let:`, read by
@@ -304,7 +304,7 @@ let:
 # what checks it; `control_mode`'s 143 ms link is checked by nothing in the
 # checker (the driver's answer is bounded by the window on the host) and is
 # compared with its observations by the post-run trace check
-# (tools/eval/analysis.py, phase10-B8).
+# (rtss-work-2026-demo:tools/eval/analysis.py, phase10-B8).
 #
 # EACH TIMER NAMES ITS PARAMETER (phase10-B1)
 #
@@ -336,7 +336,7 @@ let:
 # 300 ms planner placeholder, reads 9223.33; 9198.33 with the 81 ms link
 # and play_launch 0.16.0's 6 ms gate jitter; 9491.33 and 9171.33 with the
 # 206 ms hop, 9683.33 and 9363.33 before phase8-W30).
-# `play_launch check --explain` prints every term; docs/takeover-trace.md
+# `play_launch check --explain` prints every term; rtss-work-2026-demo:docs/takeover-trace.md
 # sets the observed runs against them.
 #
 # THE PLANNER HOP IS NOT IN THIS FILE
@@ -347,8 +347,8 @@ let:
 # image, so the comfortable rung's reaction ends at the island's own output,
 # /planning/scenario_planning/max_velocity_candidates, and the planner's
 # share is not charged here. The phase-8 demo contract
-# (demo/l3/contracts/l3_takeover.contract.yaml) states it as a 300 ms
-# PLACEHOLDER stand-in node; docs/takeover-trace.md reports the hop as
+# (rtss-work-2026-demo:demo/l3/contracts/l3_takeover.contract.yaml) states it as a 300 ms
+# PLACEHOLDER stand-in node; rtss-work-2026-demo:docs/takeover-trace.md reports the hop as
 # observed, with no declared number beside it.
 #
 # WHERE THE CHAIN OUTRAN THE CHECKER (history: fixed by play_launch phase 82,
@@ -743,7 +743,7 @@ nodes:
       # Until W30 it was 110 ms, the 100 ms tick plus the 10 ms of
       # `timeout_call_mrm_behavior`, set on native_sim. Each term below is
       # the maximum over the 13 W8 board runs (image 780195b0, main 88a336f;
-      # w8-a1, b1, e1, r01..r10; docs/takeover-trace.md sections 9 and 10)
+      # w8-a1, b1, e1, r01..r10; rtss-work-2026-demo:docs/takeover-trace.md sections 9 and 10)
       # plus 20 %, rounded up to the next ms. The 100 ms period is
       # `update_rate: 10` and takes no margin.
       #   (link, NOT here since phase9-W5: the serial hop in is
@@ -917,7 +917,7 @@ nodes:
           source: { measured: { max: 29.43ms, n: 361, margin: 0.2 } }
         qos: { depth: 1 }
       # Behind the same link, and downsampled 40 -> 10 Hz by the gateway
-      # (demo/l3/router/island-gateway.json5), so a change of mode waits
+      # (rtss-work-2026-demo:demo/l3/router/island-gateway.json5), so a change of mode waits
       # for the next sample the downsampler passes: the host probe's receipt
       # of MANUAL to the island's take was 63.65-118.78 ms in the five a
       # runs (cross-clock, as the link above). 118.78 x 1.2 = 142.54 -> 143.
@@ -1040,7 +1040,7 @@ topics:
   # `gate-rt` container) republishes Autoware's availability with the ODD
   # verdict folded into `autonomous` (phase-8 doc D5). It is a 10 Hz timer;
   # its 20 ms path and 6 ms measured jitter are declared in the demo
-  # composition (demo/l3/contracts/l3_takeover.contract.yaml, phase9-W6),
+  # composition (rtss-work-2026-demo:demo/l3/contracts/l3_takeover.contract.yaml, phase9-W6),
   # where the checker charges all three (detection 126 ms); this file does
   # not declare the gate's node, so it charges the 100 ms period alone.
   /system/operation_mode/availability:

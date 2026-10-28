@@ -171,7 +171,7 @@ qemu-run secs="40":
         [ -n "$pty" ] || { echo "qemu-run: QEMU gave UART1 no PTY" >&2; cat "$qout"; exit 1; }
         echo "qemu-run: UART1 (zenoh) on $pty"
         if true; then
-            # The host half, exactly as experiments/serial-interop runs it
+            # The host half, exactly as rtss-work-2026-demo:experiments/serial-interop runs it
             # against the board's UART (router-serial.json5 is required).
             ZENOH_ROUTER_CONFIG_URI=$PWD/config/router-serial.json5 \
             ZENOH_CONFIG_OVERRIDE="listen/endpoints=[\"serial/$pty#baudrate=115200\",\"tcp/[::]:{{QEMU_ROUTER_PORT}}\"]" \
@@ -318,7 +318,7 @@ renode-run elf="build-board/zephyr/zephyr.elf" secs="40": renode-setup
     pids+=($!)
     for i in $(seq 1 60); do [ -e "$pty" ] && break; sleep 0.5; done
     [ -e "$pty" ] || { echo "renode-run: Renode never created $pty" >&2; tail "$out/renode-$stamp.renode.log"; exit 1; }
-    # The host half of the serial link, exactly as experiments/serial-interop
+    # The host half of the serial link, exactly as rtss-work-2026-demo:experiments/serial-interop
     # runs it against the real DCD-LZ UART (router-serial.json5 is required;
     # its header says why). TCP on 7448 so a qemu-run router can coexist.
     set +u; source /opt/ros/humble/setup.bash; set -u

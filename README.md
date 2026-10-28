@@ -108,9 +108,12 @@ Zephyr variant: `just zephyr-build && just zephyr-run` (host tooling needs
 S32K344 under Zephyr; the image builds and links, no hardware run yet),
 [phase-4](docs/roadmap/phase-4-link-security.md) (what protects the island's
 link — open question, gates any non-bench deployment),
-[phase-8](docs/roadmap/phase-8-rtss-work-demo.md) (the RTSS@Work 2026
-takeover demo, on silicon), [phase-9](docs/roadmap/phase-9-rtss-demo-open-items.md)
-(what the RTSS demo left open).
+[phase-14](docs/roadmap/phase-14-repo-split.md) (the evaluation leaves this
+repo). The RTSS@Work 2026 takeover demo and its evaluation (the L3 container,
+the CARLA booth demo, the acts, the experiment runs, phases 6-9) live in
+[NEWSLabNTU/rtss-work-2026-demo](https://github.com/NEWSLabNTU/rtss-work-2026-demo),
+which holds this repo as its submodule `third-party/safety-island`; this
+repo's docs cite its files as `rtss-work-2026-demo:<path>`.
 
 ## The legacy Cyclone demo (validated 2026-07-31: PASS, 3.90 -> 0.00 m/s; not re-validated since)
 

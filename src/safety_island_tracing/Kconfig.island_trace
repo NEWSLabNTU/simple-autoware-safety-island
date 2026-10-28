@@ -78,7 +78,7 @@ config ISLAND_DEBUG_OVERRUN
 	  takeover_request_state 206 ms) and, because the one executor is
 	  blocked, the spin's release-jitter and the timers' overrun rules.
 	  It is the board's end-to-end test of the violation channel
-	  (docs/takeover-trace.md section 12). No link entity, no parameter
+	  (rtss-work-2026-demo:docs/takeover-trace.md section 12). No link entity, no parameter
 	  service, no contract change: only a debugger can command it.
 	  phase11-S7 adds `island_debug_fault_overrun_ms`, the same for the
 	  FAULT tick: the next tick that runs call_mrm busy-waits N ms right
