@@ -13,9 +13,17 @@
 # A contract is `<stem>.contract.yaml`, the provider sidecar of
 # `<stem>.launch.xml` beside it. Build trees, third-party and experiments are
 # not searched. Exit 0 when every verdict matches its expectation.
+#
+# Two lists (phase14-P1.4). CORE is the island's own: every contract under
+# src/. EVALUATION is everything else (demo/l3, docs/demo-l4,
+# docs/island-variants), which leaves with the evaluation in phase 14 P2;
+# a list whose paths are gone checks nothing and passes. CONTRACTS=core,
+# CONTRACTS=evaluation or CONTRACTS=all (the default) picks them.
 set -u
 cd "$(dirname "$0")/.."
 PL="${PLAY_LAUNCH:-play_launch}"
+SCOPE="${CONTRACTS:-all}"
+case "$SCOPE" in core|evaluation|all) ;; *) echo "CONTRACTS must be core, evaluation or all, not '$SCOPE'" >&2; exit 2;; esac
 
 # Expected verdict per contract stem, as "<exit>:<rule id>"; anything not
 # listed must pass (0). An exit-1 row passes only when the output names its
@@ -23,7 +31,12 @@ PL="${PLAY_LAUNCH:-play_launch}"
 # play_launch too old to parse it exits 1 with `error[manifest-parse]`, which
 # is never an expected verdict (phase9-W22, DX 2.4). A rule ending in `!`
 # must be the ONLY error the output names (phase10-B5).
-declare -A EXPECT=(
+# CORE: the island's own contract passes (no entry); nothing core is
+# expected to fail. Kept as its own table so a core variant has a place.
+declare -A EXPECT_CORE=(
+)
+# EVALUATION
+declare -A EXPECT_EVAL=(
     # docs/demo-l4/run.sh: each "B" run is a one-number change that the
     # checker must REJECT. A pass here would be the regression.
     [docs/demo-l4/stage0-interface-broken]=1:rate-hierarchy
@@ -46,18 +59,29 @@ declare -A EXPECT=(
     [docs/island-variants/safety_island_65kmh]=1:ladder-rung-budget!     # 31123.67 ms
 )
 
-echo "play_launch: $(command -v "$PL") ($("$PL" --version 2>/dev/null))"
+# The contracts of one list: core is ./src, evaluation everything else.
+contracts() {
+    case "$1" in
+        core) [ -d src ] && find ./src -name '*.contract.yaml' -print ;;
+        evaluation) find . \( -path ./third-party -o -path './build*' -o -path ./experiments \
+                          -o -path ./play_log -o -path ./.git -o -path ./src \) -prune \
+                      -o -name '*.contract.yaml' -print ;;
+    esac
+}
+
+echo "play_launch: $(command -v "$PL") ($("$PL" --version 2>/dev/null)); contracts: $SCOPE"
 fail=0 n=0
-while IFS= read -r c; do
+while IFS=' ' read -r list c; do
+    [ -n "$c" ] || continue
     stem="${c%.contract.yaml}"; stem="${stem#./}"
     launch="$stem.launch.xml"
-    spec="${EXPECT[$stem]:-0}"
+    if [ "$list" = core ]; then spec="${EXPECT_CORE[$stem]:-0}"; else spec="${EXPECT_EVAL[$stem]:-0}"; fi
     want="${spec%%:*}" rule=""
     [ "$spec" != "$want" ] && rule="${spec#*:}"
     only=0; [ "${rule%!}" != "$rule" ] && { only=1; rule="${rule%!}"; }
     n=$((n + 1))
     if [ ! -f "$launch" ]; then
-        echo "FAIL $stem: no $launch beside the contract"; fail=1; continue
+        echo "FAIL [$list] $stem: no $launch beside the contract"; fail=1; continue
     fi
     out="$(timeout 120 "$PL" check "$launch" 2>&1)"; got=$?
     out="$(printf '%s\n' "$out" | sed 's/\x1b\[[0-9;]*m//g')"
@@ -74,14 +98,15 @@ while IFS= read -r c; do
         [ -z "$others" ] || why="error[$rule] as expected, but also $others"
     fi
     if [ -z "$why" ]; then
-        echo "ok   $stem (exit $got${rule:+, error[$rule]}) $summary"
+        echo "ok   [$list] $stem (exit $got${rule:+, error[$rule]}) $summary"
     else
-        echo "FAIL $stem: $why $summary"
+        echo "FAIL [$list] $stem: $why $summary"
         printf '%s\n' "$out" | grep -E 'error\[|warning\[' | head -20 | sed 's/^/     /'
         fail=1
     fi
-done < <(find . \( -path ./third-party -o -path './build*' -o -path ./experiments \
-                  -o -path ./play_log -o -path ./.git \) -prune \
-              -o -name '*.contract.yaml' -print | sort)
+done < <(for l in core evaluation; do
+             [ "$SCOPE" = all ] || [ "$SCOPE" = "$l" ] || continue
+             contracts "$l" | sort | sed "s|^|$l |"
+         done)
 echo "$n contract(s) checked; $([ $fail = 0 ] && echo 'every verdict as expected' || echo 'VERDICT MISMATCH')"
 exit $fail

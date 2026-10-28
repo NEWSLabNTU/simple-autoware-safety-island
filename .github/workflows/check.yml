@@ -1,5 +1,6 @@
 # phase8-W3: `play_launch check` on every contract in the repository, each
-# against the verdict it is meant to give (.github/check-contracts.sh).
+# against the verdict it is meant to give (.github/check-contracts.sh), in
+# two lists: core (the island) and evaluation (phase14-P1.4).
 # Builds nothing: `check` reads launch files and their contract sidecars.
 # play_launch is installed the way the runbook installs it (pip), pinned to
 # the version the demo host runs.
@@ -30,11 +31,19 @@ jobs:
           # carries every distribution its Python serves and picks Humble here.
           pip3 install --no-cache-dir "play_launch==${PLAY_LAUNCH_VERSION}"
           play_launch --version
-      - name: play_launch check on every contract
+      # Two lists (.github/check-contracts.sh, phase14-P1.4): the island's
+      # own contracts (src/) and the evaluation's (demo/l3, docs/demo-l4,
+      # docs/island-variants), which leave in phase 14 P2.
+      - name: play_launch check, core contracts
         shell: bash
         run: |
           source /opt/ros/humble/setup.bash
-          .github/check-contracts.sh
+          CONTRACTS=core .github/check-contracts.sh
+      - name: play_launch check, evaluation contracts (moves out in phase 14 P2)
+        shell: bash
+        run: |
+          source /opt/ros/humble/setup.bash
+          CONTRACTS=evaluation .github/check-contracts.sh
       # phase8-W7: the timeline draws its declared bars from the checker's
       # `--explain` table and its stop curve from the same braking-profile
       # arithmetic. The board half's selftest parses a captured table
