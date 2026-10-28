@@ -27,7 +27,7 @@ play_launch check <stem>.launch.xml --sched <stem>.system.posix.yaml --explain
 ```
 
 against `play_launch` 0.10.0 at
-`/home/aeon/repos/play_launch/install/play_launch/lib/play_launch/play_launch`.
+a source build (`install/play_launch/lib/play_launch/play_launch` in a play_launch checkout).
 Nothing was built. No Rust harness was needed: `check --sched --explain` prints
 the merged scheduling plan with the mapper's own provenance string per node,
 which is the ranked output this unit wanted.

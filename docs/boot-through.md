@@ -43,9 +43,9 @@ merged, the image was built against a clone of the pinned nano-ros
 external-root lever. `qemu-build` now names `nano_ros_DIR` too, so the cmake
 package, the Zephyr module and the CLI come from one tree:
 
-    NANO_ROS_ALLOW_EXTERNAL_ROOT=1 NANO_ROS_ROOT=/home/aeon/repos/nano-ros-w8pin \
+    NANO_ROS_ALLOW_EXTERNAL_ROOT=1 NANO_ROS_ROOT=$HOME/repos/nano-ros-w8pin \
         just QEMU_BUILD_DIR=build-qemu-w8 qemu-build
-    NANO_ROS_ALLOW_EXTERNAL_ROOT=1 NANO_ROS_ROOT=/home/aeon/repos/nano-ros-w8pin \
+    NANO_ROS_ALLOW_EXTERNAL_ROOT=1 NANO_ROS_ROOT=$HOME/repos/nano-ros-w8pin \
         just QEMU_BUILD_DIR=build-qemu-w8 qemu-run 40
 
 The diagnostic overrides go through the recipe's existing env lever. W8

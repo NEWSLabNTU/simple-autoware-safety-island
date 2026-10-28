@@ -482,7 +482,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--xosc", default=os.path.join(HERE, "scenarios", "town01_island_odd.xosc"))
     ap.add_argument("--osm", default=os.path.join(
-        os.environ.get("CSB_DIR", "/mnt/evo/aeon/repos/carla-scenario-bridge"),
+        os.environ.get("CSB_DIR", os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(HERE))), "carla-scenario-bridge")),
         "data/carla-autoware-bridge/Town01/lanelet2_map.osm"))
     ap.add_argument("--log", default=None)
     ap.add_argument("--carla-host", default="127.0.0.1")

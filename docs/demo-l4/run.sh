@@ -33,7 +33,7 @@
 #                             from one table row. `ladder-rung-budget`, exit 1.
 #
 # No build is needed. `check` reads the launch file and its contract sidecar.
-CHECK=${CHECK:-/home/aeon/repos/play_launch/install/play_launch/lib/play_launch/play_launch}
+CHECK=${CHECK:-play_launch}
 HERE=$(cd "$(dirname "$0")" && pwd)
 
 # ROS 2's setup.bash reads variables it has not set, so `set -u` goes on

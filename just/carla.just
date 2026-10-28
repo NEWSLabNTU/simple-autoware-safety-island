@@ -33,7 +33,8 @@
 # one per composable (~200); in isolated mode 2 of 5 starts failed (a
 # subscription that never received; a drive that did not arrive).
 
-CSB_DIR := env("CSB_DIR", "/mnt/evo/aeon/repos/carla-scenario-bridge")
+# carla-scenario-bridge checkout; default: a sibling of this repo.
+CSB_DIR := env("CSB_DIR", parent_directory(justfile_directory()) / "carla-scenario-bridge")
 CARLA_DIR := env("CARLA_DIR", home_directory() + "/carla-0.9.16")
 CARLA_GRAPH := "share/tier4_system_launch/config/diagnostics/autoware-carla-l3.yaml"
 
@@ -118,11 +119,11 @@ carla-rclcpp:
 # One act on the board (run-board.sh --sim carla, args as there: [options] a|b|encore
 # <run-id>), the dashboard demo/carla/cast_dashboard.py on CAST_DISPLAY (:3, a
 # 1920x1080 TurboVNC display of its own; demo/carla/cast.sh says how to start one),
-# recorded with ffmpeg into CAST_DIR (/mnt/evo/aeon/casts) with stills. C8
+# recorded with ffmpeg into CAST_DIR (default build/casts) with stills. C8
 #
 # Record one act with the cast dashboard (needs the :3 display). C8
 carla-cast *args:
-    scripts/ienv.sh 'CAST_DISPLAY="{{env("CAST_DISPLAY", ":3")}}" CAST_DIR="{{env("CAST_DIR", "/mnt/evo/aeon/casts")}}" demo/carla/cast.sh {{args}}'
+    scripts/ienv.sh 'CAST_DISPLAY="{{env("CAST_DISPLAY", ":3")}}" CAST_DIR="{{env("CAST_DIR", "build/casts")}}" demo/carla/cast.sh {{args}}'
 
 # Start the cast's display: TurboVNC :3, 1920x1080, no desktop (only the dashboard draws). C8
 carla-cast-display:
@@ -132,7 +133,7 @@ carla-cast-display:
     if [ -S "/tmp/.X11-unix/X${d#:}" ]; then echo "carla-cast-display: $d is up"; exit 0; fi
     pid="$HOME/.vnc/$(hostname):${d#:}.pid"
     if [ -f "$pid" ] && ! kill -0 "$(cat "$pid")" 2>/dev/null; then echo "carla-cast-display: removing the stale $pid"; rm -f "$pid"; fi
-    x="${CAST_DIR:-/mnt/evo/aeon/casts}/xstartup-bare.sh"
+    x="${CAST_DIR:-build/casts}/xstartup-bare.sh"
     mkdir -p "$(dirname "$x")"
     printf '#!/bin/sh\n# bare display for the island cast: no desktop, no window manager\nexec sleep infinity\n' > "$x"; chmod +x "$x"
     /opt/TurboVNC/bin/vncserver "$d" -geometry 1920x1080 -xstartup "$x"

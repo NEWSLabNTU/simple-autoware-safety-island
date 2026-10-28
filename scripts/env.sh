@@ -42,7 +42,7 @@ _island_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # INHERITED from the shell that launched a tool is indistinguishable from one
 # typed on purpose, and this repo spent a session with `NANO_ROS_ROOT` and the
 # cmake `nano_ros_ROOT` both silently pointing at the sibling while every `just`
-# recipe printed `scripts/build/cargo.sh: /home/aeon/repos/nano-ros/...: No such
+# recipe printed `scripts/build/cargo.sh: <sibling>/nano-ros/...: No such
 # file or directory` and carried on. So an override now has to say so:
 #
 #     NANO_ROS_ALLOW_EXTERNAL_ROOT=1 NANO_ROS_ROOT=/path/to/checkout ...

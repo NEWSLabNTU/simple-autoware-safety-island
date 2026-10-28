@@ -3,7 +3,7 @@
 Design and plan: `docs/design/carla-island-demo.md` (units C1-C8). Recipes:
 `just/carla.just`. The CARLA side is carla-scenario-bridge (CSB,
 `NEWSLabNTU/carla-scenario-bridge`, default checkout
-`/mnt/evo/aeon/repos/carla-scenario-bridge`, override with `CSB_DIR`) and its
+`../carla-scenario-bridge` beside this repo, override with `CSB_DIR`) and its
 submodule autoware_carla_bridge (acb).
 
 | path | what | unit |
@@ -356,7 +356,7 @@ dashboard (`cast_dashboard.py`) on the display at run-board's step 6, and
 `ffmpeg -f x11grab` from step 7 (the scenario starts) to `CAST_TAIL` (8) s
 after step 8 (the readout). Everything else is the act as always: same
 preflight, same record in `build/timeline/<id>/`, same SUMMARY. Out, in
-`CAST_DIR` (/mnt/evo/aeon/casts): `<id>.mp4` (h264_nvenc, 30 fps;
+`CAST_DIR` (default `build/casts`): `<id>.mp4` (h264_nvenc, 30 fps;
 `CAST_CODEC=libx264` without the GPU encoder), `<id>.events.jsonl` (each
 transition the dashboard saw, wall and sim time), `<id>.meta`, and a still
 per transition the act is about (`<id>-NN-odd-exit.png`, `-takeover-request`,

@@ -139,7 +139,7 @@ play_launch check <stem>.launch.xml --explain
 against play_launch `bbf9c044` (phase 84, rlm v0.1.47; phase8-W12 re-ran all three, the verdicts did not move;
 phase8-W14 regenerated them on the W8a mrm_handler, built from nano-ros da272e419's vendored
 submodule with `cargo build --release -p play_launch`; W12 used
-`/home/aeon/repos/play_launch/install/play_launch/lib/play_launch/play_launch`).
+a source build, `install/play_launch/lib/play_launch/play_launch` in a play_launch checkout).
 Against W12's outputs only the timestamps, the contract line numbers of the
 `settle-derived` lines and three `derivable-min-rate` infos moved: W8a removed
 the handler's gear, turn-indicator and emergency-holding publishers.

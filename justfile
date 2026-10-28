@@ -24,7 +24,7 @@
 # tool is indistinguishable from one typed on purpose. This repo spent a
 # session with NANO_ROS_ROOT (and cmake's nano_ros_ROOT) both silently naming
 # the SIBLING checkout while every recipe printed
-# `scripts/build/cargo.sh: /home/aeon/repos/nano-ros/...: No such file or
+# `scripts/build/cargo.sh: <sibling>/nano-ros/...: No such file or
 # directory` and carried on. .envrc guards the interactive path; this guards
 # the ones that never source it -- CI, an agent's tool shell, a bare `just`.
 # An override now has to name itself, which cannot happen by inheritance.

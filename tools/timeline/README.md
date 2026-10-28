@@ -78,5 +78,5 @@ A run directory holds `probe.jsonl`, `gate.jsonl`, `scenario.jsonl`,
   publish gap under 150 ms for 10 min at load 100-130. It still logs
   `stall` events (timer or raw stream more than GATE_STALL_MS late) and a
   `stats` event with its largest publish gap at exit.
-- `tlcommon.PLAY_LAUNCH_W6` is a local fallback path to a source-built
-  play_launch; set `PLAY_LAUNCH_CHECK` elsewhere.
+- `PLAY_LAUNCH_CHECK` names the play_launch the checker reads run under
+  (default: `play_launch` on PATH).

@@ -20,7 +20,7 @@
 # and the dashboard closes. run-board.sh then finishes its teardown and
 # SUMMARY as usual; this waits for it and exits with its status.
 #
-# Out, in CAST_DIR (default /mnt/evo/aeon/casts):
+# Out, in CAST_DIR (default build/casts):
 #   <run-id>.mp4             H.264 (h264_nvenc, CAST_CODEC to change), 30 fps, 1920x1080
 #   <run-id>.events.jsonl    the dashboard's transitions, wall and sim time each
 #   <run-id>.meta            the recording's wall start, the run directory
@@ -39,7 +39,7 @@ case "$act" in a|b|encore) ;; *) echo "cast: act is a, b or encore" >&2; exit 2;
 disp="${CAST_DISPLAY:-:3}"
 case "$disp" in :1|:2|:9) echo "cast: $disp is not ours to record (the user's or another user's desktop)" >&2; exit 2;; esac
 [ -S "/tmp/.X11-unix/X${disp#:}" ] || { echo "cast: no X server on $disp -- start one (see the head of $0)" >&2; exit 2; }
-out="${CAST_DIR:-/mnt/evo/aeon/casts}"
+out="${CAST_DIR:-build/casts}"
 mkdir -p "$out"
 dir="build/timeline/$id"
 xosc_default=demo/carla/scenarios/town01_island_odd.xosc

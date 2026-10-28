@@ -14,7 +14,7 @@
 # No build is needed. `check --sched --explain` reads the launch file, the
 # contract sidecar and the platform file beside it.
 # `set -u` comes AFTER the ROS setup script, which reads unbound variables.
-CHECK=${CHECK:-/home/aeon/repos/play_launch/install/play_launch/lib/play_launch/play_launch}
+CHECK=${CHECK:-play_launch}
 HERE=$(cd "$(dirname "$0")" && pwd)
 
 source /opt/ros/humble/setup.bash

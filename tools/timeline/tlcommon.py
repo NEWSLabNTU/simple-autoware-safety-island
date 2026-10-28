@@ -50,7 +50,6 @@ ROOT = os.path.dirname(os.path.dirname(HERE))
 MODEL = os.path.join(ROOT, "build/nros/models/safety_island_bringup/system_model.yaml")
 BRINGUP = os.path.join(ROOT, "src/safety_island_bringup")
 LAUNCH = os.path.join(BRINGUP, "launch/safety_island.launch.xml")
-PLAY_LAUNCH_W6 = "/home/aeon/repos/play_launch/install/play_launch/lib/play_launch/play_launch"
 
 # Message constants the timeline names (tier4 / autoware msgs, 1.5.0).
 MRM_STATE = {0: "UNKNOWN", 1: "NORMAL", 2: "MRM_OPERATING", 3: "MRM_SUCCEEDED", 4: "MRM_FAILED"}

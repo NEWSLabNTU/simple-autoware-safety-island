@@ -173,7 +173,7 @@ run (the island's `use_comfortable_stop` is false).
 `rmw_zenohd` on 7447:
 
 ```
-l3-autoware: /home/aeon/.local/bin/play_launch (play_launch 0.12.0), RMW rmw_zenoh_cpp, domain 10
+l3-autoware: ~/.local/bin/play_launch (play_launch 0.12.0), RMW rmw_zenoh_cpp, domain 10
 l3-autoware: tier4_system_launch from build/l3-host-ws/install, availability converter -> /system/operation_mode/availability_raw
 2026-09-28T10:59:20.129553Z  INFO Startup complete: all nodes ready (nodes 32/32, containers 13/13, composable 68/68)
 ```
