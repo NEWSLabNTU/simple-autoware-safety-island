@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """phase7-W3 fault injector: the demo sequence, with every step time-stamped.
 
-Same sequence as demo/scenario_driver.py (whose helpers it imports): initial
+Same sequence as tools/eval/scenario_driver.py (whose helpers it imports): initial
 pose, goal, engage, drive, SIGSTOP the process publishing
 /system/operation_mode/availability (the fault), hold, SIGCONT, wait for the
 island to go back to NORMAL, resume. What it adds is a log, written as JSON
@@ -29,7 +29,7 @@ import time
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO = os.path.dirname(os.path.dirname(_HERE))
-sys.path.insert(0, os.path.join(_REPO, 'demo'))
+sys.path.insert(0, os.path.join(_REPO, 'tools', 'eval'))
 import scenario_driver as sd  # noqa: E402  (sets the Cyclone/RMW env before rclpy)
 
 from rclpy.executors import SingleThreadedExecutor  # noqa: E402

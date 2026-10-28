@@ -56,7 +56,7 @@ drive DRIVE_SECS past MIN_SPEED, then
   encore  hpc-loss, observe to standstill, hpc-restore
 and prints one VERDICT line (exit 0 = PASS). Env: DRIVE_SECS (3),
 RESPOND_AFTER (3), OBSERVE_SECS (30), MIN_SPEED (1.0), INIT_*/GOAL_* as
-demo/scenario_driver.py. SCENARIO_FAULT_CMD (encore, phase11-S7): a command
+tools/eval/scenario_driver.py. SCENARIO_FAULT_CMD (encore, phase11-S7): a command
 run once the vehicle drives, before the fault, that arms the handler's
 fault-tick overrun (run-board.sh RB_OVERRUN); an `overrun_armed` event
 records it.
@@ -423,7 +423,6 @@ def time_to_exit(poly, st):
 # ------------------------------------------------------------- the acts ----
 def run(act, log):
     import rclpy
-    sys.path.insert(0, os.path.join(tl.ROOT, "demo"))
     import scenario_driver as sd  # the demo's pose, goal and helpers
     from autoware_adapi_v1_msgs.msg import MrmState
     from autoware_planning_msgs.msg import RouteState

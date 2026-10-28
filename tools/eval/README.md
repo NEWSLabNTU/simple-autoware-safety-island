@@ -21,6 +21,7 @@ selftests (CI).
 | file | what it is |
 |---|---|
 | `scenario.py` | `gate`: execs the availability gate, `demo/host_ws/src/availability_gate` (C++, phase8-W16; Autoware's availability on `.../availability_raw` republished at 10 Hz on `/system/operation_mode/availability` with `autonomous &= !odd_exit`); `press <button>` / `buttons` (a window): odd-exit, odd-enter, takeover (MANUAL via `/control/control_mode_request`), hpc-loss (SIGSTOP the gate), hpc-restore; `run a\|b\|encore`: the whole act, scripted, one VERDICT |
+| `scenario_driver.py` | the sample map's initial pose, goal and engage helpers (phase 2's scripted drive; moved from `demo/` in phase 14); `scenario.py run` imports them, the legacy `just _scenario` runs it |
 | `merge.py` | island trace markers onto host CLOCK_MONOTONIC: coarse offset from anchor 1, refined on every publish/receipt pair, checked by anchor 2 (the W3 method, docs/reaction-trace.md) |
 | `analysis.py` | declared against observed for one run: the edges, the observed terms, one verdict per declared bar, the rung the run ended on, the longest availability gap (the `hpc_alive` precondition); a row per declared `max_transport` edge the trace observes (phase10-B8); the settle at the observed entry speed, its difference from the profile as the measured response delay, and profile + `response` once declared (phase10-B2); each row's `checked by` (checker sum, runtime monitor, trace) |
 | `render.py` | the static PNG of a run for the slides, and `--table` (markdown) |

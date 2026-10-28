@@ -47,7 +47,7 @@ settle 2034.00ms) = 2677.33ms fits the fault-tolerant time interval
 ```
 
 **Injection.** The injection is the one the demo already uses
-(`demo/scenario_driver.py`). The driver drives the vehicle on the sample
+(`tools/eval/scenario_driver.py`). The driver drives the vehicle on the sample
 route for 15 s. It then finds the process publishing
 `/system/operation_mode/availability` (Autoware's `/system/converter`) from
 the live graph and sends it SIGSTOP. That stops the stream at a known wall

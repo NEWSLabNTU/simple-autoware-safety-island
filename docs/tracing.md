@@ -272,7 +272,7 @@ would have produced.
 ## 4. The gate, native_sim demo
 
 `just trace-demo`: host Autoware 1.5.0 planning_simulator, the traced
-native_sim island on domain 10, `demo/scenario_driver.py`.
+native_sim island on domain 10, `tools/eval/scenario_driver.py`.
 
 The gate run is `just trace-demo build/trace/demo3.trace`, on the final
 image (with the single-read timestamp fix). Output verbatim:

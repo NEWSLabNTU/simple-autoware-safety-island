@@ -18,7 +18,7 @@ CYCLONEDDS_URI is already set.
 """
 import os, sys, time, signal, subprocess
 
-_REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # tools/eval/..
 os.environ.setdefault('CYCLONEDDS_URI', 'file://' + os.path.join(_REPO, 'demo', 'cyclonedds.xml'))
 os.environ['RMW_IMPLEMENTATION'] = 'rmw_cyclonedds_cpp'
 os.environ.setdefault('ROS_DOMAIN_ID', '1')
@@ -232,5 +232,5 @@ def main():
           f'recover={ok_recover}, resume_v={v2}, arrived={arrived})'); sys.exit(1)
 
 if __name__ == '__main__':
-    os.chdir(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+    os.chdir(_REPO)
     main()

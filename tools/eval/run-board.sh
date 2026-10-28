@@ -115,7 +115,7 @@
 # and rclcpp patch, and sat at 63-64/68 composables in 3 of 5 starts),
 # DRIVE_SECS / OBSERVE_SECS / RESPOND_AFTER / MIN_SPEED and the planning
 # simulator's pose and goal INIT_X/Y/QZ/QW, GOAL_X/Y/QZ/QW (scenario.py's;
-# default demo/scenario_driver.py's), L3_PLANNING_COMMON (a planning common
+# default tools/eval/scenario_driver.py's), L3_PLANNING_COMMON (a planning common
 # parameter file for Autoware, demo/l3/container/run.sh; phase10-B6 runs at
 # the declared entry speed with demo/l3/config/common-30kmh.param.yaml),
 # SAI_DEMO_LOCK,

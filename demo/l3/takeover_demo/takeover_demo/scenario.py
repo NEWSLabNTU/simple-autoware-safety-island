@@ -7,7 +7,7 @@
   ros2 run takeover_demo scenario odd-respond   ODD exit, the driver responds
                                                 after RESPOND_AFTER seconds (2)
 
-Every act starts the same way as demo/scenario_driver.py (initial pose,
+Every act starts the same way as tools/eval/scenario_driver.py (initial pose,
 goal, engage, wait for motion), then injects its fault and prints every
 transition of the island's mrm_state, the takeover HMI state, the control
 mode and the velocity, with the time since the injection. It ends with one

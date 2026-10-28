@@ -1029,7 +1029,7 @@ _scenario:
     # rclpy, the overlay's message packages, the RMW and the domain all come
     # from env.sh.
     source scripts/env.sh
-    exec python3 demo/scenario_driver.py
+    exec python3 tools/eval/scenario_driver.py
 
 # ── All of it, one command ──────────────────────────────────────────────────
 #   just demo-all              # zephyr island (default)
