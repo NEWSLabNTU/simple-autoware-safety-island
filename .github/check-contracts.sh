@@ -3,7 +3,7 @@
 # against the verdict it is MEANT to give. Run by .github/workflows/check.yml;
 # runs the same way locally:
 #
-#   just l3-check                         # the pinned wheel, in build/l3-ci
+#   just contract-check                   # the pinned wheel, in build/l3-ci
 #   PLAY_LAUNCH=/path/to/play_launch .github/check-contracts.sh
 #
 # The expectations below are the PINNED release's verdicts (check.yml,

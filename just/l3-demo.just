@@ -199,22 +199,6 @@ l3-island-qemu elf="build-qemu/zephyr/zephyr.elf" port="7447" secs="60" host="12
         -nic "user,model=lan9118,guestfwd=tcp:10.0.2.100:7447-$fwd" \
         ${mon_args[@]+"${mon_args[@]}"} -kernel "{{elf}}" </dev/null 2>&1 | tee "$log" || true
 
-# play_launch check on every contract with the CI's pinned wheel (build/l3-ci). phase8-W3
-l3-check:
-    #!/usr/bin/env bash
-    set -eo pipefail
-    ver="$(sed -n 's/^ *PLAY_LAUNCH_VERSION: *"\(.*\)"/\1/p' .github/workflows/check.yml)"
-    venv=build/l3-ci/play_launch-$ver
-    # play_launch[humble] from the GitHub release's assets until PyPI has the
-    # per-distribution projects (check.yml says why); a local wheelhouse
-    # (PLAY_LAUNCH_WHEELHOUSE/play_launch-<ver>) wins.
-    links="https://github.com/NEWSLabNTU/play_launch/releases/expanded_assets/v$ver"
-    wh="${PLAY_LAUNCH_WHEELHOUSE:-}"
-    [ -n "$wh" ] && [ -d "$wh/play_launch-$ver" ] && links="$wh/play_launch-$ver"
-    [ -x $venv/bin/play_launch ] || { python3 -m venv $venv && $venv/bin/pip install -q "play_launch[humble]==$ver" --find-links "$links"; }
-    env -i HOME="$HOME" USER="$USER" PATH=/usr/bin:/bin PLAY_LAUNCH="$PWD/$venv/bin/play_launch" \
-        bash -c 'source /opt/ros/humble/setup.bash && exec .github/check-contracts.sh'
-
 # ---- phase8-W7: the takeover timeline ------------------------------------------
 # tools/eval/README.md. One traced native_sim run, everything at once:
 #   tools/eval/run-native.sh a|b|encore <id>      -> build/timeline/<id>/
@@ -256,3 +240,23 @@ l3-timeline dir="build/timeline/live" png="":
 # One traced act: a | b | encore, on the board or QEMU, into build/timeline/<id>. phase8-W17
 l3-traced-act act id target="board" elf="" flags="":
     tools/eval/run-board.sh --target {{target}} {{ if elf != "" { "--elf " + elf } else { "" } }} {{flags}} {{act}} {{id}}
+
+# ---- phase9-U3: the spin-latency diagnostic, its act runners (tools/eval) ------
+# The diag image itself is core: `just board-build-diag` (tools/diag/).
+# phase9-U3: the spin-latency diagnostic (docs/tracing.md section 9). One board
+# act on the diag image (`just board-build-diag`) with spin_diag.py read
+# just before and just after the act, into build/timeline/<id>/
+# (spin-diag-pre.txt, spin-diag-act.txt beside run-board.sh's files). Flashes
+# the diag ELF: flash the normal image back after (`just board-flash`).
+# Arguments go to tools/eval/run-diag.sh: [--no-flash] [a|b|encore] <id>.
+#
+# Board: one act on the spin-diag image, the diag read before and after the act.
+diag-run *args:
+    tools/eval/run-diag.sh {{args}}
+
+# Late spins inside the act only (act read minus pre read), per run; run dirs
+# or ids under build/timeline. `--survival` prints the per-ms curve too.
+#
+# Count the act segment's late spins of diag runs (tools/eval/actseg.py).
+diag-actseg +runs:
+    python3 tools/eval/actseg.py {{runs}}
