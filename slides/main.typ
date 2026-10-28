@@ -140,7 +140,7 @@
     )
   ]
   #v(0.4em)
-  #text(size: 13pt)[Nothing else crosses: `docs/topic-contract.md` is the SSoT,
+  #text(size: 13pt)[Nothing else crosses: `safety_island.contract.yaml` is the SSoT,
   the bridge YAML is the machine artifact. Same island binary runs native (dev loop) and Zephyr.]
 ]
 
@@ -425,7 +425,7 @@ just host-env   # prints CYCLONEDDS_URI:
   #v(0.3em)
   #text(size: 14pt)[
     *Start here:* `github.com/NEWSLabNTU/simple-autoware-safety-island` — README quick start,
-    `docs/porting-notes.md`, `docs/topic-contract.md` \
+    `docs/porting-notes.md`, `safety_island.contract.yaml` \
     *nano-ros:* `github.com/NEWSLabNTU/nano-ros` — RFC-0044 (rclcpp shape), RFC-0028 (safety / E2E),
     the `nros` CLI + `play_launch`
   ]

@@ -45,7 +45,8 @@ range 120) that the island's unicast peer scan can find; the island's own
 profile is compile-time (`CONFIG_NROS_CYCLONE_CONFIG_XML`, nano-ros issue
 0367).
 
-- Topic contract: [docs/topic-contract.md](docs/topic-contract.md) (SSoT).
+- Topic contract: the `topics:` section of
+  [safety_island.contract.yaml](src/safety_island_bringup/launch/safety_island.contract.yaml) (SSoT).
 - Safety contracts: nano-ros `[safety]` feature (E2E CRC-32 + sequence, EN 50159
   black-channel model, nano-ros RFC-0028) + execution tiers for the control loop.
 - Demo scenario: kill the Autoware heartbeat → island detects loss → MRM engages →
@@ -65,7 +66,6 @@ src/
 demo/                       Autoware planning_simulator recipes + shared cyclone config
 docs/
   roadmap/                  phase doc — plan + acceptance
-  topic-contract.md         island⇄Autoware topic contract (SSoT)
   porting-notes.md          rclcpp→nano-ros friction log (deliverable!)
   demo-runbook.md           fresh-machine bring-up of the board demo (start here)
   board-bringup-triage.md   MR-CANHUBK344 first-boot triage: symptom → knob

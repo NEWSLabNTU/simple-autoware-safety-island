@@ -105,7 +105,8 @@ every measured path, and the island's graph and liveliness semantics
 ### 1.3 The island attaches exactly as today
 
 Nothing changes on the board or in the link: the same image, `just l3-router`,
-`just l3-peer`, domain 10. On the host, the island's topics (docs/topic-contract.md)
+`just l3-peer`, domain 10. On the host, the island's topics (the `topics:` section of
+`src/safety_island_bringup/launch/safety_island.contract.yaml`)
 must be produced and consumed by the CARLA ego the same way:
 
 | interface | today | with CARLA | work |
