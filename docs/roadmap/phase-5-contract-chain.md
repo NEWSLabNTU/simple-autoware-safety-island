@@ -176,7 +176,4 @@ census track (M1 track A); they are independent of each other. W4 last.
 ## 5. What this phase is not
 
 It is not the place for the upstream design; each unit names the wave it
-consumes and nothing more. It is not the deck (`~/Downloads/contract-e2e-slides`),
-which was paused until the numbers here were measured rather than projected.
-That condition is met: the board image links and fits as of 2026-09-24, and
-the deck is active again under phase 6.
+consumes and nothing more.

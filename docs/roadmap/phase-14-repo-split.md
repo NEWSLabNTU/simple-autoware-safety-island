@@ -7,7 +7,7 @@ demo, the acts, the experiment runs, the figures) moves to a new private repo,
 `NEWSLabNTU/rtss-work-2026-demo`, which consumes this one as a submodule.
 Write-ups and slides leave with it. The legacy Cyclone demo is retired.
 
-**Status (2026-10-29): P0 and P1 done; P2 and P3 open.** Decisions taken:
+**Status (2026-10-29): P0-P3 done; the P2.4 board act is open (below).** Decisions taken:
 
 - **History is kept.** Paths leave the tree, not the history; nothing is
   rewritten or force-pushed.
@@ -97,7 +97,33 @@ names the eval act runners.
 - P1.5 The root `justfile` imports evaluation modules optionally
   (`import?`), so removing them leaves `just` working.
 
-**P2. Extract the evaluation**
+**P2. Extract the evaluation** -- done (2026-10-29), except the P2.4 act
+
+Status: `NEWSLabNTU/rtss-work-2026-demo` (private) is a `git filter-repo`
+of a fresh clone at a657ac3 down to the evaluation and write-up paths,
+current and pre-move (`tools/timeline/<eval files>`,
+`demo/scenario_driver.py`), 225 commits; layout unchanged (`demo/l3`,
+`demo/carla`, `demo/host_ws`, `tools/eval`, `experiments/`, `just/`,
+`docs/...`). It holds this repo as `third-party/safety-island`, and its
+root justfile imports `just/l3-demo.just` and `just/carla.just` and loads
+this repo's justfile as the optional module `island` (`just
+island::board-build`). `tools/eval` reads `tools/board`, `scripts/`, `src/`
+and the build trees from the submodule (`tl.ROOT` is the island; run
+directories stay in the demo repo); the contract launch files take the
+island's parameter files from it. Its CI (play_launch 0.20.2) runs the
+evaluation contract check (the old `EXPECT_EVAL`, 15 contracts) and the
+evaluation selftest. `run-native.sh` did not move: it ran on the legacy
+demo's recipes. `demo/fetch-map.sh` moved (its users are the L3 recipes).
+Here: the moved paths are deleted, `.github/check-contracts.sh` checks
+`src/` only, the `import?` lines are gone, and docs and comments cite moved
+files as `rtss-work-2026-demo:<path>`. The legacy Cyclone demo is retired:
+its recipes (`autoware`, `island`, `demo`, `demo-all`, `demo-down`,
+`topics`, `demo-host-ws`, `demo-map`, `trace-demo`), `demo/cyclonedds.xml`,
+the overlay and `CYCLONEDDS_URI` in `scripts/env.sh`, the `SAI_DEMO_RUN`
+marker and its test, the README and runbook sections. `src/` is untouched
+(`native_entry` and `native_sim_entry` still build; `trace-native` keeps
+the run guards). Open: P2.4, one board act from the demo repo against the
+pinned island.
 
 - P2.1 Create `NEWSLabNTU/rtss-work-2026-demo` (private).
 - P2.2 `git filter-repo` a fresh clone down to the evaluation paths (with
@@ -109,7 +135,12 @@ names the eval act runners.
 - P2.4 The board acts run from the new repo against the pinned island; one
   act passes there before P2.3 lands.
 
-**P3. Write-ups leave**
+**P3. Write-ups leave** -- done (2026-10-29)
+
+Status: the write-ups went with the same filter-repo pass and are deleted
+here. The docs that stay drop deck and slide references (the reaction
+trace drawing, the spin-latency comparison, the phase-5 deck note, an
+emulation claim's wording); measurements keep their method.
 
 - P3.1 `slides/`, `docs/writeup/`, `docs/dx-ux-gaps-2026-10.md`,
   `docs/design/rtss-work-2026/` move to the new repo (same filter-repo pass

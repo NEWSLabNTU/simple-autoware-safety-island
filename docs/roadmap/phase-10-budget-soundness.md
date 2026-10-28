@@ -168,7 +168,7 @@ with its evidence. Two were confirmed by experiment on 2026-10-15:
 - Gate: a fixture with a delayed tick records the violation on qemu and on
   the board; the island's acts record none; violation-record layout and
   readout updated. nano-ros PR, then the pin.
-- Also in this repo (`docs/dx-ux-gaps-2026-10.md` section 5.3).
+- Also in rtss-work-2026-demo:docs/dx-ux-gaps-2026-10.md section 5.3.
 - Status (2026-10-15): done in nano-ros (PR #2221, merged as `67e29e9fa`), pinned
   here; checked on the board (below). The executor stamps the
   dispatch that takes a route's trigger input (the earliest take not yet

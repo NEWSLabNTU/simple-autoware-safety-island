@@ -976,4 +976,4 @@ patches applied for the length of the build only (an EXIT trap reverts
 them; build-board is untouched), `just diag-run <id>` runs one act with the
 diag read just before and just after it (run-board.sh's own act, wrapped in
 RB_ACT), and `just diag-actseg <run>...` counts the late spins of the act
-segment, the numbers of the roadmap's section 6 and the deck's B2 figure.
+segment, the numbers of the phase-9 roadmap's section 6.

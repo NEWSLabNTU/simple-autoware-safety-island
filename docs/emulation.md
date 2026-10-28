@@ -425,7 +425,7 @@ through zpico's `printk`, and was read with gdb.
 - **"An emulation ladder in nano-ros, all rungs present ... Renode".** nano-ros
   has no Renode support; the "171 hits" are two files. The Renode rung here is
   upstream Renode's S32K388 model plus a four-line delta.
-- **"only FVP or silicon durations go on a slide without a qualifier".** FVP
+- **"only FVP or silicon durations are reported without a qualifier".** FVP
   durations need the same qualifier as QEMU's: the models are not
   cycle-accurate, and nano-ros runs them with cache state unmodelled. The
   nano-ros FVP is not even the island's ISA.

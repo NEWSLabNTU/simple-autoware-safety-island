@@ -248,13 +248,11 @@ Reading it, term by term:
   most) is inside its 643.33. The overrun is all in the settle term's entry
   speed assumption.
 
-## 4. The figure
+## 4. The drawing
 
-`~/Downloads/contract-e2e-slides/assets/diagrams/reaction_trace.typ` and
-`reaction_trace.png` (300 ppi, 2302 x 625 px, aspect 3.68). The declared
-budget is drawn above and the observed intervals of run r7 below, on one time
-axis. The axis is broken at 700 ms: linear on each side, compressed after the
-break.
+The declared budget drawn above and the observed intervals of run r7 below,
+on one time axis, broken at 700 ms: linear on each side, compressed after
+the break. The drawing is not kept in this repo.
 
 r7 is used because it is the best-aligned run (anchors 0.21 ms apart). It
 also has the largest detection wait (577.99 ms) and the largest standstill

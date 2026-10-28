@@ -51,8 +51,8 @@ segment is the act read minus the pre read.
 
 ## The B2 numbers, regenerated
 
-The deck's spin-latency figure (per-byte interrupt against the FIFO
-watermark) plots these two runs; from this tree:
+The spin-latency comparison (per-byte interrupt against the FIFO
+watermark) is these two runs; from this tree:
 
 ```
 $ just diag-actseg <runs>/sl-i13 <runs>/sl-i14w1 --survival
