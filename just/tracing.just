@@ -18,63 +18,30 @@ trace-gen-check:
     python3 {{TRACE_GEN}} check
     python3 {{TRACE_GEN}} sites > /dev/null && echo "trace-gen-check: every marker has a call site"
 
-# The island joins the demo domain exactly as `just island` does (scripts/env.sh,
-# the same zephyr.exe), so run `just autoware` and `just demo` beside it for the
-# demo's island half, or use `just trace-demo`, which does all three. The image
-# writes the RAM buffer at exit (--stop_at, SIGTERM or Ctrl-C) to <out>; <out>.meta
-# records what the buffer cannot hold about itself: the image's sha256 and the
-# source revision.
+# The native_sim island on the domain scripts/env.sh sets (the same
+# zephyr.exe as `just zephyr-run`). The image writes the RAM buffer at exit
+# (--stop_at, SIGTERM or Ctrl-C) to <out>; <out>.meta records what the
+# buffer cannot hold about itself: the image's sha256 and the source revision.
 #
 # Run the native_sim island for a bounded time (host seconds) and dump its trace.
-trace-native secs="120" out=(TRACE_DIR / "island.trace"): (_not-running "demo/.island.pgid" "island") (_island-image-check "zephyr")
+trace-native secs="120" out=(TRACE_DIR / "island.trace"): (_not-running "build/.island.pgid" "island") (_island-image-check "zephyr")
     #!/usr/bin/env bash
     source scripts/env.sh
     set -e
     mkdir -p "$(dirname "{{out}}")"
     : > "{{out}}"   # the image opens an existing file (see island_trace.h)
     just _trace-meta "{{out}}" build-zephyr/zephyr/zephyr.exe
-    ps -o pgid= -p $$ | tr -d ' ' > demo/.island.pgid
+    mkdir -p build
+    ps -o pgid= -p $$ | tr -d ' ' > build/.island.pgid
     echo "trace-native: island for {{secs}} s -> {{out}} (log {{out}}.log)"
     set +e
     python3 scripts/sntp-server.py >> tmp_sntp.log 2>&1 &  # phase8-W18: the epoch (prj.conf)
     ./build-zephyr/zephyr/zephyr.exe --stop_at={{secs}} --trace-out="$PWD/{{out}}" > "{{out}}.log" 2>&1
     rc=$?
-    rm -f demo/.island.pgid
+    rm -f build/.island.pgid
     grep -a 'island_trace:' "{{out}}.log" || true
     [ -s "{{out}}" ] || { echo "trace-native: no trace written (exit $rc; is tracing in the image? see {{out}}.log)"; exit 1; }
     echo "trace-native: $(stat -c %s "{{out}}") B in {{out}} (island exit $rc)"
-
-# Autoware + a TRACED island + the demo sequence; prints the VERDICT, then checks the trace.
-trace-demo out=(TRACE_DIR / "demo.trace"): (_not-running "demo/.sim.pgid" "sim") (_not-running "demo/.island.pgid" "island") _sim-prereq-check (_island-image-check "zephyr")
-    #!/usr/bin/env bash
-    rm -f tmp_sim.log tmp_island.log
-    mkdir -p "$(dirname "{{out}}")"
-    : > "{{out}}"
-    just _trace-meta "{{out}}" build-zephyr/zephyr/zephyr.exe
-    parallel --lb --halt now,done=1 --termseq {{TERMSEQ}} ::: \
-        "just _svc-sim" \
-        "just _job-traced-island '$PWD/{{out}}'" \
-        "just demo"
-    rc=$?
-    # the island dumps on SIGTERM; give the exit hook a moment to land
-    for _ in 1 2 3 4 5; do pgrep -f 'build-zephyr/zephyr/zephyr.exe' >/dev/null || break; sleep 1; done
-    echo "== demo exit $rc; island trace: $(stat -c %s "{{out}}" 2>/dev/null || echo 0) B in {{out}}"
-    grep -a 'island_trace:' tmp_island.log || true
-    python3 {{TRACE_PY}} check "{{out}}"
-    trc=$?
-    exit $(( rc != 0 ? rc : trc ))
-
-[private]
-_job-traced-island out:
-    #!/usr/bin/env bash
-    set -e
-    just _wait-sim > /dev/null
-    source scripts/env.sh
-    ps -o pgid= -p $$ | tr -d ' ' > demo/.island.pgid
-    python3 scripts/sntp-server.py >> tmp_sntp.log 2>&1 &  # phase8-W18: the epoch (prj.conf)
-    # phase8-W29: the console also goes to tmp_island.stamped.log with host
-    # stamps, which show the island clock's lag (rtss-work-2026-demo:docs/takeover-trace.md, 8)
-    exec ./build-zephyr/zephyr/zephyr.exe --trace-out="{{out}}" 2>&1 | python3 -u tools/board/stamp.py tmp_island.log tmp_island.stamped.log
 
 [private]
 _trace-meta out image:

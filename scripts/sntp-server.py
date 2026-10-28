@@ -11,7 +11,7 @@ CONFIG_NROS_SNTP_SERVER names ("127.0.0.1:12323").
 It answers every request with this host's CLOCK_REALTIME. The recipes start
 it in the background and then `exec` zephyr.exe, so its parent IS the island;
 it exits once it is reparented, i.e. when the island has gone, however it was
-stopped (demo-down, the timeline's stop-island.sh, Ctrl-C).
+stopped (Ctrl-C, or the end of trace-native).
 
     python3 scripts/sntp-server.py [host:port]      # default 127.0.0.1:12323
 """

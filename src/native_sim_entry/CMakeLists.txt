@@ -1,6 +1,6 @@
-# Zephyr native_sim entry -- the island the demo runs (`just zephyr-build`,
-# `just demo-all`): all four ported Autoware nodes in one zephyr.exe, on
-# Cyclone DDS, joining Autoware's domain directly.
+# Zephyr native_sim entry (`just zephyr-build`): all four ported Autoware
+# nodes in one zephyr.exe, on Cyclone DDS, joining Autoware's domain directly
+# (the legacy Cyclone demo's island; that demo is retired, phase 14).
 #
 #   west build -b native_sim/native/64 -d build-zephyr src/native_sim_entry \
 #     -- -DCONF_FILE="prj.conf;prj-cyclonedds.conf" -DZEPHYR_EXTRA_MODULES=<nano-ros>

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Source me: the environment the demo runs in.
+# Source me: the environment the island's host-side recipes run in.
 #
 #   source scripts/env.sh
 #
 # ONE spelling, read by two consumers: `.envrc` (an interactive shell, through
-# direnv) and the demo recipes (`_svc-sim`, `_svc-island`, `_scenario`), which
-# source it themselves. The recipes used to ASSUME direnv had run. A shell it
+# direnv) and the recipes that run the island on the host (`trace-native`,
+# `scripts/ienv.sh`), which source it themselves. The recipes used to ASSUME direnv had run. A shell it
 # never touched -- CI, a script, an agent, or a checkout whose .envrc was not
 # `direnv allow`ed -- reached `play_launch launch` with no Autoware on
 # AMENT_PREFIX_PATH and died on "Package 'autoware_launch' not found".
@@ -95,12 +95,6 @@ else
     echo 'env: MISSING Autoware 1.5.0 (/opt/autoware/1.5.0) -- the sim recipes will fail' >&2
 fi
 
-# -- Demo overlay: domain_bridge + the MRM-shadowing tier4_system_launch ------
-# (built by `just demo-host-ws`; this is what disables Autoware's stock MRM)
-if [ -f "$_island_root/demo/host_ws/install/setup.bash" ]; then
-    source "$_island_root/demo/host_ws/install/setup.bash"
-fi
-
 # -- play_launch (runs Autoware; installed by `just setup`) ------------------
 # pip installs land in ~/.local/bin, which is not always on PATH.
 case ":$PATH:" in
@@ -148,28 +142,12 @@ export -n NANO_ROS_ROOT
 # ROS env otherwise shadows the SDK lib at runtime -- porting-notes env entry).
 export NROS_CYCLONEDDS_HOME="${NROS_CYCLONEDDS_HOME:-$HOME/.nros/sdk/cyclonedds/0.10.5-nros1}"
 
-# -- Demo graph env (single domain, shared cyclone config) -------------------
-# Direct-connection structure: Autoware, the island, and every CLI tool talk
-# on domain 10 -- no domain bridges. The shared config gives every host
-# participant a predictable participant index (auto, range 120) so the
-# multicast-less native_sim island's unicast 127.0.0.1 peer scan can
-# discover it (rationale in demo/cyclonedds.xml). The ZEPHYR island's
-# profile is compiled in (see the justfile note on it) and ignores this; the
-# NATIVE island reads CYCLONEDDS_URI, so it gets this one.
+# -- Graph env (one domain) ---------------------------------------------------
+# Autoware's domain and RMW for the native and native_sim islands. The
+# ZEPHYR island's Cyclone profile is compiled in (the justfile note on it);
+# the shared host profile of the retired legacy demo (demo/cyclonedds.xml,
+# phase 14) is gone, so a host participant uses Cyclone's defaults.
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 export ROS_DOMAIN_ID=10
-export CYCLONEDDS_URI="file://$_island_root/demo/cyclonedds.xml"
-
-# -- Demo participant marker -------------------------------------------------
-# `just demo-down` sweeps leftover demo processes by this variable. It is set
-# only where a demo process is launched (every launcher sources this file in
-# its own subshell), never by direnv: .envrc sources this file into the
-# interactive shell, and anything started from that shell -- an editor, a
-# Claude Code session -- would otherwise look like a demo participant. The
-# sweep used to key on CYCLONEDDS_URI, which direnv does export, and it
-# TERMed then KILLed a Claude Code session twice on 2026-09-28.
-if [ -z "${DIRENV_IN_ENVRC:-}" ]; then
-    export SAI_DEMO_RUN="$_island_root"
-fi
 
 unset _island_root

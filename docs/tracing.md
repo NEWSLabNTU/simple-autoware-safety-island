@@ -247,7 +247,6 @@ is required again. No marker is exempted by name alone.
 | `just trace-gen` | regenerate the header and table from the model; check every marker has a call site |
 | `just trace-gen-check` | fail if the committed header or table is stale, or a marker has no call site |
 | `just trace-native [secs] [out]` | run the native_sim island for `secs` host seconds (`--stop_at`) on the demo domain. The image writes the buffer to `out` at exit (`--trace-out=`, an `ON_EXIT` native task). Default `build/trace/island.trace` |
-| `just trace-demo [out]` | Autoware, a traced island and the demo sequence (as `demo-all`). Prints the VERDICT, then runs `trace-check` on the dump |
 | `just trace-decode <file> [zephyr]` | event counts and bytes, the provenance, the first 60 marker/heartbeat records, and `<file>.perfetto.json` for ui.perfetto.dev |
 | `just trace-check <file> [zephyr]` | PASS only if: the decode is clean; the provenance names `markers.json`'s table; every marker is seen or exempted by a confirmed parameter; heartbeats are contiguous from 0; and (native_sim) the last recorded heartbeat is the last one emitted, i.e. the buffer did not fill early |
 | `just trace-board [out] [elf]` | phase8-W17: `tools/board/readout.py --target board`: halt, read `ram_tracing` and the heartbeat and window counters over SWD (pyocd, attach mode), resume; every address from the ELF's symbol table; the buffer wrapped in the native_sim dump's header; then `trace-check` |
@@ -271,7 +270,8 @@ would have produced.
 
 ## 4. The gate, native_sim demo
 
-`just trace-demo`: host Autoware 1.5.0 planning_simulator, the traced
+`just trace-demo` (retired with the legacy Cyclone demo in phase 14; the
+record below stands): host Autoware 1.5.0 planning_simulator, the traced
 native_sim island on domain 10, `rtss-work-2026-demo:tools/eval/scenario_driver.py`.
 
 The gate run is `just trace-demo build/trace/demo3.trace`, on the final

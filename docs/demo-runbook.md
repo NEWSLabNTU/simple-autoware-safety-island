@@ -13,16 +13,15 @@ here; sections 7 and 9 run in a rtss-work-2026-demo checkout (its README
 says how to clone it), where `just island::<recipe>` runs this repo's
 recipes. A path written `rtss-work-2026-demo:<path>` is in that repo. The
 measurements and the traps behind each setting are in
-rtss-work-2026-demo:demo/l3/README.md; the earlier Cyclone/native_sim demo is
-labelled "Legacy" at the end of this file.
+rtss-work-2026-demo:demo/l3/README.md. The earlier Cyclone/native_sim demo
+(phases 2-7) is retired (phase 14); its recipes are gone.
 
 ## 0. The one rule: a clean shell
 
 This host's login shell is not a clean one. `.envrc` (through
-`scripts/env.sh`) exports the Cyclone RMW and `CYCLONEDDS_URI`, and, once
-`just demo-host-ws` has been built, puts `rtss-work-2026-demo:demo/host_ws/install` (the
-Cyclone-era overlay with the MRM nodes commented out) ahead of
-`/opt/autoware/1.5.0`. From such a shell an Autoware contract check parses
+`scripts/env.sh`) exports the Cyclone RMW, and a shell that ever sourced a
+built copy of the demo overlay (rtss-work-2026-demo:demo/host_ws, the MRM
+nodes commented out) carries it ahead of `/opt/autoware/1.5.0`. From such a shell an Autoware contract check parses
 163 scopes / 33 nodes / 2 manifests instead of 169 / 34 / 4 and every MRM
 hazard reads `hazard-unguarded`, with no message saying why.
 
@@ -32,11 +31,10 @@ hazard reads `hazard-unguarded`, with no message saying why.
   reach the build.
 - Run every Autoware check under `env -i` with only
   `/opt/ros/humble/setup.bash` and `/opt/autoware/1.5.0/setup.bash` sourced,
-  never from a direnv shell. `just l3-check`, the `l3-*` recipes and
+  never from a direnv shell. `just contract-check`, the `l3-*` recipes and
   run-board.sh already do this themselves (rtss-work-2026-demo:just/l3-demo.just `_l3-host`,
-  `l3-check`; rtss-work-2026-demo:demo/l3/container/bin/l3-env).
-- The zenoh path does not need `just demo-host-ws` or `just setup` (both
-  build the Cyclone overlay above); its own overlay is `build/l3-host-ws`.
+  `contract-check`; rtss-work-2026-demo:demo/l3/container/bin/l3-env).
+- The zenoh path's own overlay is `build/l3-host-ws` (section 7).
 
 ## 1. Prerequisites (machine level)
 
@@ -301,13 +299,12 @@ Each of these cost a session on the demo host:
   (trap 8); `l3-env` sets the zenoh RMW after sourcing it.
 - A shared domain is a shared namespace. The demo runs on domain 10. On
   Cyclone, two stacks on one domain leave no participant creatable and every
-  host node dies with `rcl node's rmw handle is invalid` (legacy item below);
+  host node dies with `rcl node's rmw handle is invalid`;
   on zenoh, a second stack on one host needs its own router port and domain
   (rtss-work-2026-demo:demo/l3/README.md, "Run it": `just l3-router 7461`).
 - `pkill -f play_launch` (or any name pattern) hits every project on the
   box, and kills the shell running it when the pattern is in its own command
-  line (trap 11). run-board.sh tears down only its own process groups; for
-  the Cyclone path use `just demo-down`.
+  line (trap 11). run-board.sh tears down only its own process groups.
 - The host overlay shadow above (section 0).
 
 ## Validation record
@@ -340,153 +337,3 @@ SUMMARY w2-e2 encore: PASS; load 16.10 at act; table 8/8 PASS, total 3472.83 of 
 SUMMARY w2-a2 a: PASS; load 20.93 at act; table 6/6 PASS; trace-check PASS (window 2 of the boot); stored 1 (silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 66432 of 107008 B
 SUMMARY w2-b2 b: PASS; load 29.62 at act; table 15/15 PASS, total 15698.33 of 20450.67 ms; trace-check PASS (window 3 of the boot); stored 1 (silence-runtime x1); serial in act 0/0 (overruns/bad frames); heap peak 66432 of 107008 B
 ```
-
-## Legacy: the Cyclone / native_sim demo (phases 2-7)
-
-`just autoware` / `island` / `demo` / `demo-all`, the native and native_sim
-islands on CycloneDDS with Autoware on the host. Superseded by the zenoh
-board path above for the RTSS demo and **not re-validated since
-2026-07-31**; kept because the recipes still exist and the overlay's
-defaults keep it working in principle. Prerequisites beyond section 1: the
-nano-ros SDK CycloneDDS (`~/.nros/sdk/cyclonedds/0.10.5-nros1`, `nros setup`
-provisions it; `$NROS_CYCLONEDDS_HOME` overrides) and `just setup` (which
-also builds the `rtss-work-2026-demo:demo/host_ws` overlay of section 0).
-
-### Island images
-
-```sh
-just build          # native island   -> build/src/native_entry/native_entry
-just zephyr-build   # Zephyr image    -> build-zephyr/zephyr/zephyr.exe
-```
-
-`just build` is green as of 2026-07-31 (verified on the slow machine). It
-needed two fixes, both now committed:
-
-* nano-ros `packages/rmw/cffi/CMakeLists.txt` resolved `../nros-rmw-abi`,
-  which stopped existing when RFC-0054 moved the headers to
-  `packages/core/nros-rmw-abi` -- configure died with
-  `add_subdirectory given source ... which is not an existing directory`.
-  Fixed upstream in nano-ros `c53f65bf2`.
-* `CycloneDDS_DIR` is now pinned by the `build` recipe to the nano-ros SDK
-  Cyclone. With a ROS env sourced (which `.envrc` does), `find_package` picks
-  `/opt/ros/humble`'s Cyclone instead and the link fails on undefined
-  `ddsrt_malloc` / `ddsrt_free` / `ddsrt_strdup`.
-
-`just zephyr-build` was still mid-flight when the machine was abandoned -- it
-recompiles every vendored interface crate (roughly a minute each), so budget
-accordingly on the first run. It has no known failure; it just needs to
-finish.
-
-### Demo overlay
-
-```sh
-just demo-host-ws   # colcon-builds the MRM-shadowed tier4_system_launch
-```
-
-This overlay is what disables Autoware's stock MRM: `rtss-work-2026-demo:demo/host_ws/src/
-tier4_system_launch/launch/system.launch.xml` keeps the upstream file shape
-with the MRM operator and handler nodes commented out, so the island is the
-only MRM path. (The domain_bridge checkout is gone -- the direct-connection
-restructure removed the bridges and the relay entirely.)
-
-### The run itself (validated 2026-07-31, direct connection)
-
-The island sits directly on Autoware's domain 1: no bridges, no relay. Its
-`mrm_state` and emergency commands reach `vehicle_cmd_gate` (and the RViz
-AutowareStatePanel -- the MRM row goes red live) natively. Blocking recipes
--- one terminal each, Ctrl-C (or exit) tears the recipe's whole process
-tree down; `just demo-down` is crash cleanup only:
-
-```sh
-just autoware        # 1. planning_simulator, domain 1, stock MRM off
-                     #    (blocks; prints "Startup complete" when ready)
-just island          # 2. the island, domain 1 direct (blocks)
-just demo            # 3. waits for the sim, then drive -> heartbeat fault ->
-                     #    island MRM stop -> revive -> resume -> VERDICT
-
-just demo-all        # all three, one command (add `native` for the native island)
-just demo-down       # crash cleanup (recorded pgid groups + orphan sweep)
-```
-
-Expected outcome, from the validated runs (2026-07-31, twice): the vehicle
-drives at ~4.3 m/s, the availability heartbeat is cut by SIGSTOPping the
-`converter_node` process (the `/system/operation_mode/availability`
-publisher -- resolved from the live graph by the scenario), the island goes
-`MRM_OPERATING / EMERGENCY_STOP` within 0.5 s and the vehicle stops
-(4.26 -> 0.00 m/s); the process is then SIGCONTed, the island returns to
-`NORMAL`, and the vehicle resumes on its own -- `VERDICT: PASS`.
-
-If it fails, the logs to read are `tmp_sim.log` and `tmp_island.log`
-(repo root, gitignored).
-
-Discovery contract (the part that bit repeatedly): the native_sim island is
-multicast-less (NSOS breaks cyclone's multicast waitset) and its sockets
-only reach loopback-advertised locators, so EVERY host participant must run
-the shared `demo/cyclonedds.xml` (lo-pinned, `ParticipantIndex auto`,
-`MaxAutoParticipantIndex 120`) -- `.envrc` exports it. The island's own
-profile is compile-time: `CONFIG_NROS_CYCLONE_CONFIG_XML` in
-`src/native_sim_entry/prj-cyclonedds.conf` (nano-ros issue 0367 wired the
-knob), plus a 256 MiB malloc arena.
-
-The pthread mutex/cond pools used to be part of that sizing story and no
-longer are. Cyclone took a pool mutex per DDS entity and per addrset, so
-joining the full ~40-participant graph exhausted 16384 slots ~19 s in and
-died as an anonymous `abort()` (nano-ros issue 0371); the pools had been
-walked 256 -> 16384 -> 131072 chasing graph size. Cyclone on Zephyr now
-uses a native ddsrt sync backend (embedded `k_mutex`/`k_condvar`, nano-ros
-issue 0496), takes no pool slots at all, and the knobs are back at the 256
-default. If you ever see the pool named in an abort again, that backend is
-not in the build.
-
-### Open items of that path
-
-* The model is no longer committed. `just sync` (part of `just setup`, and a
-  dependency of `just build` / `just zephyr-build` / `just board-build`)
-  resolves it into `build/nros/models/safety_island_bringup/system_model.yaml`
-  and costs 0.08 s when nothing changed. It needs play_launch's `resolve`
-  verb (0.8.x and later), and the island contract needs 0.13.0 (the CI pin is 0.16.0), so
-  `just doctor` checks the version.
-* Clock domains: the ported operators integrate `dt` from message stamps;
-  host Autoware stamps are wall-clock while the island clock boots at ~0.
-  The emergency stop operator carries a clamp (its unguarded first MRM tick
-  computed `jerk x 1.8e9` and accelerated the vehicle to the sim cap);
-  the deeper fix (epoch-synced island clock on native_sim) is a nano-ros
-  question.
-* The VNC session on `:1` had died and was restarted by hand; nothing
-  automates that. `just doctor` now checks that an X server answers on the
-  display it prints (`xset q`, else the /tmp/.X11-unix socket) and warns,
-  without failing, when none does (phase9-W22).
-* **This build host is shared, and a DDS domain is a shared namespace.** The
-  demo runs on domain **10** (`ROS_DOMAIN_ID` in `.envrc` +
-  `CONFIG_NROS_CYCLONE_DOMAIN_ID` in the island's Kconfig fragment, which must
-  stay in step because the island bakes its domain at compile time). Another
-  project's Autoware has occupied domains 1-3. Two stacks on one domain
-  contend for participant indices and see each other's topics, and the symptom
-  is not obvious: no cyclone participant can be created on the domain at all,
-  so every host node dies with `rcl node's rmw handle is invalid` and the sim
-  half-starts (18/33 nodes, 0/13 containers) -- which reads as a bug in
-  whatever you changed last. To confirm it is the domain and not your change:
-  a plain `rclpy` node on that domain fails for ANY config including no
-  config, while the same node on an unused domain, or on fastrtps, succeeds.
-* **`just demo-down` is scoped to this checkout; ad-hoc `pkill` is not.** The
-  sweep discriminates on this checkout's `CYCLONEDDS_URI`, so it cleans our
-  ~110 processes and leaves other projects' Autoware alone. A name-based
-  `pkill -f play_launch` hits every project on the box -- one killed this
-  demo's sim mid-scenario (SIGTERM at "driving for 15s"), and conversely
-  another agent's cleanup can kill ours. Prefer `just demo-down`.
-* Two scenario flakes under load, both timing rather than island behaviour.
-  Neither has been chased down; both are worth knowing before reading a FAIL
-  as a regression:
-  - The initial `ChangeOperationMode` (`== 3. engage autonomous ==`) can
-    return `success=False` for all 8 attempts, then engage on attempt 1 the
-    very next run. Observed once; MRM operated and recovered correctly in the
-    same run, so the island was healthy throughout.
-  - `VERDICT: FAIL` on the velocity check when the vehicle is still
-    accelerating at fault-injection time -- e.g. `stop=True v 0.57 -> 0.0`
-    where the check wants a drop from ~4 m/s. The MRM cycle itself
-    (`NORMAL -> MRM_OPERATING -> MRM_SUCCEEDED -> NORMAL`) completes. Read the
-    verdict's own fields before blaming the island: `stop`, `mrm`, `recover`
-    and `resume_v` tell you whether the safety path worked.
-  A fix for the second would be to gate `== 5. cut the heartbeat ==` on the
-  vehicle actually reaching a threshold speed rather than on `DRIVE_SECS`
-  elapsing.

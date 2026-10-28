@@ -28,29 +28,22 @@ nano-ros consumes stock `rosidl_generate_interfaces()` + `package.xml` unchanged
 
 ## Topology
 
-```
-┌───────────────────────────────┐      ┌──────────────────────────────────┐
-│ Autoware (host install,       │      │ Safety island (Zephyr / native)  │
-│ planning_simulator, domain 1, │◄────►│ domain 1: mrm_handler +          │
-│ stock MRM nodes DISABLED)     │direct│ 3 stop operators                 │
-└───────────────────────────────┘ DDS  └──────────────────────────────────┘
-   one shared domain — the island's mrm_state / emergency commands reach
-   the gate (and RViz) with no domain_bridge or relay in the middle
-```
-
-The island joins Autoware's own DDS domain directly. Discovery contract:
-the native_sim island is multicast-less (NSOS), so every host participant
-runs the shared `demo/cyclonedds.xml` (lo-pinned, auto participant index,
-range 120) that the island's unicast peer scan can find; the island's own
-profile is compile-time (`CONFIG_NROS_CYCLONE_CONFIG_XML`, nano-ros issue
-0367).
+The island joins Autoware's own domain (10) directly, with no bridge or
+relay in between: on the board (`zephyr_entry`) as a zenoh-pico client over
+the serial link to a gateway router beside Autoware's rmw_zenoh router
+(docs/serial-link.md); on the host (`native_entry`, `native_sim_entry`) on
+Cyclone DDS, the native_sim island's profile compiled in
+(`CONFIG_NROS_CYCLONE_CONFIG_XML`, nano-ros issue 0367). Autoware's stock
+MRM nodes are disabled by the demo's overlay, so the island is the only MRM
+path; the demo itself (the L3 container, the acts, the CARLA booth) is
+NEWSLabNTU/rtss-work-2026-demo.
 
 - Topic contract: the `topics:` section of
   [safety_island.contract.yaml](src/safety_island_bringup/launch/safety_island.contract.yaml) (SSoT).
 - Safety contracts: nano-ros `[safety]` feature (E2E CRC-32 + sequence, EN 50159
   black-channel model, nano-ros RFC-0028) + execution tiers for the control loop.
-- Demo scenario: kill the Autoware heartbeat → island detects loss → MRM engages →
-  vehicle stops in the planning simulator.
+- Reaction: Autoware's availability heartbeat stops → the island detects the
+  loss → MRM engages → the vehicle stops.
 
 ## Layout
 
@@ -60,10 +53,11 @@ src/
   <vendored msg pkgs>/      verbatim rosidl packages (subset)
   autoware_mrm_*/           ported node pkgs (upstream file layout preserved)
   safety_island_bringup/    system.toml + launch XML + params + resolved model
-  native_entry/             native demo entry (fast dev loop)
-  native_sim_entry/         Zephyr native_sim entry, Cyclone (the demo island)
+  native_entry/             native entry (fast dev loop)
+  native_sim_entry/         Zephyr native_sim entry, Cyclone
   zephyr_entry/             Zephyr board entry, zenoh (MR-CANHUBK344)
-demo/                       Autoware planning_simulator recipes + shared cyclone config
+tools/board/                board tooling: SWD readout, violations, probe
+tools/diag/                 the spin-latency diagnostic image
 docs/
   roadmap/                  phase doc — plan + acceptance
   porting-notes.md          rclcpp→nano-ros friction log (deliverable!)
@@ -73,8 +67,8 @@ docs/
 
 ## Prerequisites
 
-- ROS 2 Humble (`.msg` parsing by the codegen, and the host-side demo tools).
-- Autoware 1.5.0 host install (`/opt/autoware/1.5.0`) for the demo.
+- ROS 2 Humble (`.msg` parsing by the codegen, and the host-side tools).
+- Autoware 1.5.0 host install (`/opt/autoware/1.5.0`) (the doctor checks it).
 - nano-ros -- pinned as the `third-party/nano-ros` submodule, which wins
   over a sibling checkout or an inherited `$NANO_ROS_ROOT` (resolution order
   in `scripts/env.sh`; an override needs `NANO_ROS_ALLOW_EXTERNAL_ROOT=1`).
@@ -83,10 +77,10 @@ docs/
   Provides the `nros` CLI and the cmake package.
 - `just` (task runner), `direnv` (optional but assumed by `.envrc`).
 - play_launch — **installed by `just setup`**, not a manual prerequisite. It
-  runs Autoware for the demo; >= 0.20.2 (the CI pin) is required. To install from a source
+  checks the island's contract; >= 0.20.2 (the CI pin) is required. To install from a source
   checkout instead of the package index: `PLAY_LAUNCH_REPO=<path> just setup`.
 
-`direnv allow` sources ROS 2, Autoware, the demo overlay and nano-ros, and
+`direnv allow` sources ROS 2, Autoware and nano-ros, and
 reports anything missing; `just doctor` gives the same verdict on demand.
 
 ## Quick start (native island)
@@ -96,14 +90,14 @@ zenoh in a container) is set up and run by [docs/demo-runbook.md](docs/demo-runb
 The native island below is the fast development loop.
 
 ```sh
-just setup        # install play_launch, demo overlay, resolve the system model
+just setup        # install play_launch, resolve the system model
 just build        # cmake configure + build (native)
 just run          # boot the island against the native board
 ```
 
 Zephyr variant: `just zephyr-build && just zephyr-run` (host tooling needs
 `just host-env`). Phase docs: [phase-1](docs/roadmap/phase-1-safety-island-port.md)
-(ports), [phase-2](docs/roadmap/phase-2-simple-demo-host-autoware.md) (the demo),
+(ports), [phase-2](docs/roadmap/phase-2-simple-demo-host-autoware.md) (the legacy Cyclone demo, retired),
 [phase-3](docs/roadmap/phase-3-canhubk344-real-silicon.md) (NXP MR-CANHUBK344 —
 S32K344 under Zephyr; the image builds and links, no hardware run yet),
 [phase-4](docs/roadmap/phase-4-link-security.md) (what protects the island's
@@ -114,67 +108,6 @@ the CARLA booth demo, the acts, the experiment runs, phases 6-9) live in
 [NEWSLabNTU/rtss-work-2026-demo](https://github.com/NEWSLabNTU/rtss-work-2026-demo),
 which holds this repo as its submodule `third-party/safety-island`; this
 repo's docs cite its files as `rtss-work-2026-demo:<path>`.
-
-## The legacy Cyclone demo (validated 2026-07-31: PASS, 3.90 -> 0.00 m/s; not re-validated since)
-
-Host Autoware 1.5.0 (`/opt/autoware/1.5.0`) + the island; stock MRM nodes are
-shadowed out, so the island is the ONLY MRM path.
-
-Three parts, one terminal each — every recipe **blocks** on its services and
-tears its whole process tree down when it exits or is Ctrl-C'd (no detached
--up/-down pairs, no orphans). RViz renders on the VNC display
-(`$VNC_DISPLAY`, default `:1`; start one with `vncserver :1`):
-
-```sh
-just setup          # once: install play_launch, build the demo overlay
-                    #       (MRM-shadowed tier4_system_launch), resolve the model
-
-just autoware       # 1. Autoware planning_simulator, stock MRM OFF
-                    #    (blocks; prints "Startup complete" when ready)
-just island         # 2. the island, directly on domain 1 (blocks)
-just demo           # 3. waits for the sim, then drive -> heartbeat fault ->
-                    #    island MRM stop -> revive -> resume -> VERDICT
-
-just demo-all       # all three in one command -> VERDICT (exit 0 = PASS)
-just demo-down      # crash cleanup only (recorded groups + orphan sweep)
-```
-
-Every multi-process recipe is a foreground **GNU parallel** supervisor:
-each service is its own process-group leader, and recipe exit — the
-scenario finishing, a service dying, or Ctrl-C — tears the whole group
-down (`--termseq` TERM→KILL). Normal teardown is simply Ctrl-C;
-`just demo-down` exists for crashed supervisors.
-
-Variants: `just demo-all native` / `just island native` (native island
-instead of the Zephyr native_sim image). Autoware is launched with
-play_launch (>= 0.20.2, the CI pin; 0.5.x stalls on the composable
-containers); `just doctor` checks the environment.
-
-### Demo sequence & timeline
-
-| t | step | visible in RViz |
-| --- | --- | --- |
-| 0 s | wait for the sim stack (ADAPI routing up) | map |
-| ~1 s | `/initialpose` published | vehicle appears |
-| ~6 s | goal published → route SET | route ribbon |
-| ~10 s | `change_to_autonomous` | mode AUTONOMOUS |
-| T₀ | velocity > 0 | **vehicle drives (~4 m/s)** |
-| T₀+15 s | availability publisher SIGSTOPped — heartbeat cut | — |
-| **T₀+15.5 s** | island heartbeat timeout (0.5 s) → `MRM_OPERATING / EMERGENCY_STOP` | **hard decel starts; MRM State panel goes red (live — direct domain)** |
-| T₀+~18 s | jerk-limited ramp (a = −2.5 m/s²) done | **vehicle stopped, hazards on** |
-| T₀+25 s | publisher SIGCONTed — heartbeat revives | — |
-| T₀+~27 s | island MRM back to `NORMAL` | MRM State Inactive |
-| T₀+~35 s | trajectory follower resumes on its own | **vehicle drives again** |
-| +~40 s | `VERDICT: PASS/FAIL` printed | — |
-
-The recovery leg is part of the verdict: PASS requires the MRM stop, the
-island returning to `NORMAL` after the heartbeat revives, AND the vehicle
-moving again. `ARRIVE_SECS=300 just demo-all` additionally waits for the
-route to reach `ARRIVED` (off by default — the sample route's intersection
-stop lines can hold the planner for minutes, which is Autoware behavior,
-not the island's). Drive longer before the fault: `DRIVE_SECS=30`.
-The 0.5 s reaction time is the ported handler's upstream
-`timeout_operation_mode_availability` default.
 
 ## Porting conventions
 

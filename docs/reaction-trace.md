@@ -64,7 +64,8 @@ helpers. It adds a time-stamped JSON-lines log with these records:
 
 `rtss-work-2026-demo:experiments/reaction-trace/run.sh <id>` runs one traced run: host Autoware,
 the traced island, and the injector. It is `just trace-demo` with the
-injector in place of the scenario.
+injector in place of the scenario. (`trace-demo` and the legacy Cyclone demo
+recipes it ran on retired in phase 14; the runs below stand as recorded.)
 
 **Aligning wall and simulated time.** The trace is in simulated time. The
 injector's log is in host wall time. `extract.py` aligns them on the first
