@@ -6,7 +6,7 @@ in the second after.
   swd_where.py <zephyr.elf>
 
 Attaches without reset (pyocd, MCU-Link). PC and LR are named with the SDK's
-addr2line (tools/timeline/spin_diag.py find_addr2line: $ADDR2LINE, then
+addr2line (tools/board/spin_diag.py find_addr2line: $ADDR2LINE, then
 $ZEPHYR_SDK_INSTALL_DIR, then the nros store). A heartbeat that does not move
 with the core resumed means the island is wedged; IPSR (xPSR & 0x1ff) != 0
 means it was halted inside an exception handler.

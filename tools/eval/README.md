@@ -1,4 +1,4 @@
-# tools/timeline - the live timeline (phase 8, unit W7)
+# tools/eval - the evaluation: the live timeline and the acts (phase 8, unit W7)
 
 One JSON Lines event stream (`t_mono_ns`, `source`, `kind`, `hazard`,
 `rung`, `marker`, `value`) fed by the contract-generated probe and logger,
@@ -10,12 +10,16 @@ arithmetic (`play_launch check --explain`); observed edges from events.
 Design: `docs/roadmap/phase-8-rtss-work-demo.md`, D7. Results:
 `docs/takeover-trace.md`.
 
+The board half (the event schema and the declared side in `tlcommon.py`,
+the SWD readers, the probe) is `tools/board/` (its README); everything here
+imports `tlcommon` from there. This half leaves with the evaluation
+(phase 14, P2). `python3 tools/eval/selftest.py` runs both halves'
+selftests (CI).
+
 ## The pieces
 
 | file | what it is |
 |---|---|
-| `tlcommon.py` | the event schema (module doc), the JSONL writer and tailer, the declared side (resolved SystemModel, the contract sidecar's `when:`/`window:`/`exit:`/`entry_speed`, the `--explain` table parser), the braking-profile arithmetic; `selftest` for CI |
-| `probe.py` | the probe and logger: subscribes to every topic named in a `when:` (types from the resolved model), writes a `predicate` event on each change of truth, plus the samples the lanes and the alignment need |
 | `scenario.py` | `gate`: execs the availability gate, `demo/host_ws/src/availability_gate` (C++, phase8-W16; Autoware's availability on `.../availability_raw` republished at 10 Hz on `/system/operation_mode/availability` with `autonomous &= !odd_exit`); `press <button>` / `buttons` (a window): odd-exit, odd-enter, takeover (MANUAL via `/control/control_mode_request`), hpc-loss (SIGSTOP the gate), hpc-restore; `run a\|b\|encore`: the whole act, scripted, one VERDICT |
 | `merge.py` | island trace markers onto host CLOCK_MONOTONIC: coarse offset from anchor 1, refined on every publish/receipt pair, checked by anchor 2 (the W3 method, docs/reaction-trace.md) |
 | `analysis.py` | declared against observed for one run: the edges, the observed terms, one verdict per declared bar, the rung the run ended on, the longest availability gap (the `hpc_alive` precondition); a row per declared `max_transport` edge the trace observes (phase10-B8); the settle at the observed entry speed, its difference from the profile as the measured response delay, and profile + `response` once declared (phase10-B2); each row's `checked by` (checker sum, runtime monitor, trace) |
@@ -23,10 +27,7 @@ Design: `docs/roadmap/phase-8-rtss-work-demo.md`, D7. Results:
 | `timeline.py` | the booth view: pyqtgraph, tails the run directory at 20 Hz; a rung turns red when its dwell passes the checker's `ends within` (window + the first hop of the route below, phase8-W12); the entry-speed flag |
 | `run-native.sh` | one traced native_sim run with Autoware, everything above, into `build/timeline/<id>/` |
 | `run-board.sh` | one traced act with the island off the host (phase8-W17): `--target board` flashes the ELF with pyocd, starts the gateway on the UART (`just l3-peer`), resets, waits for the island, starts Autoware in the container, the gate, the probe and the act, reads the trace over SWD, and merges and analyses into `build/timeline/<id>/` as `run-native.sh` does; `--target qemu` does the same against the QEMU island behind the same gateway config (island face on a unix socket) and reads over the QEMU monitor; `--dry-run` prints the steps. A preflight before flashing (phase9-U5, C6: host overlay, model freshness, no `sai-l3*` container, the probe free, the tty free with a bounded `fuser`, the 1-min load under `RB_LOAD_MAX`) refuses with one `REFUSED <reason>` line and exit 3; the load is checked again at the act; a run without its probe or gate reads `VERDICT: VOID` (exit 4); docs/tracing.md has the table. The board steps ran on the S32K344 in phase8-W8 (docs/takeover-trace.md section 9; `just l3-traced-act`) |
-| `terms.py` | the board budget terms over a round of runs (link, tick spacing, in-tick work, the velocity limit on the expiry tick, ...; phase8-W30, moved here from the W30 re-analysis directory); `--propose` applies the measurement rule and prints each budget: max x 1.2 rounded up to the next ms, the timer period without margin (tick = period + lateness x 1.2), call_mrm = tick + work (phase10-B4) |
-| `readout.py` | the island's RAM trace buffer and counters off a running target, every address from the ELF: pyocd over SWD on the board (phase8-W8), the QEMU monitor on QEMU; wraps the buffer in the native_sim dump's header |
-| `spin_diag.py`, `run-diag.sh`, `actseg.py` | DIAG (spin latency, phase9-U3): read and decode `island_spin_diag` over SWD; one act on the diag image (`just board-build-diag`) with the diag read before and after the act (`just diag-run`); the late spins of the act segment (`just diag-actseg`). experiments/spin-latency/README.md |
-| `testdata/explain.txt` | the checker's settle-derived lines and budget table for the live contract (play_launch phase 84, phase8-W12), for `tlcommon.py selftest` |
+| `run-diag.sh`, `actseg.py` | DIAG (spin latency, phase9-U3; the SWD reader `spin_diag.py` is in tools/board): one act on the diag image (`just board-build-diag`) with the diag read before and after the act (`just diag-run`); the late spins of the act segment (`just diag-actseg`). experiments/spin-latency/README.md |
 
 ## Dependencies
 
@@ -46,8 +47,8 @@ resolved model.
 One run, scripted (Autoware, the traced native_sim island, gate, probe, act):
 
 ```
-tools/timeline/run-native.sh a|b|encore <id>      # -> build/timeline/<id>/
-python3 tools/timeline/render.py build/timeline/<id> --table
+tools/eval/run-native.sh a|b|encore <id>      # -> build/timeline/<id>/
+python3 tools/eval/render.py build/timeline/<id> --table
 ```
 
 By hand, one terminal each, into one run directory (default

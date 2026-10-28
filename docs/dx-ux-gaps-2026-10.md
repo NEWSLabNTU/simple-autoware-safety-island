@@ -68,7 +68,7 @@ checkout is itself gap 3.1.
 - What: `call_mrm: 206ms` is link 57 + tick 118 + work 31 folded into one
   node-path latency because rlm/play_launch 0.13.0 has no place for each
   term (CON:176-194). The tick share is duplicated by hand as
-  `analysis.TICK_MS` in tools/timeline (TT section 10, "rlm has no key for a
+  `analysis.TICK_MS` in tools/eval (TT section 10, "rlm has no key for a
   timer's release jitter"). After the window's deadline the 57 ms link term
   is pure slack, charged anyway.
 - Evidence: TT:759-800 (Where each term is stated), TT:922-944 (F1-F5);
@@ -693,7 +693,7 @@ checkout is itself gap 3.1.
 ### 6.1 No visitor UI: the acts are presenter-run shell scripts
 
 - Hits: USER-BOOTH.
-- What: "today an act is a `tools/timeline/run-board.sh` invocation by the
+- What: "today an act is a `tools/eval/run-board.sh` invocation by the
   presenter, and the plot is rendered from the run directory afterwards";
   the proposal promises that visitors trigger each act.
 - Evidence: P9:40-49 (W1), P9:133-137 (W11).
@@ -704,7 +704,7 @@ checkout is itself gap 3.1.
 - What: run-board.sh flashes (pyocd), starts the router and gateway,
   resets the board, waits for the island, starts the container, the gate,
   the probe and the act, then reads the trace over SWD (core halted
-  0.18-0.23 s) (tools/timeline/run-board.sh:19-31; docs/tracing.md:596-599).
+  0.18-0.23 s) (tools/eval/run-board.sh:19-31; docs/tracing.md:596-599).
   No reset-between-acts sequence exists, and what the visitor sees while
   the board resets is undesigned.
 - Sev: BLOCKS for a booth cadence. Owner: SAI. Tracked: P9 W1, W2.
@@ -761,7 +761,7 @@ checkout is itself gap 3.1.
   under `flock /tmp/claude-1000005/sai-demo.lock`; the script does not take
   the lock itself, and that path exists only in this machine's agent
   sandbox. A booth machine (the Orin) will not have it.
-- Evidence: tools/timeline/run-board.sh:38-39; TT:432, 565, 958.
+- Evidence: tools/eval/run-board.sh:38-39; TT:432, 565, 958.
 - Sev: COSMETIC to HOURS (two concurrent acts corrupt each other).
   Owner: SAI. Tracked: UNTRACKED. Cheap.
 

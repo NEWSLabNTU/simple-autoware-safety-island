@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The proof cast of the CARLA island demo (docs/design/carla-island-demo.md,
-# unit C8): one act on the board with CARLA (tools/timeline/run-board.sh
+# unit C8): one act on the board with CARLA (tools/eval/run-board.sh
 # --sim carla), the dashboard (demo/carla/cast_dashboard.py) on a TurboVNC
 # display, recorded with ffmpeg x11grab, and stills at the act's transitions.
 #
@@ -49,7 +49,7 @@ xosc="$(readlink -f "${RB_XOSC:-$xosc_default}")"
 ws="${RB_HOST_WS:-$repo/build/l3-host-ws/install}"
 rm -f "$out/$id".{mp4,events.jsonl,meta} "$out/$id"-[0-9][0-9]-*.png
 
-tools/timeline/run-board.sh --sim carla "${args[@]}" > "$out/$id.run-board.out" 2>&1 &
+tools/eval/run-board.sh --sim carla "${args[@]}" > "$out/$id.run-board.out" 2>&1 &
 rb=$!
 echo "cast: run-board.sh pid $rb (log $dir/run.log, also $out/$id.run-board.out)"
 dash="" ff=""
@@ -90,9 +90,9 @@ wait $rb; rc=$?
 # a booth image (CONFIG_ISLAND_LED): the LED record against the trace (C5)
 elf=build-board/zephyr/zephyr.elf
 for ((i = 0; i < ${#args[@]} - 1; i++)); do [ "${args[i]}" = --elf ] && elf="${args[i + 1]}"; done
-if [ -s "$dir/island.jsonl" ] && python3 tools/timeline/led_readout.py --elf "$elf" --dry-run > /dev/null 2>&1; then
-    timeout -s KILL 120 python3 tools/timeline/led_readout.py --elf "$elf" > "$dir/led.txt" 2>&1
-    python3 tools/timeline/led_vs_trace.py "$dir" > "$dir/led_vs_trace.md" 2>&1
+if [ -s "$dir/island.jsonl" ] && python3 tools/board/led_readout.py --elf "$elf" --dry-run > /dev/null 2>&1; then
+    timeout -s KILL 120 python3 tools/board/led_readout.py --elf "$elf" > "$dir/led.txt" 2>&1
+    python3 tools/eval/led_vs_trace.py "$dir" > "$dir/led_vs_trace.md" 2>&1
     echo "cast: $(tail -n1 "$dir/led_vs_trace.md") ($dir/led_vs_trace.md)"
 fi
 

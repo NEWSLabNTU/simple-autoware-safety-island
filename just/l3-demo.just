@@ -181,9 +181,9 @@ l3-rviz config="/opt/autoware/1.5.0/share/autoware_launch/rviz/autoware.rviz":
 # The QEMU island (an existing image; default build-qemu) into a router on the
 # host: guestfwd 10.0.2.100:7447 -> {{host}}:{{port}} (bounded). phase8-W3
 # monitor=<path>: QEMU's monitor on that unix socket, for the trace readout
-# (tools/timeline/readout.py --target qemu). fwd=<target>: the guestfwd
+# (tools/board/readout.py --target qemu). fwd=<target>: the guestfwd
 # target instead of tcp:{{host}}:{{port}}, e.g. "cmd:socat - UNIX-CONNECT:<sock>"
-# to reach a router's unix-socket listener (tools/timeline/run-board.sh puts
+# to reach a router's unix-socket listener (tools/eval/run-board.sh puts
 # the island behind the gateway that way). phase8-W17
 l3-island-qemu elf="build-qemu/zephyr/zephyr.elf" port="7447" secs="60" host="127.0.0.1" monitor="" fwd="":
     #!/usr/bin/env bash
@@ -216,8 +216,8 @@ l3-check:
         bash -c 'source /opt/ros/humble/setup.bash && exec .github/check-contracts.sh'
 
 # ---- phase8-W7: the takeover timeline ------------------------------------------
-# tools/timeline/README.md. One traced native_sim run, everything at once:
-#   tools/timeline/run-native.sh a|b|encore <id>      -> build/timeline/<id>/
+# tools/eval/README.md. One traced native_sim run, everything at once:
+#   tools/eval/run-native.sh a|b|encore <id>      -> build/timeline/<id>/
 # By hand, one terminal each, into one run directory (default build/timeline/live);
 # Autoware must be launched with
 # operation_mode_availability_topic:=/system/operation_mode/availability_raw:
@@ -228,24 +228,24 @@ l3-check:
 
 # The contract probe and logger: every `when:` topic and the velocity, to JSONL (blocks). phase8-W7
 l3-probe dir="build/timeline/live":
-    bash -c 'source scripts/env.sh >/dev/null 2>&1; exec python3 tools/timeline/probe.py --out "{{dir}}/probe.jsonl"'
+    bash -c 'source scripts/env.sh >/dev/null 2>&1; exec python3 tools/board/probe.py --out "{{dir}}/probe.jsonl"'
 
 # The scenario controller: gate | buttons | press <button> | run a|b|encore. phase8-W7
 l3-scenario cmd="buttons" arg="" dir="build/timeline/live":
     #!/usr/bin/env bash
     source scripts/env.sh >/dev/null 2>&1
     log="{{dir}}/scenario.jsonl"; [ "{{cmd}}" = gate ] && log="{{dir}}/gate.jsonl"
-    exec python3 tools/timeline/scenario.py {{cmd}} {{arg}} --log "$log"
+    exec python3 tools/eval/scenario.py {{cmd}} {{arg}} --log "$log"
 
 # The live timeline of a run directory (pyqtgraph; blocks). png=<file> renders the static one instead. phase8-W7
 l3-timeline dir="build/timeline/live" png="":
     #!/usr/bin/env bash
-    if [ -n "{{png}}" ]; then exec python3 tools/timeline/render.py "{{dir}}" --out "{{png}}" --table; fi
+    if [ -n "{{png}}" ]; then exec python3 tools/eval/render.py "{{dir}}" --out "{{png}}" --table; fi
     export DISPLAY="${DISPLAY:-{{VNC_DISPLAY}}}"
-    exec python3 tools/timeline/timeline.py "{{dir}}"
+    exec python3 tools/eval/timeline.py "{{dir}}"
 
 # ---- phase8-W17: one traced act with the island off the host ---------------------
-# tools/timeline/run-board.sh: flash, gateway, reset, join, Autoware in the
+# tools/eval/run-board.sh: flash, gateway, reset, join, Autoware in the
 # container, gate, probe, the act, the trace read over SWD (or the QEMU
 # monitor), merged and analysed into build/timeline/<id>/ as run-native.sh
 # does. target=qemu runs the same act against the QEMU island (just
@@ -255,4 +255,4 @@ l3-timeline dir="build/timeline/live" png="":
 #
 # One traced act: a | b | encore, on the board or QEMU, into build/timeline/<id>. phase8-W17
 l3-traced-act act id target="board" elf="" flags="":
-    tools/timeline/run-board.sh --target {{target}} {{ if elf != "" { "--elf " + elf } else { "" } }} {{flags}} {{act}} {{id}}
+    tools/eval/run-board.sh --target {{target}} {{ if elf != "" { "--elf " + elf } else { "" } }} {{flags}} {{act}} {{id}}

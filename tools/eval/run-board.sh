@@ -3,7 +3,7 @@
 # board (the demo) or the QEMU island (the rehearsal) -- and the timeline's
 # inputs, into build/timeline/<id>/ exactly as run-native.sh writes them.
 #
-#   tools/timeline/run-board.sh [options] a|b|encore <run-id>
+#   tools/eval/run-board.sh [options] a|b|encore <run-id>
 #
 #   --target board|qemu   board (default): flash --elf with pyocd, the island
 #                         gateway on the UART (just l3-peer), reset. qemu: boot
@@ -79,8 +79,8 @@
 #      (its "Startup complete")
 #   6. the availability gate ($RB_GATE), the probe ($RB_PROBE)
 #  6b. --late-join only: reset the held island now, then step 4's wait
-#   7. the act ($RB_ACT, after RB_SETTLE s): tools/timeline/scenario.py run
-#   8. the readout: tools/timeline/readout.py (board: pyocd over SWD;
+#   7. the act ($RB_ACT, after RB_SETTLE s): tools/eval/scenario.py run
+#   8. the readout: tools/board/readout.py (board: pyocd over SWD;
 #      qemu: the QEMU monitor) -> island.trace, wrapped; in the same halt the
 #      nano-ros violation record -> violations.txt (phase9-W4)
 #   9. teardown: act helpers, Autoware, the link, the router if this started it
@@ -247,7 +247,7 @@ if [ "$sim" = carla ]; then
     # the act; scenario.py re-arms it (attach, no halt): the encore once the
     # ego drives, a and b a few seconds before the ODD exit (SCENARIO_ODD_FILE,
     # the polygon odd_monitor watches; C5 trace margin)
-    [ "$target" = board ] && export SCENARIO_REARM="python3 tools/timeline/readout.py --target board --elf '$(readlink -f "$elf")' --out /dev/null --rearm-only"
+    [ "$target" = board ] && export SCENARIO_REARM="python3 tools/board/readout.py --target board --elf '$(readlink -f "$elf")' --out /dev/null --rearm-only"
     [ "$rb_trigger" != button ] && [ "$act" != encore ] && export SCENARIO_ODD_FILE="$xosc"
 fi
 # phase11-S7: RB_OVERRUN=<ms>|stall, the encore with the handler's fault tick
@@ -274,7 +274,7 @@ if [ -n "${RB_OVERRUN:-}" ]; then
     # act that waited for the host's load (p11-ov1: full ~166 s before exit,
     # no island marker of the act). The re-armed window opens at the next
     # availability take, a few seconds before the fault.
-    export SCENARIO_FAULT_CMD="python3 tools/timeline/readout.py --target board --elf '$(readlink -f "$elf")' --out /dev/null --rearm-only && python3 tools/timeline/violations.py fault-overrun --elf '$(readlink -f "$elf")' $RB_OVERRUN"
+    export SCENARIO_FAULT_CMD="python3 tools/board/readout.py --target board --elf '$(readlink -f "$elf")' --out /dev/null --rearm-only && python3 tools/board/violations.py fault-overrun --elf '$(readlink -f "$elf")' $RB_OVERRUN"
 fi
 # RB_LATE_RETURN=<ms> (1..100), any act on the board: once the vehicle
 # drives, before the fault, the act writes violations.py late-return <ms>
@@ -291,7 +291,7 @@ if [ -n "${RB_LATE_RETURN:-}" ]; then
     fi
     case "$RB_LATE_RETURN" in [1-9]|[1-9][0-9]|100) ;;
         *) echo "run-board: RB_LATE_RETURN is <ms> (1..100)" >&2; exit 2;; esac
-    export SCENARIO_LATE_CMD="python3 tools/timeline/violations.py late-return --elf '$(readlink -f "$elf")' $RB_LATE_RETURN"
+    export SCENARIO_LATE_CMD="python3 tools/board/violations.py late-return --elf '$(readlink -f "$elf")' $RB_LATE_RETURN"
 fi
 # phase11-S6: RB_INERT=1, act b with a comfortable stop that does not
 # decelerate (violations.py comfortable-inert, written by the act like
@@ -303,11 +303,11 @@ if [ -n "${RB_INERT:-}" ]; then
     [ "$act" = b ] || { echo "run-board: RB_INERT is for act b" >&2; exit 2; }
     [ "$target" = board ] || { echo "run-board: RB_INERT is for the board" >&2; exit 2; }
     [ -z "${RB_OVERRUN:-}" ] || { echo "run-board: RB_INERT and RB_OVERRUN are separate acts" >&2; exit 2; }
-    export SCENARIO_FAULT_CMD="python3 tools/timeline/readout.py --target board --elf '$(readlink -f "$elf")' --out /dev/null --rearm-only && python3 tools/timeline/violations.py comfortable-inert --elf '$(readlink -f "$elf")'"
+    export SCENARIO_FAULT_CMD="python3 tools/board/readout.py --target board --elf '$(readlink -f "$elf")' --out /dev/null --rearm-only && python3 tools/board/violations.py comfortable-inert --elf '$(readlink -f "$elf")'"
 fi
-: "${RB_GATE:=python3 tools/timeline/scenario.py gate --log $dir/gate.jsonl}"
-: "${RB_PROBE:=python3 tools/timeline/probe.py --out $dir/probe.jsonl}"
-: "${RB_ACT:=python3 tools/timeline/scenario.py run $act --log $dir/scenario.jsonl}"
+: "${RB_GATE:=python3 tools/eval/scenario.py gate --log $dir/gate.jsonl}"
+: "${RB_PROBE:=python3 tools/board/probe.py --out $dir/probe.jsonl}"
+: "${RB_ACT:=python3 tools/eval/scenario.py run $act --log $dir/scenario.jsonl}"
 started_router=0
 pids=()
 
@@ -473,7 +473,7 @@ refuse() {  # refuse <reason>: one line, kept in refused.txt
 }
 finish_refused() {  # the record of a refused run, then exit 3
     echo "loadavg_end=$(cut -d' ' -f1-3 /proc/loadavg)" >> "$out.meta"
-    python3 tools/timeline/run_summary.py "$dir" | tee "$dir/summary.txt"
+    python3 tools/eval/run_summary.py "$dir" | tee "$dir/summary.txt"
     exit 3
 }
 load_ok() { awk -v l="$(cut -d' ' -f1 /proc/loadavg)" -v m="$load_max" 'BEGIN { exit !(l + 0 <= m + 0) }'; }
@@ -519,7 +519,7 @@ preflight() {
     local ws; ws="$(host_ws)" || { refuse "no host overlay: $ws/setup.bash missing -- run \`just l3-host-ws\`"; return 1; }
     echo "   host overlay $ws"
     local m
-    m="$(timeout 60 python3 -c 'import sys; sys.path.insert(0, "tools/timeline"); import tlcommon as tl; tl.load_model()' 2>&1)" \
+    m="$(timeout 60 python3 -c 'import sys; sys.path.insert(0, "tools/board"); import tlcommon as tl; tl.load_model()' 2>&1)" \
         || { refuse "${m##*$'\n'}"; return 1; }
     echo "   the model is fresh against its inputs"
     local c rc
@@ -642,10 +642,10 @@ if [ "$keep_boot" = 1 ]; then
     # previous act's teardown stopped Autoware and the gate, so the re-armed
     # window opens when this act's availability stream starts.
     echo "   keep-boot: no reset; re-arming the trace window"
-    if [ "$dry" = 1 ]; then echo "   [dry-run] python3 tools/timeline/readout.py --target board --elf $elf --out $out --rearm-only"
+    if [ "$dry" = 1 ]; then echo "   [dry-run] python3 tools/board/readout.py --target board --elf $elf --out $out --rearm-only"
     else
         # bounded: a pyocd that never exits holds the probe (c4-e1, scenario.py's re-arm)
-        r="$(timeout -s KILL 90 python3 tools/timeline/readout.py --target board --elf "$elf" --out "$out" --rearm-only 2>&1)"; rc=$?
+        r="$(timeout -s KILL 90 python3 tools/board/readout.py --target board --elf "$elf" --out "$out" --rearm-only 2>&1)"; rc=$?
         echo "$r" | sed 's/^/   /'
         [ "$rc" = 0 ] || { refuse "the trace window was not re-armed: $(tail -n1 <<< "$r")"; finish_refused; }
         echo "rearm=$(grep -o 're-arm [0-9]* at uptime [0-9]* ms' <<< "$r")" >> "$out.meta"
@@ -830,7 +830,7 @@ fi
 # phase9-U1: the serial counters at the act's start (attach, no halt), so the
 # readout can say which overruns and bad frames fell inside the act
 if [ "$target" = board ] && [ "$dry" != 1 ]; then
-    python3 tools/timeline/readout.py --target board --elf "$elf" --out "$dir/serial-pre" --serial-only \
+    python3 tools/board/readout.py --target board --elf "$elf" --out "$dir/serial-pre" --serial-only \
         2>&1 | sed 's/^/   /'
 fi
 if [ "$sim" = carla ]; then
@@ -857,13 +857,13 @@ fi
 step "8. the readout ($target)"
 if [ "$dry" = 1 ] && [ -f "$elf" ]; then
     # harmless and worth doing: resolve every address the read will use
-    python3 tools/timeline/readout.py --target "$target" --elf "$elf" --out /dev/null --dry-run | sed 's/^/   /'
+    python3 tools/board/readout.py --target "$target" --elf "$elf" --out /dev/null --dry-run | sed 's/^/   /'
 fi
 if [ "$target" = board ]; then
     # pyocd over SWD, attach mode, the core halted for the read (about 0.2 s)
-    run python3 tools/timeline/readout.py --target board --elf "$elf" --out "$out" --serial-pre "$dir/serial-pre.json"
+    run python3 tools/board/readout.py --target board --elf "$elf" --out "$out" --serial-pre "$dir/serial-pre.json"
 else
-    run python3 tools/timeline/readout.py --target qemu --elf "$elf" --out "$out" --monitor "$mon"
+    run python3 tools/board/readout.py --target qemu --elf "$elf" --out "$out" --monitor "$mon"
 fi
 trc_read=$?
 
@@ -907,15 +907,15 @@ if [ -n "${RB_EXPLAIN:-}" ]; then
     # phase10-B6: the declared budgets of a stated contract (another round's
     # explain.txt), so the table compares with them; the current contract's
     # output is kept beside it
-    python3 -c 'import sys; sys.path.insert(0,"tools/timeline"); import tlcommon as tl; open(sys.argv[1],"w").write(tl.explain_text())' "$dir/explain.current.txt"
+    python3 -c 'import sys; sys.path.insert(0,"tools/board"); import tlcommon as tl; open(sys.argv[1],"w").write(tl.explain_text())' "$dir/explain.current.txt"
     cp "$RB_EXPLAIN" "$dir/explain.txt"
     echo "   declared budgets from RB_EXPLAIN=$RB_EXPLAIN (this tree's contract: $dir/explain.current.txt)"
     echo "explain=$(readlink -f "$RB_EXPLAIN") sha256=$(sha256sum "$RB_EXPLAIN" | cut -d' ' -f1)" >> "$out.meta"
 else
-python3 -c 'import sys; sys.path.insert(0,"tools/timeline"); import tlcommon as tl; open(sys.argv[1],"w").write(tl.explain_text())' "$dir/explain.txt"
+python3 -c 'import sys; sys.path.insert(0,"tools/board"); import tlcommon as tl; open(sys.argv[1],"w").write(tl.explain_text())' "$dir/explain.txt"
 fi
-python3 tools/timeline/merge.py "$out" "$dir" || echo "merge failed: the plot has host events only"
-python3 tools/timeline/render.py "$dir" --table | tee "$dir/table.md"
+python3 tools/eval/merge.py "$out" "$dir" || echo "merge failed: the plot has host events only"
+python3 tools/eval/render.py "$dir" --table | tee "$dir/table.md"
 if [ -n "$void" ]; then
     echo "VERDICT: VOID $void (the scenario's own verdict is not evidence without them)"
     [ -f "$dir/scenario.jsonl" ] && python3 -c 'import json,sys
@@ -932,6 +932,6 @@ for l in open(sys.argv[1]):
         print("VERDICT: %s %s: v at the fault %.2f m/s; %s" % ("PASS" if v["ok"] else "FAIL", e["marker"], v["v0"], v["why"]))' "$dir/scenario.jsonl"
 fi
 # phase9-U1: one line per run, from the files this run wrote
-python3 tools/timeline/run_summary.py "$dir" | tee "$dir/summary.txt"
+python3 tools/eval/run_summary.py "$dir" | tee "$dir/summary.txt"
 [ -z "$void" ] || exit 4
 exit $rc

@@ -12,7 +12,7 @@ garbage.
 
 Input: a native_sim dump (`ISLTRC01` header, written by the image at exit), a
 raw `ram_tracing` read from the board (`--zephyr 4.4`, no header), or such a
-read wrapped in the same header by `wrap` (tools/timeline/readout.py does, with
+read wrapped in the same header by `wrap` (tools/board/readout.py does, with
 the heartbeat counter it read beside the buffer).
 
   island_trace.py decode <file> [--timeline N] [--perfetto out.json]

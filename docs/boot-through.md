@@ -563,7 +563,7 @@ safety island. Island pin bec9aecb8, `features = []` as in W1.
 
 **What left the image, and the reader checked first** (Autoware 1.5.0
 source under `~/repos/autoware/1.5.0-ws`, the demo's `demo/host_ws`
-overlay, `tools/timeline`, `demo/l3/takeover_demo`):
+overlay, `tools/board` and `tools/eval`, `demo/l3/takeover_demo`):
 
 | cut | reader in the demo | why it can go |
 |---|---|---|
@@ -748,7 +748,7 @@ the bound races the drop, which is why some runs list the nodes and some
 do not. On the board the W2 gateway keeps liveliness away from the
 island, and W4 turns discovery off; this was not run against HEAD.
 
-**Regression, W7's acts on native_sim** (`tools/timeline/run-native.sh`,
+**Regression, W7's acts on native_sim** (`tools/eval/run-native.sh`,
 one run each, sequential, under the demo lock, load 16-27 at the start;
 the declared side from play_launch 92043c82):
 
@@ -836,7 +836,7 @@ refused this image first (`CONFIG_NROS_DOMAIN_ID = 0 (what the image bakes;
 from the Kconfig default ...)` against system.toml's 10): its conf stated
 only `CONFIG_NROS_CYCLONE_DOMAIN_ID=10`. prj-cyclonedds.conf now states
 `CONFIG_NROS_DOMAIN_ID=10` as well. W7's acts on it
-(`tools/timeline/run-native.sh`, under the demo lock, load 20-31 at the
+(`tools/eval/run-native.sh`, under the demo lock, load 20-31 at the
 start; the declared side from play_launch bbf9c044):
 
     VERDICT: FAIL a: v at the fault 3.92 m/s; TOR on True, TOR now 1, control mode 4, mrm (3, 2)

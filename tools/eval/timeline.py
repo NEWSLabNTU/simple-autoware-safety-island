@@ -23,6 +23,8 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# tlcommon (the event schema, the declared side) is board tooling: tools/board.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "board"))
 import analysis as an  # noqa: E402
 import render as rd  # noqa: E402
 import tlcommon as tl  # noqa: E402

@@ -37,11 +37,18 @@ jobs:
           .github/check-contracts.sh
       # phase8-W7: the timeline draws its declared bars from the checker's
       # `--explain` table and its stop curve from the same braking-profile
-      # arithmetic. The selftest parses a captured table
-      # (tools/timeline/testdata/explain.txt) and recomputes every settle.
-      - name: timeline tools read the checker's table
+      # arithmetic. The board half's selftest parses a captured table
+      # (tools/board/testdata/explain.txt) and checks every row's terms; the
+      # evaluation half's (tools/eval, phase 14: leaves with the evaluation in
+      # P2) recomputes every settle and checks merge and the run summary.
+      - name: board tools read the checker's table
         shell: bash
         run: |
-          python3 -m py_compile tools/timeline/*.py
-          bash -n tools/timeline/run-native.sh
-          python3 tools/timeline/tlcommon.py selftest
+          python3 -m py_compile tools/board/*.py
+          python3 tools/board/tlcommon.py selftest
+      - name: evaluation tools (tools/eval; moves out in phase 14 P2)
+        shell: bash
+        run: |
+          python3 -m py_compile tools/eval/*.py
+          for s in tools/eval/*.sh; do bash -n "$s"; done
+          python3 tools/eval/selftest.py

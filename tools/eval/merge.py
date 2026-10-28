@@ -4,7 +4,7 @@
   merge.py <trace> <run_dir> [--zephyr 4.4] [--out <run_dir>/island.jsonl]
 
 The trace is the native_sim dump (`just trace-native`, `ISLTRC01` header), or
-the board's or QEMU's `ram_tracing` as tools/timeline/readout.py wraps it (the
+the board's or QEMU's `ram_tracing` as tools/board/readout.py wraps it (the
 same header; a bare read needs `--zephyr 4.4`). Its stamps
 are the island's own clock (native_sim: simulated ns since boot; the board:
 cycle-counter time), so they are never subtracted from host stamps. As in
@@ -42,6 +42,8 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# tlcommon (the event schema, the declared side) is board tooling: tools/board.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "board"))
 import tlcommon as tl  # noqa: E402
 
 sys.path.insert(0, os.path.join(tl.ROOT, "src/safety_island_tracing"))

@@ -36,7 +36,7 @@ boots a QEMU island image into a router on the host. `just l3-check` is the CI
 job.
 
 Fresh machine, every setup step, and the recorded board path
-(`tools/timeline/run-board.sh`): docs/demo-runbook.md (validated 2026-10-13,
+(`tools/eval/run-board.sh`): docs/demo-runbook.md (validated 2026-10-13,
 phase9-W21). `L3_PEER_TTY` names the gateway's serial adapter on another
 machine.
 

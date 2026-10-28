@@ -11,7 +11,7 @@
      which waitpid()s, so the command returns at once):
      `$(env SAI_ACT_TRIGGER true) hpc-loss`. run-board.sh (sim carla) sets
      SAI_ACT_TRIGGER to demo/carla/act_trigger.py and the run's socket; the
-     act daemon (tools/timeline/scenario.py) receives `hpc-loss` and SIGSTOPs
+     act daemon (tools/eval/scenario.py) receives `hpc-loss` and SIGSTOPs
      the availability gate, the encore's mechanism. Without the variable the
      action runs `true hpc-loss`, a no-op, and the scenario still runs.
 

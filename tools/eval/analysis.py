@@ -31,11 +31,15 @@ over-stated by the smallest out-link delay, never under-stated. They say so
 in their note.
 """
 import math
+import os
 import re
+import sys
 
 import yaml
 
-import tlcommon as tl
+# tlcommon (the event schema, the declared side) is board tooling: tools/board.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "board"))
+import tlcommon as tl  # noqa: E402
 
 # The tick share of mrm_handler/call_mrm on the board: the 100 ms period of
 # update_rate 10 plus 18 ms of jitter (ticks up to 114.84 ms apart on the
@@ -791,7 +795,7 @@ def settle_at_speed(add, r, start, extra=""):
 
 def selftest_rows(check):
     """The phase10-B8 link rows and the phase10-B2 settle row on synthetic
-    events (tlcommon.py selftest): the explain parsing, the hop matching and
+    events (tools/eval/selftest.py): the explain parsing, the hop matching and
     each row's declared value, verdict and source."""
     ex = ("  hpc_loss/emergency_stop: route = link 81.00ms (max_transport into "
           "'/mrm_handler/operation_mode_availability', sub-level) + path 188.33ms\n"

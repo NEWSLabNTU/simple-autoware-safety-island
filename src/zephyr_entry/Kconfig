@@ -9,7 +9,7 @@ config ISLAND_ASSERT_RECORD
 	help
 	  phase9-C4. Overrides assert_post_action() (src/assert_record.c): the
 	  first failing __ASSERT writes its file, line and uptime into
-	  island_assert_record, then panics; tools/timeline/readout.py writes
+	  island_assert_record, then panics; tools/board/readout.py writes
 	  assert.txt from it. The console is not wired on the board.
 
 config ISLAND_DEBUG_FORCE_ASSERT_MS
@@ -41,7 +41,7 @@ config ISLAND_LED
 	  and CAN LED0 is a 1 Hz heartbeat, both set from the handler's own
 	  10 Hz tick (src/island_led.c; docs/design/carla-island-demo.md,
 	  section 3). island_led_record keeps the shown pattern and its last
-	  transitions for the SWD readout (tools/timeline/led_readout.py).
+	  transitions for the SWD readout (tools/board/led_readout.py).
 	  Off by default: the gate image does not carry it.
 
 config ISLAND_BUTTONS
@@ -66,7 +66,7 @@ config ISLAND_LOCK_PROBE
 	  lock cost at boot, every hold of the executor's lock (wrapping
 	  nros_cpp_executor_set_lock) for L_max, and each thread's stack
 	  high-water, into island_lock_probe_record for an SWD readout
-	  (tools/timeline/lock_probe.py). Off in the gate image.
+	  (tools/board/lock_probe.py). Off in the gate image.
 
 config ISLAND_LOCK_PROBE_STEADY_MS
 	int "Uptime from which a hold counts as steady state (ms)"
@@ -104,7 +104,7 @@ config ISLAND_SUPERVISOR_CALL_MRM_MS
 	  board: tick 118 + work 31). The handler adds it to the
 	  availability's max_age (its own timeout_operation_mode_availability
 	  parameter) for the hpc_loss reaction's due from the last take.
-	  tools/timeline/analysis.py reads the due back from the trace and
+	  tools/eval/analysis.py reads the due back from the trace and
 	  compares it with the contract's.
 
 config ISLAND_SUPERVISOR_STACK_SIZE
@@ -182,7 +182,7 @@ config ISLAND_DEBUG_SPIN_STALL
 	  Compiles in island_debug_spin_stall, a volatile u32 read at the
 	  start of every spin. A debugger writing non-zero into it makes the
 	  next spin busy-wait forever before feeding SWT0: the bench check of
-	  the watchdog rung with no route pending (tools/timeline/
+	  the watchdog rung with no route pending (tools/board/
 	  violations.py spin-stall). Inert while the word is 0, as it is
 	  from boot: only a debugger writes it.
 

@@ -6,7 +6,7 @@
  * gap in every traced run (w8a-e, w14-e, w27-a/b/e), past the island's 500 ms
  * silence bound, and one tick of false MRM right after start-up. The gap is
  * not on the wire. Run w29-base-a, with the island's console stamped on the
- * host (tools/timeline/stamp.py):
+ * host (tools/board/stamp.py):
  *
  *     host ms   island line
  *        45.7   [00:00:00.000,002] dds_create_participant returned

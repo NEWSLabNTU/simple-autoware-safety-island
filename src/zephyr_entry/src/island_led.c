@@ -27,7 +27,7 @@
  * image.
  *
  * `island_led_record` keeps what was shown, for the SWD readout
- * (tools/timeline/led_readout.py): the current pattern and the last
+ * (tools/board/led_readout.py): the current pattern and the last
  * ISLAND_LED_RING transitions with their uptime. Cost: the 88 B record and a
  * 4 B level cache in .bss (DTCM), ~1.3 KB of flash.
  */
@@ -54,7 +54,7 @@
 #define MRM_BEH_COMFORTABLE 3u
 #define MRM_BEH_EMERGENCY 2u
 
-/* Layout read by tools/timeline/led_readout.py; all 32-bit. */
+/* Layout read by tools/board/led_readout.py; all 32-bit. */
 struct island_led_transition {
 	uint32_t uptime_ms;
 	uint32_t code; /* state << 24 | behavior << 16 | takeover << 8 | pattern */

@@ -17,7 +17,7 @@
 #    a kill short of SIGKILL never leaves the submodules patched
 #
 # <dir> is $BOARD_DIAG_BUILD_DIR, default build-board-diag; the ELF is
-# <dir>/zephyr/zephyr.elf, which tools/timeline/run-diag.sh flashes by
+# <dir>/zephyr/zephyr.elf, which tools/eval/run-diag.sh flashes by
 # default. Do not run a normal `just board-build` in the same checkout while
 # this runs: it would compile the patched sources.
 set -u

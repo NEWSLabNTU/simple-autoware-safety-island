@@ -20,7 +20,7 @@ buffer and the counters are one instant, then resumed.
          read_memory_block8) plus halt/resume.
   qemu   the QEMU human monitor on a unix socket (`-monitor
          unix:<sock>,server,nowait`): `stop`, `pmemsave`, `xp /1wx`, `cont`.
-         Exercised against the QEMU island (tools/timeline/run-board.sh
+         Exercised against the QEMU island (tools/eval/run-board.sh
          --target qemu).
 
 The raw buffer is written beside the output as <out>.raw, and <out> is that
@@ -30,7 +30,7 @@ tell a full buffer from a short act. <out>.readout.json has every value read.
 
 phase9-W4: in the same halt, the nano-ros violation record
 (`NROS_VIOLATION_RECORD`) and the handler's arming words, when the image has
-them; decoded by tools/timeline/violations.py into violations.txt (and the
+them; decoded by tools/board/violations.py into violations.txt (and the
 raw record violations.bin) in the output's directory, so every act's run
 directory carries the board's own violation readout beside its trace.
 
@@ -58,7 +58,7 @@ after resetting the buffer, writing the provenance again and clearing the
 trigger (src/safety_island_tracing/include/island_trace.h, "RE-ARMING").
 The re-armed window opens at the first take of the guarded input after it,
 so re-arm with the HPC down, after the previous act's readout and teardown
-(tools/timeline/run-board.sh --keep-boot does it at its start). Every full
+(tools/eval/run-board.sh --keep-boot does it at its start). Every full
 read also reports the window's re-arm count (`rearms`, 0 = the first window
 since boot) and the uptime of the last re-arm.
 
@@ -71,7 +71,7 @@ load) after the instant asked for.
 
 CARLA demo C6 (the board's buttons, RB_TRIGGER=board): `--rearm-only
 --buttons` stays attached after the re-arm as the act's button bridge
-(tools/timeline/board_buttons.py): it prints a line per SW1/SW2 press the
+(tools/board/board_buttons.py): it prints a line per SW1/SW2 press the
 island records and takes `inject sw1|sw2 [ticks]` and `quit` on stdin, so
 the re-arm and the buttons share one pyocd session.
 """

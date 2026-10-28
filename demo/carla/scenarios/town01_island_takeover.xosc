@@ -7,7 +7,7 @@
      takeover speed, so the world's verdict is that the ego reached the
      route's goal (x 120) under its driver, with no standstill on the way
      and no collision. SSv2 cannot see domain 10, so MANUAL itself is read
-     by the act daemon (tools/timeline/scenario.py), not here.
+     by the act daemon (tools/eval/scenario.py), not here.
      Run by run-board.sh, sim carla (unit C3). -->
 <OpenSCENARIO>
 	<FileHeader author="simple-autoware-safety-island" date="2026-10-14T00:00:00+00:00" description="Town01: the ego leaves its ODD road segment; the driver takes over and drives on" revMajor="1" revMinor="2" />

@@ -29,7 +29,7 @@
 #if defined(__ZEPHYR__)
 #include <zephyr/kernel.h>
 // phase9-W4: when and why the handler armed nano-ros's contract monitors,
-// readable by name over SWD (tools/timeline/violations.py): the uptime of the
+// readable by name over SWD (tools/board/violations.py): the uptime of the
 // call (0 = not yet) and the transition that made it (ARM_VIA_*).
 extern "C" {
 volatile uint32_t island_monitors_armed_uptime_ms;
@@ -38,12 +38,12 @@ volatile uint32_t island_monitors_armed_via;
 // phase9-W4 debug hook (CONFIG_ISLAND_DEBUG_OVERRUN, Kconfig.island_trace):
 // 0 from boot; a debugger writes N > 0 and the next RUN tick busy-waits N ms,
 // once. Read and cleared only by onTimer(). By name over SWD:
-// tools/timeline/violations.py overrun N.
+// tools/board/violations.py overrun N.
 volatile uint32_t island_debug_overrun_ms;
 // phase11-S7: the same hook, armed for the FAULT tick: a debugger writes N > 0
 // and the next tick that runs call_mrm busy-waits N ms right after its ENTRY,
 // before the reaction (so the route itself is late), once; 0xffffffff never
-// ends. tools/timeline/violations.py fault-overrun N|stall.
+// ends. tools/board/violations.py fault-overrun N|stall.
 volatile uint32_t island_debug_fault_overrun_ms;
 #endif
 #if defined(CONFIG_ISLAND_SUPERVISOR)
@@ -82,7 +82,7 @@ double abs_d(double v) { return v < 0 ? -v : v; }
 //   ARM_VIA_INIT_DONE      INIT -> RUN (marker INIT_DONE);
 //   ARM_VIA_INIT_RECOVERY  RUN + init failure -> RUN, the failure cleared.
 // NOT at INIT_TIMEOUT. On the board the island boots minutes before Autoware
-// (tools/timeline/run-board.sh: reset at step 3, Autoware at step 5), so
+// (tools/eval/run-board.sh: reset at step 3, Autoware at step 5), so
 // init_timeout (3.0 s) always passes first; arming there would store the
 // availability's silence-runtime for the minutes Autoware takes to start,
 // a start-up wait the handler already reports as its own fault (init

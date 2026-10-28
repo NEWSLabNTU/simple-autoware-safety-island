@@ -67,7 +67,7 @@
  *
  * phase9-W2: RE-ARMING. The window above opens once; a debugger re-arms it
  * for the next act on the same boot by writing non-zero into
- * island_trace_rearm (tools/timeline/readout.py --rearm-only). The next
+ * island_trace_rearm (tools/board/readout.py --rearm-only). The next
  * heartbeat tick (<= 100 ms) then, under the lock: resets the RAM backend
  * (buffer zeroed, write position 0, not full: its own init), writes the
  * provenance again, empties the pre-trigger ring and the record policy's
@@ -519,7 +519,7 @@ static uint16_t island_trace_spins[ISLAND_TRACE_MARKER_COUNT + 1]; /* SPIN_ENTRY
 static bool island_trace_armed;
 static bool island_trace_reopen; /* phase9-W2: a re-armed window, opened by the first guarded take */
 
-/* Readable by name over SWD / the QEMU monitor (tools/timeline/readout.py). */
+/* Readable by name over SWD / the QEMU monitor (tools/board/readout.py). */
 #ifdef __cplusplus
 extern "C" {
 #endif

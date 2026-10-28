@@ -6,7 +6,7 @@ the MR-CANHUBK344; the SUMMARY lines are under "Validation record" at the end.
 This is the path the RTSS demo runs: the island on the board, its zenoh
 session over the serial link to a gateway router on the host, Autoware 1.5.0
 on rmw_zenoh_cpp in a container, everything driven by
-`tools/timeline/run-board.sh`. The measurements and the traps behind each
+`tools/eval/run-board.sh`. The measurements and the traps behind each
 setting are in demo/l3/README.md; the earlier Cyclone/native_sim demo is
 labelled "Legacy" at the end of this file.
 
@@ -201,9 +201,9 @@ preflight refuses either, and takes the demo lock
 `${XDG_RUNTIME_DIR:-/tmp}/sai-demo.lock` itself; do not wrap it in `flock`).
 
 ```sh
-scripts/ienv.sh 'tools/timeline/run-board.sh encore w21-e1'
-scripts/ienv.sh 'tools/timeline/run-board.sh a w21-a1'
-scripts/ienv.sh 'tools/timeline/run-board.sh b w21-b1'
+scripts/ienv.sh 'tools/eval/run-board.sh encore w21-e1'
+scripts/ienv.sh 'tools/eval/run-board.sh a w21-a1'
+scripts/ienv.sh 'tools/eval/run-board.sh b w21-b1'
 ```
 
 Each run flashes `build-board/zephyr/zephyr.elf`, starts the stock router
@@ -228,7 +228,7 @@ About 70-80 s per act on a warm host (validation: encore 71 s, a 79 s, b
 - `--dry-run` prints every step; `--no-flash` keeps the image on the board
   (but still resets it; `--keep-boot` below does not);
   `--target qemu` runs the same act against the QEMU island
-  (`just trace-qemu-build` first). `tools/timeline/run-board.sh --help` has
+  (`just trace-qemu-build` first). `tools/eval/run-board.sh --help` has
   every option and variable.
 
 ### Several acts on one boot (phase9-W2)
@@ -238,9 +238,9 @@ back on one boot (the booth), keep the island's link up between them and
 re-arm the trace window instead:
 
 ```sh
-scripts/ienv.sh 'tools/timeline/run-board.sh --keep-link encore w2-e2'
-scripts/ienv.sh 'tools/timeline/run-board.sh --keep-boot --keep-link a w2-a2'
-scripts/ienv.sh 'tools/timeline/run-board.sh --keep-boot b w2-b2'
+scripts/ienv.sh 'tools/eval/run-board.sh --keep-link encore w2-e2'
+scripts/ienv.sh 'tools/eval/run-board.sh --keep-boot --keep-link a w2-a2'
+scripts/ienv.sh 'tools/eval/run-board.sh --keep-boot b w2-b2'
 ```
 
 - `--keep-link` leaves the gateway (and the router, if the run started it)

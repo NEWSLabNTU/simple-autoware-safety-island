@@ -161,7 +161,7 @@ with its evidence. Two were confirmed by experiment on 2026-10-15:
   149 ms is a wait for the next tick plus the work, measured from the
   input's take. A route made of a full tick wait and a slow dispatch can
   exceed its budget while every callback passes. Route budgets are today
-  checked only after the run, from the trace (`tools/timeline/analysis.py`).
+  checked only after the run, from the trace (`tools/eval/analysis.py`).
 - Fix: nano-ros stamps the take of a path's trigger and checks
   take-to-last-output against the path's `max_latency` at the output,
   recording a `route-latency-runtime` violation (record only; no fallback).
@@ -176,7 +176,7 @@ with its evidence. Two were confirmed by experiment on 2026-10-15:
   outputs, judges take to dispatch end against the path's `max_latency`:
   `route-latency-runtime`, rule code 10, record only, reported once until
   a route is within budget again. The violation record's layout is
-  unchanged (v1: the rule is a code); `tools/timeline/violations.py` says
+  unchanged (v1: the rule is a code); `tools/board/violations.py` says
   which quantity each latency rule measured. The timer sweep judges it as
   the drains do (the sweep's blind spot for `max-latency-runtime` was
   closed by nano-ros phase-474 I6 before this). Codegen gives the route to
@@ -273,7 +273,7 @@ with its evidence. Two were confirmed by experiment on 2026-10-15:
   applied by hand. It prints the proposed budget per term.
 - Gate: on the W8 runs it reproduces tick 118 and work 31; on the W31 runs,
   link 81 from a 67.02 ms maximum.
-- Status (2026-10-15): done. `tools/timeline/terms.py --propose`. W8
+- Status (2026-10-15): done. `tools/board/terms.py --propose`. W8
   (13 runs): tick 118 (lateness 14.84), work 31 (25.04, tick to the
   velocity limit), call_mrm 149. W31 (9 runs): link 81 (67.02). fr
   (9 runs): link 56 (46.42), tick 102, work 2, call_mrm 104.

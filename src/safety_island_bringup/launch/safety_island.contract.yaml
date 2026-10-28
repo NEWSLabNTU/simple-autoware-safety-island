@@ -304,7 +304,7 @@ let:
 # what checks it; `control_mode`'s 143 ms link is checked by nothing in the
 # checker (the driver's answer is bounded by the window on the host) and is
 # compared with its observations by the post-run trace check
-# (tools/timeline, phase10-B8).
+# (tools/eval/analysis.py, phase10-B8).
 #
 # EACH TIMER NAMES ITS PARAMETER (phase10-B1)
 #

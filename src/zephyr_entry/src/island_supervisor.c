@@ -95,7 +95,7 @@
  * and the output is latched, which commands the emergency stop as above.
  *
  * Everything is readable by name over SWD (island_supervisor_record,
- * tools/timeline/violations.py supervisor).
+ * tools/board/violations.py supervisor).
  */
 #include <stdbool.h>
 #include <stdint.h>
@@ -159,7 +159,7 @@ BUILD_ASSERT(ISLAND_SUPERVISOR_PRIORITY >= 0, "the reaction thread stays preempt
 
 #define ISLAND_SUPERVISOR_MAGIC 0x56505553u /* "SUPV" little-endian */
 
-/* Layout read by tools/timeline/violations.py; all 32-bit. */
+/* Layout read by tools/board/violations.py; all 32-bit. */
 struct island_supervisor_route {
 	uint32_t armed;      /* 1 while a due is pending */
 	uint32_t due_ms;     /* uptime ms of the current due */

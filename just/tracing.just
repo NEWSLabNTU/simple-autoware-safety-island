@@ -74,7 +74,7 @@ _job-traced-island out:
     python3 scripts/sntp-server.py >> tmp_sntp.log 2>&1 &  # phase8-W18: the epoch (prj.conf)
     # phase8-W29: the console also goes to tmp_island.stamped.log with host
     # stamps, which show the island clock's lag (docs/takeover-trace.md, 8)
-    exec ./build-zephyr/zephyr/zephyr.exe --trace-out="{{out}}" 2>&1 | python3 -u tools/timeline/stamp.py tmp_island.log tmp_island.stamped.log
+    exec ./build-zephyr/zephyr/zephyr.exe --trace-out="{{out}}" 2>&1 | python3 -u tools/board/stamp.py tmp_island.log tmp_island.stamped.log
 
 [private]
 _trace-meta out image:
@@ -105,8 +105,8 @@ trace-window-native-build:
 
 # phase8-W17: the QEMU island with the board's tracing block and window, into
 # build-qemu-trace (src/qemu_entry/trace.conf). Its buffer is read over the
-# QEMU monitor (tools/timeline/readout.py --target qemu); one traced act:
-#   tools/timeline/run-board.sh --target qemu --elf build-qemu-trace/zephyr/zephyr.elf b <id>
+# QEMU monitor (tools/board/readout.py --target qemu); one traced act:
+#   tools/eval/run-board.sh --target qemu --elf build-qemu-trace/zephyr/zephyr.elf b <id>
 # The heap is 1 MiB, through qemu-build's triage lever (W3's precedent): at
 # the stated 102,400 B the QEMU island died of HEAP EXHAUSTED in zpico_read
 # when Autoware joined, over a TCP link that nothing paces (docs/tracing.md
@@ -116,7 +116,7 @@ trace-window-native-build:
 trace-qemu-build:
     EXTRA_CONF_FILE="$PWD/src/qemu_entry/trace.conf" CONFIG_NROS_ZEPHYR_HEAP_SIZE=1048576 just --set QEMU_BUILD_DIR build-qemu-trace qemu-build
 
-# phase8-W17: the read goes through tools/timeline/readout.py: every address
+# phase8-W17: the read goes through tools/board/readout.py: every address
 # from the ELF symbol table, the core halted for the read (buffer and
 # counters are one instant) and resumed, the heartbeat counter and the trace
 # window's counters beside the buffer, and the buffer wrapped in the
@@ -131,7 +131,7 @@ trace-board out=(TRACE_DIR / "board.trace") elf=(BOARD_BUILD_DIR / "zephyr/zephy
     [ -f "{{elf}}" ] || { echo "trace-board: no {{elf}} -- just board-build"; exit 1; }
     mkdir -p "$(dirname "{{out}}")"
     just _trace-meta "{{out}}" "{{elf}}"
-    python3 tools/timeline/readout.py --target board --elf "{{elf}}" --out "{{out}}"
+    python3 tools/board/readout.py --target board --elf "{{elf}}" --out "{{out}}"
     python3 {{TRACE_PY}} check "{{out}}"
 
 # phase9-U3: the spin-latency diagnostic (docs/tracing.md section 9). One board
@@ -139,15 +139,15 @@ trace-board out=(TRACE_DIR / "board.trace") elf=(BOARD_BUILD_DIR / "zephyr/zephy
 # just before and just after the act, into build/timeline/<id>/
 # (spin-diag-pre.txt, spin-diag-act.txt beside run-board.sh's files). Flashes
 # the diag ELF: flash the normal image back after (`just board-flash`).
-# Arguments go to tools/timeline/run-diag.sh: [--no-flash] [a|b|encore] <id>.
+# Arguments go to tools/eval/run-diag.sh: [--no-flash] [a|b|encore] <id>.
 #
 # Board: one act on the spin-diag image, the diag read before and after the act.
 diag-run *args:
-    tools/timeline/run-diag.sh {{args}}
+    tools/eval/run-diag.sh {{args}}
 
 # Late spins inside the act only (act read minus pre read), per run; run dirs
 # or ids under build/timeline. `--survival` prints the per-ms curve too.
 #
-# Count the act segment's late spins of diag runs (tools/timeline/actseg.py).
+# Count the act segment's late spins of diag runs (tools/eval/actseg.py).
 diag-actseg +runs:
-    python3 tools/timeline/actseg.py {{runs}}
+    python3 tools/eval/actseg.py {{runs}}

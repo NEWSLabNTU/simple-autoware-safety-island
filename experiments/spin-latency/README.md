@@ -15,9 +15,9 @@ not for merge, applied only for the length of one build.
 | `late_records.py` | one line per late interval of a decode (the ring of intervals at least 2 ms late): segments, lock waits, longest callback, other threads |
 | `swd_where.py` | one SWD halt: PC, LR, SP, xPSR, the fault status registers, and whether the heartbeat moves after resume |
 | `swd_stackwalk.py` | halt, read 8 KiB above SP, name every word that looks like a Thumb return address (found the C4 assert recursion) |
-| `../../tools/timeline/spin_diag.py` | reads and decodes `island_spin_diag` over SWD (attach, no halt) |
-| `../../tools/timeline/run-diag.sh` | `just diag-run`: one board act (default encore) with `spin_diag.py read` just before and just after the act |
-| `../../tools/timeline/actseg.py` | `just diag-actseg`: late spins inside the act only (act read minus pre read) |
+| `../../tools/board/spin_diag.py` | reads and decodes `island_spin_diag` over SWD (attach, no halt) |
+| `../../tools/eval/run-diag.sh` | `just diag-run`: one board act (default encore) with `spin_diag.py read` just before and just after the act |
+| `../../tools/eval/actseg.py` | `just diag-actseg`: late spins inside the act only (act read minus pre read) |
 | `../../scripts/ienv.sh` | runs a command in the checkout under `env -i` plus scripts/env.sh |
 
 ## Use

@@ -220,7 +220,7 @@ def budget(d, v):
 
 
 def selftest(check):
-    """budget() on synthetic tables (tlcommon.py selftest, phase10-B9)."""
+    """budget() on synthetic tables (tools/eval/selftest.py, phase10-B9)."""
     import tempfile
     head = "| term | declared ms | observed ms | verdict | note |\n|---|---|---|---|---|\n"
     ok_rows = "| settle (braking command -> standstill) | 4165.33 | 3000.00 | PASS |  |\n" \

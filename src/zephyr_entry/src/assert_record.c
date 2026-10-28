@@ -5,7 +5,7 @@
  * lost even when it prints. This overrides Zephyr's weak assert_post_action()
  * (lib/os/assert.c): the first failing assert writes its file, line, uptime and
  * context into `island_assert_record`, then panics as Zephyr's would. The
- * SWD readout (tools/timeline/readout.py, assert.txt) decodes it; the file
+ * SWD readout (tools/board/readout.py, assert.txt) decodes it; the file
  * pointer is a string in flash, resolved from the ELF.
  *
  * An assert that fires while the first one is being handled (the fault path
@@ -30,7 +30,7 @@
 
 #define ISLAND_ASSERT_MAGIC 0x54525341u /* "ASRT" little-endian */
 
-/* Layout read by tools/timeline/readout.py (ASSERT_FIELDS); all 32-bit. */
+/* Layout read by tools/board/readout.py (ASSERT_FIELDS); all 32-bit. */
 struct island_assert_record {
 	uint32_t magic;       /* ISLAND_ASSERT_MAGIC once a record is written */
 	uint32_t count;       /* failing asserts seen, nested ones included */

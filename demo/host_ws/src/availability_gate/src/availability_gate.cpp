@@ -1,5 +1,5 @@
 // availability_gate -- the host-side availability gate of the phase-8
-// takeover demo (phase8-W16; replaces tools/timeline/scenario.py's rclpy gate).
+// takeover demo (phase8-W16; replaces tools/eval/scenario.py's rclpy gate).
 //
 // Autoware is launched with
 //   operation_mode_availability_topic:=/system/operation_mode/availability_raw
@@ -31,7 +31,7 @@
 // this binary); the stall measured was I/O, not the CPU run queue, so FIFO
 // is a margin, not the fix.
 //
-// Control interface (as the rclpy gate's; tools/timeline/scenario.py):
+// Control interface (as the rclpy gate's; tools/eval/scenario.py):
 //   SIGUSR1 / SIGUSR2   ODD exit / ODD enter
 //   /demo/odd/exit      std_msgs/Bool, the same flag (W3's odd_monitor)
 //   SIGSTOP / SIGCONT   HPC loss / restore: every thread stops, the stream is
@@ -39,7 +39,7 @@
 // The pid file (--pid-file) holds "<pid> <count file>"; the count file holds
 // "<samples published> <CLOCK_MONOTONIC ns of the last publish>".
 //
-// Events (--log, JSON Lines, tools/timeline/tlcommon.py's schema, source
+// Events (--log, JSON Lines, tools/board/tlcommon.py's schema, source
 // "gate"): `odd` on each flag change; `publish` for the first sample with a
 // new `autonomous`; `stall` when the timer (`tick`) or the raw stream
 // (`availability_raw`) was more than stall_ms late; `stale` when the raw

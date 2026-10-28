@@ -250,7 +250,7 @@ is required again. No marker is exempted by name alone.
 | `just trace-demo [out]` | Autoware, a traced island and the demo sequence (as `demo-all`). Prints the VERDICT, then runs `trace-check` on the dump |
 | `just trace-decode <file> [zephyr]` | event counts and bytes, the provenance, the first 60 marker/heartbeat records, and `<file>.perfetto.json` for ui.perfetto.dev |
 | `just trace-check <file> [zephyr]` | PASS only if: the decode is clean; the provenance names `markers.json`'s table; every marker is seen or exempted by a confirmed parameter; heartbeats are contiguous from 0; and (native_sim) the last recorded heartbeat is the last one emitted, i.e. the buffer did not fill early |
-| `just trace-board [out] [elf]` | phase8-W17: `tools/timeline/readout.py --target board`: halt, read `ram_tracing` and the heartbeat and window counters over SWD (pyocd, attach mode), resume; every address from the ELF's symbol table; the buffer wrapped in the native_sim dump's header; then `trace-check` |
+| `just trace-board [out] [elf]` | phase8-W17: `tools/board/readout.py --target board`: halt, read `ram_tracing` and the heartbeat and window counters over SWD (pyocd, attach mode), resume; every address from the ELF's symbol table; the buffer wrapped in the native_sim dump's header; then `trace-check` |
 | `just trace-window-native-build` | phase8-W17: the native_sim island with the trace window (`src/native_sim_entry/trace-window.conf`), into build-zephyr |
 | `just trace-qemu-build` | phase8-W17: the QEMU island with the board's tracing block and window (`src/qemu_entry/trace.conf`), into build-qemu-trace |
 
@@ -624,7 +624,7 @@ with `HEAP EXHAUSTED` in `_z_slice_init` from `zpico_read`, both straight
 into the stock router and behind the gateway (runs w17-qb1, w17-qb2). Over
 TCP nothing paces Autoware's traffic the way the board's UART does.
 
-`tools/timeline/run-board.sh --target qemu` puts the QEMU island behind the
+`tools/eval/run-board.sh --target qemu` puts the QEMU island behind the
 gateway router exactly as the board is: `demo/l3/router/island-gateway.json5`
 with its island face moved from `serial` to `unixsock-stream` (so the
 no-graph rule and the downsampling apply to it), and QEMU's `guestfwd` piped
@@ -649,16 +649,16 @@ ELF symbols the board read uses.
   `run-board.sh` does (it flashes and resets for every act). Since
   phase9-W2 the window can be re-armed instead ("Re-arming" below).
 
-### One traced act off the host: `tools/timeline/run-board.sh`
+### One traced act off the host: `tools/eval/run-board.sh`
 
 ```
 just board-build                                   # the image with the window
-tools/timeline/run-board.sh b <id>          # the board (phase8-W8)
-tools/timeline/run-board.sh --dry-run b <id> # print the steps, resolve the addresses
-tools/timeline/run-board.sh --keep-link encore <id1>  # leave the link up (phase9-W2)
-tools/timeline/run-board.sh --keep-boot b <id2>       # the next act on the same boot, re-armed
+tools/eval/run-board.sh b <id>          # the board (phase8-W8)
+tools/eval/run-board.sh --dry-run b <id> # print the steps, resolve the addresses
+tools/eval/run-board.sh --keep-link encore <id1>  # leave the link up (phase9-W2)
+tools/eval/run-board.sh --keep-boot b <id2>       # the next act on the same boot, re-armed
 just trace-qemu-build
-tools/timeline/run-board.sh --target qemu b <id>   # the rehearsal
+tools/eval/run-board.sh --target qemu b <id>   # the rehearsal
 just l3-traced-act b <id> [target] [elf] [flags]   # the same, as a recipe
 ```
 
@@ -816,7 +816,7 @@ explicit re-arm, commanded over SWD, and defines where a re-armed window
 starts.
 
 **What re-arms.** A debugger writes non-zero into `island_trace_rearm`
-(`tools/timeline/readout.py --rearm-only`, attach, no halt). The next
+(`tools/board/readout.py --rearm-only`, attach, no halt). The next
 heartbeat tick (at most 100 ms later; the ack came after 51-103 ms on the
 board) does, under the heartbeat's `irq_lock` (`island_trace_rearm_now`,
 `include/island_trace.h`):
@@ -957,7 +957,7 @@ measured/declared.
 
 **The SWD record beside it.** The same verdicts go, at detection, into
 nano-ros's `NROS_VIOLATION_RECORD` (`CONFIG_NROS_BOOT_REPORT`), read by
-symbol by `tools/timeline/violations.py` and, inside its halted read, by
+symbol by `tools/board/violations.py` and, inside its halted read, by
 `readout.py`, which writes `violations.txt` into every run directory. The
 record keeps the latest `CONFIG_NROS_EXECUTOR_MAX_VIOLATIONS` (8) and the
 counts (total, dropped, suppressed_before_arm, armed); the trace keeps
@@ -969,7 +969,7 @@ can be read whole (`w4-bringup2`: 17 in the trace, 8 in the record).
 that exists only with `experiments/spin-latency/nano-ros-diag.patch`; the
 sink never writes it to the trace. It fills `island_spin_diag` (lateness
 histogram, per-segment CPU of the late intervals), read over SWD by
-`tools/timeline/spin_diag.py` (nano-ros phase-474 I10). The tools are in
+`tools/board/spin_diag.py` (nano-ros phase-474 I10). The tools are in
 the tree (phase9-U3; experiments/spin-latency/README.md): `just
 board-build-diag` builds the diag image into build-board-diag with both
 patches applied for the length of the build only (an EXIT trap reverts

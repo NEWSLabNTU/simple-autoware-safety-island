@@ -63,7 +63,7 @@ config ISLAND_SPIN_DIAG
 	  DIAG (spin latency). Breaks each spin-to-spin interval into the
 	  segments nano-ros marks with event 40 and charges each to the spin
 	  thread, idle and the rest; keeps a lateness histogram and the late
-	  intervals in island_spin_diag (tools/timeline/spin_diag.py).
+	  intervals in island_spin_diag (tools/board/spin_diag.py).
 
 config ISLAND_DEBUG_OVERRUN
 	bool "Debug hook: one commanded busy-wait in the handler's tick"
@@ -71,7 +71,7 @@ config ISLAND_DEBUG_OVERRUN
 	  phase9-W4. Compiles in `island_debug_overrun_ms`, a volatile u32 the
 	  handler reads on every tick in RUN. It is 0 from boot and the hook
 	  does nothing while it is 0; a debugger writing N > 0 into it (over
-	  SWD: tools/timeline/violations.py overrun N) makes the NEXT RUN tick
+	  SWD: tools/board/violations.py overrun N) makes the NEXT RUN tick
 	  busy-wait N ms after its publishes, once, and clears it. A tick that
 	  long trips the contract's max-latency-runtime monitors on the
 	  handler's publishers (hazard_lights_cmd 100 ms, mrm_state and

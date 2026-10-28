@@ -8,7 +8,7 @@ branch B (ODD exit, nobody answers, comfortable stop), and the encore (HPC
 loss, emergency stop). Every declared bar is a row of
 `play_launch check --explain` on
 `src/safety_island_bringup/launch/safety_island.contract.yaml`; every
-observed edge is an event (tools/timeline/README.md has the schema).
+observed edge is an event (tools/eval/README.md has the schema).
 
 **The rung is native_sim. Island durations are SIMULATED time.** As in
 docs/reaction-trace.md (phase7-W3): native_sim runs code in zero simulated
@@ -36,16 +36,16 @@ handler's call and the operator's publish run in one executor turn.
   `just trace-gen` accept it.
 - Host: Autoware 1.5.0 `planning_simulator` on CycloneDDS, launched with
   `operation_mode_availability_topic:=/system/operation_mode/availability_raw`;
-  the availability gate (`tools/timeline/scenario.py gate`) republishes it on
+  the availability gate (`tools/eval/scenario.py gate`) republishes it on
   `/system/operation_mode/availability` at 10 Hz with
   `autonomous &= !odd_exit`.
-- Acts (`tools/timeline/scenario.py run a|b|encore`): initial pose, goal,
+- Acts (`tools/eval/scenario.py run a|b|encore`): initial pose, goal,
   engage, drive 3 s past 1 m/s, then
   - A: ODD exit (SIGUSR1 to the gate), wait 3 s, ask the vehicle for MANUAL
     (`/control/control_mode_request`), observe past the would-be expiry;
   - B: ODD exit, nobody answers, observe to MRM_SUCCEEDED;
   - encore: SIGSTOP the gate, observe to MRM_SUCCEEDED, SIGCONT.
-- One run: `tools/timeline/run-native.sh <act> <id>` (GNU parallel
+- One run: `tools/eval/run-native.sh <act> <id>` (GNU parallel
   supervisor as experiments/reaction-trace/run.sh). Island markers are put
   on the host clock by `merge.py`: offset from the minimum over the
   publish/receipt pairs (each change of `/system/takeover_request/state` and
@@ -103,7 +103,7 @@ counted.
 ## 3. Declared against observed, per run
 
 ms unless marked; "FAIL" marks an observed value outside its declared one.
-Produced by `tools/timeline/render.py <run> --table`.
+Produced by `tools/eval/render.py <run> --table`.
 
 ### Branch A: ODD exit, the driver takes over
 
@@ -215,7 +215,7 @@ SIGSTOP landed 95.01 / 56.53 / 50.24 ms after the gate's last sample.
 
 ## 5. Plots
 
-Rendered by `tools/timeline/render.py` (the slide copies are
+Rendered by `tools/eval/render.py` (the slide copies are
 `takeover_timeline_{a,b,encore}.png` in the deck's assets):
 
 - `docs/takeover-trace/timeline_a_a1.png` - branch A, run a1
@@ -263,7 +263,7 @@ declaring `window: 10.1s`, would have charged it twice.
   the period of that node's timer that publishes the rung's output; a
   warning when no such timer is declared); `--explain` prints
   `window >=10000.00` and the interval the request ends in. No TOTAL moved.
-- `tools/timeline/analysis.py`: branch B is cut at the deadline (request on
+- `tools/eval/analysis.py`: branch B is cut at the deadline (request on
   + the declared, parameter-bound window, a derived instant); the dwell is
   checked against `[window, ends within]` read from the checker, on the
   island clock and as the host received it; a "windows + route" row needs no
@@ -282,7 +282,7 @@ odd_exit  emergency_stop    floor    100.00  10110.00  143.33    4165.33 derived
 
 **Three runs of branch B** on an image built from main 55a65a4 in a
 worktree, with no handler change (`build-zephyr/zephyr/zephyr.exe`, sha256
-`828ee7f5...8161bd48a3`, native_sim, tracing on), `tools/timeline/run-native.sh b
+`828ee7f5...8161bd48a3`, native_sim, tracing on), `tools/eval/run-native.sh b
 w12-b<n>`, one at a time under the demo lock, each started below load 35:
 
 ```
@@ -324,8 +324,8 @@ takes over). Plot: `docs/takeover-trace/timeline_b_w12-b1.png`.
 
 ```
 just zephyr-build                        # native_sim, tracing on
-tools/timeline/run-native.sh b b9        # or a / encore; -> build/timeline/b9/
-python3 tools/timeline/render.py build/timeline/b9 --table
+tools/eval/run-native.sh b b9        # or a / encore; -> build/timeline/b9/
+python3 tools/eval/render.py build/timeline/b9 --table
 ```
 
 Run one at a time. The load-35 rule of W7 was for the rclpy gate; the C++
@@ -428,7 +428,7 @@ its raw callback had not run. The C++ gate's residual lateness (up to
 load 100+; SCHED_FIFO takes its own timer to +4.5 ms, and what is left in
 the external column is the subscriber's own scheduling.
 
-**Branch B with the C++ gate** (`tools/timeline/run-native.sh b w16-b<n>`,
+**Branch B with the C++ gate** (`tools/eval/run-native.sh b w16-b<n>`,
 each under the demo lock (`flock` on one host-wide file, now
 `${XDG_RUNTIME_DIR:-/tmp}/sai-demo.lock`); image
 `c28dba8f...bcc8e`, native_sim, origin/main 3fb4cfb). w16-b1 ran before the
@@ -479,7 +479,7 @@ recorder's time base (the recorder starts about 15 s before the island).
 
 **Where it was: the island's clock, not any hop of the stream.** Measured in
 w29-base-a (main 53f032e) with the island's console stamped on the host
-(`tools/timeline/stamp.py`, `island.trace.stamped.log`) and a 2 ms sampler
+(`tools/board/stamp.py`, `island.trace.stamped.log`) and a 2 ms sampler
 of native_sim's lag behind the host:
 
 - The gate published every 100 ms from its first sample (its `stats`:
@@ -546,7 +546,7 @@ observes, and here it observes none.
 phase8-W8, 2026-09-30. The three acts on the S32K344 (NXP MR-CANHUBK3, the
 DCD-LZ serial cable at 921,600 baud, `just l3-peer` as the island gateway),
 with Autoware 1.5.0 in the container, all driven by
-`tools/timeline/run-board.sh`. The script flashes the board, starts the
+`tools/eval/run-board.sh`. The script flashes the board, starts the
 gateway and resets the board, waits for the island, then starts Autoware,
 the gate, the probe and the act. At the end it reads the trace over SWD
 and merges it.
@@ -799,7 +799,7 @@ tick is followed by a short one, 81.96 ms); every other run stays within
   20 + `call_mrm` 206; it was 210).
 
 rlm has no key for a timer's release jitter or for a service edge's
-queueing; both are stated inside `call_mrm` (F2, F3). `tools/timeline/
+queueing; both are stated inside `call_mrm` (F2, F3). `tools/eval/
 analysis.py` adds the tick share (118) back to the encore's detect row, as
 it added 100 before, and reads the exit row's bound from the contract.
 
@@ -837,7 +837,7 @@ and `l3_takeover_65kmh` 30,558.67 ms against 30,000 (were 30,636.67 and
 30,366.67); their floors fit (24,730.67 and 18,622.67; hpc_loss 4,904.67
 and 8,796.67). No variant needed a change: the smallest breaks moved to a
 window above 19.17 s and a bound above 63.0 km/h. The island contract's
-table, as `tools/timeline/testdata/explain.txt` now holds it:
+table, as `tools/board/testdata/explain.txt` now holds it:
 
 ```
 HAZARD    RUNG              ROLE     DETECT   WINDOWS   ROUTE             SETTLE     TOTAL      FTTI     SLACK
@@ -955,7 +955,7 @@ phase8-W31, 2026-09-30. Section 10 derived the board budgets from W8's
 runs and re-analysed those same runs. This section runs the three acts
 again on the S32K344 with an image built from that contract, so the
 budgets are tested on runs they were not sized from. The rig and method
-are section 9's: `tools/timeline/run-board.sh`, `sai-l3-autoware:1.5.0-w24`,
+are section 9's: `tools/eval/run-board.sh`, `sai-l3-autoware:1.5.0-w24`,
 the C++ gate from `just demo-host-ws`, and every run flashed and reset
 under the demo lock at a 1-min load below 35 (run-board.sh takes
 `${XDG_RUNTIME_DIR:-/tmp}/sai-demo.lock` itself since phase9-W22).
@@ -1015,7 +1015,7 @@ w31-r09 (5.82) VERDICT: PASS encore: v at the fault 3.88 m/s; mrm (3, 2) (2 = EM
 
 All 9 runs PASS, and `trace-check: PASS` on all 9 traces. Each run's
 `explain.txt` came from this contract: its budget table is identical to
-`tools/timeline/testdata/explain.txt` (routes 206.00, WINDOWS 10206.00).
+`tools/board/testdata/explain.txt` (routes 206.00, WINDOWS 10206.00).
 Every trace names image `664592d4`. Every Autoware start read `nodes
 31/31, containers 13/13, composable 68/68`. The window's history ran 39-48
 records over 1464-1496 ms. After the trigger the board wrote 464-605 B/s.
@@ -1196,7 +1196,7 @@ demo lock, 1-min load 3-9.
   grace deadline. Before the call a verdict is counted in
   `suppressed_before_arm` and not stored.
 - **The SWD record.** `NROS_VIOLATION_RECORD`, read by symbol by
-  `tools/timeline/violations.py` and inside readout.py's halted read; every
+  `tools/board/violations.py` and inside readout.py's halted read; every
   run directory has `violations.txt`. 8 slots
   (`CONFIG_NROS_EXECUTOR_MAX_VIOLATIONS`, the latest kept).
 - **The trace.** nano-ros's violation events 21-24, forwarded by the

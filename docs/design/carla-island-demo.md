@@ -215,7 +215,7 @@ separate measurement of whether Cyclone holds Autoware's graph at all.
 
 ### 2.1 The three acts in CARLA
 
-The acts stay host-driven (tools/timeline/scenario.py), because their
+The acts stay host-driven (tools/eval/scenario.py), because their
 measured edges are host events (`press`, `sigstop`, `gate_last`). SSv2
 supplies the world: the route, the traffic, the place where things happen,
 and its own verdict.
@@ -288,7 +288,7 @@ untried with it.
 
 | verdict | from | covers |
 |---|---|---|
-| contract table, `trace-check`, `VERDICT` | run-board.sh SUMMARY (tools/timeline/run-board.sh steps 8-10) | the island's terms: detect, route, settle, FTTI, rung, entry speed |
+| contract table, `trace-check`, `VERDICT` | run-board.sh SUMMARY (tools/eval/run-board.sh steps 8-10) | the island's terms: detect, route, settle, FTTI, rung, entry speed |
 | SSv2 `result.junit.xml` | the scenario | the world: the ego reached standstill, no collision, within the scenario's timeout |
 | acceptance-style checks | `acb:scripts/acceptance.py` | no node died, localization against ground truth, tracking |
 
@@ -498,12 +498,12 @@ the change used 20,949 B (+197 B).
 
 `island_led_record` (88 B, DTCM .bss) holds the selected pattern, the tick
 count and the last 8 transitions with their uptime;
-`tools/timeline/led_readout.py` reads it and the four pins' PGPDO bits over
+`tools/board/led_readout.py` reads it and the four pins' PGPDO bits over
 SWD (attach, no halt).
 
 On the board, two acts with the LED image (`ISLAND_BOARD_KCONFIG="CONFIG_ISLAND_LED=y"
 just BOARD_BUILD_DIR=build-board-led board-build`, then
-`tools/timeline/run-board.sh --elf build-board-led/zephyr/zephyr.elf`):
+`tools/eval/run-board.sh --elf build-board-led/zephyr/zephyr.elf`):
 
 ```
 SUMMARY led-e3 encore: PASS; load 13.51 at act; table 8/8 PASS, total 3540.99 of 4909.67 ms; trace-check PASS; ...
@@ -586,7 +586,7 @@ press; the act reads the record over the debug probe. Decided in C6:
   button, accepted or why ignored, and the MRM state at that tick.
 - *To the host.* In `RB_TRIGGER=board` the trace window's re-arm helper
   (`readout.py --rearm-only --buttons`) stays attached after the re-arm and
-  polls the record every 25 ms (`tools/timeline/board_buttons.py`): one
+  polls the record every 25 ms (`tools/board/board_buttons.py`): one
   pyocd session holds the probe for the whole act. The act turns an
   accepted press into the MANUAL request (SW1) or the SIGSTOP (SW2).
 - *Rejected: publishing `/demo/driver/response` and `/demo/fault/inject`
@@ -764,7 +764,7 @@ the goal delayed 15 s, drove past the goal and fell below 0.1 m/s 227 m
 from the start; not investigated); its lateral error (no ground-truth
 trace kept); `carla_manual_control` beside `allow_manual`.
 
-**C3 status (2026-10-14, evidence).** `tools/timeline/run-board.sh --sim
+**C3 status (2026-10-14, evidence).** `tools/eval/run-board.sh --sim
 carla` (island `613c17f`, `36506e2`): steps 1-4 as today (flash, router,
 gateway, the island joins), step 5 starts CARLA, csb and the CARLA ego
 (each its own process group, SIGINT first at teardown), step 7 starts the
@@ -902,7 +902,7 @@ built by `just board-build-booth` into build-board-booth; `just
 board-build` (the gate image) is unchanged (its `.config`: `#
 CONFIG_ISLAND_LED is not set`). The booth build (2026-10-14, island-led
 worktree at main + the snippet) is the size of 3.3's LED build: FLASH
-582,612, RAM 276,056, DTCM 117,624, ITCM 13,028. `tools/timeline/led_vs_trace.py`
+582,612, RAM 276,056, DTCM 117,624, ITCM 13,028. `tools/eval/led_vs_trace.py`
 matches each `mrm_state` and takeover-request edge of an act's trace
 (island clock) with a transition of the LED record (`led_readout.py`, read
 right after the act; island uptime) and passes when each is within one
@@ -1237,7 +1237,7 @@ The three bugs carried from C5/C6:
   C6 image lacked (longest gap with its end uptime) now dates any
   recurrence.
 - **tm-b1's silent re-arm helper** (nothing in 22 s, act FATAL): the
-  helper is `python3 tools/timeline/readout.py`, whose imports (pyocd and
+  helper is `python3 tools/board/readout.py`, whose imports (pyocd and
   pyelftools, from ~/.local on /home, the spinning disk) block on that
   disk under other jobs' I/O. Measured on 2026-10-18: `import
   pyocd.core.helpers, elftools.elf.elffile` took 38 s, and an `import
@@ -1459,7 +1459,7 @@ nano-ros #1967), the CSB checkout at 0b80299 with acb 7d1b1ce (its
 gitlink; acb's `max_velocity` stays at Autoware's 4.17 m/s; CSB's
 Autoware fix overlay of roadmap 042 is not built, so the ego runs stock
 Autoware 1.5.0), built with CSB's `just build` (51 packages). One fresh
-boot per act, `tools/timeline/run-board.sh --sim planning|carla`:
+boot per act, `tools/eval/run-board.sh --sim planning|carla`:
 
 | sim | act | run | SUMMARY | junit | hazard_lights_on (ms) |
 |---|---|---|---|---|---|
@@ -1504,7 +1504,7 @@ supervisor 3 (`[tiers.mrm]` names no `above`). The build notes the authored
 fastest release, the 30 Hz operator). `just sync` exits 0 with no
 `ExecutorFull` and writes the four components' source metadata
 (mrm_handler.json among them). Planning simulator, one fresh boot per act,
-`tools/timeline/run-board.sh --sim planning`:
+`tools/eval/run-board.sh --sim planning`:
 
 | act | run | SUMMARY | hazard_lights_on (ms) |
 |---|---|---|---|
@@ -1522,7 +1522,7 @@ demand is unknown, #2423 launch remaps one const table in flash with no
 runtime remap table on bare metal, #2424 extra sessions sized from the
 backend count): DTCM 103,224 B (FLASH 598,512, RAM 280,680, ITCM 14,824).
 The plan is unchanged: transport 4, mrm 5 in pool.app, supervisor 3.
-Planning simulator, one fresh boot per act, `tools/timeline/run-board.sh
+Planning simulator, one fresh boot per act, `tools/eval/run-board.sh
 --sim planning`:
 
 | act | run | SUMMARY | hazard_lights_on (ms) |
@@ -1548,7 +1548,7 @@ own due and judged at its expiry from the executor's route cells, not from
 the gap between spins, so a longer park cannot latch it. The longest
 feed-to-feed gap is now ~34 ms (the 33.3 ms park plus the spin), still
 about a ninth of SWT0's 300 ms. Planning simulator, one fresh boot per act,
-`tools/timeline/run-board.sh --sim planning`, two rounds:
+`tools/eval/run-board.sh --sim planning`, two rounds:
 
 | act | run | SUMMARY | hazard_lights_on (ms) |
 |---|---|---|---|
@@ -1592,7 +1592,7 @@ and gap statistics are written under the lock. On this one-level image the
 record reads one level (`main`, priority 5) owning route 1, a feed per
 spin, and no foreign route-1 dues.
 
-Planning simulator, one fresh boot per act, `tools/timeline/run-board.sh
+Planning simulator, one fresh boot per act, `tools/eval/run-board.sh
 --sim planning`, two rounds:
 
 | act | run | SUMMARY | hazard_lights_on (ms) | handler tick: gaps, grid lateness max |
@@ -1652,7 +1652,7 @@ and the handler's level never spawned (SWT0 latched at 574 ms). nano-ros
 #2545 fixed it (seeds name their node; one monitor table per image; a
 failed level setup fails the boot).
 
-Planning simulator, one fresh boot per act, `tools/timeline/run-board.sh
+Planning simulator, one fresh boot per act, `tools/eval/run-board.sh
 --sim planning`; hazard lights against p509-r1 (one tier, rank-ordered):
 
 | act | run | SUMMARY | hazard_lights_on (ms) | p509-r1 (ms) |

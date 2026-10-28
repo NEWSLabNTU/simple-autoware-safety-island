@@ -35,7 +35,7 @@
  *    scanned.
  *
  * Read over SWD after the run (island_lock_probe_record; the decoder is
- * tools/timeline/lock_probe.py).
+ * tools/board/lock_probe.py).
  */
 #include <stdbool.h>
 #include <stdint.h>

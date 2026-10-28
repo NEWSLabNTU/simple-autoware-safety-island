@@ -9,7 +9,7 @@
  * A demo affordance, not a safety function. The island does not act on a
  * press: it records it, with the handler's state at that tick, in
  * `island_button_record`, and the act on the host reads the record over SWD
- * (tools/timeline/board_buttons.py, through the same pyocd session that
+ * (tools/board/board_buttons.py, through the same pyocd session that
  * re-arms the trace window) and does what the act's own button did before:
  * SW1 asks the vehicle for MANUAL (/control/control_mode_request), SW2
  * SIGSTOPs the availability gate. So the island's ROS interface, its
@@ -56,7 +56,7 @@
 #define WHY_NO_TAKEOVER 2u  /* SW1 with no takeover request on */
 #define WHY_NOT_NORMAL 3u   /* SW2 while an MRM runs or after it */
 
-/* Layout read by tools/timeline/board_buttons.py; all 32-bit. */
+/* Layout read by tools/board/board_buttons.py; all 32-bit. */
 struct island_button_press {
 	uint32_t uptime_ms; /* the tick that saw the press */
 	uint32_t code;      /* button (1 SW1, 2 SW2) << 24 | why << 16 | state << 8 | behavior */

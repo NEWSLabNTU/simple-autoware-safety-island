@@ -11,7 +11,7 @@
  * Contended zenoh-pico lock waits arrive through island_diag_lock_wait (weak
  * in nano-ros's Zephyr system layer and the serial TX path).
  *
- * Read over SWD by symbol (tools/timeline/spin_diag.py): the struct is
+ * Read over SWD by symbol (tools/board/spin_diag.py): the struct is
  * plain u32 words. */
 #ifndef ISLAND_SPIN_DIAG_H
 #define ISLAND_SPIN_DIAG_H

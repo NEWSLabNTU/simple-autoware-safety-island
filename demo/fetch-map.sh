@@ -10,7 +10,7 @@
 #   MAP_DIR=<dir> demo/fetch-map.sh
 #
 # Users: the legacy planning_simulator recipes (justfile _svc-sim),
-# tools/timeline/run-native.sh, just/l3-demo.just (l3-container, the host
+# tools/eval/run-native.sh, just/l3-demo.just (l3-container, the host
 # run) and the L3 container build (COPY demo/map/sample-map-planning/).
 set -euo pipefail
 cd "$(dirname "$0")/.."

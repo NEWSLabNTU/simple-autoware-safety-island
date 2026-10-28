@@ -24,7 +24,7 @@ named from markers.json's endpoint hashes (the contract's endpoint refs).
 It replaces phase8-W31's vscan.py, which scanned RAM for (ptr, len) pairs
 naming a rule literal because the ring had no fixed address.
 
-tools/timeline/readout.py reads the same words inside its halted read at the
+tools/board/readout.py reads the same words inside its halted read at the
 end of every run-board.sh act and writes <run dir>/violations.txt with
 `report()` below, so every act's run directory has one.
 

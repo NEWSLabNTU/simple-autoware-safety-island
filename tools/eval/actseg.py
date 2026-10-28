@@ -5,7 +5,7 @@
 
 A <run> is a run directory, or a run id under build/timeline/ of this
 checkout. Each must hold spin-diag-pre.txt and spin-diag-act.txt, the two
-`spin_diag.py read` decodes that tools/timeline/run-diag.sh takes just
+`spin_diag.py read` decodes that tools/eval/run-diag.sh takes just
 before and just after the act (a CONFIG_ISLAND_SPIN_DIAG image, built by
 `just board-build-diag`).
 

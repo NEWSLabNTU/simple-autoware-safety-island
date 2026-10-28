@@ -13,8 +13,8 @@ From the arrivals and the ticks one reads a leaf's period and how old its
 last sample was at each tick, i.e. how close it came to its graph timeout.
 
 With run-board.sh, beside the probe (the path literal, $dir is not expanded):
-  RB_PROBE="python3 $PWD/tools/timeline/diaggraph.py --out $PWD/build/timeline/<id>/diag.rec &
-            exec python3 tools/timeline/probe.py --out $PWD/build/timeline/<id>/probe.jsonl"
+  RB_PROBE="python3 $PWD/tools/eval/diaggraph.py --out $PWD/build/timeline/<id>/diag.rec &
+            exec python3 tools/board/probe.py --out $PWD/build/timeline/<id>/probe.jsonl"
 """
 import argparse
 import json

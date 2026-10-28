@@ -14,8 +14,8 @@ submodule autoware_carla_bridge (acb).
 | `act_trigger.py` | what that CustomCommandAction runs (`$(env SAI_ACT_TRIGGER)`): one datagram to the act's socket | C4 |
 | `cast_dashboard.py`, `cast.sh` | the proof cast: a 1920x1080 dashboard (CARLA chase view, ODD, takeover request, island MRM with the LED mirrored, map, events) recorded with ffmpeg | C8 |
 | `../../src/zephyr_entry/snippets/island-booth` | the booth image's snippet: `CONFIG_ISLAND_LED=y`, `CONFIG_ISLAND_BUTTONS=y` (`just board-build-booth`) | C5, C6 |
-| `../../tools/timeline/board_buttons.py` | SW1/SW2 over SWD: the on-site check (`just board-buttons`), injection, and the act's button bridge (`RB_TRIGGER=board`) | C6 |
-| `../../tools/timeline/run-board.sh --sim carla` | one act on the board with CARLA, the scenario side and the ego instead of the L3 container | C3 |
+| `../../tools/board/board_buttons.py` | SW1/SW2 over SWD: the on-site check (`just board-buttons`), injection, and the act's button bridge (`RB_TRIGGER=board`) | C6 |
+| `../../tools/eval/run-board.sh --sim carla` | one act on the board with CARLA, the scenario side and the ego instead of the L3 container | C3 |
 | `ego-overlay.bash` | what CSB's `just ego-av` sources between Autoware and acb (`EGO_OVERLAY`): the island's overlay and the patched librclcpp | C1 |
 | `island_standin.py` | the island's two always-on outputs, for a run with no island | C1 |
 | `play_launch.yaml` | the ego's play_launch runtime config: startup pacing, a wedged composable reloaded | C1 |
@@ -137,9 +137,9 @@ run-board.sh `--sim carla` always passes it.
 
 ```sh
 # once, as for C1 (just l3-host-ws, just carla-rclcpp, CSB built), and the board image
-tools/timeline/run-board.sh --sim carla --elf <zephyr.elf> encore <run-id>
-tools/timeline/run-board.sh --sim carla --elf <zephyr.elf> b <run-id>
-tools/timeline/run-board.sh --sim carla --elf <zephyr.elf> a <run-id>
+tools/eval/run-board.sh --sim carla --elf <zephyr.elf> encore <run-id>
+tools/eval/run-board.sh --sim carla --elf <zephyr.elf> b <run-id>
+tools/eval/run-board.sh --sim carla --elf <zephyr.elf> a <run-id>
 ```
 
 Nothing else may be up: no CARLA (2000), csb (5560), Traffic Manager
@@ -211,9 +211,9 @@ the scenario decide when the fault comes, at its place on the road:
 Several acts on one boot, as phase9-W2 (the booth):
 
 ```sh
-scripts/ienv.sh 'tools/timeline/run-board.sh --sim carla --keep-link --elf <elf> encore <id1>'
-scripts/ienv.sh 'tools/timeline/run-board.sh --sim carla --keep-boot --keep-link --elf <elf> a <id2>'
-scripts/ienv.sh 'tools/timeline/run-board.sh --sim carla --keep-boot --elf <elf> b <id3>'
+scripts/ienv.sh 'tools/eval/run-board.sh --sim carla --keep-link --elf <elf> encore <id1>'
+scripts/ienv.sh 'tools/eval/run-board.sh --sim carla --keep-boot --keep-link --elf <elf> a <id2>'
+scripts/ienv.sh 'tools/eval/run-board.sh --sim carla --keep-boot --elf <elf> b <id3>'
 ```
 
 Each act still starts its own CARLA, scenario side and ego; only the
@@ -247,9 +247,9 @@ presses the button itself, after `DRIVE_SECS`).
 
 ```sh
 just board-build-booth     # snippet island-booth (CONFIG_ISLAND_LED=y) -> build-board-booth
-tools/timeline/run-board.sh --sim carla --elf build-board-booth/zephyr/zephyr.elf <act> <id>
-python3 tools/timeline/led_readout.py --elf build-board-booth/zephyr/zephyr.elf > build/timeline/<id>/led.txt
-python3 tools/timeline/led_vs_trace.py build/timeline/<id>
+tools/eval/run-board.sh --sim carla --elf build-board-booth/zephyr/zephyr.elf <act> <id>
+python3 tools/board/led_readout.py --elf build-board-booth/zephyr/zephyr.elf > build/timeline/<id>/led.txt
+python3 tools/eval/led_vs_trace.py build/timeline/<id>
 ```
 
 The gate image (`just board-build`, build-board) has no LED code; the booth
@@ -279,8 +279,8 @@ the availability gate). A demo affordance, not a safety function.
 A visitor's act, with the operator starting the rest:
 
 ```sh
-RB_TRIGGER=board tools/timeline/run-board.sh --sim carla --elf build-board-booth/zephyr/zephyr.elf a <id>
-RB_TRIGGER=board tools/timeline/run-board.sh --sim carla --elf build-board-booth/zephyr/zephyr.elf encore <id>
+RB_TRIGGER=board tools/eval/run-board.sh --sim carla --elf build-board-booth/zephyr/zephyr.elf a <id>
+RB_TRIGGER=board tools/eval/run-board.sh --sim carla --elf build-board-booth/zephyr/zephyr.elf encore <id>
 ```
 
 - **a**: the ego leaves the scenario's ODD by itself (odd_monitor, as in
@@ -324,7 +324,7 @@ island's debounced level (`island SW1 down`) and each press the island
 records, with accepted/ignored and its state, e.g. `island press SW2
 ignored (not NORMAL) ... state=MRM_OPERATING/EMERGENCY_STOP` (with no
 Autoware the island sits in its init-timeout stop, so both buttons read
-ignored). `python3 tools/timeline/board_buttons.py inject sw1 --elf <elf>`
+ignored). `python3 tools/board/board_buttons.py inject sw1 --elf <elf>`
 presses through the firmware without a finger, to tell a dead pad from a
 dead firmware path.
 
@@ -351,7 +351,7 @@ just carla-cast --no-flash --elf <elf> a cast-a<N>
 ```
 
 `carla-cast` runs `demo/carla/cast.sh` under `scripts/ienv.sh`. It starts
-`tools/timeline/run-board.sh --sim carla` with the arguments given, the
+`tools/eval/run-board.sh --sim carla` with the arguments given, the
 dashboard (`cast_dashboard.py`) on the display at run-board's step 6, and
 `ffmpeg -f x11grab` from step 7 (the scenario starts) to `CAST_TAIL` (8) s
 after step 8 (the readout). Everything else is the act as always: same

@@ -769,7 +769,7 @@ priority-check board="0":
     PY
     if [ "{{board}}" = "1" ]; then
         source scripts/board-env.sh "{{NROS_ROOT}}" >/dev/null
-        out="$(python3 tools/timeline/violations.py supervisor --elf "$b/zephyr/zephyr.elf")"
+        out="$(python3 tools/board/violations.py supervisor --elf "$b/zephyr/zephyr.elf")"
         printf '%s\n' "$out" | grep -E "priorit" || true
         printf '%s\n' "$out" | grep -q "priorities: AGREE with the plan" \
             || { echo "priority-check: the board's priorities do not agree with the plan" >&2; exit 1; }
@@ -793,7 +793,7 @@ board-build-booth:
 #
 # Watch SW1/SW2 live on the board running the booth image (Ctrl-C to stop).
 board-buttons elf="build-board-booth/zephyr/zephyr.elf":
-    python3 tools/timeline/board_buttons.py watch --elf {{elf}}
+    python3 tools/board/board_buttons.py watch --elf {{elf}}
 
 # phase9-U3: the spin-latency diagnostic image (docs/tracing.md section 9,
 # experiments/spin-latency/README.md). Applies the two diag patches to the

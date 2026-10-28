@@ -46,7 +46,7 @@ builtin_interfaces::msg::Time now_stamp()
 // 0 from boot; a debugger writes non-zero and the next operate=1 request is
 // answered OPERATING with no velocity limit published, once: a comfortable
 // stop that does not decelerate, for the supervised standstill (route 2,
-// island_supervisor.c). By name over SWD: tools/timeline/violations.py
+// island_supervisor.c). By name over SWD: tools/board/violations.py
 // comfortable-inert.
 extern "C" {
 volatile uint32_t island_debug_comfortable_inert;

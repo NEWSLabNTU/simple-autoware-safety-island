@@ -85,7 +85,7 @@ phases, this repository by fast-forward push.
 - **W1 - the booth UI.** One button per act (ODD exit, take over, HPC
   loss) and the trace plot drawn after each act. The proposal promises
   that visitors trigger each act; today an act is a
-  `tools/timeline/run-board.sh` invocation by the presenter, and the plot
+  `tools/eval/run-board.sh` invocation by the presenter, and the plot
   is rendered from the run directory afterwards (phase 8 D7, W9). Design:
   which process owns the buttons (the scenario controller already logs
   button presses as events), how the next act waits for the island to be
@@ -208,7 +208,7 @@ phases, this repository by fast-forward push.
     and draw each verdict (docs/tracing.md section 9). native_sim, QEMU and
     board images build; `.github/check-contracts.sh` 14/14 as expected (the
     contract is untouched).
-  - [x] SWD readout: tools/timeline/violations.py reads
+  - [x] SWD readout: tools/board/violations.py reads
     `NROS_VIOLATION_RECORD` by symbol through the pinned
     read-violation-record.py; readout.py reads it in its halt, so every
     run directory gets `violations.txt` (vscan.py retired).
@@ -600,7 +600,7 @@ phases, this repository by fast-forward push.
   frame's wire time (11.5 ms per 1 KB kinematic_state) because the reader
   woke once per byte. Measured with a diagnostic build
   (`CONFIG_ISLAND_SPIN_DIAG`, off; needs `experiments/spin-latency/*.patch`
-  on nano-ros; `tools/timeline/spin_diag.py` reads it over SWD).
+  on nano-ros; `tools/board/spin_diag.py` reads it over SWD).
   - [x] before, `sl-diag-before` (pin `319715968` + diag), act only: 3589
     spin intervals, 74 at 10 ms or more late (max 19 ms), 199 at 5 ms or
     more, p99 in the 12-13 ms bin; 8 verdicts 10.0-18.8 ms; each 10 ms+
@@ -698,7 +698,7 @@ phases, this repository by fast-forward push.
   10230, route 149), odd_exit floor 14683.67; the request ends within
   10,149 ms. The variants still fail only their comfortable-stop rung
   (30795.67 and 30525.67; demo/l3/contracts/README.md). 14/14 CI checks
-  as expected; tools/timeline/testdata/explain.txt regenerated and the
+  as expected; tools/board/testdata/explain.txt regenerated and the
   selftest passes (tlcommon now runs the play_launch on PATH; the W6
   source build is 0.12.0, DX gap 2.2). Open: the fresh board round of
   W14 against the new numbers (the board is on the spin-latency
@@ -737,7 +737,7 @@ phases, this repository by fast-forward push.
   detection charges the publisher's period and path, not its timer's
   jitter (6 ms short here; no verdict is that close). The island contract
   changed in one comment only (its path-exclusion note is printed again
-  since W5, naming `on_timer`); tools/timeline/testdata/explain.txt
+  since W5, naming `on_timer`); tools/board/testdata/explain.txt
   regenerated (line numbers only), selftest OK. CI: main's run of W5
   failed, the 0.13.1 pin refusing `trigger.timer.jitter`
   (`manifest-parse`) on four contracts; the pin and the doctor's minimum
@@ -774,7 +774,7 @@ phases, this repository by fast-forward push.
   or total moves (hpc_loss 4934.67, odd_exit comfortable_stop 20795.67,
   floor 14703.67; island alone floor 14683.67; variants 30795.67 and
   30525.67), only line numbers; README's verbatim outputs and
-  tools/timeline/testdata/explain.txt follow (selftest OK);
+  tools/board/testdata/explain.txt follow (selftest OK);
   `.github/check-contracts.sh` 14/14 as expected.
   Status (2026-10-12, the jitter gap): play_launch PR #18
   (NEWSLabNTU/play_launch, branch `fix/timer-jitter-detection`, not
@@ -795,7 +795,7 @@ phases, this repository by fast-forward push.
   `warning[scope-budget]`, so the re-pin must re-derive island.tor (to at
   least 218). `.github/check-contracts.sh` with the PR build: 14/14 as
   expected. At the re-pin: README verbatim outputs, smallest breaks,
-  tools/timeline/testdata/explain.txt (the island's own table does not
+  tools/board/testdata/explain.txt (the island's own table does not
   move) and the paper's odd_exit figures.
 - **W7 - on-demand topics.** The contract's 10 Hz `min_rate_hz` on the
   comfortable-stop operator's `clear_velocity_limit` and
@@ -929,7 +929,7 @@ phases, this repository by fast-forward push.
     Autoware check parses 163 scopes / 33 nodes / 2 manifests instead of
     169 / 34 / 4, and every MRM hazard reads `hazard-unguarded` (DX 2.8,
     7.4); `just l3-check` and run-board.sh already run under `env -i`
-    (just/l3-demo.just:191-192; tools/timeline/run-board.sh:36-38). State
+    (just/l3-demo.just:191-192; tools/eval/run-board.sh:36-38). State
     the rule: run every Autoware check under `env -i`.
   - the host's real-time setup, undocumented today: `gate-rt` uses
     SCHED_FIFO only "when `ulimit -r` allows (0 for this user: needs a
@@ -1016,7 +1016,7 @@ phases, this repository by fast-forward push.
     Done: each EXPECT row is `1:<rule>`; 0.13.0 passes 14/14, the PATH
     0.12.0 now FAILs the two variants on `error[manifest-parse]` (the old
     script called them "ok").
-  - [x] DX 6.7, the demo lock. tools/timeline/run-board.sh never takes the
+  - [x] DX 6.7, the demo lock. tools/eval/run-board.sh never takes the
     lock; its comment tells the operator to run under "flock
     /tmp/claude-1000005/sai-demo.lock" (run-board.sh:38-39), a path that
     exists only in this machine's agent sandbox (also
@@ -1351,7 +1351,7 @@ runs kept in `build/timeline/` and `/mnt/mx500/aeon/worktrees/spinlat-logs/`).
 
 ## 7. A board round on the I14 image (2026-10-12)
 
-Ten acts with `tools/timeline/run-board.sh` on the plain board image of this
+Ten acts with `tools/eval/run-board.sh` on the plain board image of this
 branch at `3329eac` (ELF sha256 `924c7abd9bb2c511...`, nano-ros `9a0e7ec0f`,
 FIFO watermark and serial TCM on, no spin diag; the 149 / 81 budgets),
 under `env -i` + scripts/env.sh, `L3_IMAGE=sai-l3-autoware:1.5.0-w24`. Run
@@ -1416,7 +1416,7 @@ image of main.
   play_launch with the PR, re-pin CI and the doctor's minimum (W19's
   three surfaces together), raise the island contract's `island.tor` from
   210 to at least 218 ms (its critical path through the handler tick is
-  100 + 18 + 100 with the PR), regenerate `tools/timeline/testdata/explain.txt`
+  100 + 18 + 100 with the PR), regenerate `tools/board/testdata/explain.txt`
   and the README's verbatim outputs. Expected: odd_exit detection 120 ->
   126 ms, comfortable_stop 20,795.67 -> 20,801.67, floor 14,703.67 ->
   14,709.67, the variants 30,801.67 and 30,531.67 (still refused at the
@@ -1738,7 +1738,7 @@ image of main.
   hits it repeatedly at the same phase; host load only widens the window
   (later arrivals).
 
-  Evidence. Recorded with `tools/timeline/diaggraph.py` beside the probe
+  Evidence. Recorded with `tools/eval/diaggraph.py` beside the probe
   (`build/timeline/c8-*/diag.rec`, island-c2's tree): the 1 Hz leaves
   arrive every 1000.00 ms with about half the gaps at or over 1000.0 ms
   (max 1008.6 in `c8-b2`); in `c8-b3` `lane_departure_checker_node:
@@ -1803,7 +1803,7 @@ image of main.
 
 - [x] **U1 - every run records its own evidence.** The serial counters,
   the boot record (heap and arena at FirstSpin and at the dump) and the
-  violation ring are read by hand today. tools/timeline/readout.py
+  violation ring are read by hand today. tools/board/readout.py
   reads all three in its halted read at the end of each act, into
   `serial.txt` and `bootrec.txt` beside `violations.txt`, and
   run-board.sh prints one summary line (verdict, total, stored verdicts,
@@ -1813,7 +1813,7 @@ image of main.
   the pinned read-boot-report.py); `--serial-only` snapshots the counters
   without a halt just before the act (run-board.sh step 7), so serial.txt
   says how many overruns and bad frames fell inside the act;
-  tools/timeline/run_summary.py prints one SUMMARY line per run (also
+  tools/eval/run_summary.py prints one SUMMARY line per run (also
   summary.txt). On the board, encore `u1-e2` (image rebuilt at 190890d):
   `SUMMARY u1-e2 encore: PASS; table 8/8 PASS, total 3529.61 of 4934.67
   ms; trace-check PASS; stored 1 (silence-runtime x1); serial in act 0/0
@@ -1858,9 +1858,9 @@ image of main.
   count, so the B2 figure is reproducible from the repo. Gate: the B2
   numbers regenerate from a clean checkout.
   Status (2026-10-13, branch `phase9-u3-u4`): done. The act-segment count
-  is tools/timeline/actseg.py (`just diag-actseg <run>...`, run dirs or ids
+  is tools/eval/actseg.py (`just diag-actseg <run>...`, run dirs or ids
   under build/timeline; `--survival` prints the per-ms curve the figure
-  plots), the driver tools/timeline/run-diag.sh (`just diag-run [a|b|encore]
+  plots), the driver tools/eval/run-diag.sh (`just diag-run [a|b|encore]
   <id>`: run-board.sh's own default act inside RB_ACT, `spin_diag.py read`
   just before and just after it, the diag ELF by default), the build
   experiments/spin-latency/build-diag.sh (`just board-build-diag

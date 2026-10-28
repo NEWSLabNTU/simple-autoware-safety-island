@@ -388,7 +388,7 @@ the others by fast-forward push once implementation starts.
   Image: main `88a336f` (W28), board ELF sha256 `780195b0...5c80cde6`, RAM
   290,728 of 327,680 B. Container `sai-l3-autoware:1.5.0-w24` (31/31 nodes,
   68/68 composables in every start). All runs went through
-  tools/timeline/run-board.sh; its board steps (pyocd flash, gateway plus
+  tools/eval/run-board.sh; its board steps (pyocd flash, gateway plus
   reset, SWD readout) worked on the first run and needed no change beyond
   the default image and the notes. Heap on the board, island joined to the
   container Autoware through `just l3-peer`: FirstSpin, PEAK 77,160 of
@@ -531,7 +531,7 @@ the others by fast-forward push once implementation starts.
   contract; 64-bit cycle-counter stamps. Measured 1.68-1.79 s of act per
   KiB, so the board's 32 KiB buffer holds 51-54 s after the trigger (board
   image links at RAM 287,320 of 327,680 B). Act B and the encore PASS with
-  trace-check PASS on native_sim and QEMU through tools/timeline/run-board.sh
+  trace-check PASS on native_sim and QEMU through tools/eval/run-board.sh
   (flash, gateway + reset and SWD readout untested). Open: QEMU needed a
   1 MiB heap when Autoware joined through run-board's gateway path (heap
   exhausted in zpico_read at 102,400); the trigger fires once per boot; a
