@@ -77,8 +77,8 @@ for t in "" $NESTED; do
     mod="$(git -C "$d" status --porcelain --untracked-files=no --ignore-submodules=all 2>/dev/null | awk '{print $2}')"
     [ -n "$mod" ] || continue
     WARN "$rel_root${t:+/$t} has modified tracked files: $(echo $mod | cut -c1-160)"
-    if [ -z "$t" ] && git -C "$root" apply -R --check "$isl/experiments/spin-latency/nano-ros-diag.patch" 2>/dev/null; then
-        WARN "  that is the spin-diag patch (a killed board-build-diag?) -- run: git -C $rel_root apply -R experiments/spin-latency/nano-ros-diag.patch (path from $isl)"
+    if [ -z "$t" ] && git -C "$root" apply -R --check "$isl/tools/diag/nano-ros-diag.patch" 2>/dev/null; then
+        WARN "  that is the spin-diag patch (a killed board-build-diag?) -- run: git -C $rel_root apply -R tools/diag/nano-ros-diag.patch (path from $isl)"
     fi
 done
 

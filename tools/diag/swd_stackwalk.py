@@ -14,7 +14,7 @@ import struct
 import subprocess
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "tools", "timeline"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "board"))
 from spin_diag import ADDR2LINE  # noqa: E402
 
 

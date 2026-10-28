@@ -213,7 +213,7 @@ delta at all. It printed:
 2. Connects LPUART2 to a host PTY through
    `emulation CreateUartPtyTerminal` and `connector Connect`.
 3. Starts `rmw_zenohd` listening on that PTY, with
-   `experiments/serial-interop/router-serial.json5` and the same invocation
+   `config/router-serial.json5` and the same invocation
    the bench uses.
 4. Starts the machine through the Renode monitor port.
 5. After the bound, reads the boot report with `sysbus ReadBytes` and decodes

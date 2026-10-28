@@ -599,7 +599,7 @@ phases, this repository by fast-forward push.
   (k_thread 4, above main at 5) and the RX ISR held the CPU for each
   frame's wire time (11.5 ms per 1 KB kinematic_state) because the reader
   woke once per byte. Measured with a diagnostic build
-  (`CONFIG_ISLAND_SPIN_DIAG`, off; needs `experiments/spin-latency/*.patch`
+  (`CONFIG_ISLAND_SPIN_DIAG`, off; needs `tools/diag/*.patch`
   on nano-ros; `tools/board/spin_diag.py` reads it over SWD).
   - [x] before, `sl-diag-before` (pin `319715968` + diag), act only: 3589
     spin intervals, 74 at 10 ms or more late (max 19 ms), 199 at 5 ms or
@@ -1298,7 +1298,7 @@ this pin; re-pin at or after its merge commit.
 
 The board image on nano-ros `4f91dfd7b` (#1944 play_launch 0.15.1, #1946
 the non-blocking serial TX, phase-474 I12), TX ring 4096, encore with the
-spin diag (`CONFIG_ISLAND_SPIN_DIAG` + `experiments/spin-latency/*.patch`;
+spin diag (`CONFIG_ISLAND_SPIN_DIAG` + `tools/diag/*.patch`;
 runs kept in `build/timeline/` and `/mnt/mx500/aeon/worktrees/spinlat-logs/`).
 
 | run | spins | >= 2 ms late per 10k | >= 1 ms per 10k | worst |
@@ -1346,7 +1346,7 @@ runs kept in `build/timeline/` and `/mnt/mx500/aeon/worktrees/spinlat-logs/`).
   went past it. Not pursued: one frame in an encore costs nothing the gate
   sees. If it recurs, RXWATER 0 (interrupt on the first byte, still a FIFO
   drain per interrupt) or the I16 DMA mode are the next steps.
-  `experiments/spin-latency/*.patch` and the spin diag now read zenoh-pico's
+  `tools/diag/*.patch` and the spin diag now read zenoh-pico's
   own ISR counters (`CONFIG_NROS_ZENOH_SERIAL_ISR_STATS`, diag builds only).
 
 ## 7. A board round on the I14 image (2026-10-12)
@@ -1863,7 +1863,7 @@ image of main.
   plots), the driver tools/eval/run-diag.sh (`just diag-run [a|b|encore]
   <id>`: run-board.sh's own default act inside RB_ACT, `spin_diag.py read`
   just before and just after it, the diag ELF by default), the build
-  experiments/spin-latency/build-diag.sh (`just board-build-diag
+  tools/diag/build-diag.sh (`just board-build-diag
   [CONFIG_X=v ...]`: both patches applied, built into build-board-diag with
   `CONFIG_ISLAND_SPIN_DIAG` and `CONFIG_NROS_ZENOH_SERIAL_ISR_STATS` as -D
   through board-build's new `ISLAND_BOARD_KCONFIG`, the board conf not
@@ -1871,7 +1871,7 @@ image of main.
   is refused with the `git apply -R` to run). Beside the patches:
   late_records.py, swd_where.py, swd_stackwalk.py (addr2line from the SDK,
   no host path: spin_diag.py's lookup), and scripts/ienv.sh for the
-  `env -i` runner; experiments/spin-latency/README.md documents them.
+  `env -i` runner; tools/diag/README.md documents them.
   Gate, over the island-rclcpp run dirs (read only): `sl-i13` 61 spins
   >= 1 ms late of 5,779 act spins (35 >= 2 ms, 105.6 / 60.6 per 10k, worst
   bin 6 ms, ISR 6.21 us a call, 4.46 s), `sl-i14w1` 0 of 6,019 (worst bin

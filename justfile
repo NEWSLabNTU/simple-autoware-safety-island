@@ -796,7 +796,7 @@ board-buttons elf="build-board-booth/zephyr/zephyr.elf":
     python3 tools/board/board_buttons.py watch --elf {{elf}}
 
 # phase9-U3: the spin-latency diagnostic image (docs/tracing.md section 9,
-# experiments/spin-latency/README.md). Applies the two diag patches to the
+# tools/diag/README.md). Applies the two diag patches to the
 # submodules, builds into build-board-diag (BOARD_DIAG_BUILD_DIR) with
 # CONFIG_ISLAND_SPIN_DIAG and CONFIG_NROS_ZENOH_SERIAL_ISR_STATS (plus any
 # CONFIG_X=value given here), and reverts the patches on any exit. build-board
@@ -804,7 +804,7 @@ board-buttons elf="build-board-booth/zephyr/zephyr.elf":
 #
 # Build the spin-diag board image into build-board-diag (patches reverted after).
 board-build-diag *conf:
-    ISLAND_NROS_ROOT="{{NROS_ROOT}}" experiments/spin-latency/build-diag.sh {{conf}}
+    ISLAND_NROS_ROOT="{{NROS_ROOT}}" tools/diag/build-diag.sh {{conf}}
 
 # Flash the island. pyocd via MCU-Link; the runner comes from the board itself.
 #

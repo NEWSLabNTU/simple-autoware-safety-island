@@ -338,7 +338,7 @@ re-routes in one run and 3 of 3 here kept it at 10 Hz.
 (the Dockerfile unchanged: the local `ros:humble-ros-base-jammy` is already
 W21's digest `sha256:1813d3c8...`, so every Autoware layer came from cache and
 the rclcpp 16.0.19 check passed). Same method as W11: a private
-`rmw_zenohd` (keep_alive 6, `experiments/serial-interop/router-serial.json5`)
+`rmw_zenohd` (keep_alive 6, `config/router-serial.json5`)
 on 7484, every Autoware start under the demo lock (now
 `${XDG_RUNTIME_DIR:-/tmp}/sai-demo.lock`),
 a start counted when play_launch prints `Startup complete` with n/n

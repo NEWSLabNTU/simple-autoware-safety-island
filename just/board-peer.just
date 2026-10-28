@@ -71,7 +71,7 @@ board-peer tty=PEER_TTY port=PEER_TCP log=(PEER_DIR / "board-peer-router.log") b
         exit 1
     fi
     mkdir -p "$(dirname "{{log}}")"
-    cfg="$PWD/experiments/serial-interop/router-serial.json5"
+    cfg="$PWD/config/router-serial.json5"
     rust_log="${BOARD_PEER_RUST_LOG:-zenoh=info,zenoh_transport=debug}"
     # Run the router under its own name: on 2026-09-25 a concurrent session's
     # name-based cleanup of `rmw_zenohd` closed this router twice mid-run

@@ -173,7 +173,7 @@ qemu-run secs="40":
         if true; then
             # The host half, exactly as experiments/serial-interop runs it
             # against the board's UART (router-serial.json5 is required).
-            ZENOH_ROUTER_CONFIG_URI=$PWD/experiments/serial-interop/router-serial.json5 \
+            ZENOH_ROUTER_CONFIG_URI=$PWD/config/router-serial.json5 \
             ZENOH_CONFIG_OVERRIDE="listen/endpoints=[\"serial/$pty#baudrate=115200\",\"tcp/[::]:{{QEMU_ROUTER_PORT}}\"]" \
                 setsid ros2 run rmw_zenoh_cpp rmw_zenohd >"$router_log" 2>&1 &
             pids+=($!)
@@ -322,7 +322,7 @@ renode-run elf="build-board/zephyr/zephyr.elf" secs="40": renode-setup
     # runs it against the real DCD-LZ UART (router-serial.json5 is required;
     # its header says why). TCP on 7448 so a qemu-run router can coexist.
     set +u; source /opt/ros/humble/setup.bash; set -u
-    ZENOH_ROUTER_CONFIG_URI=$PWD/experiments/serial-interop/router-serial.json5 \
+    ZENOH_ROUTER_CONFIG_URI=$PWD/config/router-serial.json5 \
     ZENOH_CONFIG_OVERRIDE="listen/endpoints=[\"serial/$pty#baudrate=115200\",\"tcp/[::]:7448\"]" \
         setsid ros2 run rmw_zenoh_cpp rmw_zenohd > "$out/renode-$stamp.router.log" 2>&1 &
     pids+=($!)

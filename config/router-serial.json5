@@ -1,6 +1,6 @@
 // rmw_zenohd router config for zenoh-over-serial against a zenoh-pico device.
 //
-//   ZENOH_ROUTER_CONFIG_URI=$PWD/router-serial.json5 \
+//   ZENOH_ROUTER_CONFIG_URI=$PWD/config/router-serial.json5 \
 //   ZENOH_CONFIG_OVERRIDE='listen/endpoints=["serial//dev/ttyUSB0#baudrate=115200","tcp/[::]:7447"]' \
 //     ros2 run rmw_zenoh_cpp rmw_zenohd
 //

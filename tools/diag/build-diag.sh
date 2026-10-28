@@ -2,7 +2,7 @@
 # DIAG (spin latency): a board image with the spin diagnostic, built into its
 # own directory so the normal build-board is untouched.
 #
-#   experiments/spin-latency/build-diag.sh [CONFIG_X=value ...]
+#   tools/diag/build-diag.sh [CONFIG_X=value ...]
 #   (just board-build-diag [CONFIG_X=value ...])
 #
 # 1. applies nano-ros-diag.patch to the nano-ros submodule and
@@ -23,7 +23,7 @@
 set -u
 cd "$(dirname "$0")/../.."
 repo="$PWD"
-E="$repo/experiments/spin-latency"
+E="$repo/tools/diag"
 # This checkout's submodule. Not $NROS_REPO_DIR: inherited, it names whatever
 # checkout the calling shell sourced (a direnv of another worktree), and
 # patching THAT tree is the one thing this must not do. `just

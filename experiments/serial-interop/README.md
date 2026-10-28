@@ -18,7 +18,7 @@ because the T1 Ethernet link needs a media converter we do not have.
 
 Host side — the router LISTENS on the serial line and bridges to TCP:
 
-    ZENOH_ROUTER_CONFIG_URI=$PWD/experiments/serial-interop/router-serial.json5 \
+    ZENOH_ROUTER_CONFIG_URI=$PWD/config/router-serial.json5 \
     ZENOH_CONFIG_OVERRIDE='listen/endpoints=["serial//dev/ttyUSB0#baudrate=115200","tcp/[::]:7447"]' \
       ros2 run rmw_zenoh_cpp rmw_zenohd
 
