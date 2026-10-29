@@ -7,7 +7,8 @@ demo, the acts, the experiment runs, the figures) moves to a new private repo,
 `NEWSLabNTU/rtss-work-2026-demo`, which consumes this one as a submodule.
 Write-ups and slides leave with it. The legacy Cyclone demo is retired.
 
-**Status (2026-10-29): P0-P3 done; the P2.4 board act is open (below).** Decisions taken:
+**Status (2026-10-29): P0-P3 and the loose ends (P4) done; the P2.4 board
+act is open (below).** Decisions taken:
 
 - **History is kept.** Paths leave the tree, not the history; nothing is
   rewritten or force-pushed.
@@ -147,6 +148,37 @@ emulation claim's wording); measurements keep their method.
   or a second one).
 - P3.2 The docs that stay state technical facts only (measurements with
   their method, no paper framing).
+
+**P4. Loose ends** -- done (2026-10-29)
+
+Status: `docs/demo-runbook.md` keeps the island and board bring-up
+(sections 0-6) and links rtss-work-2026-demo:docs/demo-runbook.md, which
+took the host side, the real-time limits, the acts, the host traps and the
+act validation record, rewritten for its layout (`just island::<recipe>`,
+island paths under `third-party/safety-island`). The `DX x.y` tags, which
+named a gap list that left with the write-ups, state their gap inline. In
+the demo repo: docs citing an island doc by a plain `docs/<file>` path now
+cite `third-party/safety-island/docs/<file>` (the slides and one ASCII
+diagram line aside); `l3-probe` and `l3-scenario` run in the L3
+environment run-board.sh uses (`env -i`, `l3-env` over `build/l3-host-ws`,
+rmw_zenoh_cpp, domain 10) instead of this repo's `scripts/env.sh`; and
+`scenario_driver.py` no longer forces `RMW_IMPLEMENTATION=rmw_cyclonedds_cpp`
+and `ROS_DOMAIN_ID=1` at import (`scenario.py run` imported it before
+`rclpy.init`, so the act's children inherited Cyclone; the phase7-W3
+injector sets both itself). The L3 image builds from the demo repo
+(`docker build` of `demo/l3/container/Dockerfile`, base layers cached,
+15 s) as `sai-l3-autoware:1.5.0-c8-p14`; since the `-c8` build its inputs
+changed in comments only. An in-image check (`l3-env`: rmw_zenoh_cpp
+0.1.10, domain 10, the overlay's packages, the rclcpp diversion, the map,
+play_launch 0.12.0) passes. The `-c8` tag was left in place: `just
+l3-container` rebuilds that tag and then prunes untagged images with the
+image's label.
+
+- P4.1 The runbook's host-side sections move to the demo repo.
+- P4.2 `DX x.y` tags state their gap inline.
+- P4.3 Demo docs cite island docs under `third-party/safety-island`.
+- P4.4 The L3 probe and scenario recipes run in the L3 environment.
+- P4.5 The L3 image builds from the demo repo.
 
 ## Acceptance
 
