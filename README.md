@@ -61,7 +61,7 @@ tools/diag/                 the spin-latency diagnostic image
 docs/
   roadmap/                  phase doc — plan + acceptance
   porting-notes.md          rclcpp→nano-ros friction log (deliverable!)
-  demo-runbook.md           fresh-machine bring-up of the board demo (start here)
+  demo-runbook.md           fresh-machine bring-up of the island and the board (start here)
   board-bringup-triage.md   MR-CANHUBK344 first-boot triage: symptom → knob
 ```
 
@@ -86,7 +86,9 @@ reports anything missing; `just doctor` gives the same verdict on demand.
 ## Quick start (native island)
 
 The board demo (the RTSS path: the island on the MR-CANHUBK344, Autoware on
-zenoh in a container) is set up and run by [docs/demo-runbook.md](docs/demo-runbook.md).
+zenoh in a container): [docs/demo-runbook.md](docs/demo-runbook.md) sets up
+and builds the island and the board image; the host side and the acts run from
+NEWSLabNTU/rtss-work-2026-demo (its docs/demo-runbook.md).
 The native island below is the fast development loop.
 
 ```sh

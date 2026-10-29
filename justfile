@@ -101,8 +101,9 @@ doctor:
     # the justfile value: $NANO_ROS_ROOT is not exported, and under `set -u`
     # expanding it killed this recipe instead of reporting.
     #
-    # phase9-U4 (DX 3.1): present is not enough. A CLI built from another
-    # commit, or one another checkout put first on PATH, still runs; a nested
+    # phase9-U4 (tooling picked up another checkout silently): present is not
+    # enough. A CLI built from another commit, or one another checkout put
+    # first on PATH, still runs; a nested
     # nano-ros submodule left behind by a non-recursive `git submodule update`
     # surfaces later as a --locked Cargo.lock error. scripts/check-nros-fresh.sh
     # checks the pin, the nested submodules the build reads, and both host
@@ -124,16 +125,17 @@ doctor:
     # The host gate (run-board.sh's RB_GATE, through gate-rt) runs SCHED_FIFO 20
     # only when this shell's rtprio limit allows it, else SCHED_OTHER with a
     # line in gate.stdout. A warning: every measured round so far ran it
-    # SCHED_OTHER. The limits.d line is in docs/demo-runbook.md (phase9-W21).
+    # SCHED_OTHER. The limits.d line is in rtss-work-2026-demo:docs/demo-runbook.md
+    # section 4 (phase9-W21).
     rtprio="$(ulimit -r)"
     if [ "$rtprio" = unlimited ] || [ "$rtprio" -ge 20 ] 2>/dev/null; then
         echo "rtprio: ulimit -r $rtprio (the host gate can run SCHED_FIFO 20)"
     else
-        echo "  WARNING: ulimit -r is $rtprio -- the host availability gate will run SCHED_OTHER, not SCHED_FIFO 20 (docs/demo-runbook.md, 'Real-time limits')"
+        echo "  WARNING: ulimit -r is $rtprio -- the host availability gate will run SCHED_OTHER, not SCHED_FIFO 20 (rtss-work-2026-demo:docs/demo-runbook.md, 'Real-time limits')"
     fi
     # The display RViz and the demo UI use: a warning, not a failure (the
     # board and CI paths need no display). A headless shell made the demo UI
-    # fail with nothing said (phase9-W22, DX 6.10).
+    # fail with nothing said (phase9-W22).
     disp="{{VNC_DISPLAY}}"; dn="${disp#*:}"; dn="${dn%%.*}"
     if command -v xset >/dev/null && DISPLAY="$disp" timeout 3 xset q >/dev/null 2>&1; then
         echo "X server: $disp answers (xset q)"

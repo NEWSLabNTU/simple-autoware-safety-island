@@ -26,8 +26,9 @@ PL="${PLAY_LAUNCH:-play_launch}"
 # listed must pass (0). An exit-1 row passes only when the output names its
 # rule as `error[<rule>]`: a contract can exit 1 for another reason, and a
 # play_launch too old to parse it exits 1 with `error[manifest-parse]`, which
-# is never an expected verdict (phase9-W22, DX 2.4). A rule ending in `!`
-# must be the ONLY error the output names (phase10-B5).
+# is never an expected verdict (phase9-W22: comparing exit codes alone passed
+# such a run). A rule ending in `!` must be the ONLY error the output names
+# (phase10-B5).
 # CORE: the island's own contract passes (no entry); nothing core is
 # expected to fail. Kept as its own table so a core variant has a place.
 declare -A EXPECT_CORE=(

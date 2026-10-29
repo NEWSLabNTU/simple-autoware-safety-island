@@ -877,7 +877,7 @@ held by anything but the kept gateway, or when `--elf` differs from the
 image the kept link's run flashed. The link is kept rather than restarted
 because the island rejoined a restarted gateway, without a reset, only
 after 107 s (zenoh-pico's reconnect; one measurement).
-docs/demo-runbook.md section 9 has the commands.
+rtss-work-2026-demo:docs/demo-runbook.md section 5 has the commands.
 
 **Cost.** Three words in SRAM (the window's state lives in
 mrm_handler_core.cpp's library, which is not relocated to DTCM) and the
