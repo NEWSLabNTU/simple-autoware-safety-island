@@ -49,10 +49,34 @@ it; nothing below the floor is invented.
 
 ## Units
 
-- S1. Contract: the floor's `safe_state.settle` gets its `supervise:` in the
-  form rlm v0.2.6 accepts; bump the CI pin to play_launch 0.21.0 (and the
-  nano-ros play_launch/rlm pins if the island's sync reads them); `check`
-  shows no `call-unbounded-floor` finding and the FTTI sums still pass.
+- S1. Contract (form confirmed with play_launch, rlm
+  `docs/format-reference.md`, rows `<settle>.supervise`):
+  - `supervise:` takes exactly one of `reaction:` / `enters:`, plus
+    `mechanism:`; `observes:` is settle-only. The floor has no rung to
+    enter, so it names a `reaction:`: a scope path of the manifest for the
+    supervisor's direct path, e.g. `sys.floor_override` (trigger: what route
+    3's due fires on; output: the braking command it publishes).
+  - The checker walks that reaction and requires it to reach one of the
+    hazard's safe states. The direct path publishes `emergency_control_cmd`,
+    which the operator's `on_timer` safe state emits; if the walk does not
+    accept that, the scope path gets its own `safe_state: { emits, settle }`.
+    The latch and the hazard lights are outside the arithmetic.
+  - One supervised settle clears both `call-unbounded-floor` findings: both
+    hazards' floors end at the operator's `on_timer` safe state.
+  - The checker adds an `overrun` row per hazard (`supervised-fit`): before
+    the floor + its settle deadline (settle + the `kinematic_state` period
+    + its `max_transport`) + detection (`supervision.switch`) + the
+    reaction's route + its settle, against each hazard's FTTI; an error if
+    it exceeds. **Risk:** odd_exit reaches the floor only after the
+    comfortable rung's overrun (26204.33 ms of 30 s today); adding the
+    floor's settle deadline (~4620 ms) and a second settle (~4484 ms) is
+    likely over 30 s. Run `check --explain` first. If it does not fit, the
+    choices are a direct path that brakes harder (its own, shorter settle),
+    an earlier floor check that the checker can model, or a recorded
+    finding for the odd_exit row with the reason.
+  - Bump the CI pin to play_launch 0.21.0 (and the nano-ros play_launch /
+    rlm pins if the island's sync reads them). Done when `check` shows no
+    `call-unbounded-floor` and both overrun rows fit.
 - S2. Supervisor: route 3 (Kconfig `ISLAND_SUPERVISOR_EMERGENCY_MS`, derived
   like route 2's), the arm call in the handler, the fault record readable by
   name over SWD (`tools/board/violations.py supervisor`), selftests. Decide
