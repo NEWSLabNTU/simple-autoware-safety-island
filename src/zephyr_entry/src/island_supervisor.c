@@ -52,8 +52,25 @@
  * lights, the emergency operator's publishes its braking command, at once and
  * then every CONFIG_ISLAND_SUPERVISOR_DIRECT_PERIOD_MS (the operator's own
  * 30 Hz), until that component's executor path reports the emergency running
- * (island_supervisor_handover). Why this is safe against the spin thread,
- * which may be the one stuck (in the callback that owns the handler's state):
+ * (island_supervisor_handover).
+ *
+ * After the handover (phase15-S6) the executor path reports every tick that
+ * publishes the emergency (island_supervisor_handover again, with its tick
+ * period). Silent for CONFIG_ISLAND_SUPERVISOR_RESUME_PERIODS of its periods
+ * (99 ms for the operator's 33, 300 ms for the handler's 100), its tick is
+ * not running (a stall after the takeover), and the direct path resumes the
+ * slot at once (`resumed`, SUPERVISOR_RESUME), at its period, for good: the
+ * executor path's later reports are counted (alive_after_resume) and answered
+ * "not yours" (handover returns 0, island_supervisor_resumed), and the
+ * component then publishes nothing on the slot's topics. One source per
+ * slot: a tick that missed three periods is not trusted to keep the next
+ * ones, and two ramps on one topic would interleave; the direct path
+ * publishes the same command. The operator slot's resume restarts the
+ * island's braking command for route 3 (brake_since) and arms route 3 for
+ * the resumed direct path's settle if nothing has it armed.
+ *
+ * Why this is safe against the spin thread, which may be the one stuck (in
+ * the callback that owns the handler's state):
  *   - the direct functions read and write only messages they own, never the
  *     component's spin-thread state, and use only publishers built at
  *     construction, which live as long as the image;
@@ -66,7 +83,14 @@
  *     the emergency stop from then on, so a spin thread that resumes (an
  *     overrun rather than a stall) enters the same state through its normal
  *     path, and hands over; a stall that never ends leaves the direct path
- *     publishing until reset.
+ *     publishing until reset;
+ *   - after the handover the spin thread writes only its slot's report
+ *     (alive_ms, a 32-bit store, then the period and the handover flag) and
+ *     reads `resumed`, which only the reaction thread writes, once, 0 -> 1.
+ *     A resume decided between the component's check and its publish costs
+ *     one extra braking command on the topic, from the same ramp; never a
+ *     missing one. The direct functions after a resume run on the same
+ *     owned messages as before the handover.
  * A spin thread that resumes after an overrun may finish the tick it was in
  * with the state it had computed before the latch; the next tick reads the
  * latch.
@@ -101,8 +125,14 @@
  * command never took effect on the island's side (the operate request lost,
  * the operator's tick not running): the output is latched, the direct path
  * brakes, and route 3 is re-armed once for the direct path's own settle.
- * Missed with the output latched (a braking command has run a whole settle):
- * the island cannot brake harder than its command, so it records a
+ * Missed with the output latched, the verdict waits for the island's own
+ * braking command to have run a whole settle (phase15-S6): measured from
+ * brake_since, the latch (the direct path's start; the operator continuing
+ * the same ramp after a handover keeps it) or the operator slot's resume.
+ * Younger than the span (a latch by SWT0 or route 2 shortly before this due,
+ * a resume after a stall): no verdict, route 3 re-armed at brake_since + the
+ * span (floor_waits, SUPERVISOR_FLOOR_WAIT). At or past it, a vehicle still
+ * moving: the island cannot brake harder than its command, so it records a
  * persistent vehicle-side fault (island_supervisor_vehicle_fault, the record,
  * SUPERVISOR_VEHICLE_FAULT); the command and the hazard lights go on (the
  * handler holds the emergency stop under the latch). mrm_state stays
@@ -179,6 +209,8 @@ BUILD_ASSERT(ISLAND_SUPERVISOR_PRIORITY < CONFIG_MAIN_THREAD_PRIORITY,
 BUILD_ASSERT(ISLAND_SUPERVISOR_PRIORITY >= 0, "the reaction thread stays preemptible");
 
 #define ISLAND_SUPERVISOR_MAGIC 0x56505553u /* "SUPV" little-endian */
+/* Route 3's span: the emergency settle + the standstill observation. */
+#define FLOOR_SPAN_MS (CONFIG_ISLAND_SUPERVISOR_EMERGENCY_MS + CONFIG_ISLAND_SUPERVISOR_STANDSTILL_OBSERVE_MS)
 
 /* Layout read by tools/board/violations.py; all 32-bit. */
 struct island_supervisor_route {
@@ -284,9 +316,19 @@ struct island_supervisor_record {
 	uint32_t vehicle_fault_uptime_ms;  /* when */
 	uint32_t vehicle_fault_speed_mm_s; /* the last noted |v| then */
 	uint32_t stale_at_due;             /* route 2 or 3 dues judged with no fresh kinematic_state */
-	/* phase15-S4, last: route 3 dues met before any kinematic_state since
+	/* phase15-S4: route 3 dues met before any kinematic_state since
 	 * boot (no vehicle reporting yet), each re-armed for another span. */
 	uint32_t floor_unseen;
+	/* phase15-S6, after floor_unseen so every offset above holds: the
+	 * direct path's resume after a handover, per slot, and route 3's
+	 * deferred verdicts. */
+	uint32_t resume_periods;                                   /* CONFIG_ISLAND_SUPERVISOR_RESUME_PERIODS */
+	uint32_t resumed[ISLAND_SUPERVISOR_DIRECT_SLOTS];            /* 1 once the direct path took the slot back */
+	uint32_t resume_uptime_ms[ISLAND_SUPERVISOR_DIRECT_SLOTS];   /* when */
+	uint32_t resume_silent_ms[ISLAND_SUPERVISOR_DIRECT_SLOTS];   /* how long the executor path had been silent */
+	uint32_t alive_after_resume[ISLAND_SUPERVISOR_DIRECT_SLOTS]; /* its reports after that (it came back) */
+	uint32_t floor_waits;                                      /* route 3 dues latched, braking younger than the span */
+	uint32_t brake_since_ms;                                   /* when the island's braking command (re)started */
 };
 
 volatile struct island_supervisor_record island_supervisor_record;
@@ -302,6 +344,14 @@ static int64_t due_ms[ISLAND_SUPERVISOR_ROUTES];
 static island_supervisor_direct_fn direct_fn[ISLAND_SUPERVISOR_DIRECT_SLOTS];
 static void *direct_ctx[ISLAND_SUPERVISOR_DIRECT_SLOTS];
 static int64_t latch_ms;
+/* phase15-S6. The executor path's last report per handed-over slot (uptime
+ * ms) and its tick period, written by that slot's spin thread; the island's
+ * braking command's start and the direct path's next publish, written and
+ * read only by the reaction thread. */
+static volatile uint32_t alive_ms[ISLAND_SUPERVISOR_DIRECT_SLOTS];
+static volatile uint32_t alive_period_ms[ISLAND_SUPERVISOR_DIRECT_SLOTS];
+static int64_t brake_since;
+static int64_t direct_next_ms;
 /* The executor's route cells, read at route 1's expiry (filled when route 1
  * gets its owner, from the owner's executor, before route 1 is ever armed). */
 static nros_cpp_route_watch_t route_watch;
@@ -521,15 +571,88 @@ static bool standstill_now(int64_t now)
 	return stopped;
 }
 
-/* Every slot not yet handed over, once per call; true while one remains. */
+/* The direct path publishes the slot: not handed over, or resumed after. */
+static bool direct_owns(int i)
+{
+	return direct_fn[i] != NULL &&
+	       (!island_supervisor_record.direct[i].handover || island_supervisor_record.resumed[i]);
+}
+
+/* A slot the direct path publishes; true while one remains. */
 static bool direct_pending(void)
 {
 	for (int i = 0; i < ISLAND_SUPERVISOR_DIRECT_SLOTS; i++) {
-		if (direct_fn[i] != NULL && !island_supervisor_record.direct[i].handover) {
+		if (direct_owns(i)) {
 			return true;
 		}
 	}
 	return false;
+}
+
+/* The slot's resume deadline: its last report + RESUME_PERIODS of its period. */
+static int64_t resume_due(int i, int64_t now)
+{
+	const uint32_t period = alive_period_ms[i] != 0u ? alive_period_ms[i] : CONFIG_ISLAND_SUPERVISOR_DIRECT_PERIOD_MS;
+	const uint32_t silent = (uint32_t)now - alive_ms[i];
+	const uint32_t limit = period * CONFIG_ISLAND_SUPERVISOR_RESUME_PERIODS;
+
+	return silent >= limit ? now : now + (int64_t)(limit - silent);
+}
+
+/* A slot handed over and watched for silence. */
+static bool direct_watched(int i)
+{
+	return direct_fn[i] != NULL && island_supervisor_record.direct[i].handover &&
+	       !island_supervisor_record.resumed[i];
+}
+
+/* phase15-S6: resume each handed-over slot whose executor path has been
+ * silent RESUME_PERIODS of its periods. True if one resumed. */
+static bool direct_watch(int64_t now)
+{
+	bool any = false;
+
+	for (int i = 0; i < ISLAND_SUPERVISOR_DIRECT_SLOTS; i++) {
+		if (!direct_watched(i)) {
+			continue;
+		}
+		const uint32_t period = alive_period_ms[i] != 0u ? alive_period_ms[i]
+								 : CONFIG_ISLAND_SUPERVISOR_DIRECT_PERIOD_MS;
+
+		if (!island_judge_resume((uint32_t)now, alive_ms[i], period, CONFIG_ISLAND_SUPERVISOR_RESUME_PERIODS)) {
+			continue;
+		}
+		const uint32_t silent = (uint32_t)now - alive_ms[i];
+
+		island_supervisor_record.resume_uptime_ms[i] = (uint32_t)now;
+		island_supervisor_record.resume_silent_ms[i] = silent;
+		island_supervisor_record.resumed[i] = 1u;
+		ISLAND_TRACE(ISLAND_MK_SUPERVISOR_RESUME, ((uint32_t)i << 28) | (silent & 0x0FFFFFFFu));
+		any = true;
+		if (i != ISLAND_SUPERVISOR_DIRECT_OPERATOR) {
+			continue;
+		}
+		/* The braking command restarts on the direct path: route 3 judges
+		 * it a whole settle from here, armed now if nothing has it. */
+		brake_since = now;
+		island_supervisor_record.brake_since_ms = (uint32_t)now;
+		k_spinlock_key_t key = k_spin_lock(&lock);
+		const uint32_t r3 = ISLAND_SUPERVISOR_ROUTE_EMERGENCY_STANDSTILL;
+
+		if (!due_valid[r3]) {
+			volatile struct island_supervisor_route *r = route_rec(r3);
+
+			due_valid[r3] = true;
+			due_ms[r3] = now + FLOOR_SPAN_MS;
+			r->armed = 1u;
+			r->due_ms = (uint32_t)due_ms[r3];
+			r->arms++;
+			island_supervisor_record.floor_stage = ISLAND_FLOOR_DIRECT;
+			rearm_locked();
+		}
+		k_spin_unlock(&lock, key);
+	}
+	return any;
 }
 
 static void direct_publish(void)
@@ -539,7 +662,7 @@ static void direct_publish(void)
 	for (int i = 0; i < ISLAND_SUPERVISOR_DIRECT_SLOTS; i++) {
 		volatile struct island_supervisor_direct *d = &island_supervisor_record.direct[i];
 
-		if (direct_fn[i] == NULL || d->handover) {
+		if (!direct_owns(i)) {
 			continue;
 		}
 		const uint32_t seq = d->calls;
@@ -553,33 +676,66 @@ static void direct_publish(void)
 	}
 }
 
+/* Latched: resume a silent slot, then the direct path's publish if its
+ * period is up (phase15-S6: a resume publishes at once). */
+static void direct_service(void)
+{
+	const int64_t now = k_uptime_get();
+
+	if (direct_watch(now)) {
+		direct_next_ms = now;
+	}
+	if (direct_pending() && now >= direct_next_ms) {
+		direct_publish();
+		direct_next_ms = now + CONFIG_ISLAND_SUPERVISOR_DIRECT_PERIOD_MS;
+	}
+}
+
+/* Latched: the next wake for the direct path (its publish, a watched slot's
+ * resume deadline) or SWT0's feed; else forever. */
+static k_timeout_t latched_wait(void)
+{
+	if (!island_supervisor_record.latched) {
+		return K_FOREVER;
+	}
+	const int64_t now = k_uptime_get();
+	int64_t next = INT64_MAX;
+
+	if (direct_pending()) {
+		next = direct_next_ms;
+	}
+	for (int i = 0; i < ISLAND_SUPERVISOR_DIRECT_SLOTS; i++) {
+		if (direct_watched(i)) {
+			const int64_t due = resume_due(i, now);
+
+			next = due < next ? due : next;
+		}
+	}
+#if defined(CONFIG_ISLAND_SUPERVISOR_SWT)
+	/* Keep SWT0 from its second (reset) timeout. */
+	if (swt_running && now + CONFIG_ISLAND_SUPERVISOR_SWT_MS / 4 < next) {
+		next = now + CONFIG_ISLAND_SUPERVISOR_SWT_MS / 4;
+	}
+#endif
+	return next == INT64_MAX ? K_FOREVER : K_TIMEOUT_ABS_MS(next);
+}
+
 static void reaction_thread(void *a, void *b, void *c)
 {
 	ARG_UNUSED(a);
 	ARG_UNUSED(b);
 	ARG_UNUSED(c);
 	for (;;) {
-		k_timeout_t wait = K_FOREVER;
-
-		if (island_supervisor_record.latched && direct_pending()) {
-			wait = K_MSEC(CONFIG_ISLAND_SUPERVISOR_DIRECT_PERIOD_MS);
-		}
-#if defined(CONFIG_ISLAND_SUPERVISOR_SWT)
-		/* Latched: keep SWT0 from its second (reset) timeout. */
-		else if (island_supervisor_record.latched && swt_running) {
-			wait = K_MSEC(CONFIG_ISLAND_SUPERVISOR_SWT_MS / 4);
-		}
-#endif
-		const int got = k_sem_take(&wake, wait);
+		const int got = k_sem_take(&wake, latched_wait());
 #if defined(CONFIG_ISLAND_SUPERVISOR_SWT)
 		if (island_supervisor_record.latched && swt_running) {
 			(void)swt_feed();
 		}
 #endif
 		if (got != 0) {
-			/* The period: the direct path's next publish. */
+			/* A period or a resume deadline. */
 			if (island_supervisor_record.latched) {
-				direct_publish();
+				direct_service();
 			}
 			continue;
 		}
@@ -636,21 +792,35 @@ static void reaction_thread(void *a, void *b, void *c)
 					/* no vehicle has reported yet: watch another span */
 					island_supervisor_record.floor_unseen++;
 					due_valid[i] = true;
-					due_ms[i] = now + CONFIG_ISLAND_SUPERVISOR_EMERGENCY_MS +
-						    CONFIG_ISLAND_SUPERVISOR_STANDSTILL_OBSERVE_MS;
+					due_ms[i] = now + FLOOR_SPAN_MS;
 					r->armed = 1u;
 					r->due_ms = (uint32_t)due_ms[i];
 					continue;
 				}
 				if (i == ISLAND_SUPERVISOR_ROUTE_EMERGENCY_STANDSTILL) {
-					floor = island_judge_floor(standstill_now(now),
-								   island_supervisor_record.latched != 0u,
-								   island_supervisor_record.floor_stage);
+					const bool latched = island_supervisor_record.latched != 0u;
+
+					floor = island_judge_floor(standstill_now(now), latched,
+								   latched ? (uint32_t)(now - brake_since) : 0u,
+								   FLOOR_SPAN_MS);
 					if (floor == ISLAND_FLOOR_MET) {
 						/* the floor stopped the vehicle in time */
 						r->dones++;
 						island_supervisor_record.floor_met++;
 						island_supervisor_record.floor_stage = ISLAND_FLOOR_IDLE;
+						continue;
+					}
+					if (floor == ISLAND_FLOOR_WAIT) {
+						/* phase15-S6: the island's braking command has
+						 * not run a settle yet: judge it at its own. */
+						island_supervisor_record.floor_waits++;
+						island_supervisor_record.floor_stage = ISLAND_FLOOR_DIRECT;
+						due_valid[i] = true;
+						due_ms[i] = brake_since + FLOOR_SPAN_MS;
+						r->armed = 1u;
+						r->due_ms = (uint32_t)due_ms[i];
+						ISLAND_TRACE(ISLAND_MK_SUPERVISOR_FLOOR_WAIT,
+							     (uint32_t)due_ms[i] & 0x0FFFFFFFu);
 						continue;
 					}
 				}
@@ -669,8 +839,7 @@ static void reaction_thread(void *a, void *b, void *c)
 					island_supervisor_record.floor_latches++;
 					island_supervisor_record.floor_stage = ISLAND_FLOOR_DIRECT;
 					due_valid[i] = true;
-					due_ms[i] = now + CONFIG_ISLAND_SUPERVISOR_EMERGENCY_MS +
-						    CONFIG_ISLAND_SUPERVISOR_STANDSTILL_OBSERVE_MS;
+					due_ms[i] = now + FLOOR_SPAN_MS;
 					r->armed = 1u;
 					r->due_ms = (uint32_t)due_ms[i];
 				} else {
@@ -706,9 +875,16 @@ static void reaction_thread(void *a, void *b, void *c)
 			safe_state(ISLAND_SUPERVISOR_CAUSE_SWT);
 		}
 		/* The emergency command follows the output at once; later wakes
-		 * (another route, a hook call) do not publish out of period. */
+		 * (another route, a hook call) do not publish out of period. The
+		 * island's braking command starts here, at this pass's time (a
+		 * route-3 latch re-armed its due at now + the span). */
 		if (!was_latched && island_supervisor_record.latched) {
-			direct_publish();
+			brake_since = now;
+			island_supervisor_record.brake_since_ms = (uint32_t)now;
+			direct_next_ms = now;
+		}
+		if (island_supervisor_record.latched) {
+			direct_service();
 		}
 	}
 }
@@ -961,15 +1137,37 @@ void island_supervisor_set_direct(uint32_t slot, island_supervisor_direct_fn fn,
 	island_supervisor_record.direct[slot].registered = 1u;
 }
 
-void island_supervisor_handover(uint32_t slot)
+uint32_t island_supervisor_handover(uint32_t slot, uint32_t period_ms)
 {
-	if (slot >= ISLAND_SUPERVISOR_DIRECT_SLOTS || !island_supervisor_record.latched ||
-	    island_supervisor_record.direct[slot].handover) {
-		return;
+	if (slot >= ISLAND_SUPERVISOR_DIRECT_SLOTS || !island_supervisor_record.latched) {
+		return 0u;
 	}
-	island_supervisor_record.direct[slot].handover_uptime_ms = k_uptime_get_32();
-	island_supervisor_record.direct[slot].handover = 1u;
-	ISLAND_TRACE(ISLAND_MK_SUPERVISOR_HANDOVER, slot);
+	if (island_supervisor_record.resumed[slot]) {
+		/* phase15-S6: the direct path took the slot back; it keeps it. */
+		island_supervisor_record.alive_after_resume[slot]++;
+		return 0u;
+	}
+	const uint32_t now = k_uptime_get_32();
+
+	/* The report before the flag: the reaction thread never sees a
+	 * handover without its time. */
+	alive_ms[slot] = now;
+	alive_period_ms[slot] = period_ms;
+	compiler_barrier();
+	if (!island_supervisor_record.direct[slot].handover) {
+		island_supervisor_record.direct[slot].handover_uptime_ms = now;
+		island_supervisor_record.direct[slot].handover = 1u;
+		ISLAND_TRACE(ISLAND_MK_SUPERVISOR_HANDOVER, slot);
+		/* The reaction thread's wait now includes this slot's resume
+		 * deadline. */
+		k_sem_give(&wake);
+	}
+	return 1u;
+}
+
+uint32_t island_supervisor_resumed(uint32_t slot)
+{
+	return slot < ISLAND_SUPERVISOR_DIRECT_SLOTS ? island_supervisor_record.resumed[slot] : 0u;
 }
 
 uint32_t island_supervisor_vehicle_fault(void)
@@ -993,6 +1191,7 @@ static int island_supervisor_init(void)
 	island_supervisor_record.levels = ISLAND_SUPERVISOR_LEVELS;
 	island_supervisor_record.route_nros_level = NROS_ENTRY_LEVEL_OF_MRM_HANDLER;
 	island_supervisor_record.nros_level_count = NROS_ENTRY_TIER_COUNT;
+	island_supervisor_record.resume_periods = CONFIG_ISLAND_SUPERVISOR_RESUME_PERIODS;
 	island_supervisor_record.magic = ISLAND_SUPERVISOR_MAGIC;
 	return 0;
 }

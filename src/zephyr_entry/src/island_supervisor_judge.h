@@ -49,27 +49,48 @@ static inline bool island_judge_unseen(uint32_t at_ms)
 #define ISLAND_FLOOR_DIRECT 2u   /* route 3's own latch: the direct path's settle */
 
 enum island_floor_verdict {
-	ISLAND_FLOOR_MET = 0,      /* at standstill: disarm */
-	ISLAND_FLOOR_LATCH,        /* latch the output, the direct path brakes; re-arm (DIRECT) */
-	ISLAND_FLOOR_VEHICLE_FAULT /* a braking command ran a whole settle and the vehicle still moves */
+	ISLAND_FLOOR_MET = 0,       /* at standstill: disarm */
+	ISLAND_FLOOR_LATCH,         /* latch the output, the direct path brakes; re-arm (DIRECT) */
+	ISLAND_FLOOR_VEHICLE_FAULT, /* the island's braking command ran a whole settle and the vehicle still moves */
+	ISLAND_FLOOR_WAIT           /* latched, but the island's braking command is younger than a settle:
+				     * re-arm at its start + the settle (phase15-S6) */
 };
 
 /* Route 3 at its due. Not stopped: if the output is not latched yet the
  * command never took effect on the island's side (the operate request lost,
  * or the operator's tick not running), and the direct path is the answer.
- * If it is latched already, something has been publishing the braking
- * command (the direct path, or the operator after its handover) for at least
- * a settle, or this is the direct path's own due: the island cannot brake
- * harder than its command, so the fault is the vehicle's. */
-static inline enum island_floor_verdict island_judge_floor(bool standstill, bool latched, uint32_t stage)
+ * If it is latched, the island owns the braking command since `braked_ms`
+ * ago: the direct path's start at the latch (followed, after a handover, by
+ * the operator continuing the same ramp), or the direct path's resume after
+ * an operator that went silent (phase15-S6). Only once that command has run
+ * a whole settle (`span_ms`, the emergency settle + the standstill
+ * observation) is a vehicle still moving the vehicle's fault: the island
+ * cannot brake harder than its command. Before that it is no verdict yet
+ * (WAIT): a latch from SWT0 or route 2 shortly before route 3's due, or a
+ * resume, has not had its settle (phase15-S6: no false vehicle fault). */
+static inline enum island_floor_verdict island_judge_floor(bool standstill, bool latched, uint32_t braked_ms,
+							   uint32_t span_ms)
 {
 	if (standstill) {
 		return ISLAND_FLOOR_MET;
 	}
-	if (!latched && stage != ISLAND_FLOOR_DIRECT) {
+	if (!latched) {
 		return ISLAND_FLOOR_LATCH;
 	}
-	return ISLAND_FLOOR_VEHICLE_FAULT;
+	if (braked_ms >= span_ms) {
+		return ISLAND_FLOOR_VEHICLE_FAULT;
+	}
+	return ISLAND_FLOOR_WAIT;
+}
+
+/* phase15-S6: a slot handed over to its component's executor path reports
+ * each tick that publishes the emergency (island_supervisor_handover, at
+ * `alive_ms`, uptime ms, wrapping). Silent for `periods` of its own period
+ * (`period_ms`) at `now_ms`, its tick is not running: the direct path
+ * resumes the slot. */
+static inline bool island_judge_resume(uint32_t now_ms, uint32_t alive_ms, uint32_t period_ms, uint32_t periods)
+{
+	return (uint32_t)(now_ms - alive_ms) >= period_ms * periods;
 }
 
 #endif /* ISLAND_SUPERVISOR_JUDGE_H */

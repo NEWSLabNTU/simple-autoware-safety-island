@@ -685,6 +685,15 @@ nodes:
             # route-3 miss then is the vehicle-side fault, never a second
             # direct-path settle. The board's floor acts (drop, stall, hold)
             # are in docs/roadmap/phase-15-supervised-floor.md.
+            # phase15-S6: an operator that takes the command over from the
+            # direct path and then stalls loses it back after 3 of its
+            # periods (99 ms + the 1 ms tick, CONFIG_ISLAND_SUPERVISOR_
+            # RESUME_PERIODS); the direct path's settle is charged that gap
+            # once, outside the checker's sum: hpc_loss 9890.33 + 100 =
+            # 9990.33 of 10 s, odd_exit 19739.33, the two-fault chain
+            # 26304.33 of 30 s. A vehicle-side fault needs the island's
+            # braking command (from the latch or that resume) to have run
+            # the whole span; an earlier route-3 due re-arms, no new latch.
             supervise:
               reaction: island.floor_override
               mechanism: timer

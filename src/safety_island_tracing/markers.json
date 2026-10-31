@@ -1,7 +1,7 @@
 {
  "generator": "src/safety_island_tracing/gen_markers.py",
- "contract_sha256": "db8f33b223681b464601b82087c4691214681eb083f20aa3ce6931e6a3ea220c",
- "table_sha256": "886752e0fd426def9227527c9f5078fed056fa13c5a565877b2adaa398990583",
+ "contract_sha256": "d53df2ffbf07cfa2d1a5d19d9256b6938afb0f8672e0ad4160d04c2012bd0f8c",
+ "table_sha256": "09183d0ae51e689e2f85319190431c05d5ed59585d53ebf466fdd84fbcf503d4",
  "entities": {
   "pub": 8,
   "sub": 7,
@@ -388,6 +388,22 @@
    "id": 37,
    "name": "SUPERVISOR_VEHICLE_FAULT",
    "kind": "supervisor_vehicle_fault",
+   "element": "/mrm_handler/call_mrm",
+   "node": "mrm_handler",
+   "record": "every"
+  },
+  {
+   "id": 38,
+   "name": "SUPERVISOR_RESUME",
+   "kind": "supervisor_resume",
+   "element": "/mrm_handler/call_mrm",
+   "node": "mrm_handler",
+   "record": "every"
+  },
+  {
+   "id": 39,
+   "name": "SUPERVISOR_FLOOR_WAIT",
+   "kind": "supervisor_floor_wait",
    "element": "/mrm_handler/call_mrm",
    "node": "mrm_handler",
    "record": "every"

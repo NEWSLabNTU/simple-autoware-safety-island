@@ -56,7 +56,8 @@ void island_supervisor_done(uint32_t route);
 uint32_t island_supervisor_latched(void);
 typedef void (*island_supervisor_direct_fn)(void * ctx, uint32_t seq, uint32_t since_latch_ms);
 void island_supervisor_set_direct(uint32_t slot, island_supervisor_direct_fn fn, void * ctx);
-void island_supervisor_handover(uint32_t slot);
+uint32_t island_supervisor_handover(uint32_t slot, uint32_t period_ms);
+uint32_t island_supervisor_resumed(uint32_t slot);
 void island_supervisor_note_speed(uint32_t speed_mm_s);
 #endif
 #if defined(CONFIG_ISLAND_DEBUG_FLOOR_INJECT)
@@ -426,6 +427,13 @@ void MrmHandler::onOperationModeState(const autoware_adapi_v1_msgs::msg::Operati
 void MrmHandler::publishHazardCmd()
 {
   using autoware_vehicle_msgs::msg::HazardLightsCommand;
+#if defined(__ZEPHYR__) && defined(CONFIG_ISLAND_SUPERVISOR)
+  // phase15-S6: the direct path resumed this slot (this tick went silent
+  // after its handover): it publishes the hazard lights, not this node.
+  if (is_supervisor_latched_ && island_supervisor_resumed(0u) != 0u) {
+    return;
+  }
+#endif
   HazardLightsCommand msg{};
 
   msg.stamp = now_stamp();
@@ -441,6 +449,12 @@ void MrmHandler::publishHazardCmd()
 
 void MrmHandler::publishMrmState()
 {
+#if defined(__ZEPHYR__) && defined(CONFIG_ISLAND_SUPERVISOR)
+  // phase15-S6: as publishHazardCmd, mrm_state is the direct path's then.
+  if (is_supervisor_latched_ && island_supervisor_resumed(0u) != 0u) {
+    return;
+  }
+#endif
   mrm_state_.stamp = now_stamp();
   ISLAND_TRACE(ISLAND_MK_PUB_MRM_HANDLER_MRM_STATE, (mrm_state_.state << 16) | mrm_state_.behavior);
   pub_mrm_state_.publish(mrm_state_);
@@ -864,9 +878,10 @@ void MrmHandler::onTimer()
   // phase11-S6: a tick that read the latch at its start has decided and
   // published with it (the emergency stop, or, in manual control, no MRM, as
   // upstream); from here the handler's own path publishes the state and the
-  // direct path's handler slot stops.
+  // direct path's handler slot stops. phase15-S6: every such tick reports
+  // itself alive; silent three periods, the direct path resumes the slot.
   if (is_supervisor_latched_) {
-    island_supervisor_handover(0u);
+    (void)island_supervisor_handover(0u, static_cast<uint32_t>(1000 / param_.update_rate));
   }
 #endif
 #if defined(__ZEPHYR__) && defined(CONFIG_ISLAND_LED)

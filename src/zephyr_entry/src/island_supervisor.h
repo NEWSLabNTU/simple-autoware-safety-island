@@ -45,16 +45,20 @@
  * output not yet latched (the operate request lost, the operator's tick not
  * running): the output is latched, the direct path brakes, and the route is
  * re-armed once for the direct path's own settle. Missed with the output
- * already latched (the direct path or the operator has been braking for a
- * whole settle): a vehicle-side fault, latched for good
- * (island_supervisor_vehicle_fault); the command is kept. */
+ * already latched: once the island's braking command (from the latch, or
+ * from the direct path's resume after a silent operator, phase15-S6) has run
+ * a whole span, a vehicle-side fault, latched for good
+ * (island_supervisor_vehicle_fault), the command kept; before that the route
+ * is re-armed at the command's start + the span. */
 #define ISLAND_SUPERVISOR_ROUTE_EMERGENCY_STANDSTILL 3u
 
 /* The direct emergency path (phase11-S6, decision 2). A component registers
  * one function per slot at construction; once the output is latched the
  * reaction thread calls it at once and then every
  * CONFIG_ISLAND_SUPERVISOR_DIRECT_PERIOD_MS until that component's own
- * executor path reports the emergency running (island_supervisor_handover).
+ * executor path reports the emergency running (island_supervisor_handover),
+ * and again, for good, once that path has been silent for
+ * CONFIG_ISLAND_SUPERVISOR_RESUME_PERIODS of its periods (phase15-S6).
  * The function publishes on publishers the component built at construction,
  * from messages it owns alone; it never takes the executor, a service or the
  * component's spin-thread state. */
@@ -89,9 +93,17 @@ void island_supervisor_spin_after(void *executor, uint8_t nros_level);
 uint32_t island_supervisor_latched(void);
 /* Register the direct emergency function of a slot (construction only). */
 void island_supervisor_set_direct(uint32_t slot, island_supervisor_direct_fn fn, void *ctx);
-/* The slot's executor path now publishes the emergency itself: the reaction
- * thread stops calling its direct function. Called from the spin thread. */
-void island_supervisor_handover(uint32_t slot);
+/* The slot's executor path publishes the emergency itself this tick (its
+ * tick period `period_ms`): the first call stops the direct function, every
+ * later one reports the tick alive. Called from the spin thread, every tick
+ * that publishes while latched. phase15-S6: silent for
+ * CONFIG_ISLAND_SUPERVISOR_RESUME_PERIODS periods, the direct path resumes
+ * the slot for good; returns 1 while the executor path holds the slot (it
+ * publishes), 0 once the direct path has it or before any latch (it
+ * publishes nothing on the slot's topics). */
+uint32_t island_supervisor_handover(uint32_t slot, uint32_t period_ms);
+/* phase15-S6: 1 once the direct path resumed the slot after its handover. */
+uint32_t island_supervisor_resumed(uint32_t slot);
 /* The vehicle's speed from the latest kinematic_state take (|v|, mm/s),
  * stamped with the uptime: route 2's standstill judgement. */
 void island_supervisor_note_speed(uint32_t speed_mm_s);

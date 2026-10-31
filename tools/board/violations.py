@@ -137,6 +137,13 @@ SUP_FLOOR = ["floor_stage", "floor_met", "floor_latches", "vehicle_fault", "vehi
 # phase15-S4, after them (absent from an S2/S3 record): route-3 dues met
 # before any kinematic_state since boot, each re-armed for another span.
 SUP_FLOOR_UNSEEN = ["floor_unseen"]
+# phase15-S6, after floor_unseen (absent from an older record): the direct
+# path's resume after a handover, per slot (each u32[SUP_DIRECT_SLOTS]), then
+# route 3's deferred verdicts and when the island's braking command started.
+SUP_RESUME = (["resume_periods"]
+              + [f"{k}_{i}" for k in ("resumed", "resume_uptime_ms", "resume_silent_ms", "alive_after_resume")
+                 for i in range(SUP_DIRECT_SLOTS)]
+              + ["floor_waits", "brake_since_ms"])
 SUP_FLOOR_STAGE = {0: "idle", 1: "the operator's settle", 2: "the direct path's settle"}
 # zenoh-pico's tasks, by the name the platform gives them, sit in the
 # transport band. Since zenoh-pico 1.9 (nano-ros phase-508, RFC-0110 D2) one
@@ -291,6 +298,9 @@ def supervisor_decode(blob):
                 o6 = o5 + len(SUP_FLOOR)
                 if o6 + len(SUP_FLOOR_UNSEEN) <= n:
                     hdr.update(zip(SUP_FLOOR_UNSEEN, w[o6:o6 + len(SUP_FLOOR_UNSEEN)]))
+                o7 = o6 + len(SUP_FLOOR_UNSEEN)
+                if o7 + len(SUP_RESUME) <= n:
+                    hdr.update(zip(SUP_RESUME, w[o7:o7 + len(SUP_RESUME)]))
     return hdr
 
 
@@ -298,7 +308,8 @@ def supervisor_layout_bytes(routes=3, levels=4):
     """The record's size by the layout above (island_supervisor.c's struct)."""
     words = (len(SUP_HEADER) + routes * len(SUP_ROUTE) + SUP_DIRECT_SLOTS * len(SUP_DIRECT) + len(SUP_TAIL)
              + len(SUP_PRIO) + SUP_PRIO_THREADS * 5 + len(SUP_LATE) + len(SUP_LEVELS)
-             + levels * SUP_LEVEL_BYTES // 4 + len(SUP_ROUTE) + len(SUP_FLOOR) + len(SUP_FLOOR_UNSEEN))
+             + levels * SUP_LEVEL_BYTES // 4 + len(SUP_ROUTE) + len(SUP_FLOOR) + len(SUP_FLOOR_UNSEEN)
+             + len(SUP_RESUME))
     return words * 4
 
 
@@ -312,6 +323,9 @@ def supervisor_selftest(elf=None):
     w[0] = SUP_MAGIC
     w[SUP_HEADER.index("routes")] = 3
     w[len(SUP_HEADER) + 2 * len(SUP_ROUTE) + SUP_ROUTE.index("arms")] = 5  # route 2 arms
+    od = len(SUP_HEADER) + 3 * len(SUP_ROUTE) + len(SUP_DIRECT)  # direct slot 1
+    w[od + SUP_DIRECT.index("registered")] = 1
+    w[od + SUP_DIRECT.index("handover")] = 1
     o3 = (len(SUP_HEADER) + 3 * len(SUP_ROUTE) + SUP_DIRECT_SLOTS * len(SUP_DIRECT) + len(SUP_TAIL)
           + len(SUP_PRIO) + SUP_PRIO_THREADS * 5 + len(SUP_LATE))
     w[o3 + SUP_LEVELS.index("levels")] = 4
@@ -325,6 +339,11 @@ def supervisor_selftest(elf=None):
     for k, v in floor.items():
         w[o4 + len(SUP_ROUTE) + SUP_FLOOR.index(k)] = v
     w[o4 + len(SUP_ROUTE) + len(SUP_FLOOR)] = 2  # floor_unseen
+    resume = {"resume_periods": 3, "resumed_1": 1, "resume_uptime_ms_1": 22099, "resume_silent_ms_1": 99,
+              "alive_after_resume_1": 4, "floor_waits": 1, "brake_since_ms": 22099}
+    o7 = o4 + len(SUP_ROUTE) + len(SUP_FLOOR) + len(SUP_FLOOR_UNSEEN)
+    for k, v in resume.items():
+        w[o7 + SUP_RESUME.index(k)] = v
     blob = struct.pack(f"<{len(w)}I", *w)
     d = supervisor_decode(blob)
     if len(d["route"]) != 4 or d["route"][3] != route3:
@@ -336,8 +355,14 @@ def supervisor_selftest(elf=None):
             fails.append(f"{k} = {d.get(k)}, expected {v}")
     if d.get("floor_unseen") != 2:
         fails.append(f"floor_unseen = {d.get('floor_unseen')}, expected 2")
+    for k, v in resume.items():
+        if d.get(k) != v:
+            fails.append(f"{k} = {d.get(k)}, expected {v}")
+    if d.get("resumed_0") != 0:
+        fails.append(f"resumed_0 = {d.get('resumed_0')}, expected 0")
     text = supervisor_report(blob)
-    for want in ("route 3 the emergency stop's standstill", "VEHICLE-SIDE FAULT", "misses that latched the direct path=1"):
+    for want in ("route 3 the emergency stop's standstill", "VEHICLE-SIDE FAULT", "misses that latched the direct path=1",
+                 "RESUMED by the direct path at uptime 22099 ms", "dues deferred to the braking command's own settle=1"):
         if want not in text:
             fails.append(f"report lacks {want!r}")
     if elf:
@@ -426,6 +451,10 @@ def supervisor_report(blob):
             line += f", first at uptime {dd['first_uptime_us'] / 1000:.3f} ms"
         line += (f"; handed over to the executor at uptime {dd['handover_uptime_ms']} ms" if dd["handover"]
                  else "; not handed over")
+        if d.get(f"resumed_{i}"):
+            line += (f"; RESUMED by the direct path at uptime {d[f'resume_uptime_ms_{i}']} ms, the executor path "
+                     f"silent {d[f'resume_silent_ms_{i}']} ms (limit {d['resume_periods']} periods); its reports "
+                     f"after that {d[f'alive_after_resume_{i}']}")
         lines.append(line)
     if "level_count" in d:
         owner = d["route_owner"]
@@ -448,11 +477,13 @@ def supervisor_report(blob):
                      f"{SUP_FLOOR_STAGE.get(d['floor_stage'], d['floor_stage'])}; dues judged with no fresh "
                      f"kinematic_state (routes 2, 3)={d['stale_at_due']}"
                      + (f"; dues re-armed before any kinematic_state since boot={d['floor_unseen']}"
-                        if "floor_unseen" in d else ""))
+                        if "floor_unseen" in d else "")
+                     + (f"; dues deferred to the braking command's own settle={d['floor_waits']} (the island's "
+                        f"braking command since uptime {d['brake_since_ms']} ms)" if "floor_waits" in d else ""))
         if d["vehicle_fault"]:
             lines.append(f"  VEHICLE-SIDE FAULT latched at uptime {d['vehicle_fault_uptime_ms']} ms: the vehicle "
-                         f"still moved ({d['vehicle_fault_speed_mm_s']} mm/s) under a braking command that ran a "
-                         f"whole settle")
+                         f"still moved ({d['vehicle_fault_speed_mm_s']} mm/s) under the island's braking command "
+                         f"that ran a whole settle")
         else:
             lines.append("  no vehicle-side fault")
     pf = priority_findings(d)

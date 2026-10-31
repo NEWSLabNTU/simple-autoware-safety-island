@@ -8,9 +8,9 @@
 #ifndef ISLAND_TRACE_MARKERS_H
 #define ISLAND_TRACE_MARKERS_H
 
-#define ISLAND_TRACE_CONTRACT_SHA256 "db8f33b223681b464601b82087c4691214681eb083f20aa3ce6931e6a3ea220c"
-#define ISLAND_TRACE_TABLE_SHA256 "886752e0fd426def9227527c9f5078fed056fa13c5a565877b2adaa398990583"
-#define ISLAND_TRACE_MARKER_COUNT 37
+#define ISLAND_TRACE_CONTRACT_SHA256 "d53df2ffbf07cfa2d1a5d19d9256b6938afb0f8672e0ad4160d04c2012bd0f8c"
+#define ISLAND_TRACE_TABLE_SHA256 "09183d0ae51e689e2f85319190431c05d5ed59585d53ebf466fdd84fbcf503d4"
+#define ISLAND_TRACE_MARKER_COUNT 39
 #define ISLAND_TRACE_ENTITIES "pub=8,sub=7,srv=2,cli=2,timer=3"
 
 #define ISLAND_MK_PATH_MRM_COMFORTABLE_STOP_OPERATOR_ON_TIMER_ENTRY           1 /* path_entry           /mrm_comfortable_stop_operator/on_timer */
@@ -50,6 +50,8 @@
 #define ISLAND_MK_SUPERVISOR_DIRECT                                          35 /* supervisor_direct    /mrm_handler/call_mrm */
 #define ISLAND_MK_SUPERVISOR_HANDOVER                                        36 /* supervisor_handover  /mrm_handler/call_mrm */
 #define ISLAND_MK_SUPERVISOR_VEHICLE_FAULT                                   37 /* supervisor_vehicle_fault /mrm_handler/call_mrm */
+#define ISLAND_MK_SUPERVISOR_RESUME                                          38 /* supervisor_resume    /mrm_handler/call_mrm */
+#define ISLAND_MK_SUPERVISOR_FLOOR_WAIT                                      39 /* supervisor_floor_wait /mrm_handler/call_mrm */
 
 /* The trace window (phase8-W17, include/island_trace.h, docs/tracing.md
  * section 8): the record policy of every id (index 0 unused), the trigger
@@ -58,7 +60,7 @@
 #define ISLAND_TRACE_REC_CHANGE 1
 #define ISLAND_TRACE_REC_SPIN_ENTRY 2
 #define ISLAND_TRACE_REC_SPIN_EXIT 3
-#define ISLAND_TRACE_POLICY_TABLE { 0, 2, 3, 0, 0, 2, 3, 0, 0, 0, 0, 2, 3, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0 }
+#define ISLAND_TRACE_POLICY_TABLE { 0, 2, 3, 0, 0, 2, 3, 0, 0, 0, 0, 2, 3, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }
 #define ISLAND_TRACE_TRIGGER_MARKER 7 /* PATH_MRM_HANDLER_CALL_MRM_ENTRY */
 #define ISLAND_TRACE_ARM_MARKER 15 /* TAKE_MRM_HANDLER_OPERATION_MODE_AVAILABILITY */
 

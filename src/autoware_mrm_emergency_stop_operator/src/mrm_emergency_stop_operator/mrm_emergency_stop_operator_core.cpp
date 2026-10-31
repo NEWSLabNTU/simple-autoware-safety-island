@@ -29,7 +29,7 @@ extern "C" {
 uint32_t island_supervisor_latched(void);
 typedef void (*island_supervisor_direct_fn)(void * ctx, uint32_t seq, uint32_t since_latch_ms);
 void island_supervisor_set_direct(uint32_t slot, island_supervisor_direct_fn fn, void * ctx);
-void island_supervisor_handover(uint32_t slot);
+uint32_t island_supervisor_handover(uint32_t slot, uint32_t period_ms);
 }
 #endif
 #if defined(__ZEPHYR__) && defined(CONFIG_ISLAND_DEBUG_FLOOR_INJECT)
@@ -279,6 +279,7 @@ void MrmEmergencyStopOperator::onTimer()
 #endif
   ISLAND_TRACE(ISLAND_MK_PATH_MRM_EMERGENCY_STOP_OPERATOR_ON_TIMER_ENTRY, status_.state);
   if (status_.state == MrmBehaviorStatus::OPERATING) {
+    bool publish = true;
 #if defined(__ZEPHYR__) && defined(CONFIG_ISLAND_SUPERVISOR)
     // phase11-S6: the supervisor's direct path braked first; this tick takes
     // over and continues its ramp from the last command it published.
@@ -290,12 +291,20 @@ void MrmEmergencyStopOperator::onTimer()
         is_prev_control_cmd_subscribed_ = true;
       }
       k_spin_unlock(&g_direct_brake.lock, key);
-      island_supervisor_handover(1u);
+    }
+    // phase15-S6: every tick after the takeover reports itself alive; a
+    // tick that went silent for three periods has lost the slot to the
+    // direct path for good, and this node then publishes no command of its
+    // own beside it (handover returns 0).
+    if (direct_taken_over_) {
+      publish = island_supervisor_handover(1u, static_cast<uint32_t>(1000 / params_.update_rate)) != 0u;
     }
 #endif
-    auto control_cmd = calcTargetAcceleration(prev_control_cmd_);
-    publishControlCommand(control_cmd);
-    prev_control_cmd_ = control_cmd;
+    if (publish) {
+      auto control_cmd = calcTargetAcceleration(prev_control_cmd_);
+      publishControlCommand(control_cmd);
+      prev_control_cmd_ = control_cmd;
+    }
   } else {
 #if defined(__ZEPHYR__) && defined(CONFIG_ISLAND_SUPERVISOR)
     // phase15-S2: latched and not OPERATING (the operate request never

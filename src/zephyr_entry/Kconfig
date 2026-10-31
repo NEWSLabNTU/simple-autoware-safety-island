@@ -128,6 +128,24 @@ config ISLAND_SUPERVISOR_DIRECT_PERIOD_MS
 	  executor path takes over (island_supervisor_handover): the
 	  emergency operator's own update_rate 30.
 
+config ISLAND_SUPERVISOR_RESUME_PERIODS
+	int "Direct path resumes a slot silent this many of its periods"
+	default 3
+	range 2 10
+	help
+	  phase15-S6. After a component's executor path took its slot over
+	  from the direct path (island_supervisor_handover), it reports
+	  every tick that publishes the emergency, with its tick period.
+	  Silent this many of its periods (the emergency operator: 3 x 33 =
+	  99 ms; the handler: 3 x 100 = 300 ms), its tick is not running,
+	  and the direct path resumes the slot for good: the braking command
+	  (or mrm_state and the hazard lights) is back on the wire at most
+	  this span plus a ms after the last tick that published it. The
+	  floor's overrun rows charge the span once (docs/roadmap/
+	  phase-15-supervised-floor.md, S6). 2 would resume on one late
+	  tick (the executor's jitter); above 3 the gap grows past what
+	  hpc_loss's 109.67 ms of slack holds.
+
 config ISLAND_SUPERVISOR_COMFORTABLE_MS
 	int "The comfortable stop's standstill deadline (ms)"
 	default 10940
@@ -149,7 +167,10 @@ config ISLAND_SUPERVISOR_EMERGENCY_MS
 	  standstill by then (plus the observation below), the supervisor
 	  latches the output and the direct path brakes; the same span again
 	  is the direct path's own due, and a vehicle still moving then is a
-	  vehicle-side fault.
+	  vehicle-side fault. phase15-S6: a vehicle-side fault needs the
+	  island's braking command to have run this span (plus the
+	  observation) from its start (the latch, or the direct path's
+	  resume after a stalled operator); a due before that re-arms there.
 
 config ISLAND_SUPERVISOR_STANDSTILL_OBSERVE_MS
 	int "How late the island sees a standstill (ms)"
