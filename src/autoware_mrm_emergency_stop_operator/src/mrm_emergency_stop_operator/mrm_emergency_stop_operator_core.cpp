@@ -32,6 +32,16 @@ void island_supervisor_set_direct(uint32_t slot, island_supervisor_direct_fn fn,
 void island_supervisor_handover(uint32_t slot);
 }
 #endif
+#if defined(__ZEPHYR__) && defined(CONFIG_ISLAND_DEBUG_FLOOR_INJECT)
+// phase15-S4 test hook (CONFIG_ISLAND_DEBUG_FLOOR_INJECT, only in the
+// island-floor-inject snippet's image): 0 from boot; a debugger writes
+// non-zero (tools/board/violations.py floor-inject stall) and from the next
+// tick in OPERATING this node's timer does nothing: no braking command, no
+// status. The operator's tick is not running, while its level still spins.
+extern "C" {
+volatile uint32_t island_debug_floor_stall;
+}
+#endif
 
 
 // nano-ros port: no rclcpp::Clock — stamps come from the platform monotonic
@@ -252,6 +262,16 @@ void MrmEmergencyStopOperator::onTimer()
   // in nano-ros's callback trace while CONFIG_NROS_TRACE_TIMER_EVERY thins the
   // rest to one in ten (the island's own sink does not forward 18/19).
   ISLAND_TRACE_TIMER_BIND(1);
+#if defined(__ZEPHYR__) && defined(CONFIG_ISLAND_DEBUG_FLOOR_INJECT)
+  if (island_debug_floor_stall != 0u && status_.state == MrmBehaviorStatus::OPERATING) {
+    static bool stall_seen = false;
+    if (!stall_seen) {
+      stall_seen = true;
+      ISLAND_TRACE(ISLAND_MK_SUPERVISOR_INJECT, 0xFFFFFFFBu);
+    }
+    return;
+  }
+#endif
   ISLAND_TRACE(ISLAND_MK_PATH_MRM_EMERGENCY_STOP_OPERATOR_ON_TIMER_ENTRY, status_.state);
   if (status_.state == MrmBehaviorStatus::OPERATING) {
 #if defined(__ZEPHYR__) && defined(CONFIG_ISLAND_SUPERVISOR)

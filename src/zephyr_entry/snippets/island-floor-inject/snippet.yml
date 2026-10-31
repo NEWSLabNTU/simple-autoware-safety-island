@@ -1,0 +1,12 @@
+# The floor's fault-injection image (phase15-S4): the gate image plus the
+# three test-only hooks of CONFIG_ISLAND_DEBUG_FLOOR_INJECT.
+#
+#   just board-build-floor-inject   (= ISLAND_BOARD_SNIPPETS=island-floor-inject,
+#                                     build-board-floor-inject)
+#
+# A snippet of its own, so the gate image (just board-build, build-board)
+# carries none of the words: a shipped image cannot be told to drop its
+# emergency request. rtss-work-2026-demo's floor acts flash this image.
+name: island-floor-inject
+append:
+  EXTRA_CONF_FILE: floor-inject.conf

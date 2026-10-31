@@ -121,7 +121,12 @@ LIFECYCLE = [
 #                          hook, mrm_handler_core.cpp): arg its ms,
 #                          0xffffffff a stall that never ends; 0xfffffffd
 #                          the comfortable stop made inert (phase11-S6:
-#                          the operator answers but publishes no limit)
+#                          the operator answers but publishes no limit);
+#                          phase15-S4 (CONFIG_ISLAND_DEBUG_FLOOR_INJECT,
+#                          test image only): 0xfffffffc the emergency
+#                          operate request dropped, 0xfffffffb the
+#                          emergency operator's tick stalled, 0xfffffffa
+#                          the handler's speed held
 #   SUPERVISOR_DIRECT      phase11-S6: the reaction thread's direct
 #                          emergency publish: arg slot << 28 | seq (slot 0
 #                          the handler's mrm_state + hazard, 1 the emergency

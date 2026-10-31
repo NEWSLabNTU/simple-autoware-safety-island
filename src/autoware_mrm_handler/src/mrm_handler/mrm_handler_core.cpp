@@ -59,6 +59,16 @@ void island_supervisor_set_direct(uint32_t slot, island_supervisor_direct_fn fn,
 void island_supervisor_handover(uint32_t slot);
 void island_supervisor_note_speed(uint32_t speed_mm_s);
 #endif
+#if defined(CONFIG_ISLAND_DEBUG_FLOOR_INJECT)
+// phase15-S4 test hooks (CONFIG_ISLAND_DEBUG_FLOOR_INJECT, only in the
+// island-floor-inject snippet's image): 0 from boot; a debugger writes them
+// (tools/board/violations.py floor-inject drop|hold). drop: the next
+// emergency operate request is not sent, once (route 3 stays armed). hold:
+// while non-zero, the speed this handler sees in kinematic_state reads that
+// many mm/s (isStopped() and route 3's sample alike).
+volatile uint32_t island_debug_floor_drop;
+volatile uint32_t island_debug_floor_hold_mm_s;
+#endif
 #if defined(CONFIG_ISLAND_LED)
 // The MRM state on the board's LEDs (src/zephyr_entry/src/island_led.c),
 // called once per tick from onTimer().
@@ -354,11 +364,23 @@ void MrmHandler::onOdometry(const nav_msgs::msg::Odometry & msg)
   ISLAND_TRACE_TAKE_BIND(MRM_HANDLER_KINEMATIC_STATE);
   odom_ = msg;
   has_odom_ = true;
+#if defined(__ZEPHYR__) && defined(CONFIG_ISLAND_DEBUG_FLOOR_INJECT)
+  // phase15-S4: the vehicle does not decelerate, as far as the island sees.
+  {
+    static bool hold_seen = false;
+    const uint32_t hold = island_debug_floor_hold_mm_s;
+    if (hold != 0u) {
+      odom_.twist.twist.linear.x = static_cast<double>(hold) * 1e-3;
+      if (!hold_seen) ISLAND_TRACE(ISLAND_MK_SUPERVISOR_INJECT, 0xFFFFFFFAu);
+    }
+    hold_seen = hold != 0u;
+  }
+#endif
 #if defined(__ZEPHYR__) && defined(CONFIG_ISLAND_SUPERVISOR)
   // phase11-S6: route 2 judges the standstill on the reaction thread from
   // this, the latest speed (|v| in mm/s; 0 is isStopped()'s < 0.001 m/s).
   island_supervisor_note_speed(
-    static_cast<uint32_t>(abs_d(msg.twist.twist.linear.x) * 1000.0));
+    static_cast<uint32_t>(abs_d(odom_.twist.twist.linear.x) * 1000.0));
 #endif
 }
 
@@ -547,6 +569,15 @@ bool MrmHandler::requestMrmBehavior(uint16_t mrm_behavior, RequestType request_t
     } else {
       island_supervisor_done(3u);
     }
+  }
+#endif
+#if defined(__ZEPHYR__) && defined(CONFIG_ISLAND_DEBUG_FLOOR_INJECT)
+  // phase15-S4: the operate request is lost, once. Route 3 was armed above;
+  // the handler goes on as if the request had been sent.
+  if (mrm_behavior == MrmState::EMERGENCY_STOP && request.operate && island_debug_floor_drop != 0u) {
+    island_debug_floor_drop = 0u;
+    ISLAND_TRACE(ISLAND_MK_SUPERVISOR_INJECT, 0xFFFFFFFCu);
+    return true;
   }
 #endif
 

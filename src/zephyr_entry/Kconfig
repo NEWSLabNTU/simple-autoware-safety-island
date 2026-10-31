@@ -205,6 +205,33 @@ config ISLAND_DEBUG_SPIN_STALL
 	  before its due holds until N ms past that due before the supervisor
 	  hears of it, once: the late notice of a route answered in time.
 
+config ISLAND_DEBUG_FLOOR_INJECT
+	bool "Debug hooks: the floor's three failures, on command (test only)"
+	help
+	  phase15-S4. Never in the gate or booth image: only the snippet
+	  island-floor-inject (just board-build-floor-inject, build-board-
+	  floor-inject) sets it, and without it the words below do not exist.
+	  Each is a volatile u32, 0 from boot and inert while 0; only a
+	  debugger writes one (tools/board/violations.py floor-inject
+	  drop|stall|hold [mm/s]), for rtss-work-2026-demo's floor acts:
+	    island_debug_floor_drop     the handler's next emergency operate
+	                                request is not sent (route 3 is still
+	                                armed), once: the request is lost;
+	    island_debug_floor_stall    from its next tick in OPERATING the
+	                                emergency operator's timer does
+	                                nothing (no command, no status): its
+	                                tick is not running. The level still
+	                                spins, so SWT0 is fed and route 3 is
+	                                what sees it;
+	    island_debug_floor_hold_mm_s the speed the handler sees in
+	                                kinematic_state (its own isStopped()
+	                                and route 3's sample) reads this many
+	                                mm/s while non-zero: the vehicle does
+	                                not decelerate, as far as the island
+	                                can tell.
+	  Each records SUPERVISOR_INJECT when taken (0xfffffffc drop,
+	  0xfffffffb stall, 0xfffffffa hold).
+
 endif
 
 source "Kconfig.zephyr"

@@ -786,6 +786,16 @@ priority-check board="0":
 board-build-booth:
     ISLAND_BOARD_SNIPPETS="island-booth ${ISLAND_BOARD_SNIPPETS:-}" just BOARD_BUILD_DIR=build-board-booth board-build
 
+# phase15-S4: the floor's fault-injection image, the gate image plus snippet
+# island-floor-inject (src/zephyr_entry/snippets/island-floor-inject:
+# CONFIG_ISLAND_DEBUG_FLOOR_INJECT=y, the three SWD words of
+# violations.py floor-inject), into build-board-floor-inject. Test only:
+# build-board, the gate image, carries none of the words.
+#
+# Build the floor fault-injection image into build-board-floor-inject.
+board-build-floor-inject:
+    ISLAND_BOARD_SNIPPETS="island-floor-inject ${ISLAND_BOARD_SNIPPETS:-}" just BOARD_BUILD_DIR=build-board-floor-inject board-build
+
 # CARLA demo C6: the on-site check of SW1/SW2 on a running booth image. Attaches
 # over SWD (no halt, no reflash) and prints every pad edge (PGPDI, no firmware
 # in between) and every press the island records (island_button_record, with

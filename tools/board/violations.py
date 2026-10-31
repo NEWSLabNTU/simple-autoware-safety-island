@@ -7,6 +7,7 @@
   violations.py fault-overrun --elf <zephyr.elf> <ms>|stall          the same, on the fault tick
   violations.py spin-stall --elf <zephyr.elf>                        stall the spin (SWT0 bench)
   violations.py comfortable-inert --elf <zephyr.elf>                 the next comfortable stop brakes not
+  violations.py floor-inject --elf <zephyr.elf> drop|stall|hold [mm/s]  the floor's failures (phase15-S4)
   violations.py supervisor --elf <zephyr.elf> [--out <prefix>]       the supervisor record
   violations.py selftest [--elf <zephyr.elf>]                        decode a synthetic record; with
                                                                      --elf, check its size against the layout
@@ -55,6 +56,14 @@ phase11-S6. `comfortable-inert` writes `island_debug_comfortable_inert`
 request is answered OPERATING and no velocity limit is published, once, so
 the comfortable stop does not decelerate and the supervised standstill
 (route 2) is what stops the vehicle.
+phase15-S4. `floor-inject drop|stall|hold [mm/s]` writes one of the floor's
+test words (CONFIG_ISLAND_DEBUG_FLOOR_INJECT, only in the island-floor-inject
+snippet's image, `just board-build-floor-inject`; the gate image has none):
+`drop` the handler's next emergency operate request is not sent, once (route
+3 stays armed); `stall` from its next OPERATING tick the emergency operator's
+timer does nothing; `hold [mm/s]` (default 1000) the speed the handler sees
+in kinematic_state reads that value while it is set, so the island never sees
+a standstill. `floor-inject clear` writes 0 into all three.
 
 `supervisor` reads `island_supervisor_record` (CONFIG_ISLAND_SUPERVISOR,
 src/zephyr_entry/src/island_supervisor.c; attach, no halt): whether the
@@ -82,6 +91,8 @@ FAULT_OVERRUN = "island_debug_fault_overrun_ms"
 SPIN_STALL = "island_debug_spin_stall"
 COMFORT_INERT = "island_debug_comfortable_inert"
 LATE_RETURN = "island_debug_late_return_ms"
+FLOOR_WORDS = {"drop": "island_debug_floor_drop", "stall": "island_debug_floor_stall",
+               "hold": "island_debug_floor_hold_mm_s"}
 SUPERVISOR = "island_supervisor_record"
 STALL = 0xFFFFFFFF
 # island_supervisor.c's record, all u32: the header, then `routes` routes.
@@ -451,8 +462,10 @@ def board():
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("cmd", choices=["read", "decode", "overrun", "fault-overrun", "spin-stall",
-                                        "comfortable-inert", "late-return", "supervisor", "selftest"])
-    ap.add_argument("arg", nargs="?", help="decode: the record dump; overrun: ms; fault-overrun: ms or stall")
+                                        "comfortable-inert", "late-return", "floor-inject", "supervisor",
+                                        "selftest"])
+    ap.add_argument("arg", nargs="?", help="decode: the record dump; overrun: ms; fault-overrun: ms or stall; floor-inject: drop|stall|hold|clear")
+    ap.add_argument("val", nargs="?", help="floor-inject hold: mm/s (default 1000)")
     ap.add_argument("--elf")
     ap.add_argument("--out", help="read: output prefix (<out>.bin, <out>.txt)")
     ap.add_argument("--words", help="decode: a JSON file of the arming words read beside the dump")
@@ -463,7 +476,31 @@ def main():
     if not a.elf:
         ap.error("--elf is required")
     syms = symbols(a.elf, {RECORD, OVERRUN, FAULT_OVERRUN, SPIN_STALL, COMFORT_INERT, LATE_RETURN, SUPERVISOR,
-                           *ARM_WORDS})
+                           *ARM_WORDS, *FLOOR_WORDS.values()})
+    if a.cmd == "floor-inject":
+        kind = a.arg or ""
+        if kind not in (*FLOOR_WORDS, "clear"):
+            sys.exit("violations: floor-inject takes drop, stall, hold [mm/s] or clear")
+        writes = {w: 0 for w in FLOOR_WORDS.values()} if kind == "clear" else \
+            {FLOOR_WORDS[kind]: int(a.val or 1000) if kind == "hold" else 1}
+        for w, v in writes.items():
+            if w not in syms:
+                sys.exit(f"violations: {a.elf} has no {w} (not the island-floor-inject image: "
+                         f"just board-build-floor-inject)")
+            if kind == "hold" and not 0 < v <= 30000:
+                sys.exit("violations: floor-inject hold takes 1..30000 mm/s")
+        for w, v in writes.items():
+            print(f"violations: write {v:#x} -> {w} @ {syms[w][0]:#010x}")
+        if a.dry_run:
+            return 0
+        s = board()
+        try:
+            for w, v in writes.items():
+                s.board.target.write32(syms[w][0], v)
+                print(f"violations: {w} reads {s.board.target.read32(syms[w][0]):#x} after the write")
+        finally:
+            s.close()
+        return 0
     if a.cmd == "supervisor":
         if SUPERVISOR not in syms:
             sys.exit(f"violations: {a.elf} has no {SUPERVISOR} (built without CONFIG_ISLAND_SUPERVISOR)")
