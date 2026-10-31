@@ -7,7 +7,7 @@
   violations.py fault-overrun --elf <zephyr.elf> <ms>|stall          the same, on the fault tick
   violations.py spin-stall --elf <zephyr.elf>                        stall the spin (SWT0 bench)
   violations.py comfortable-inert --elf <zephyr.elf>                 the next comfortable stop brakes not
-  violations.py floor-inject --elf <zephyr.elf> drop|stall|hold [mm/s]  the floor's failures (phase15-S4)
+  violations.py floor-inject --elf <zephyr.elf> drop|stall|stall-after|hold [mm/s]  the floor's failures (phase15-S4)
   violations.py supervisor --elf <zephyr.elf> [--out <prefix>]       the supervisor record
   violations.py selftest [--elf <zephyr.elf>]                        decode a synthetic record; with
                                                                      --elf, check its size against the layout
@@ -61,7 +61,8 @@ test words (CONFIG_ISLAND_DEBUG_FLOOR_INJECT, only in the island-floor-inject
 snippet's image, `just board-build-floor-inject`; the gate image has none):
 `drop` the handler's next emergency operate request is not sent, once (route
 3 stays armed); `stall` from its next OPERATING tick the emergency operator's
-timer does nothing; `hold [mm/s]` (default 1000) the speed the handler sees
+timer does nothing (`stall-after`: only once it has taken over from the
+supervisor's direct path); `hold [mm/s]` (default 1000) the speed the handler sees
 in kinematic_state reads that value while it is set, so the island never sees
 a standstill. `floor-inject clear` writes 0 into all three.
 
@@ -93,6 +94,9 @@ COMFORT_INERT = "island_debug_comfortable_inert"
 LATE_RETURN = "island_debug_late_return_ms"
 FLOOR_WORDS = {"drop": "island_debug_floor_drop", "stall": "island_debug_floor_stall",
                "hold": "island_debug_floor_hold_mm_s"}
+# stall-after writes 2 into the stall word: the operator stalls only once it
+# has taken over from the supervisor's direct path
+FLOOR_VALUE = {"stall-after": ("stall", 2)}
 SUPERVISOR = "island_supervisor_record"
 STALL = 0xFFFFFFFF
 # island_supervisor.c's record, all u32: the header, then `routes` routes.
@@ -490,10 +494,14 @@ def main():
                            *ARM_WORDS, *FLOOR_WORDS.values()})
     if a.cmd == "floor-inject":
         kind = a.arg or ""
-        if kind not in (*FLOOR_WORDS, "clear"):
-            sys.exit("violations: floor-inject takes drop, stall, hold [mm/s] or clear")
-        writes = {w: 0 for w in FLOOR_WORDS.values()} if kind == "clear" else \
-            {FLOOR_WORDS[kind]: int(a.val or 1000) if kind == "hold" else 1}
+        if kind not in (*FLOOR_WORDS, *FLOOR_VALUE, "clear"):
+            sys.exit("violations: floor-inject takes drop, stall, stall-after, hold [mm/s] or clear")
+        if kind == "clear":
+            writes = {w: 0 for w in FLOOR_WORDS.values()}
+        elif kind in FLOOR_VALUE:
+            writes = {FLOOR_WORDS[FLOOR_VALUE[kind][0]]: FLOOR_VALUE[kind][1]}
+        else:
+            writes = {FLOOR_WORDS[kind]: int(a.val or 1000) if kind == "hold" else 1}
         for w, v in writes.items():
             if w not in syms:
                 sys.exit(f"violations: {a.elf} has no {w} (not the island-floor-inject image: "

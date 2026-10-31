@@ -222,7 +222,9 @@ config ISLAND_DEBUG_FLOOR_INJECT
 	                                nothing (no command, no status): its
 	                                tick is not running. The level still
 	                                spins, so SWT0 is fed and route 3 is
-	                                what sees it;
+	                                what sees it; 2 (stall-after): only
+	                                once it has taken the command over
+	                                from the direct path (the handover);
 	    island_debug_floor_hold_mm_s the speed the handler sees in
 	                                kinematic_state (its own isStopped()
 	                                and route 3's sample) reads this many
@@ -230,7 +232,7 @@ config ISLAND_DEBUG_FLOOR_INJECT
 	                                not decelerate, as far as the island
 	                                can tell.
 	  Each records SUPERVISOR_INJECT when taken (0xfffffffc drop,
-	  0xfffffffb stall, 0xfffffffa hold).
+	  0xfffffffb stall, 0xfffffff9 stall-after, 0xfffffffa hold).
 
 endif
 

@@ -678,6 +678,13 @@ nodes:
             # 30 s. One `supervise:` clears both hazards'
             # `call-unbounded-floor`: the emergency_stop/operate call has no
             # timeout, and needs none, since its effect is checked.
+            # Two faults on odd_exit (phase15-S4) do not add a second settle:
+            # once route 2 has latched, the direct path is already braking
+            # (inside the comfortable overrun row, 26204.33 of 30 s), and the
+            # emergency call that arms route 3 comes after that latch, so a
+            # route-3 miss then is the vehicle-side fault, never a second
+            # direct-path settle. The board's floor acts (drop, stall, hold)
+            # are in docs/roadmap/phase-15-supervised-floor.md.
             supervise:
               reaction: island.floor_override
               mechanism: timer

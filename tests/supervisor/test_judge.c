@@ -79,6 +79,23 @@ static void floor_sequences(void)
 	CHECK(at_due(24621u, 0u, 24000u, 1, ISLAND_FLOOR_DIRECT) == ISLAND_FLOOR_VEHICLE_FAULT);
 }
 
+/* odd_exit, two faults (phase15-S4): the comfortable stop overruns, route 2
+ * latches the output and the direct path brakes from that due; the handler,
+ * reading the latch, calls the emergency stop, which arms route 3 at its
+ * operator stage AFTER the latch. Its due finds the output latched: a miss
+ * then is the vehicle's fault (a braking command has run at least a settle),
+ * never a second latch and never a second direct-path settle (no re-arm). */
+static void two_faults(void)
+{
+	/* latched by route 2 at 20000, route 3 armed at 20100: due 24721 */
+	CHECK(at_due(24721u, 3000u, 24700u, 1, ISLAND_FLOOR_OPERATOR) == ISLAND_FLOOR_VEHICLE_FAULT);
+	CHECK(at_due(24721u, 3000u, 24700u, 1, ISLAND_FLOOR_OPERATOR) != ISLAND_FLOOR_LATCH);
+	/* the direct path stopped the vehicle in time: met */
+	CHECK(at_due(24721u, 0u, 24700u, 1, ISLAND_FLOOR_OPERATOR) == ISLAND_FLOOR_MET);
+	/* stale under the latch: the island cannot see a stop -> the fault */
+	CHECK(at_due(24721u, 0u, 24000u, 1, ISLAND_FLOOR_OPERATOR) == ISLAND_FLOOR_VEHICLE_FAULT);
+}
+
 static void unseen(void)
 {
 	/* no sample since boot: route 3 waits (island_supervisor.c re-arms) */
@@ -95,6 +112,7 @@ int main(void)
 	floor_route();
 	floor_sequences();
 	unseen();
+	two_faults();
 	printf("supervisor judge: %s\n", fails ? "FAILED" : "OK");
 	return fails ? 1 : 0;
 }

@@ -35,9 +35,11 @@ void island_supervisor_handover(uint32_t slot);
 #if defined(__ZEPHYR__) && defined(CONFIG_ISLAND_DEBUG_FLOOR_INJECT)
 // phase15-S4 test hook (CONFIG_ISLAND_DEBUG_FLOOR_INJECT, only in the
 // island-floor-inject snippet's image): 0 from boot; a debugger writes
-// non-zero (tools/board/violations.py floor-inject stall) and from the next
-// tick in OPERATING this node's timer does nothing: no braking command, no
-// status. The operator's tick is not running, while its level still spins.
+// 1 (tools/board/violations.py floor-inject stall) and from the next tick in
+// OPERATING this node's timer does nothing: no braking command, no status.
+// The operator's tick is not running, while its level still spins. 2
+// (floor-inject stall-after): the same, but only once this node has taken
+// the braking command over from the supervisor's direct path (the handover).
 extern "C" {
 volatile uint32_t island_debug_floor_stall;
 }
@@ -263,11 +265,14 @@ void MrmEmergencyStopOperator::onTimer()
   // rest to one in ten (the island's own sink does not forward 18/19).
   ISLAND_TRACE_TIMER_BIND(1);
 #if defined(__ZEPHYR__) && defined(CONFIG_ISLAND_DEBUG_FLOOR_INJECT)
-  if (island_debug_floor_stall != 0u && status_.state == MrmBehaviorStatus::OPERATING) {
+  // 1: from the next OPERATING tick; 2 (stall-after): only once this node has
+  // taken the braking command over from the supervisor's direct path.
+  const uint32_t stall = island_debug_floor_stall;
+  if (stall != 0u && status_.state == MrmBehaviorStatus::OPERATING && (stall != 2u || direct_taken_over_)) {
     static bool stall_seen = false;
     if (!stall_seen) {
       stall_seen = true;
-      ISLAND_TRACE(ISLAND_MK_SUPERVISOR_INJECT, 0xFFFFFFFBu);
+      ISLAND_TRACE(ISLAND_MK_SUPERVISOR_INJECT, stall == 2u ? 0xFFFFFFF9u : 0xFFFFFFFBu);
     }
     return;
   }

@@ -125,8 +125,9 @@ LIFECYCLE = [
 #                          phase15-S4 (CONFIG_ISLAND_DEBUG_FLOOR_INJECT,
 #                          test image only): 0xfffffffc the emergency
 #                          operate request dropped, 0xfffffffb the
-#                          emergency operator's tick stalled, 0xfffffffa
-#                          the handler's speed held
+#                          emergency operator's tick stalled (0xfffffff9:
+#                          stalled after its handover), 0xfffffffa the
+#                          handler's speed held
 #   SUPERVISOR_DIRECT      phase11-S6: the reaction thread's direct
 #                          emergency publish: arg slot << 28 | seq (slot 0
 #                          the handler's mrm_state + hazard, 1 the emergency
