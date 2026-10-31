@@ -8,12 +8,12 @@ on the island (it is the floor)". play_launch 0.21.0 (rlm v0.2.6, phase 95)
 reports this as `warning[call-unbounded-floor]` on `hazards.hpc_loss` and
 `hazards.odd_exit`. This phase closes the gap rather than acknowledging it.
 
-**Status (2026-10-31): done (S1-S6).** Decided: supervise the floor
+**Status (2026-10-31): done (S1-S7).** Decided: supervise the floor
 (option 1), not acknowledge it. S4 proved it on the board with the
 floor's three failures injected; S6 closed the gap S4 left open (the
 operator stalling after the handover) and stopped route 3 from calling a
 vehicle-side fault before the island's own braking command had run a
-settle.
+settle; S7 reports the vehicle-side fault as MRM_FAILED.
 
 - S1: `play_launch check` (0.21.0, rlm v0.2.6) on the island contract went
   from 0 errors / 12 warnings (2 `call-unbounded-floor`) to 0 errors / 9
@@ -55,9 +55,8 @@ settle.
   Missed before any latch: latch, the direct path, re-armed once for the
   direct path's settle. Missed with the output latched: the vehicle-side
   fault (`vehicle_fault` in the record, `SUPERVISOR_VEHICLE_FAULT` in the
-  trace), the command kept. mrm_state is not set to MRM_FAILED: how
-  Autoware's gate treats MRM_FAILED is not checked, and the braking
-  command has to keep reaching the vehicle. The emergency operator,
+  trace), the command kept. mrm_state was not set to MRM_FAILED then (how
+  Autoware's gate treats it was not checked); S7 checked it and sets it. The emergency operator,
   latched and not OPERATING, stops its pass-through publish so the direct
   path is the only command on the topic. The early response check is not
   built: `supervise:` covers the whole settle only, so the checker cannot
@@ -288,9 +287,59 @@ it; nothing below the floor is invented.
     of 5228.67 ms, every table 8/8; b 15300.63 of 21393.67, 16/16; a 8/8;
     supervisor not driven, SWT0 0 fires, priorities AGREE.
 
+- S7. The vehicle-side fault is reported as MRM_FAILED. **Done
+  (2026-10-31).**
+  - How Autoware 1.5.0 consumes it (source of the 1.5.0 workspace,
+    ~/repos/autoware/1.5.0-ws; the stack the demo runs). vehicle_cmd_gate
+    (`VehicleCmdGate::onMrmState`): `is_system_emergency_` is true for
+    MRM_OPERATING, MRM_SUCCEEDED and MRM_FAILED alike while the behaviour is
+    EMERGENCY_STOP; it selects the emergency control command and the
+    emergency hazard lights, turn indicators and gear command and sets the
+    vehicle emergency flag, all on that one predicate, so the switch from
+    MRM_OPERATING changes nothing it outputs. ADAPI's fail_safe node relays the state
+    to `/api/fail_safe/mrm_state`; ADAPI's diagnostics refuse a diagnostic
+    graph reset unless the state is NORMAL or MRM_SUCCEEDED (a reset is not
+    wanted under a vehicle fault anyway); the iv/awapi adaptors and the
+    RViz panel only report it. The command mode decider, which reads it
+    too, runs only with `use_control_command_gate` (false in 1.5.0's
+    system launch). Stock mrm_handler, which the island replaces, enters
+    MRM_FAILED itself when the emergency stop cannot be requested and then
+    sends nothing more. Nothing in that list releases the brakes, drops the
+    emergency command or changes the gear, provided the behaviour stays
+    EMERGENCY_STOP.
+  - The island. On a route-3 vehicle-side fault the handler's state
+    machine enters MRM_FAILED (latched, as the fault) with the behaviour
+    EMERGENCY_STOP; operateMrm() sends no request in MRM_FAILED, so the
+    emergency operator stays OPERATING and its braking command (or the
+    direct path's) goes on; the hazard lights follow isEmergency(), held by
+    the latch. The direct path's handler slot (before a handover, or after
+    a resume, S6) publishes MRM_FAILED too, from the supervisor's
+    `vehicle_fault` word: whoever holds the slot reports the same state.
+    `island_judge_mrm_state` and a mirror of the gate's predicate are in
+    island_supervisor_judge.h, with host tests (`mrm_failed`). The
+    handler's `PUB_MRM_HANDLER_MRM_STATE` marker carries it (state 4 <<
+    16 | behaviour 2); the record is unchanged (`vehicle_fault`), the
+    readout says the state. No contract row changes.
+  - Board (island 80a6d83, floor-inject image): floor-hold n 4 PASS
+    (s7-fh1..4). Route 3's verdict 0.03-0.04 ms after its due, the direct
+    path's due 4620.96-4620.97 ms later and the vehicle-side fault 0.04-0.05
+    ms after it; mrm_state MRM_FAILED / EMERGENCY_STOP at the host 58.1-65.1
+    ms after `SUPERVISOR_VEHICLE_FAULT` (the handler's next 100 ms tick),
+    then no other state; 30 braking commands in the second after the
+    fault; hazard lights ENABLE; the scenario's verdict (now requiring
+    MRM_FAILED) PASS, the vehicle at standstill under the gate, mrm (4, 2)
+    still after the HPC is restored.
+  - Regression, the gate image (nm: 0 `island_debug_floor_*`): encore x3,
+    a, b PASS (s7g-e1..3, s7g-a1, s7g-b1): encore totals 3470.04-3502.25
+    of 5228.67 ms, 8/8; b 17251.01 of 21393.67, 16/16; a 8/8; supervisor
+    not driven, SWT0 0 fires, priorities AGREE.
+
 ## Acceptance
 
 - `play_launch check` (0.21.0): 0 errors, no `call-unbounded-floor`.
+- S7: the vehicle-side fault is reported as MRM_FAILED / EMERGENCY_STOP
+  on the wire, the braking command and the hazard lights kept (floor-hold
+  PASS).
 - On the board, each injected floor failure is detected by its due and
   answered as the table says; the existing acts PASS unchanged.
 - S6: an operator stalling after its takeover is answered by the resume,
