@@ -77,7 +77,7 @@ docs/
   Provides the `nros` CLI and the cmake package.
 - `just` (task runner), `direnv` (optional but assumed by `.envrc`).
 - play_launch — **installed by `just setup`**, not a manual prerequisite. It
-  checks the island's contract; >= 0.20.2 (the CI pin) is required. To install from a source
+  checks the island's contract; >= 0.21.0 (the CI pin) is required. To install from a source
   checkout instead of the package index: `PLAY_LAUNCH_REPO=<path> just setup`.
 
 `direnv allow` sources ROS 2, Autoware and nano-ros, and

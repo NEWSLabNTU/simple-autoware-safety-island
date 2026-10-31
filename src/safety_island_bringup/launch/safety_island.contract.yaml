@@ -659,6 +659,29 @@ nodes:
             response:
               duration: 319ms
               source: { measured: { max: 265.34ms, n: 16, margin: 0.2 } }
+            # phase15-S1: the floor is supervised to standstill, the whole
+            # settle (profile 4165.33 + response 319 = 4484.33 at the entry
+            # speed, CONFIG_ISLAND_SUPERVISOR_EMERGENCY_MS 4485), by the
+            # island's route 3 (island_supervisor.c): armed at the handler's
+            # emergency_stop call, due = that settle + the standstill
+            # observation (136, as route 2's). At the due a vehicle not at
+            # standstill by the latest kinematic_state latches the
+            # safe-state output, and the direct path publishes the braking
+            # command itself (island.floor_override below): it covers a
+            # lost operate request and an operator whose tick does not run.
+            # A vehicle that still does not stop by a second due is a
+            # vehicle-side fault the island cannot brake past: latched in
+            # the record, mrm_state MRM_FAILED, the command kept. The
+            # overrun cases (`supervised-fit`, play_launch 0.21.0): hpc_loss
+            # 744.33 before + 4484.33 + 136 + 2 + 39.33 + 4484.33 = 9890.33
+            # of 10 s; odd_exit 10493.33 before + the same = 19639.33 of
+            # 30 s. One `supervise:` clears both hazards'
+            # `call-unbounded-floor`: the emergency_stop/operate call has no
+            # timeout, and needs none, since its effect is checked.
+            supervise:
+              reaction: island.floor_override
+              mechanism: timer
+              observes: mrm_handler/kinematic_state
     sub:
       # Cached in onControlCommand and read on the timer as the ramp seed: a
       # read-latest input, not a trigger. `state: true` says so; without it
@@ -1011,6 +1034,19 @@ paths:
     trigger: { input: [/system/operation_mode/availability] }
     output: [/system/emergency/control_cmd]
     max_latency: { duration: 210ms, source: requirement }
+  # phase15-S1: the supervisor's direct path, the floor's own fallback
+  # (route 3's reaction). The reaction thread publishes the emergency
+  # operator's braking command on that node's publisher, ramped from the
+  # last /control/command/control_cmd the operator saw (direct_brake,
+  # mrm_emergency_stop_operator_core.cpp), at the latch and every 33 ms. In
+  # the graph that is the operator's `on_timer` reading its state input, so
+  # the walk charges a tick (33.33 + 6 jitter) the direct path does not
+  # wait for, and the settle is the operator's own (the same command, the
+  # same profile; 7 of the 16 stops that size its response were direct-path
+  # escalations).
+  island.floor_override:
+    trigger: { input: [/control/command/control_cmd] }
+    output: [/system/emergency/control_cmd]
 
 topics:
   # --- internal to the island: both sides are components in this image -------
