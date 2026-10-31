@@ -671,7 +671,7 @@ nodes:
             # lost operate request and an operator whose tick does not run.
             # A vehicle that still does not stop by a second due is a
             # vehicle-side fault the island cannot brake past: latched in
-            # the record, mrm_state MRM_FAILED, the command kept. The
+            # the record and the trace, the command kept. The
             # overrun cases (`supervised-fit`, play_launch 0.21.0): hpc_loss
             # 744.33 before + 4484.33 + 136 + 2 + 39.33 + 4484.33 = 9890.33
             # of 10 s; odd_exit 10493.33 before + the same = 19639.33 of

@@ -138,12 +138,26 @@ config ISLAND_SUPERVISOR_COMFORTABLE_MS
 	  rounded up to the next ms. Not at standstill by then, the comfortable
 	  stop has failed and the supervisor commands the emergency stop.
 
+config ISLAND_SUPERVISOR_EMERGENCY_MS
+	int "The emergency stop's standstill deadline (ms)"
+	default 4485
+	help
+	  Route 3 (phase15-S2, the floor): from the handler's emergency stop
+	  call to standstill, the contract's emergency settle at the entry
+	  speed (4165.33 ms at 8.33 m/s, target_acceleration -2.5, target_jerk
+	  -1.5) plus its response (319 ms), rounded up to the next ms. Not at
+	  standstill by then (plus the observation below), the supervisor
+	  latches the output and the direct path brakes; the same span again
+	  is the direct path's own due, and a vehicle still moving then is a
+	  vehicle-side fault.
+
 config ISLAND_SUPERVISOR_STANDSTILL_OBSERVE_MS
 	int "How late the island sees a standstill (ms)"
 	default 136
 	help
-	  Added to route 2's due: the island judges the standstill from its
-	  latest kinematic_state take, which comes up to one sample period
+	  Added to route 2's and route 3's dues: the island judges the
+	  standstill from its latest kinematic_state take, which comes up to
+	  one sample period
 	  (10 Hz, 100 ms) plus the serial link after the vehicle stopped. The
 	  link is kinematic_state's own max_transport (36 ms, measured on the
 	  board: 29.43 x 1.2; the contract names the runs). Without it a stop

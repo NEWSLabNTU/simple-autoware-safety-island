@@ -49,7 +49,8 @@ volatile uint32_t island_debug_fault_overrun_ms;
 #if defined(CONFIG_ISLAND_SUPERVISOR)
 // phase11-S4 (src/zephyr_entry/src/island_supervisor.h): the board's
 // supervised-deadline rung. Route 0 is the hpc_loss reaction, route 2
-// (phase11-S6) the comfortable stop's standstill.
+// (phase11-S6) the comfortable stop's standstill, route 3 (phase15-S2) the
+// emergency stop's.
 void island_supervisor_arm(uint32_t route, int64_t due_ms);
 void island_supervisor_done(uint32_t route);
 uint32_t island_supervisor_latched(void);
@@ -530,6 +531,25 @@ bool MrmHandler::requestMrmBehavior(uint16_t mrm_behavior, RequestType request_t
       return false;
   }
 
+#if defined(__ZEPHYR__) && defined(CONFIG_ISLAND_SUPERVISOR)
+  // phase15-S2: the floor is supervised to standstill. Due = this call + the
+  // emergency settle at the entry speed + its response (CONFIG_ISLAND_
+  // SUPERVISOR_EMERGENCY_MS) + the standstill observation. Armed BEFORE the
+  // send: a request that cannot even be sent (handleFailedRequest then ends
+  // in MRM_FAILED with nothing braking) is a lost request too. A miss before
+  // any latch brakes on the direct path; a miss under a braking command that
+  // has run a settle is the vehicle's fault (island_supervisor.c).
+  if (mrm_behavior == MrmState::EMERGENCY_STOP) {
+    if (request.operate) {
+      island_supervisor_arm(
+        3u, k_uptime_get() + CONFIG_ISLAND_SUPERVISOR_EMERGENCY_MS +
+              CONFIG_ISLAND_SUPERVISOR_STANDSTILL_OBSERVE_MS);
+    } else {
+      island_supervisor_done(3u);
+    }
+  }
+#endif
+
   if (nros_cpp_service_client_send_request(client_storage, buf, written) != 0) {
     ISLAND_PRINTF(
       "[mrm_handler] ERROR: %s %s request send failed\n", behavior2string(mrm_behavior),
@@ -876,6 +896,8 @@ void MrmHandler::updateMrmState()
 #if defined(__ZEPHYR__) && defined(CONFIG_ISLAND_SUPERVISOR)
       // phase11-S6: the comfortable stop reached standstill: route 2 met.
       if (mrm_state_.behavior == MrmState::COMFORTABLE_STOP) island_supervisor_done(2u);
+      // phase15-S2: the emergency stop reached standstill: route 3 met.
+      if (mrm_state_.behavior == MrmState::EMERGENCY_STOP) island_supervisor_done(3u);
 #endif
       if (mrm_state_.behavior != MrmState::PULL_OVER) {
         transitionTo(MrmState::MRM_SUCCEEDED);

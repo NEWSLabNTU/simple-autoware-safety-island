@@ -1,6 +1,6 @@
 /*
  * The board's supervised-deadline rung (phase11-S4, island_supervisor.c).
- * C linkage; the MRM handler declares the two calls it makes itself
+ * C linkage; the MRM handler declares the calls it makes itself
  * (mrm_handler_core.cpp), as it does for the LED and button hooks.
  */
 #ifndef ISLAND_SUPERVISOR_H
@@ -8,7 +8,11 @@
 
 #include <stdint.h>
 
-#define ISLAND_SUPERVISOR_ROUTES 3
+/* Routes the supervisor runs. The record's `route[]` keeps its first three
+ * (ISLAND_SUPERVISOR_RECORD_ROUTES, so every offset after it holds); route 3
+ * (phase15-S2) is appended at the record's end as `route_floor`. */
+#define ISLAND_SUPERVISOR_ROUTES 4
+#define ISLAND_SUPERVISOR_RECORD_ROUTES 3
 /* phase13-D4: threads listed in the record (the image has about eight). */
 #define ISLAND_SUPERVISOR_PRIO_THREADS 12
 /* nano-ros phase-509 I1: executor levels the supervisor tracks, one per
@@ -34,6 +38,17 @@
  * commanded. The handler clears it when it sees the standstill itself or
  * leaves the comfortable stop. */
 #define ISLAND_SUPERVISOR_ROUTE_COMFORTABLE_STANDSTILL 2u
+/* 3: the emergency stop's standstill, the floor (phase15-S2): armed by the
+ * handler when it calls the emergency stop, due = call + the emergency settle
+ * at the entry speed + its response (CONFIG_ISLAND_SUPERVISOR_EMERGENCY_MS) +
+ * the standstill observation, judged at the due as route 2. Missed with the
+ * output not yet latched (the operate request lost, the operator's tick not
+ * running): the output is latched, the direct path brakes, and the route is
+ * re-armed once for the direct path's own settle. Missed with the output
+ * already latched (the direct path or the operator has been braking for a
+ * whole settle): a vehicle-side fault, latched for good
+ * (island_supervisor_vehicle_fault); the command is kept. */
+#define ISLAND_SUPERVISOR_ROUTE_EMERGENCY_STANDSTILL 3u
 
 /* The direct emergency path (phase11-S6, decision 2). A component registers
  * one function per slot at construction; once the output is latched the
@@ -80,6 +95,10 @@ void island_supervisor_handover(uint32_t slot);
 /* The vehicle's speed from the latest kinematic_state take (|v|, mm/s),
  * stamped with the uptime: route 2's standstill judgement. */
 void island_supervisor_note_speed(uint32_t speed_mm_s);
+/* phase15-S2: 1 once route 3 found the vehicle not stopping under a braking
+ * command already running (never cleared before reset); the record and the
+ * trace carry it, the emergency stop goes on. */
+uint32_t island_supervisor_vehicle_fault(void);
 #ifdef __cplusplus
 }
 #endif

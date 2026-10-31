@@ -8,6 +8,8 @@
   violations.py spin-stall --elf <zephyr.elf>                        stall the spin (SWT0 bench)
   violations.py comfortable-inert --elf <zephyr.elf>                 the next comfortable stop brakes not
   violations.py supervisor --elf <zephyr.elf> [--out <prefix>]       the supervisor record
+  violations.py selftest [--elf <zephyr.elf>]                        decode a synthetic record; with
+                                                                     --elf, check its size against the layout
   violations.py --dry-run read|overrun ...                           resolve, touch nothing
 
 nano-ros (phase-474 I1) writes every STORED violation, at detection, into the
@@ -113,6 +115,11 @@ SUP_LEVELS = ["levels", "level_count", "level_overflow", "checkin_mask", "feeds"
               "route_nros_level", "nros_level_count"]
 SUP_LEVEL = ["spins", "gap_max_us", "gap_max_at_ms", "prio", "route_foreign"]
 SUP_LEVEL_BYTES = len(SUP_LEVEL) * 4 + 16 + 4
+# phase15-S2, after the `levels` level slots: route 3 (the emergency stop's
+# standstill, the floor) as one more SUP_ROUTE, then its verdict words.
+SUP_FLOOR = ["floor_stage", "floor_met", "floor_latches", "vehicle_fault", "vehicle_fault_uptime_ms",
+             "vehicle_fault_speed_mm_s", "stale_at_due"]
+SUP_FLOOR_STAGE = {0: "idle", 1: "the operator's settle", 2: "the direct path's settle"}
 # zenoh-pico's tasks, by the name the platform gives them, sit in the
 # transport band. Since zenoh-pico 1.9 (nano-ros phase-508, RFC-0110 D2) one
 # executor thread, `zpico_exec`, runs the read path, the lease and every
@@ -124,7 +131,8 @@ SUP_MAGIC = 0x56505553
 SUP_CAUSE = {0: "-", 1: "route deadline", 2: "SWT0 first timeout", 3: "the executor's reaction hook"}
 SUP_ROUTE_NAME = {0: "hpc_loss reaction (mrm_handler/call_mrm)",
                   1: "the executor's next supervised route (nano-ros phase-503)",
-                  2: "the comfortable stop's standstill (call + settle + response)"}
+                  2: "the comfortable stop's standstill (call + settle + response)",
+                  3: "the emergency stop's standstill, the floor (call + settle + response)"}
 ARM_VIA = {0: "not armed", 1: "INIT_DONE", 2: "init failure cleared"}
 # phase10-B3: what `measured` is, for the rules whose name does not say it.
 RULE_NOTE = {
@@ -257,7 +265,68 @@ def supervisor_decode(blob):
                 lv["nros_level"] = struct.unpack("<I", e[36:40])[0]
                 levels.append(lv)
             hdr["level"] = levels
+            o4 = o3 + len(SUP_LEVELS) + hdr["levels"] * SUP_LEVEL_BYTES // 4
+            if o4 + len(SUP_ROUTE) + len(SUP_FLOOR) <= n:
+                hdr["route"].append(dict(zip(SUP_ROUTE, w[o4:o4 + len(SUP_ROUTE)])))
+                o5 = o4 + len(SUP_ROUTE)
+                hdr.update(zip(SUP_FLOOR, w[o5:o5 + len(SUP_FLOOR)]))
     return hdr
+
+
+def supervisor_layout_bytes(routes=3, levels=4):
+    """The record's size by the layout above (island_supervisor.c's struct)."""
+    words = (len(SUP_HEADER) + routes * len(SUP_ROUTE) + SUP_DIRECT_SLOTS * len(SUP_DIRECT) + len(SUP_TAIL)
+             + len(SUP_PRIO) + SUP_PRIO_THREADS * 5 + len(SUP_LATE) + len(SUP_LEVELS)
+             + levels * SUP_LEVEL_BYTES // 4 + len(SUP_ROUTE) + len(SUP_FLOOR))
+    return words * 4
+
+
+def supervisor_selftest(elf=None):
+    """phase15-S3: a synthetic record with route 3 missed and a vehicle-side
+    fault decodes to the right words; with an ELF, the record's symbol size is
+    the layout's (the struct's offsets and this decoder agree)."""
+    fails = []
+    size = supervisor_layout_bytes()
+    w = [0] * (size // 4)
+    w[0] = SUP_MAGIC
+    w[SUP_HEADER.index("routes")] = 3
+    w[len(SUP_HEADER) + 2 * len(SUP_ROUTE) + SUP_ROUTE.index("arms")] = 5  # route 2 arms
+    o3 = (len(SUP_HEADER) + 3 * len(SUP_ROUTE) + SUP_DIRECT_SLOTS * len(SUP_DIRECT) + len(SUP_TAIL)
+          + len(SUP_PRIO) + SUP_PRIO_THREADS * 5 + len(SUP_LATE))
+    w[o3 + SUP_LEVELS.index("levels")] = 4
+    o4 = o3 + len(SUP_LEVELS) + 4 * SUP_LEVEL_BYTES // 4
+    route3 = {"armed": 0, "due_ms": 24621, "arms": 1, "dones": 0, "fired": 2, "fire_due_ms": 20000,
+              "fire_verdict_us": 20000400}
+    for k, v in route3.items():
+        w[o4 + SUP_ROUTE.index(k)] = v
+    floor = {"floor_stage": 0, "floor_met": 0, "floor_latches": 1, "vehicle_fault": 1,
+             "vehicle_fault_uptime_ms": 24621, "vehicle_fault_speed_mm_s": 8300, "stale_at_due": 0}
+    for k, v in floor.items():
+        w[o4 + len(SUP_ROUTE) + SUP_FLOOR.index(k)] = v
+    blob = struct.pack(f"<{len(w)}I", *w)
+    d = supervisor_decode(blob)
+    if len(d["route"]) != 4 or d["route"][3] != route3:
+        fails.append(f"route 3 decoded as {d['route'][3:]}")
+    if d["route"][2]["arms"] != 5:
+        fails.append("route 2 moved")
+    for k, v in floor.items():
+        if d.get(k) != v:
+            fails.append(f"{k} = {d.get(k)}, expected {v}")
+    text = supervisor_report(blob)
+    for want in ("route 3 the emergency stop's standstill", "VEHICLE-SIDE FAULT", "misses that latched the direct path=1"):
+        if want not in text:
+            fails.append(f"report lacks {want!r}")
+    if elf:
+        syms = symbols(elf, {SUPERVISOR})
+        if SUPERVISOR not in syms:
+            fails.append(f"{elf} has no {SUPERVISOR}")
+        elif syms[SUPERVISOR][1] != size:
+            fails.append(f"{SUPERVISOR} is {syms[SUPERVISOR][1]} B in the ELF, the layout says {size} B")
+    for f in fails:
+        print("FAIL", f)
+    print(f"violations selftest: {'OK' if not fails else str(len(fails)) + ' FAILED'} (record {size} B"
+          + (f", checked against {elf}" if elf and not fails else "") + ")")
+    return 1 if fails else 0
 
 
 def priority_findings(d):
@@ -349,6 +418,17 @@ def supervisor_report(blob):
     if "standstill_met" in d:
         lines.append(f"  route 2 dues met at standstill={d['standstill_met']}; last speed {d['speed_mm_s']} mm/s "
                      f"at uptime {d['speed_at_ms']} ms")
+    if "floor_stage" in d:
+        lines.append(f"  route 3 (the floor): dues met at standstill={d['floor_met']}; misses that latched the "
+                     f"direct path={d['floor_latches']}; armed for "
+                     f"{SUP_FLOOR_STAGE.get(d['floor_stage'], d['floor_stage'])}; dues judged with no fresh "
+                     f"kinematic_state (routes 2, 3)={d['stale_at_due']}")
+        if d["vehicle_fault"]:
+            lines.append(f"  VEHICLE-SIDE FAULT latched at uptime {d['vehicle_fault_uptime_ms']} ms: the vehicle "
+                         f"still moved ({d['vehicle_fault_speed_mm_s']} mm/s) under a braking command that ran a "
+                         f"whole settle")
+        else:
+            lines.append("  no vehicle-side fault")
     pf = priority_findings(d)
     if pf is not None:
         lines.append(f"  priority plan: transport [{d['prio_plan_transport_lo']}, {d['prio_plan_transport_hi']}], "
@@ -371,13 +451,17 @@ def board():
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("cmd", choices=["read", "decode", "overrun", "fault-overrun", "spin-stall",
-                                        "comfortable-inert", "late-return", "supervisor"])
+                                        "comfortable-inert", "late-return", "supervisor", "selftest"])
     ap.add_argument("arg", nargs="?", help="decode: the record dump; overrun: ms; fault-overrun: ms or stall")
-    ap.add_argument("--elf", required=True)
+    ap.add_argument("--elf")
     ap.add_argument("--out", help="read: output prefix (<out>.bin, <out>.txt)")
     ap.add_argument("--words", help="decode: a JSON file of the arming words read beside the dump")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_intermixed_args()
+    if a.cmd == "selftest":
+        return supervisor_selftest(a.elf)
+    if not a.elf:
+        ap.error("--elf is required")
     syms = symbols(a.elf, {RECORD, OVERRUN, FAULT_OVERRUN, SPIN_STALL, COMFORT_INERT, LATE_RETURN, SUPERVISOR,
                            *ARM_WORDS})
     if a.cmd == "supervisor":

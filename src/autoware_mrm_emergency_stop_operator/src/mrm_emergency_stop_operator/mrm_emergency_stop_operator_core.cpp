@@ -272,7 +272,16 @@ void MrmEmergencyStopOperator::onTimer()
     publishControlCommand(control_cmd);
     prev_control_cmd_ = control_cmd;
   } else {
+#if defined(__ZEPHYR__) && defined(CONFIG_ISLAND_SUPERVISOR)
+    // phase15-S2: latched and not OPERATING (the operate request never
+    // arrived): the direct path is the one braking on this topic, and the
+    // pass-through of the last control command would interleave with it.
+    if (island_supervisor_latched() == 0u) {
+      publishControlCommand(prev_control_cmd_);
+    }
+#else
     publishControlCommand(prev_control_cmd_);
+#endif
   }
   publishStatus();
   ISLAND_TRACE(ISLAND_MK_PATH_MRM_EMERGENCY_STOP_OPERATOR_ON_TIMER_EXIT, status_.state);
