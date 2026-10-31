@@ -47,3 +47,13 @@ jobs:
         run: |
           python3 -m py_compile tools/board/*.py
           python3 tools/board/tlcommon.py selftest
+      # phase15-S3: the supervisor's standstill verdicts (routes 2 and 3) on
+      # the host, and its SWD record decoder against the record's layout.
+      - name: supervisor verdicts and record layout
+        shell: bash
+        run: |
+          command -v cc >/dev/null || { apt-get install -y -qq --no-install-recommends gcc libc6-dev >/dev/null; }
+          mkdir -p build/tests
+          cc -std=c11 -Wall -Wextra -Werror -o build/tests/supervisor_judge tests/supervisor/test_judge.c
+          build/tests/supervisor_judge
+          python3 tools/board/violations.py selftest

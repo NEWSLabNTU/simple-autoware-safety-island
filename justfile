@@ -920,6 +920,15 @@ contract-check:
 
 alias l3-check := contract-check
 
+# phase15-S3: the supervisor's standstill verdicts on the host (route 2 and
+# route 3: met, missed, stale sample; src/zephyr_entry/src/
+# island_supervisor_judge.h) and the record decoder against its layout.
+supervisor-test:
+    mkdir -p build/tests
+    cc -std=c11 -Wall -Wextra -Werror -o build/tests/supervisor_judge tests/supervisor/test_judge.c
+    build/tests/supervisor_judge
+    python3 tools/board/violations.py selftest
+
 import 'just/emulation.just'
 import 'just/tracing.just'
 import 'just/board-peer.just'
