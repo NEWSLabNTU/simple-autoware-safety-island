@@ -164,6 +164,24 @@ static void unseen(void)
 	CHECK(at_due(20000u, 0u, 19000u, 0, 0u) == ISLAND_FLOOR_LATCH);
 }
 
+/* phase15-S7: the vehicle-side fault is reported as MRM_FAILED, and Autoware
+ * 1.5.0's vehicle_cmd_gate still passes the emergency command and hazard
+ * lights for it (the behaviour stays EMERGENCY_STOP). */
+static void mrm_failed(void)
+{
+	CHECK(island_judge_mrm_state(ISLAND_MRM_OPERATING, false) == ISLAND_MRM_OPERATING);
+	CHECK(island_judge_mrm_state(ISLAND_MRM_SUCCEEDED, false) == ISLAND_MRM_SUCCEEDED);
+	CHECK(island_judge_mrm_state(ISLAND_MRM_OPERATING, true) == ISLAND_MRM_FAILED);
+	CHECK(island_judge_mrm_state(ISLAND_MRM_SUCCEEDED, true) == ISLAND_MRM_FAILED);
+	/* the gate's emergency holds across OPERATING -> FAILED */
+	CHECK(island_autoware_gate_emergency(ISLAND_MRM_OPERATING, ISLAND_MRM_EMERGENCY_STOP));
+	CHECK(island_autoware_gate_emergency(island_judge_mrm_state(ISLAND_MRM_OPERATING, true),
+					     ISLAND_MRM_EMERGENCY_STOP));
+	/* it would not with another behaviour (why the island keeps it) */
+	CHECK(!island_autoware_gate_emergency(ISLAND_MRM_FAILED, 3u /* COMFORTABLE_STOP */));
+	CHECK(!island_autoware_gate_emergency(1u /* NORMAL */, ISLAND_MRM_EMERGENCY_STOP));
+}
+
 int main(void)
 {
 	standstill();
@@ -174,6 +192,7 @@ int main(void)
 	latched_young();
 	resume();
 	stall_after_handover();
+	mrm_failed();
 	printf("supervisor judge: %s\n", fails ? "FAILED" : "OK");
 	return fails ? 1 : 0;
 }

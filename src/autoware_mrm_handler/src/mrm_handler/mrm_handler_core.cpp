@@ -28,6 +28,10 @@
 // (porting-notes 18).
 #if defined(__ZEPHYR__)
 #include <zephyr/kernel.h>
+#if defined(CONFIG_ISLAND_SUPERVISOR)
+// phase15-S7: the state the island reports on a vehicle-side fault.
+#include "../../../zephyr_entry/src/island_supervisor_judge.h"
+#endif
 // phase9-W4: when and why the handler armed nano-ros's contract monitors,
 // readable by name over SWD (tools/board/violations.py): the uptime of the
 // call (0 = not yet) and the transition that made it (ARM_VIA_*).
@@ -58,6 +62,7 @@ typedef void (*island_supervisor_direct_fn)(void * ctx, uint32_t seq, uint32_t s
 void island_supervisor_set_direct(uint32_t slot, island_supervisor_direct_fn fn, void * ctx);
 uint32_t island_supervisor_handover(uint32_t slot, uint32_t period_ms);
 uint32_t island_supervisor_resumed(uint32_t slot);
+uint32_t island_supervisor_vehicle_fault(void);
 void island_supervisor_note_speed(uint32_t speed_mm_s);
 #endif
 #if defined(CONFIG_ISLAND_DEBUG_FLOOR_INJECT)
@@ -161,7 +166,13 @@ void direct_emergency(void * ctx, uint32_t seq, uint32_t since_latch_ms)
   auto * d = static_cast<DirectEmergency *>(ctx);
   autoware_adapi_v1_msgs::msg::MrmState st{};
   st.stamp = now_stamp();
-  st.state = autoware_adapi_v1_msgs::msg::MrmState::MRM_OPERATING;
+  // phase15-S7: once route 3 has found the vehicle-side fault, the state is
+  // MRM_FAILED, the behaviour stays EMERGENCY_STOP: Autoware 1.5.0's
+  // vehicle_cmd_gate keeps the emergency command and hazard lights for
+  // MRM_OPERATING, MRM_SUCCEEDED and MRM_FAILED alike while the behaviour is
+  // EMERGENCY_STOP (VehicleCmdGate::onMrmState).
+  st.state = island_judge_mrm_state(autoware_adapi_v1_msgs::msg::MrmState::MRM_OPERATING,
+                                    island_supervisor_vehicle_fault() != 0u);
   st.behavior = autoware_adapi_v1_msgs::msg::MrmState::EMERGENCY_STOP;
   (void)d->mrm_state->publish(st);
   autoware_vehicle_msgs::msg::HazardLightsCommand hz{};
@@ -916,6 +927,23 @@ void MrmHandler::updateMrmState()
   using autoware_adapi_v1_msgs::msg::MrmState;
 
   const bool is_emergency = isEmergency();
+
+#if defined(__ZEPHYR__) && defined(CONFIG_ISLAND_SUPERVISOR)
+  // phase15-S7: the supervisor found the vehicle not stopping under the
+  // island's braking command (route 3, the vehicle-side fault): report
+  // MRM_FAILED, as upstream does when the emergency stop itself cannot be
+  // requested, with the behaviour kept EMERGENCY_STOP. Nothing is
+  // cancelled: operateMrm() sends no request in MRM_FAILED, so the
+  // emergency operator stays OPERATING and the braking command, the
+  // direct path's or the operator's, goes on; the hazard lights follow
+  // isEmergency(), which the latch holds. Latched for good, as the fault.
+  if (is_supervisor_latched_ && island_supervisor_vehicle_fault() != 0u) {
+    const uint16_t reported = island_judge_mrm_state(mrm_state_.state, true);
+    if (mrm_state_.state != reported) transitionTo(reported);
+    mrm_state_.behavior = MrmState::EMERGENCY_STOP;
+    return;
+  }
+#endif
 
   if (!is_emergency) {
     // Back in the domain (or the stream is back): no request, and the next

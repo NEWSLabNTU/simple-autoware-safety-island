@@ -93,4 +93,29 @@ static inline bool island_judge_resume(uint32_t now_ms, uint32_t alive_ms, uint3
 	return (uint32_t)(now_ms - alive_ms) >= period_ms * periods;
 }
 
+/* phase15-S7: autoware_adapi_v1_msgs/MrmState values the island reports. */
+#define ISLAND_MRM_OPERATING 2u
+#define ISLAND_MRM_SUCCEEDED 3u
+#define ISLAND_MRM_FAILED 4u
+#define ISLAND_MRM_EMERGENCY_STOP 2u
+
+/* The state the island's mrm_state carries: MRM_FAILED once route 3 has
+ * found the vehicle-side fault (the handler's tick and the direct path's
+ * handler slot alike), else the state as computed. The behaviour is not
+ * touched: it stays EMERGENCY_STOP under the latch. */
+static inline uint16_t island_judge_mrm_state(uint16_t state, bool vehicle_fault)
+{
+	return vehicle_fault ? (uint16_t)ISLAND_MRM_FAILED : state;
+}
+
+/* Autoware 1.5.0's vehicle_cmd_gate (VehicleCmdGate::onMrmState): the
+ * emergency command and the emergency hazard lights pass while this holds.
+ * Mirrored for the host tests: MRM_FAILED keeps it as long as the behaviour
+ * is EMERGENCY_STOP. */
+static inline bool island_autoware_gate_emergency(uint16_t state, uint16_t behavior)
+{
+	return (state == ISLAND_MRM_OPERATING || state == ISLAND_MRM_SUCCEEDED || state == ISLAND_MRM_FAILED) &&
+	       behavior == ISLAND_MRM_EMERGENCY_STOP;
+}
+
 #endif /* ISLAND_SUPERVISOR_JUDGE_H */

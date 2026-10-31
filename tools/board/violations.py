@@ -483,7 +483,8 @@ def supervisor_report(blob):
         if d["vehicle_fault"]:
             lines.append(f"  VEHICLE-SIDE FAULT latched at uptime {d['vehicle_fault_uptime_ms']} ms: the vehicle "
                          f"still moved ({d['vehicle_fault_speed_mm_s']} mm/s) under the island's braking command "
-                         f"that ran a whole settle")
+                         f"that ran a whole settle; mrm_state reports MRM_FAILED / EMERGENCY_STOP from then on (phase15-S7), "
+                         f"the braking command and the hazard lights kept")
         else:
             lines.append("  no vehicle-side fault")
     pf = priority_findings(d)
