@@ -110,7 +110,7 @@ is never required.
 | availability `max_transport` | 56 (46.42, n 12) | both hazards | - | no: host stamp, island take, no shared clock. Total loss is caught by `max_age` 500 |
 | `control_mode.max_transport` | 143 (118.78, n 5) | no hazard | - | no (deferred to an Ethernet link, phase 10) |
 | comfortable settle `response` | 943 (785.43, n 3) | odd_exit | escalate to the emergency stop | yes: no deceleration in `kinematic_state` by take + 943 |
-| emergency settle `response` | 319 (265.34, n 16; was 256 from 213.11, n 3) | hpc_loss, odd_exit floor | none on the island (it is the floor) | observable; no rung below it |
+| emergency settle `response` | 319 (265.34, n 16; was 256 from 213.11, n 3) | hpc_loss, odd_exit floor | phase 15: route 3 latches and the direct path brakes; a vehicle still moving after the direct path's own settle is a latched vehicle-side fault | yes (phase 15 route 3): no standstill in `kinematic_state` by call + 4485 + 136 |
 
 Slack on main (link 56): hpc_loss 5,228.67 of 10,000 ms (5,165.67 with the
 256 ms response); odd_exit 21,393.67 of 30,000 ms. By hand, with d the detection delay: `call_mrm`

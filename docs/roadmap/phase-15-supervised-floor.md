@@ -8,8 +8,49 @@ on the island (it is the floor)". play_launch 0.21.0 (rlm v0.2.6, phase 95)
 reports this as `warning[call-unbounded-floor]` on `hazards.hpc_loss` and
 `hazards.odd_exit`. This phase closes the gap rather than acknowledging it.
 
-**Status (2026-10-31): planned.** Decided: supervise the floor (option 1),
-not acknowledge it.
+**Status (2026-10-31): S1-S3 and S5 done; S4 (board) open.** Decided:
+supervise the floor (option 1), not acknowledge it.
+
+- S1: `play_launch check` (0.21.0, rlm v0.2.6) on the island contract went
+  from 0 errors / 12 warnings (2 `call-unbounded-floor`) to 0 errors / 9
+  warnings, no `call-unbounded-floor`; the emergency response (319) is now
+  supervised, so its `measured-unsupervised` is gone too. The reaction is
+  `island.floor_override` (trigger `/control/command/control_cmd`, output
+  `/system/emergency/control_cmd`): the walk reaches the operator's
+  `on_timer` safe state through its state input and charges its tick
+  (33.33 + 6), which the direct path does not wait for. A scope path with
+  its own `safe_state` and the trigger `/localization/kinematic_state` was
+  refused (`supervised-fit`: "reaches none of the hazard's safe states").
+  The overrun rows:
+
+  | hazard | before | settle | observe | detect | route | settle | total | FTTI | slack |
+  |---|---|---|---|---|---|---|---|---|---|
+  | hpc_loss | 744.33 | 4484.33 | 136 | 2 | 39.33 | 4484.33 | 9890.33 | 10000 | 109.67 |
+  | odd_exit | 10493.33 | 4484.33 | 136 | 2 | 39.33 | 4484.33 | 19639.33 | 30000 | 10360.67 |
+
+  The checker takes one overrun at a time. A comfortable stop that
+  overruns AND an emergency stop that then overruns (two faults) is
+  26204.33 + 136 + 2 + 39.33 + 4484.33 = 30866.00 ms, over odd_exit's 30 s;
+  it is not a row of the checker.
+- S2: route 3 (`island_supervisor.c`, `CONFIG_ISLAND_SUPERVISOR_
+  EMERGENCY_MS` 4485), armed in `requestMrmBehavior` before the send.
+  Missed before any latch: latch, the direct path, re-armed once for the
+  direct path's settle. Missed with the output latched: the vehicle-side
+  fault (`vehicle_fault` in the record, `SUPERVISOR_VEHICLE_FAULT` in the
+  trace), the command kept. mrm_state is not set to MRM_FAILED: how
+  Autoware's gate treats MRM_FAILED is not checked, and the braking
+  command has to keep reaching the vehicle. The emergency operator,
+  latched and not OPERATING, stops its pass-through publish so the direct
+  path is the only command on the topic. The early response check is not
+  built: `supervise:` covers the whole settle only, so the checker cannot
+  model a deceleration check at the response bound (follow-up, rlm).
+- S3: `just supervisor-test` (host verdicts: met, missed, stale sample,
+  the floor's sequences; the record decoder against its layout, and with
+  `--elf` against the image: 756 B); native, native_sim and board builds
+  pass; `priority-check` agrees.
+- S5: phase 11's table row, the contract comments, the readout
+  (`violations.py supervisor`: route 3, `floor_*`, `vehicle_fault`,
+  `stale_at_due`) and the marker table.
 
 ## What can fail on the floor, and what the island can do
 
