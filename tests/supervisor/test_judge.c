@@ -79,11 +79,22 @@ static void floor_sequences(void)
 	CHECK(at_due(24621u, 0u, 24000u, 1, ISLAND_FLOOR_DIRECT) == ISLAND_FLOOR_VEHICLE_FAULT);
 }
 
+static void unseen(void)
+{
+	/* no sample since boot: route 3 waits (island_supervisor.c re-arms) */
+	CHECK(island_judge_unseen(0u));
+	/* any sample once taken: judged, a stale one as a miss */
+	CHECK(!island_judge_unseen(1u));
+	CHECK(!island_judge_unseen(19000u));
+	CHECK(at_due(20000u, 0u, 19000u, 0, ISLAND_FLOOR_OPERATOR) == ISLAND_FLOOR_LATCH);
+}
+
 int main(void)
 {
 	standstill();
 	floor_route();
 	floor_sequences();
+	unseen();
 	printf("supervisor judge: %s\n", fails ? "FAILED" : "OK");
 	return fails ? 1 : 0;
 }

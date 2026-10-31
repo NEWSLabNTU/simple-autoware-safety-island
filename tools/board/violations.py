@@ -130,6 +130,9 @@ SUP_LEVEL_BYTES = len(SUP_LEVEL) * 4 + 16 + 4
 # standstill, the floor) as one more SUP_ROUTE, then its verdict words.
 SUP_FLOOR = ["floor_stage", "floor_met", "floor_latches", "vehicle_fault", "vehicle_fault_uptime_ms",
              "vehicle_fault_speed_mm_s", "stale_at_due"]
+# phase15-S4, after them (absent from an S2/S3 record): route-3 dues met
+# before any kinematic_state since boot, each re-armed for another span.
+SUP_FLOOR_UNSEEN = ["floor_unseen"]
 SUP_FLOOR_STAGE = {0: "idle", 1: "the operator's settle", 2: "the direct path's settle"}
 # zenoh-pico's tasks, by the name the platform gives them, sit in the
 # transport band. Since zenoh-pico 1.9 (nano-ros phase-508, RFC-0110 D2) one
@@ -281,6 +284,9 @@ def supervisor_decode(blob):
                 hdr["route"].append(dict(zip(SUP_ROUTE, w[o4:o4 + len(SUP_ROUTE)])))
                 o5 = o4 + len(SUP_ROUTE)
                 hdr.update(zip(SUP_FLOOR, w[o5:o5 + len(SUP_FLOOR)]))
+                o6 = o5 + len(SUP_FLOOR)
+                if o6 + len(SUP_FLOOR_UNSEEN) <= n:
+                    hdr.update(zip(SUP_FLOOR_UNSEEN, w[o6:o6 + len(SUP_FLOOR_UNSEEN)]))
     return hdr
 
 
@@ -288,7 +294,7 @@ def supervisor_layout_bytes(routes=3, levels=4):
     """The record's size by the layout above (island_supervisor.c's struct)."""
     words = (len(SUP_HEADER) + routes * len(SUP_ROUTE) + SUP_DIRECT_SLOTS * len(SUP_DIRECT) + len(SUP_TAIL)
              + len(SUP_PRIO) + SUP_PRIO_THREADS * 5 + len(SUP_LATE) + len(SUP_LEVELS)
-             + levels * SUP_LEVEL_BYTES // 4 + len(SUP_ROUTE) + len(SUP_FLOOR))
+             + levels * SUP_LEVEL_BYTES // 4 + len(SUP_ROUTE) + len(SUP_FLOOR) + len(SUP_FLOOR_UNSEEN))
     return words * 4
 
 
@@ -314,6 +320,7 @@ def supervisor_selftest(elf=None):
              "vehicle_fault_uptime_ms": 24621, "vehicle_fault_speed_mm_s": 8300, "stale_at_due": 0}
     for k, v in floor.items():
         w[o4 + len(SUP_ROUTE) + SUP_FLOOR.index(k)] = v
+    w[o4 + len(SUP_ROUTE) + len(SUP_FLOOR)] = 2  # floor_unseen
     blob = struct.pack(f"<{len(w)}I", *w)
     d = supervisor_decode(blob)
     if len(d["route"]) != 4 or d["route"][3] != route3:
@@ -323,6 +330,8 @@ def supervisor_selftest(elf=None):
     for k, v in floor.items():
         if d.get(k) != v:
             fails.append(f"{k} = {d.get(k)}, expected {v}")
+    if d.get("floor_unseen") != 2:
+        fails.append(f"floor_unseen = {d.get('floor_unseen')}, expected 2")
     text = supervisor_report(blob)
     for want in ("route 3 the emergency stop's standstill", "VEHICLE-SIDE FAULT", "misses that latched the direct path=1"):
         if want not in text:
@@ -433,7 +442,9 @@ def supervisor_report(blob):
         lines.append(f"  route 3 (the floor): dues met at standstill={d['floor_met']}; misses that latched the "
                      f"direct path={d['floor_latches']}; armed for "
                      f"{SUP_FLOOR_STAGE.get(d['floor_stage'], d['floor_stage'])}; dues judged with no fresh "
-                     f"kinematic_state (routes 2, 3)={d['stale_at_due']}")
+                     f"kinematic_state (routes 2, 3)={d['stale_at_due']}"
+                     + (f"; dues re-armed before any kinematic_state since boot={d['floor_unseen']}"
+                        if "floor_unseen" in d else ""))
         if d["vehicle_fault"]:
             lines.append(f"  VEHICLE-SIDE FAULT latched at uptime {d['vehicle_fault_uptime_ms']} ms: the vehicle "
                          f"still moved ({d['vehicle_fault_speed_mm_s']} mm/s) under a braking command that ran a "

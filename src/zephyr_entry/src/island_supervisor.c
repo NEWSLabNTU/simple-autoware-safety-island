@@ -109,6 +109,10 @@
  * MRM_OPERATING / EMERGENCY_STOP: how Autoware's gate treats MRM_FAILED is
  * not checked here, and the braking command must keep reaching the vehicle.
  * No SWT0 reset: a reset would drop the island's commands while it boots.
+ * A due met before any kinematic_state since boot (phase15-S4) is re-armed
+ * for another span (floor_unseen): no vehicle has reported yet, as at boot
+ * while the vehicle's stack starts; a sample once seen and gone stale is a
+ * miss as before.
  *
  * Everything is readable by name over SWD (island_supervisor_record,
  * tools/board/violations.py supervisor).
@@ -280,6 +284,9 @@ struct island_supervisor_record {
 	uint32_t vehicle_fault_uptime_ms;  /* when */
 	uint32_t vehicle_fault_speed_mm_s; /* the last noted |v| then */
 	uint32_t stale_at_due;             /* route 2 or 3 dues judged with no fresh kinematic_state */
+	/* phase15-S4, last: route 3 dues met before any kinematic_state since
+	 * boot (no vehicle reporting yet), each re-armed for another span. */
+	uint32_t floor_unseen;
 };
 
 volatile struct island_supervisor_record island_supervisor_record;
@@ -624,6 +631,17 @@ static void reaction_thread(void *a, void *b, void *c)
 				}
 				enum island_floor_verdict floor = ISLAND_FLOOR_LATCH;
 
+				if (i == ISLAND_SUPERVISOR_ROUTE_EMERGENCY_STANDSTILL &&
+				    island_judge_unseen(island_supervisor_record.speed_at_ms)) {
+					/* no vehicle has reported yet: watch another span */
+					island_supervisor_record.floor_unseen++;
+					due_valid[i] = true;
+					due_ms[i] = now + CONFIG_ISLAND_SUPERVISOR_EMERGENCY_MS +
+						    CONFIG_ISLAND_SUPERVISOR_STANDSTILL_OBSERVE_MS;
+					r->armed = 1u;
+					r->due_ms = (uint32_t)due_ms[i];
+					continue;
+				}
 				if (i == ISLAND_SUPERVISOR_ROUTE_EMERGENCY_STANDSTILL) {
 					floor = island_judge_floor(standstill_now(now),
 								   island_supervisor_record.latched != 0u,

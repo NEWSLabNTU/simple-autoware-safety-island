@@ -31,6 +31,18 @@ static inline bool island_judge_stale(uint32_t now_ms, uint32_t at_ms, uint32_t 
 	return at_ms == 0u || (uint32_t)(now_ms - at_ms) > fresh_ms;
 }
 
+/* No kinematic_state taken since boot (at_ms == 0): no vehicle has reported
+ * to the island yet. The island boots before the vehicle's stack, and an
+ * emergency stop its INIT failure raises then has nothing to watch: route 3
+ * waits another span at such a due instead of latching on a vehicle it has
+ * never seen (phase15-S4: the board latched at boot when the stack took
+ * longer than the span to report). A sample that was seen and went stale is
+ * judged as before (island_judge_stale: a miss). */
+static inline bool island_judge_unseen(uint32_t at_ms)
+{
+	return at_ms == 0u;
+}
+
 /* Route 3's stage: what its armed due supervises. */
 #define ISLAND_FLOOR_IDLE 0u
 #define ISLAND_FLOOR_OPERATOR 1u /* the handler's emergency call: the operator's settle */
