@@ -58,9 +58,11 @@ settle; S7 reports the vehicle-side fault as MRM_FAILED.
   trace), the command kept. mrm_state was not set to MRM_FAILED then (how
   Autoware's gate treats it was not checked); S7 checked it and sets it. The emergency operator,
   latched and not OPERATING, stops its pass-through publish so the direct
-  path is the only command on the topic. The early response check is not
-  built: `supervise:` covers the whole settle only, so the checker cannot
-  model a deceleration check at the response bound (follow-up, rlm).
+  path is the only command on the topic. The early response check was not
+  built here: `supervise:` covered the whole settle only, so the checker
+  could not model a check at the response bound. Phase 16 builds it (rlm
+  v0.3.1 `supervise: { early: { within, drop } }`, play_launch 0.22.0,
+  route 4): docs/roadmap/phase-16-floor-response-check.md.
 - S3: `just supervisor-test` (host verdicts: met, missed, stale sample,
   the floor's sequences; the record decoder against its layout, and with
   `--elf` against the image: 756 B; 760 B since S4's `floor_unseen`); native, native_sim and board builds
@@ -93,7 +95,7 @@ it; nothing below the floor is invented.
   (CONFIG_ISLAND_SUPERVISOR_STANDSTILL_OBSERVE_MS, 136). At the due the thread
   judges standstill the way route 2 does (fresh kinematic_state, below
   1 mm/s). Met: disarm. Missed: latch, direct path, fault record.
-- **An early check at the response bound (optional, decided in S2).** No
+- **An early check at the response bound (built in phase 16, route 4).** No
   deceleration in kinematic_state by call + route + response (319) +
   observation means the command never took effect; reacting there instead of
   at the full settle saves about 4 s. Phase 11 lists the same observable for
