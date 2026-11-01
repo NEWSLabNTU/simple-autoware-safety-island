@@ -694,10 +694,31 @@ nodes:
             # 26304.33 of 30 s. A vehicle-side fault needs the island's
             # braking command (from the latch or that resume) to have run
             # the whole span; an earlier route-3 due re-arms, no new latch.
+            # phase16: the response check (`early:`, rlm v0.3.1, play_launch
+            # 0.22.0), the island's route 4. Route 3 cannot tell a command
+            # that never took effect before the whole settle has passed;
+            # route 4, armed at each of route 3's starts, asks at start +
+            # 1319 (the response 319 + 1 s of the jerk ramp) + the
+            # observation 136 whether the vehicle has shed 0.25 m/s since
+            # (or stopped), against the |v| seen at the start. The nominal
+            # profile sheds 0.75 m/s by then (`supervised-early`, from
+            # vehicle.braking 1.1.0's settle.speed_lost); the other 0.5 m/s
+            # cover a vehicle still accelerating at 1 m/s^2 through the
+            # response and a reference sample 136 ms old. A miss is route
+            # 3's, early: the direct path if nothing is latched, else, once
+            # the island's own braking command has run the response span,
+            # the vehicle-side fault (MRM_FAILED, phase15-S7). Its overrun
+            # rows: hpc_loss 744.33 + 1319 + 136 + 2 + 39.33 + 4484.33 =
+            # 6725.00 of 10 s (+100, the resume gap: 6825.00), odd_exit
+            # 16474.00 of 30 s; the settle's rows above stay the worst case
+            # (a vehicle that slows, then fails to stop). Kconfig
+            # ISLAND_SUPERVISOR_EMERGENCY_RESPONSE_MS 1319,
+            # ISLAND_SUPERVISOR_EMERGENCY_DROP_MM_S 250.
             supervise:
               reaction: island.floor_override
               mechanism: timer
               observes: mrm_handler/kinematic_state
+              early: { within: 1319ms, drop: 0.25 m/s }
     sub:
       # Cached in onControlCommand and read on the timer as the ramp seed: a
       # read-latest input, not a trigger. `state: true` says so; without it

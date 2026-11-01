@@ -144,6 +144,11 @@ SUP_RESUME = (["resume_periods"]
               + [f"{k}_{i}" for k in ("resumed", "resume_uptime_ms", "resume_silent_ms", "alive_after_resume")
                  for i in range(SUP_DIRECT_SLOTS)]
               + ["floor_waits", "brake_since_ms"])
+# phase16, after brake_since_ms (absent from an older record): route 4, the
+# floor's response check, as one more SUP_ROUTE, then its words.
+SUP_RESPONSE = ["response_within_ms", "response_drop_mm_s", "response_ref_mm_s", "response_met",
+                "response_latches", "response_waits", "response_unref", "response_last_shed_mm_s",
+                "vehicle_fault_route"]
 SUP_FLOOR_STAGE = {0: "idle", 1: "the operator's settle", 2: "the direct path's settle"}
 # zenoh-pico's tasks, by the name the platform gives them, sit in the
 # transport band. Since zenoh-pico 1.9 (nano-ros phase-508, RFC-0110 D2) one
@@ -157,7 +162,8 @@ SUP_CAUSE = {0: "-", 1: "route deadline", 2: "SWT0 first timeout", 3: "the execu
 SUP_ROUTE_NAME = {0: "hpc_loss reaction (mrm_handler/call_mrm)",
                   1: "the executor's next supervised route (nano-ros phase-503)",
                   2: "the comfortable stop's standstill (call + settle + response)",
-                  3: "the emergency stop's standstill, the floor (call + settle + response)"}
+                  3: "the emergency stop's standstill, the floor (call + settle + response)",
+                  4: "the floor's response check (call + within: shed the drop or stop)"}
 ARM_VIA = {0: "not armed", 1: "INIT_DONE", 2: "init failure cleared"}
 # phase10-B3: what `measured` is, for the rules whose name does not say it.
 RULE_NOTE = {
@@ -301,6 +307,11 @@ def supervisor_decode(blob):
                 o7 = o6 + len(SUP_FLOOR_UNSEEN)
                 if o7 + len(SUP_RESUME) <= n:
                     hdr.update(zip(SUP_RESUME, w[o7:o7 + len(SUP_RESUME)]))
+                o8 = o7 + len(SUP_RESUME)
+                if o8 + len(SUP_ROUTE) + len(SUP_RESPONSE) <= n:
+                    hdr["route"].append(dict(zip(SUP_ROUTE, w[o8:o8 + len(SUP_ROUTE)])))
+                    o9 = o8 + len(SUP_ROUTE)
+                    hdr.update(zip(SUP_RESPONSE, w[o9:o9 + len(SUP_RESPONSE)]))
     return hdr
 
 
@@ -309,7 +320,7 @@ def supervisor_layout_bytes(routes=3, levels=4):
     words = (len(SUP_HEADER) + routes * len(SUP_ROUTE) + SUP_DIRECT_SLOTS * len(SUP_DIRECT) + len(SUP_TAIL)
              + len(SUP_PRIO) + SUP_PRIO_THREADS * 5 + len(SUP_LATE) + len(SUP_LEVELS)
              + levels * SUP_LEVEL_BYTES // 4 + len(SUP_ROUTE) + len(SUP_FLOOR) + len(SUP_FLOOR_UNSEEN)
-             + len(SUP_RESUME))
+             + len(SUP_RESUME) + len(SUP_ROUTE) + len(SUP_RESPONSE))
     return words * 4
 
 
@@ -344,10 +355,25 @@ def supervisor_selftest(elf=None):
     o7 = o4 + len(SUP_ROUTE) + len(SUP_FLOOR) + len(SUP_FLOOR_UNSEEN)
     for k, v in resume.items():
         w[o7 + SUP_RESUME.index(k)] = v
+    o8 = o7 + len(SUP_RESUME)
+    route4 = {"armed": 0, "due_ms": 22910, "arms": 2, "dones": 0, "fired": 2, "fire_due_ms": 21455,
+              "fire_verdict_us": 21455040}
+    for k, v in route4.items():
+        w[o8 + SUP_ROUTE.index(k)] = v
+    response = {"response_within_ms": 1319, "response_drop_mm_s": 250, "response_ref_mm_s": 1000,
+                "response_met": 0, "response_latches": 1, "response_waits": 0, "response_unref": 0,
+                "response_last_shed_mm_s": 0, "vehicle_fault_route": 4}
+    for k, v in response.items():
+        w[o8 + len(SUP_ROUTE) + SUP_RESPONSE.index(k)] = v
     blob = struct.pack(f"<{len(w)}I", *w)
     d = supervisor_decode(blob)
-    if len(d["route"]) != 4 or d["route"][3] != route3:
-        fails.append(f"route 3 decoded as {d['route'][3:]}")
+    if len(d["route"]) != 5 or d["route"][3] != route3:
+        fails.append(f"route 3 decoded as {d['route'][3:4]}")
+    if len(d["route"]) != 5 or d["route"][4] != route4:
+        fails.append(f"route 4 decoded as {d['route'][4:]}")
+    for k, v in response.items():
+        if d.get(k) != v:
+            fails.append(f"{k} = {d.get(k)}, expected {v}")
     if d["route"][2]["arms"] != 5:
         fails.append("route 2 moved")
     for k, v in floor.items():
@@ -362,7 +388,9 @@ def supervisor_selftest(elf=None):
         fails.append(f"resumed_0 = {d.get('resumed_0')}, expected 0")
     text = supervisor_report(blob)
     for want in ("route 3 the emergency stop's standstill", "VEHICLE-SIDE FAULT", "misses that latched the direct path=1",
-                 "RESUMED by the direct path at uptime 22099 ms", "dues deferred to the braking command's own settle=1"):
+                 "RESUMED by the direct path at uptime 22099 ms", "dues deferred to the braking command's own settle=1",
+                 "route 4 (the response check, 1319 ms, 250 mm/s)", "misses that latched the direct path=1;",
+                 "found by route 4 (the response check)"):
         if want not in text:
             fails.append(f"report lacks {want!r}")
     if elf:
@@ -480,10 +508,21 @@ def supervisor_report(blob):
                         if "floor_unseen" in d else "")
                      + (f"; dues deferred to the braking command's own settle={d['floor_waits']} (the island's "
                         f"braking command since uptime {d['brake_since_ms']} ms)" if "floor_waits" in d else ""))
+        if "response_within_ms" in d:
+            lines.append(f"  route 4 (the response check, {d['response_within_ms']} ms, {d['response_drop_mm_s']} mm/s): "
+                         f"dues responded by={d['response_met']}; misses that latched the direct path="
+                         f"{d['response_latches']}; dues deferred to the braking command's own start="
+                         f"{d['response_waits']}; starts with no fresh sample (not armed)={d['response_unref']}; "
+                         f"armed against {d['response_ref_mm_s']} mm/s; shed at the last verdict "
+                         f"{d['response_last_shed_mm_s']} mm/s")
         if d["vehicle_fault"]:
+            by = d.get("vehicle_fault_route", 3)
+            how = ("found by route 4 (the response check): the vehicle did not slow under the island's braking "
+                   "command that ran the response span" if by == 4 else
+                   "under the island's braking command that ran a whole settle")
             lines.append(f"  VEHICLE-SIDE FAULT latched at uptime {d['vehicle_fault_uptime_ms']} ms: the vehicle "
-                         f"still moved ({d['vehicle_fault_speed_mm_s']} mm/s) under the island's braking command "
-                         f"that ran a whole settle; mrm_state reports MRM_FAILED / EMERGENCY_STOP from then on (phase15-S7), "
+                         f"still moved ({d['vehicle_fault_speed_mm_s']} mm/s), {how}; mrm_state reports "
+                         f"MRM_FAILED / EMERGENCY_STOP from then on (phase15-S7), "
                          f"the braking command and the hazard lights kept")
         else:
             lines.append("  no vehicle-side fault")

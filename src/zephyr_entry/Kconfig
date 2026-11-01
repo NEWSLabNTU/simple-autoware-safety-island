@@ -172,11 +172,43 @@ config ISLAND_SUPERVISOR_EMERGENCY_MS
 	  observation) from its start (the latch, or the direct path's
 	  resume after a stalled operator); a due before that re-arms there.
 
+config ISLAND_SUPERVISOR_EMERGENCY_RESPONSE_MS
+	int "The emergency stop's response check, from the call (ms; 0: off)"
+	default 1319
+	range 0 4484
+	help
+	  Route 4 (phase16, the contract's `early: { within }` on the
+	  emergency settle): the floor's response check. Armed with route 3
+	  at the same start (the handler's emergency call, route 3's latch,
+	  the direct path's resume), due = start + this + the standstill
+	  observation below, against the |v| the island had noted when it
+	  armed. By then the vehicle must have shed
+	  ISLAND_SUPERVISOR_EMERGENCY_DROP_MM_S or be at standstill; if not,
+	  route 3's miss runs now instead of at the settle's end (the direct
+	  path if nothing is latched; the vehicle-side fault, MRM_FAILED, once
+	  the island's own braking command has run this span). 1319 = the
+	  response (319 ms) + 1 s of the jerk ramp (-1.5 m/s^3), by which the
+	  nominal profile has shed 0.75 m/s (vehicle.braking 1.1.0's
+	  settle.speed_lost; play_launch `supervised-early`). Below the
+	  settle (4485): a check at its end would detect nothing earlier.
+
+config ISLAND_SUPERVISOR_EMERGENCY_DROP_MM_S
+	int "The emergency stop's response check: least speed shed (mm/s)"
+	default 250
+	range 1 10000
+	help
+	  Route 4 (phase16, the contract's `early: { drop }`): the least
+	  |v| the vehicle must have shed by route 4's due, against the |v|
+	  the island noted when it armed. A third of the nominal profile's
+	  0.75 m/s: the rest covers a vehicle still accelerating at up to
+	  1 m/s^2 through the response (0.32 m/s) and a reference sample one
+	  observation (136 ms) old.
+
 config ISLAND_SUPERVISOR_STANDSTILL_OBSERVE_MS
 	int "How late the island sees a standstill (ms)"
 	default 136
 	help
-	  Added to route 2's and route 3's dues: the island judges the
+	  Added to route 2's, route 3's and route 4's dues: the island judges the
 	  standstill from its latest kinematic_state take, which comes up to
 	  one sample period
 	  (10 Hz, 100 ms) plus the serial link after the vehicle stopped. The

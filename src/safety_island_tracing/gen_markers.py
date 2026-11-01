@@ -144,8 +144,12 @@ LIFECYCLE = [
 #   SUPERVISOR_FLOOR_WAIT  phase15-S6: route 3's due found the output
 #                          latched but the island's braking command younger
 #                          than the span: no verdict, re-armed; arg the new
-#                          due's uptime ms (low 28 bits). Last, so no id
-#                          above moves.
+#                          due's uptime ms (low 28 bits).
+#   SUPERVISOR_RESPONSE    phase16: route 4's verdict, the floor's response
+#                          check; arg verdict << 28 | the speed shed since
+#                          its start, mm/s (verdict 0 met, 1 latched the
+#                          direct path, 2 vehicle-side fault, 3 re-armed).
+#                          Last, so no id above moves.
 SUPERVISION = [
     ("/mrm_handler/call_mrm", "SUPERVISOR_DEADLINE", "supervisor_deadline"),
     ("/mrm_handler/call_mrm", "SUPERVISOR_SAFE_STATE", "supervisor_safe_state"),
@@ -155,6 +159,7 @@ SUPERVISION = [
     ("/mrm_handler/call_mrm", "SUPERVISOR_VEHICLE_FAULT", "supervisor_vehicle_fault"),
     ("/mrm_handler/call_mrm", "SUPERVISOR_RESUME", "supervisor_resume"),
     ("/mrm_handler/call_mrm", "SUPERVISOR_FLOOR_WAIT", "supervisor_floor_wait"),
+    ("/mrm_handler/call_mrm", "SUPERVISOR_RESPONSE", "supervisor_response"),
 ]
 
 # phase9-W4: nano-ros's own trace markers, forwarded into the island's stream

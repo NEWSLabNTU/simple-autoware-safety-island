@@ -1,7 +1,7 @@
 {
  "generator": "src/safety_island_tracing/gen_markers.py",
- "contract_sha256": "a89e5901dd1f83fc05f69e96ec6a6ba553009a35c43664d938514ef04ca26afc",
- "table_sha256": "09183d0ae51e689e2f85319190431c05d5ed59585d53ebf466fdd84fbcf503d4",
+ "contract_sha256": "427a7affe10ab0711d43422b0380433784c591f26ffb9706b84867a8ea671fa8",
+ "table_sha256": "5252ada87090d6d6aa1ca6c3d89d5506fb3422e7e1619877507368a345e3d30c",
  "entities": {
   "pub": 8,
   "sub": 7,
@@ -407,6 +407,14 @@
    "element": "/mrm_handler/call_mrm",
    "node": "mrm_handler",
    "record": "every"
+  },
+  {
+   "id": 40,
+   "name": "SUPERVISOR_RESPONSE",
+   "kind": "supervisor_response",
+   "element": "/mrm_handler/call_mrm",
+   "node": "mrm_handler",
+   "record": "every"
   }
  ],
  "nros": {
@@ -491,7 +499,8 @@
    "hazard-detected",
    "hazard-reaction",
    "hazard-recovered",
-   "mode-switch-runtime"
+   "mode-switch-runtime",
+   "hazard-route-runtime"
   ],
   "endpoint_hashes": {
    "8a287f9b": "/mrm_comfortable_stop_operator/clear_velocity_limit",

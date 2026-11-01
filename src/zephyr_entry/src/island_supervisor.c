@@ -144,6 +144,27 @@
  * while the vehicle's stack starts; a sample once seen and gone stale is a
  * miss as before.
  *
+ * Route 4 (phase16): the floor's response check, the contract's `early:
+ * { within, drop }` on the emergency settle. Route 3 waits a whole settle
+ * (4621 ms) before it can tell a command that never took effect; route 4
+ * asks the weaker question earlier. Whenever route 3 starts a settle (the
+ * handler's call, route 3's latch, the direct path's resume) route 4 is
+ * armed at the same start, due = start + CONFIG_ISLAND_SUPERVISOR_
+ * EMERGENCY_RESPONSE_MS + the standstill observation (1319 + 136), against
+ * the |v| noted then (only from a fresh sample: with none, route 4 is not
+ * armed, response_unref, and route 3 alone judges). At its due a vehicle at
+ * standstill, or one whose fresh sample has shed CONFIG_ISLAND_SUPERVISOR_
+ * EMERGENCY_DROP_MM_S, has responded: met, and route 3 goes on to its own
+ * due. Not responded is route 3's miss, early, judged by the same function
+ * with the response span in place of the settle's: nothing latched, the
+ * direct path brakes (response_latches; route 3 and route 4 re-armed for
+ * the direct path's settle and response); latched and the island's own
+ * braking command older than the response span, the vehicle-side fault
+ * (vehicle_fault_route 4; route 3 disarmed: the fault is final), which the
+ * handler reports as MRM_FAILED (phase15-S7); younger, re-armed at
+ * brake_since + the span against the |v| noted at brake_since
+ * (response_waits). Each verdict is traced (SUPERVISOR_RESPONSE).
+ *
  * Everything is readable by name over SWD (island_supervisor_record,
  * tools/board/violations.py supervisor).
  */
@@ -211,6 +232,10 @@ BUILD_ASSERT(ISLAND_SUPERVISOR_PRIORITY >= 0, "the reaction thread stays preempt
 #define ISLAND_SUPERVISOR_MAGIC 0x56505553u /* "SUPV" little-endian */
 /* Route 3's span: the emergency settle + the standstill observation. */
 #define FLOOR_SPAN_MS (CONFIG_ISLAND_SUPERVISOR_EMERGENCY_MS + CONFIG_ISLAND_SUPERVISOR_STANDSTILL_OBSERVE_MS)
+/* Route 4's span (phase16): the response check + the standstill observation. */
+#define RESPONSE_SPAN_MS (CONFIG_ISLAND_SUPERVISOR_EMERGENCY_RESPONSE_MS + CONFIG_ISLAND_SUPERVISOR_STANDSTILL_OBSERVE_MS)
+BUILD_ASSERT(CONFIG_ISLAND_SUPERVISOR_EMERGENCY_RESPONSE_MS < CONFIG_ISLAND_SUPERVISOR_EMERGENCY_MS,
+	     "the response check must come before the settle's end");
 
 /* Layout read by tools/board/violations.py; all 32-bit. */
 struct island_supervisor_route {
@@ -315,7 +340,7 @@ struct island_supervisor_record {
 	uint32_t vehicle_fault;            /* 1 once a braking command ran a settle and the vehicle still moved */
 	uint32_t vehicle_fault_uptime_ms;  /* when */
 	uint32_t vehicle_fault_speed_mm_s; /* the last noted |v| then */
-	uint32_t stale_at_due;             /* route 2 or 3 dues judged with no fresh kinematic_state */
+	uint32_t stale_at_due;             /* route 2, 3 or (phase16) 4 dues judged with no fresh kinematic_state */
 	/* phase15-S4: route 3 dues met before any kinematic_state since
 	 * boot (no vehicle reporting yet), each re-armed for another span. */
 	uint32_t floor_unseen;
@@ -329,6 +354,18 @@ struct island_supervisor_record {
 	uint32_t alive_after_resume[ISLAND_SUPERVISOR_DIRECT_SLOTS]; /* its reports after that (it came back) */
 	uint32_t floor_waits;                                      /* route 3 dues latched, braking younger than the span */
 	uint32_t brake_since_ms;                                   /* when the island's braking command (re)started */
+	/* phase16, after brake_since_ms so every offset above holds: route 4,
+	 * the floor's response check, and what its verdicts did. */
+	struct island_supervisor_route route_response;
+	uint32_t response_within_ms;       /* CONFIG_ISLAND_SUPERVISOR_EMERGENCY_RESPONSE_MS */
+	uint32_t response_drop_mm_s;       /* CONFIG_ISLAND_SUPERVISOR_EMERGENCY_DROP_MM_S */
+	uint32_t response_ref_mm_s;        /* the |v| the armed due is judged against */
+	uint32_t response_met;             /* dues the vehicle had responded by */
+	uint32_t response_latches;         /* misses that latched the output (the direct path) */
+	uint32_t response_waits;           /* misses latched, braking younger than the span: re-armed */
+	uint32_t response_unref;           /* starts with no fresh sample to judge against: not armed */
+	uint32_t response_last_shed_mm_s;  /* the speed shed at the last verdict */
+	uint32_t vehicle_fault_route;      /* the route that found the vehicle-side fault: 3 or 4 */
 };
 
 volatile struct island_supervisor_record island_supervisor_record;
@@ -352,6 +389,11 @@ static volatile uint32_t alive_ms[ISLAND_SUPERVISOR_DIRECT_SLOTS];
 static volatile uint32_t alive_period_ms[ISLAND_SUPERVISOR_DIRECT_SLOTS];
 static int64_t brake_since;
 static int64_t direct_next_ms;
+/* phase16: the |v| noted when the island's braking command (re)started, and
+ * whether it was fresh then: route 4's reference after a wait. Reaction
+ * thread only. */
+static uint32_t brake_ref_mm_s;
+static bool brake_ref_ok;
 /* The executor's route cells, read at route 1's expiry (filled when route 1
  * gets its owner, from the owner's executor, before route 1 is ever armed). */
 static nros_cpp_route_watch_t route_watch;
@@ -466,11 +508,59 @@ static void rearm_locked(void)
 	}
 }
 
-/* A route's words in the record: route 3 is appended after the levels. */
+/* A route's words in the record: route 3 is appended after the levels,
+ * route 4 after route 3's words. */
 static volatile struct island_supervisor_route *route_rec(uint32_t route)
 {
-	return route < ISLAND_SUPERVISOR_RECORD_ROUTES ? &island_supervisor_record.route[route]
-						       : &island_supervisor_record.route_floor;
+	if (route < ISLAND_SUPERVISOR_RECORD_ROUTES) {
+		return &island_supervisor_record.route[route];
+	}
+	return route == ISLAND_SUPERVISOR_ROUTE_EMERGENCY_RESPONSE ? &island_supervisor_record.route_response
+								   : &island_supervisor_record.route_floor;
+}
+
+/* The latest kinematic_state sample is fresh at `now`. */
+static bool speed_fresh(int64_t now)
+{
+	return !island_judge_stale((uint32_t)now, island_supervisor_record.speed_at_ms, ISLAND_STANDSTILL_FRESH_MS);
+}
+
+/* phase16: arm route 4 for a settle that starts at `start`, due = start +
+ * the response span, against `ref_mm_s` when it was fresh (`ref_ok`);
+ * without a reference route 4 stays unarmed and route 3 alone judges. The
+ * lock is held; the caller re-arms the timer. */
+static void response_arm_locked(int64_t start, uint32_t ref_mm_s, bool ref_ok)
+{
+	const uint32_t r4 = ISLAND_SUPERVISOR_ROUTE_EMERGENCY_RESPONSE;
+	volatile struct island_supervisor_route *r = route_rec(r4);
+
+	if (CONFIG_ISLAND_SUPERVISOR_EMERGENCY_RESPONSE_MS == 0) {
+		return;
+	}
+	if (!ref_ok) {
+		island_supervisor_record.response_unref++;
+		due_valid[r4] = false;
+		r->armed = 0u;
+		return;
+	}
+	due_valid[r4] = true;
+	due_ms[r4] = start + RESPONSE_SPAN_MS;
+	r->armed = 1u;
+	r->due_ms = (uint32_t)due_ms[r4];
+	r->arms++;
+	island_supervisor_record.response_ref_mm_s = ref_mm_s;
+}
+
+/* phase16: route 4 is cleared with route 3. The lock is held. */
+static void response_clear_locked(void)
+{
+	const uint32_t r4 = ISLAND_SUPERVISOR_ROUTE_EMERGENCY_RESPONSE;
+
+	if (due_valid[r4]) {
+		due_valid[r4] = false;
+		route_rec(r4)->armed = 0u;
+		route_rec(r4)->dones++;
+	}
 }
 
 void island_supervisor_arm(uint32_t route, int64_t due)
@@ -488,8 +578,11 @@ void island_supervisor_arm(uint32_t route, int64_t due)
 	r->due_ms = (uint32_t)due;
 	r->arms++;
 	if (route == ISLAND_SUPERVISOR_ROUTE_EMERGENCY_STANDSTILL) {
-		/* The handler's emergency call: the operator's settle. */
+		/* The handler's emergency call: the operator's settle, and
+		 * (phase16) its response check from the same call. */
 		island_supervisor_record.floor_stage = ISLAND_FLOOR_OPERATOR;
+		response_arm_locked(k_uptime_get(), island_supervisor_record.speed_mm_s,
+				    speed_fresh(k_uptime_get()));
 	}
 	rearm_locked();
 	k_spin_unlock(&lock, key);
@@ -508,6 +601,7 @@ void island_supervisor_done(uint32_t route)
 		route_rec(route)->dones++;
 		if (route == ISLAND_SUPERVISOR_ROUTE_EMERGENCY_STANDSTILL) {
 			island_supervisor_record.floor_stage = ISLAND_FLOOR_IDLE;
+			response_clear_locked();
 		}
 		rearm_locked();
 	}
@@ -636,6 +730,8 @@ static bool direct_watch(int64_t now)
 		 * it a whole settle from here, armed now if nothing has it. */
 		brake_since = now;
 		island_supervisor_record.brake_since_ms = (uint32_t)now;
+		brake_ref_mm_s = island_supervisor_record.speed_mm_s;
+		brake_ref_ok = speed_fresh(now);
 		k_spinlock_key_t key = k_spin_lock(&lock);
 		const uint32_t r3 = ISLAND_SUPERVISOR_ROUTE_EMERGENCY_STANDSTILL;
 
@@ -648,6 +744,8 @@ static bool direct_watch(int64_t now)
 			r->due_ms = (uint32_t)due_ms[r3];
 			r->arms++;
 			island_supervisor_record.floor_stage = ISLAND_FLOOR_DIRECT;
+			/* phase16: and its response check from the resume */
+			response_arm_locked(now, brake_ref_mm_s, brake_ref_ok);
 			rearm_locked();
 		}
 		k_spin_unlock(&lock, key);
@@ -787,6 +885,38 @@ static void reaction_thread(void *a, void *b, void *c)
 				}
 				enum island_floor_verdict floor = ISLAND_FLOOR_LATCH;
 
+				if (i == ISLAND_SUPERVISOR_ROUTE_EMERGENCY_RESPONSE) {
+					/* phase16: has the vehicle responded to the
+					 * braking command since route 4's start? */
+					const bool latched = island_supervisor_record.latched != 0u;
+					const uint32_t ref = island_supervisor_record.response_ref_mm_s;
+					const uint32_t v = island_supervisor_record.speed_mm_s;
+					const bool responded =
+						island_judge_responded(standstill_now(now), speed_fresh(now), ref, v,
+								       CONFIG_ISLAND_SUPERVISOR_EMERGENCY_DROP_MM_S);
+					const uint32_t shed = island_judge_shed(ref, v);
+
+					island_supervisor_record.response_last_shed_mm_s = shed;
+					floor = island_judge_floor(responded, latched,
+								   latched ? (uint32_t)(now - brake_since) : 0u,
+								   RESPONSE_SPAN_MS);
+					ISLAND_TRACE(ISLAND_MK_SUPERVISOR_RESPONSE,
+						     ((uint32_t)floor << 28) | (shed & 0x0FFFFFFFu));
+					if (floor == ISLAND_FLOOR_MET) {
+						/* slowing as commanded: route 3 goes on */
+						r->dones++;
+						island_supervisor_record.response_met++;
+						continue;
+					}
+					if (floor == ISLAND_FLOOR_WAIT) {
+						/* the island's braking command is younger
+						 * than the response span: judge it from its
+						 * own start */
+						island_supervisor_record.response_waits++;
+						response_arm_locked(brake_since, brake_ref_mm_s, brake_ref_ok);
+						continue;
+					}
+				}
 				if (i == ISLAND_SUPERVISOR_ROUTE_EMERGENCY_STANDSTILL &&
 				    island_judge_unseen(island_supervisor_record.speed_at_ms)) {
 					/* no vehicle has reported yet: watch another span */
@@ -808,6 +938,8 @@ static void reaction_thread(void *a, void *b, void *c)
 						r->dones++;
 						island_supervisor_record.floor_met++;
 						island_supervisor_record.floor_stage = ISLAND_FLOOR_IDLE;
+						due_valid[ISLAND_SUPERVISOR_ROUTE_EMERGENCY_RESPONSE] = false;
+						route_rec(ISLAND_SUPERVISOR_ROUTE_EMERGENCY_RESPONSE)->armed = 0u;
 						continue;
 					}
 					if (floor == ISLAND_FLOOR_WAIT) {
@@ -830,27 +962,44 @@ static void reaction_thread(void *a, void *b, void *c)
 				}
 				ISLAND_TRACE(ISLAND_MK_SUPERVISOR_DEADLINE,
 					     ((uint32_t)i << 28) | ((uint32_t)due_ms[i] & 0x0FFFFFFFu));
-				if (i != ISLAND_SUPERVISOR_ROUTE_EMERGENCY_STANDSTILL) {
+				const uint32_t r3 = ISLAND_SUPERVISOR_ROUTE_EMERGENCY_STANDSTILL;
+				const uint32_t r4 = ISLAND_SUPERVISOR_ROUTE_EMERGENCY_RESPONSE;
+
+				if (i != (int)r3 && i != (int)r4) {
 					fired_routes |= BIT(i);
 				} else if (floor == ISLAND_FLOOR_LATCH) {
-					/* The command never took effect: the direct path
-					 * brakes, and gets one settle of its own. */
+					/* The command never took effect (route 3: no
+					 * standstill by the settle's end; route 4: no
+					 * slowing by the response check): the direct
+					 * path brakes, and gets one settle of its own
+					 * (route 3) and its response check (route 4). */
 					fired_routes |= BIT(i);
-					island_supervisor_record.floor_latches++;
+					if (i == (int)r3) {
+						island_supervisor_record.floor_latches++;
+					} else {
+						island_supervisor_record.response_latches++;
+					}
 					island_supervisor_record.floor_stage = ISLAND_FLOOR_DIRECT;
-					due_valid[i] = true;
-					due_ms[i] = now + FLOOR_SPAN_MS;
-					r->armed = 1u;
-					r->due_ms = (uint32_t)due_ms[i];
+					due_valid[r3] = true;
+					due_ms[r3] = now + FLOOR_SPAN_MS;
+					route_rec(r3)->armed = 1u;
+					route_rec(r3)->due_ms = (uint32_t)due_ms[r3];
+					response_arm_locked(now, island_supervisor_record.speed_mm_s, speed_fresh(now));
 				} else {
-					/* A braking command ran a whole settle and the
-					 * vehicle still moves: the vehicle's fault. The
-					 * output stays latched, the command keeps going. */
+					/* The island's braking command ran a whole
+					 * settle (route 3) or the response span (route
+					 * 4) and the vehicle still moves, or does not
+					 * slow: the vehicle's fault. The output stays
+					 * latched, the command keeps going; the other
+					 * floor route is done (the fault is final). */
 					island_supervisor_record.floor_stage = ISLAND_FLOOR_IDLE;
+					due_valid[i == (int)r3 ? r4 : r3] = false;
+					route_rec(i == (int)r3 ? r4 : r3)->armed = 0u;
 					if (island_supervisor_record.vehicle_fault == 0u) {
 						island_supervisor_record.vehicle_fault_uptime_ms = (uint32_t)now;
 						island_supervisor_record.vehicle_fault_speed_mm_s =
 							island_supervisor_record.speed_mm_s;
+						island_supervisor_record.vehicle_fault_route = (uint32_t)i;
 						island_supervisor_record.vehicle_fault = 1u;
 					}
 					ISLAND_TRACE(ISLAND_MK_SUPERVISOR_VEHICLE_FAULT,
@@ -881,6 +1030,8 @@ static void reaction_thread(void *a, void *b, void *c)
 		if (!was_latched && island_supervisor_record.latched) {
 			brake_since = now;
 			island_supervisor_record.brake_since_ms = (uint32_t)now;
+			brake_ref_mm_s = island_supervisor_record.speed_mm_s;
+			brake_ref_ok = speed_fresh(now);
 			direct_next_ms = now;
 		}
 		if (island_supervisor_record.latched) {
@@ -1192,6 +1343,8 @@ static int island_supervisor_init(void)
 	island_supervisor_record.route_nros_level = NROS_ENTRY_LEVEL_OF_MRM_HANDLER;
 	island_supervisor_record.nros_level_count = NROS_ENTRY_TIER_COUNT;
 	island_supervisor_record.resume_periods = CONFIG_ISLAND_SUPERVISOR_RESUME_PERIODS;
+	island_supervisor_record.response_within_ms = CONFIG_ISLAND_SUPERVISOR_EMERGENCY_RESPONSE_MS;
+	island_supervisor_record.response_drop_mm_s = CONFIG_ISLAND_SUPERVISOR_EMERGENCY_DROP_MM_S;
 	island_supervisor_record.magic = ISLAND_SUPERVISOR_MAGIC;
 	return 0;
 }

@@ -83,6 +83,34 @@ static inline enum island_floor_verdict island_judge_floor(bool standstill, bool
 	return ISLAND_FLOOR_WAIT;
 }
 
+/* phase16: route 4, the floor's response check (the contract's
+ * `supervise: { early: { within, drop } }` on the emergency settle). Armed
+ * with route 3 at the same start, due = start + within + the standstill
+ * observation, against `ref_mm_s`, the |v| the island had noted when it
+ * armed. The vehicle has responded when it is at standstill now, or when a
+ * fresh sample shows it has shed at least `drop_mm_s` from the reference.
+ * A stale or missing sample is no response: the island cannot see one (as
+ * route 3 judges standstill). Not responded is a miss judged like route
+ * 3's (island_judge_floor) with the response span (within + observation)
+ * in place of the settle's: the direct path if nothing is latched, the
+ * vehicle-side fault once the island's own braking command has run that
+ * span, a wait before. */
+static inline bool island_judge_responded(bool standstill, bool fresh, uint32_t ref_mm_s, uint32_t speed_mm_s,
+					  uint32_t drop_mm_s)
+{
+	if (standstill) {
+		return true;
+	}
+	return fresh && ref_mm_s >= speed_mm_s && ref_mm_s - speed_mm_s >= drop_mm_s;
+}
+
+/* The speed shed since the reference, mm/s, 0 when it has not slowed (for
+ * the record and the trace). */
+static inline uint32_t island_judge_shed(uint32_t ref_mm_s, uint32_t speed_mm_s)
+{
+	return ref_mm_s > speed_mm_s ? ref_mm_s - speed_mm_s : 0u;
+}
+
 /* phase15-S6: a slot handed over to its component's executor path reports
  * each tick that publishes the emergency (island_supervisor_handover, at
  * `alive_ms`, uptime ms, wrapping). Silent for `periods` of its own period

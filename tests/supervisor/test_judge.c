@@ -1,7 +1,7 @@
 /*
  * Host tests of the supervisor's standstill verdicts (phase15-S3):
  * src/zephyr_entry/src/island_supervisor_judge.h, the functions the reaction
- * thread calls at route 2's and route 3's dues. `just supervisor-test`; CI
+ * thread calls at route 2's, route 3's and (phase16) route 4's dues. `just supervisor-test`; CI
  * runs it too (.github/workflows/check.yml).
  */
 #include <stdio.h>
@@ -164,6 +164,70 @@ static void unseen(void)
 	CHECK(at_due(20000u, 0u, 19000u, 0, 0u) == ISLAND_FLOOR_LATCH);
 }
 
+/* phase16: route 4, the floor's response check (CONFIG_ISLAND_SUPERVISOR_
+ * EMERGENCY_RESPONSE_MS 1319 + the observation 136; DROP_MM_S 250). */
+#define RSPAN 1455u
+#define DROP 250u
+
+/* Route 4 at its due, as island_supervisor.c composes it: `ref` the |v|
+ * noted at its start, `brake` when the island's braking command (re)started
+ * (0: not latched). */
+static enum island_floor_verdict response_due(uint32_t now, uint32_t ref, uint32_t v, uint32_t at, int latched,
+					      uint32_t brake)
+{
+	const bool responded = island_judge_responded(island_judge_standstill(now, v, at, FRESH),
+						      !island_judge_stale(now, at, FRESH), ref, v, DROP);
+
+	return island_judge_floor(responded, latched != 0, latched ? (uint32_t)(now - brake) : 0u, RSPAN);
+}
+
+static void response_route(void)
+{
+	/* slowed by the drop or more, on a fresh sample: met */
+	CHECK(island_judge_responded(false, true, 4000u, 3750u, DROP));
+	CHECK(island_judge_responded(false, true, 4000u, 3000u, DROP));
+	/* one mm/s short of the drop: not yet */
+	CHECK(!island_judge_responded(false, true, 4000u, 3751u, DROP));
+	/* faster than the reference (accelerating): not responded, no wrap */
+	CHECK(!island_judge_responded(false, true, 4000u, 4300u, DROP));
+	CHECK(island_judge_shed(4000u, 4300u) == 0u);
+	CHECK(island_judge_shed(4000u, 3000u) == 1000u);
+	/* stale: the island cannot see a response, even a large drop */
+	CHECK(!island_judge_responded(false, false, 4000u, 0u, DROP));
+	/* standstill counts whatever the reference (a slow vehicle stopped) */
+	CHECK(island_judge_responded(true, true, 100u, 0u, DROP));
+	/* a vehicle slower than the drop at the start, stopped by the due */
+	CHECK(response_due(21455u, 120u, 0u, 21400u, 0, 0u) == ISLAND_FLOOR_MET);
+}
+
+/* phase16, the floor's failures at the response bound. The handler's
+ * emergency call at 20000 arms route 3 (due 24621) and route 4 (due 21455,
+ * against 4100 mm/s). */
+static void response_sequences(void)
+{
+	/* the operator brakes: 0.8 m/s shed by the due -> met, route 3 goes on */
+	CHECK(response_due(21455u, 4100u, 3300u, 21420u, 0, 0u) == ISLAND_FLOOR_MET);
+	/* the operate request lost, or the operator's tick stalled: no slowing
+	 * -> the direct path at 21455 (3166 ms before route 3's due) */
+	CHECK(response_due(21455u, 4100u, 4100u, 21420u, 0, 0u) == ISLAND_FLOOR_LATCH);
+	/* re-armed at the latch, against the |v| then: the direct path
+	 * brakes -> met at 22910 */
+	CHECK(response_due(22910u, 4100u, 3200u, 22900u, 1, 21455u) == ISLAND_FLOOR_MET);
+	/* the vehicle does not decelerate under the direct path either (the
+	 * held speed): the vehicle-side fault at 22910, 2.9 s after the call
+	 * instead of 9.2 s */
+	CHECK(response_due(22910u, 1000u, 1000u, 22900u, 1, 21455u) == ISLAND_FLOOR_VEHICLE_FAULT);
+	/* latched by SWT0 at 21300, just before route 4's due: the braking
+	 * command is 155 ms old -> no verdict, re-armed at 21300 + 1455 */
+	CHECK(response_due(21455u, 4100u, 4100u, 21420u, 1, 21300u) == ISLAND_FLOOR_WAIT);
+	CHECK(response_due(22755u, 4100u, 4100u, 22700u, 1, 21300u) == ISLAND_FLOOR_VEHICLE_FAULT);
+	CHECK(response_due(22755u, 4100u, 3000u, 22700u, 1, 21300u) == ISLAND_FLOOR_MET);
+	/* a stale sample at the due: a miss, as route 3 judges one */
+	CHECK(response_due(21455u, 4100u, 3000u, 21000u, 0, 0u) == ISLAND_FLOOR_LATCH);
+	/* the response check never detects later than the settle's due */
+	CHECK(RSPAN < SPAN);
+}
+
 /* phase15-S7: the vehicle-side fault is reported as MRM_FAILED, and Autoware
  * 1.5.0's vehicle_cmd_gate still passes the emergency command and hazard
  * lights for it (the behaviour stays EMERGENCY_STOP). */
@@ -193,6 +257,8 @@ int main(void)
 	resume();
 	stall_after_handover();
 	mrm_failed();
+	response_route();
+	response_sequences();
 	printf("supervisor judge: %s\n", fails ? "FAILED" : "OK");
 	return fails ? 1 : 0;
 }

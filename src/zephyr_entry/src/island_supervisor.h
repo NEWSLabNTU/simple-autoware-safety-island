@@ -10,8 +10,9 @@
 
 /* Routes the supervisor runs. The record's `route[]` keeps its first three
  * (ISLAND_SUPERVISOR_RECORD_ROUTES, so every offset after it holds); route 3
- * (phase15-S2) is appended at the record's end as `route_floor`. */
-#define ISLAND_SUPERVISOR_ROUTES 4
+ * (phase15-S2) is appended at the record's end as `route_floor`, route 4
+ * (phase16) after it as `route_response`. */
+#define ISLAND_SUPERVISOR_ROUTES 5
 #define ISLAND_SUPERVISOR_RECORD_ROUTES 3
 /* phase13-D4: threads listed in the record (the image has about eight). */
 #define ISLAND_SUPERVISOR_PRIO_THREADS 12
@@ -51,6 +52,16 @@
  * (island_supervisor_vehicle_fault), the command kept; before that the route
  * is re-armed at the command's start + the span. */
 #define ISLAND_SUPERVISOR_ROUTE_EMERGENCY_STANDSTILL 3u
+/* 4: the floor's response check (phase16): armed by the supervisor itself
+ * whenever route 3 starts a settle (the handler's call, route 3's latch, the
+ * direct path's resume), due = start + CONFIG_ISLAND_SUPERVISOR_EMERGENCY_
+ * RESPONSE_MS + the standstill observation, against the |v| noted at the
+ * start. A vehicle that has not shed CONFIG_ISLAND_SUPERVISOR_EMERGENCY_
+ * DROP_MM_S by then (and is not at standstill) gets route 3's miss early:
+ * the direct path, or the vehicle-side fault once the island's own braking
+ * command has run the response span. The handler never arms it; route 3's
+ * done clears it. */
+#define ISLAND_SUPERVISOR_ROUTE_EMERGENCY_RESPONSE 4u
 
 /* The direct emergency path (phase11-S6, decision 2). A component registers
  * one function per slot at construction; once the output is latched the
@@ -107,9 +118,10 @@ uint32_t island_supervisor_resumed(uint32_t slot);
 /* The vehicle's speed from the latest kinematic_state take (|v|, mm/s),
  * stamped with the uptime: route 2's standstill judgement. */
 void island_supervisor_note_speed(uint32_t speed_mm_s);
-/* phase15-S2: 1 once route 3 found the vehicle not stopping under a braking
- * command already running (never cleared before reset); the record and the
- * trace carry it, the emergency stop goes on. */
+/* phase15-S2: 1 once route 3 (or, phase16, route 4's response check) found
+ * the vehicle not stopping under a braking command already running (never
+ * cleared before reset); the record and the trace carry it, the emergency
+ * stop goes on. */
 uint32_t island_supervisor_vehicle_fault(void);
 #ifdef __cplusplus
 }
