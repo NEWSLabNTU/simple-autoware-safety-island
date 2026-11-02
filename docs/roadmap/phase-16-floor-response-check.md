@@ -13,8 +13,13 @@ evaluation repo used "S8" for an image bump).
 
 **Status (2026-11-02): done.** The contract language, the checker, the
 supervisor and the board acts.
+play_launch 0.22.0 carries the checker but was never published: its
+rolling wheels failed on an upstream rclcpp header change in
+play_launch_container. 0.22.1 is 0.22.0 plus that fix, and is the pin
+(CI, the doctor). The contract comment names 0.22.0, the release the
+grammar arrived in.
 
-## The contract form (rlm v0.3.1, play_launch 0.22.0)
+## The contract form (rlm v0.3.1, play_launch 0.22.0; published as 0.22.1)
 
 A supervised settle takes a response check beside its reaction, mechanism
 and observation:
@@ -66,7 +71,7 @@ reference sample one observation (136 ms) old. A check at the response
 bound itself (`within` 319) would be refused: the profile sheds nothing by
 then.
 
-## The FTTI rows (`play_launch check --explain`, 0.22.0)
+## The FTTI rows (`play_launch check --explain`, 0.22.0/0.22.1)
 
 `check`: 0 errors, 6 warnings, 2 acknowledged, before and after. The rows
 of the floor, before (phase 15) and after:
@@ -162,7 +167,10 @@ mps2-an385 board and its serial crate, and a zpico.c branch the island's
 threaded session does not compile). On the pinned image, built from this
 tree: floor-hold, floor-drop, floor-stall, encore and b PASS (p16f-fh1,
 p16f-fd1, p16f-fs1, p16f-e1, p16f-b1), with the numbers inside the ranges
-below except the encore's shed 632 mm/s and drop's call -> due 1454.03.
+below except the encore's shed 632 mm/s and drop's call -> due 1454.03. The
+pin then moved to nano-ros 4153448193 (#2989, Kconfig help; plus host
+CLI crates): the gate image it builds is byte-identical to b40cd0ec49's
+(`zephyr.bin`, cmp).
 All times ms.
 
 Floor-inject image (`just board-build-floor-inject`), entry speed 3.13-4.17
@@ -211,7 +219,7 @@ case).
 
 ## Acceptance
 
-- `play_launch check` (0.22.0): 0 errors; `supervised-early` fits on both
+- `play_launch check` (0.22.1, the CI pin): 0 errors; `supervised-early` fits on both
   hazards; the response check's overrun rows 6725.00 (hpc_loss) and
   16474.00 (odd_exit); no row above its FTTI.
 - floor-hold: route 4's verdict at the response bound latches the direct
