@@ -52,7 +52,11 @@ while read -r c; do
     if [ ! -f "$launch" ]; then
         echo "FAIL $stem: no $launch beside the contract"; fail=1; continue
     fi
-    out="$(timeout 120 "$PL" check "$launch" 2>&1)"; got=$?
+    # --locked (phase10-A3): an extension or profile other than the one
+    # rlm.lock beside the contract pins is `error[lock-mismatch]`; --strict
+    # (phase10-A2): a worst-case claim the checker could not decide is an
+    # error, not a warning.
+    out="$(timeout 120 "$PL" check --locked --strict "$launch" 2>&1)"; got=$?
     out="$(printf '%s\n' "$out" | sed 's/\x1b\[[0-9;]*m//g')"
     summary="$(printf '%s\n' "$out" | grep -E 'manifest\(s\) checked' | tail -1)"
     why=""

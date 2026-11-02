@@ -101,8 +101,19 @@
 # array parameter would be a board fact, never stated here.
 
 version: 1
+# Both entries are pinned by rlm.lock beside this file (phase10-A3,
+# `play_launch check --update-lock` writes it): version and sha256 of what
+# each resolved to. CI checks with `--locked`, so a checker that bundles
+# another vehicle.braking (or a changed one under the same version) fails
+# with `lock-mismatch` until the lock is reviewed and rewritten, and with
+# `--strict`, so every derived settle must keep its `worst case: proved`
+# (vehicle.braking states its monotonicity in entry speed, response, decel
+# and jerk; phase10-A2).
 use:
   vehicle.braking: "^1"
+  # The severity profile (phase10-A4): ISO 26262's scale, by name and
+  # version; see the note above `acknowledged:`.
+  iso26262: "^1"
 
 # The ODD speed bound (30 km/h, decision 2), read by both hazards'
 # `entry_speed`: whichever fault occurs, the vehicle is at most here.
@@ -428,10 +439,14 @@ let:
 # odd_exit's reaction walk, derives ASIL_B, the first time it derives
 # anything.
 
-# ISO 26262's scale, stated rather than assumed. It happens to be the
-# checker's default; writing it out is what makes `severity: ASIL_D` below a
-# reference to a named scale rather than a string nobody validates.
-severity_levels: [QM, ASIL_A, ASIL_B, ASIL_C, ASIL_D]
+# ISO 26262's scale is named by the severity profile `iso26262` in `use:`
+# above (phase10-A4, play_launch phase 91 E6), not restated here: the profile
+# states the scale (QM, ASIL_A..ASIL_D) and its criticality map, so
+# `severity: ASIL_D` below is a reference to a named, versioned scale. It is
+# also the checker's default scale, so no derived criticality moves; the
+# checker refuses a `severity_levels:` list beside a profile
+# (`severity-scale-conflict`), which is why the list this file carried until
+# phase10 is gone.
 
 # The two reaction-unguarded warnings, kept on purpose (see "WHAT THE
 # CHECKER STILL COMPLAINS ABOUT" above): each reaction ends at an
