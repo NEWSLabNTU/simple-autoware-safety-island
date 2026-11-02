@@ -612,14 +612,15 @@ nodes:
             # kinematic_state escalates to the emergency stop: a k_timer and
             # a thread above the executor, which command it directly (the
             # direct path, as call_mrm's supervision). The overrun case
-            # (`supervised-fit`, play_launch 0.18.1) is the comfortable
-            # rung's total 21393.67 + observation 136 + detection 2 + the
-            # emergency route 188.33 + its settle 4484.33 = 26204.33 ms of
-            # the 30 s FTTI.
+            # (`supervised-fit`) is the comfortable rung's total 21393.67 +
+            # observation 136 + detection 2 + the emergency route 188.33 +
+            # the resume gap 102 (`resume:`, see the floor's supervise
+            # below) + its settle 4484.33 = 26306.33 ms of the 30 s FTTI.
             supervise:
               enters: emergency_stop
               mechanism: timer
               observes: mrm_handler/kinematic_state
+              resume: { after: 3 periods }
     pub:
       # Both are TRANSIENT_LOCAL in the source (QoS(1).transient_local()): a
       # velocity limit is latched so a late planner still sees it. Stated
@@ -687,28 +688,34 @@ nodes:
             # A vehicle that still does not stop by a second due is a
             # vehicle-side fault the island cannot brake past: latched in
             # the record and the trace, the command kept. The
-            # overrun cases (`supervised-fit`, play_launch 0.21.0): hpc_loss
-            # 744.33 before + 4484.33 + 136 + 2 + 39.33 + 4484.33 = 9890.33
-            # of 10 s; odd_exit 10493.33 before + the same = 19639.33 of
-            # 30 s. One `supervise:` clears both hazards'
+            # overrun cases (`supervised-fit`): hpc_loss 744.33 before +
+            # 4484.33 + 136 + 2 + 39.33 + the resume gap 102 + 4484.33 =
+            # 9992.33 of 10 s; odd_exit 10493.33 before + the same =
+            # 19741.33 of 30 s. One `supervise:` clears both hazards'
             # `call-unbounded-floor`: the emergency_stop/operate call has no
             # timeout, and needs none, since its effect is checked.
             # Two faults on odd_exit (phase15-S4) do not add a second settle:
             # once route 2 has latched, the direct path is already braking
-            # (inside the comfortable overrun row, 26204.33 of 30 s), and the
+            # (inside the comfortable overrun row, 26306.33 of 30 s), and the
             # emergency call that arms route 3 comes after that latch, so a
             # route-3 miss then is the vehicle-side fault, never a second
             # direct-path settle. The board's floor acts (drop, stall, hold)
             # are in docs/roadmap/phase-15-supervised-floor.md.
             # phase15-S6: an operator that takes the command over from the
             # direct path and then stalls loses it back after 3 of its
-            # periods (99 ms + the 1 ms tick, CONFIG_ISLAND_SUPERVISOR_
-            # RESUME_PERIODS); the direct path's settle is charged that gap
-            # once, outside the checker's sum: hpc_loss 9890.33 + 100 =
-            # 9990.33 of 10 s, odd_exit 19739.33, the two-fault chain
-            # 26304.33 of 30 s. A vehicle-side fault needs the island's
-            # braking command (from the latch or that resume) to have run
-            # the whole span; an earlier route-3 due re-arms, no new latch.
+            # periods (CONFIG_ISLAND_SUPERVISOR_RESUME_PERIODS). Stated as
+            # `resume: { after: 3 periods }` on every `supervise:` here
+            # (phase10-G4, rlm v0.3.2): the checker charges the gap once on
+            # each overrun row, 3 periods of the operator's on_timer (33.33
+            # ms at `update_rate: 30`) + the supervision's detection (tick 1
+            # + switch 1) = 102 ms. Until phase10 it was added by hand
+            # beside the checker's sum, as 100 (99 + the 1 ms tick: the
+            # island's period is 1000/30 truncated to 33 ms, and the switch
+            # was left out), so each row reads 2 ms above the hand sums
+            # (9990.33, 19739.33, 26304.33). A vehicle-side fault needs the
+            # island's braking command (from the latch or that resume) to
+            # have run the whole span; an earlier route-3 due re-arms, no
+            # new latch.
             # phase16: the response check (`early:`, rlm v0.3.1, play_launch
             # 0.22.0), the island's route 4. Route 3 cannot tell a command
             # that never took effect before the whole settle has passed;
@@ -723,9 +730,9 @@ nodes:
             # 3's, early: the direct path if nothing is latched, else, once
             # the island's own braking command has run the response span,
             # the vehicle-side fault (MRM_FAILED, phase15-S7). Its overrun
-            # rows: hpc_loss 744.33 + 1319 + 136 + 2 + 39.33 + 4484.33 =
-            # 6725.00 of 10 s (+100, the resume gap: 6825.00), odd_exit
-            # 16474.00 of 30 s; the settle's rows above stay the worst case
+            # rows: hpc_loss 744.33 + 1319 + 136 + 2 + 39.33 + the resume
+            # gap 102 + 4484.33 = 6827.00 of 10 s, odd_exit 16576.00 of
+            # 30 s; the settle's rows above stay the worst case
             # (a vehicle that slows, then fails to stop). Kconfig
             # ISLAND_SUPERVISOR_EMERGENCY_RESPONSE_MS 1319,
             # ISLAND_SUPERVISOR_EMERGENCY_DROP_MM_S 250.
@@ -734,6 +741,7 @@ nodes:
               mechanism: timer
               observes: mrm_handler/kinematic_state
               early: { within: 1319ms, drop: 0.25 m/s }
+              resume: { after: 3 periods }
     sub:
       # Cached in onControlCommand and read on the timer as the ramp seed: a
       # read-latest input, not a trigger. `state: true` says so; without it
@@ -882,8 +890,12 @@ nodes:
           # the reaction runs even while the executor is stuck in this very
           # callback. A miss in odd_exit enters the emergency stop as well
           # (one `supervise:` per budget): a handler that overran once is
-          # not trusted with the takeover request.
-          supervise: { enters: emergency_stop, mechanism: timer }
+          # not trusted with the takeover request. Once the operator's tick
+          # publishes the braking command again it takes it over, and it
+          # loses it back after 3 silent periods (`resume:`, see the
+          # floor's supervise): its overrun rows carry the 102 ms gap,
+          # hpc_loss 5481.67 of 10 s, odd_exit 15230.67 of 30 s.
+          supervise: { enters: emergency_stop, mechanism: timer, resume: { after: 3 periods } }
         # The client calls to the operators are named in `output` so the
         # reaction walk can follow the service edges (phase 82). The safe
         # states are declared on the operators, whose outputs command the
