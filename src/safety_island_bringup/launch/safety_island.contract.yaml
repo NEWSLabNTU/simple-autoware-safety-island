@@ -496,10 +496,13 @@ supervision:
 # The clocks across the UART are not synchronised (the island's take is put
 # on the host clock by merge.py's alignment), so `check --against` reports
 # these links unmeasured and `measure` cannot propose them; the runs below
-# are the source. No `monitor:` yet: on an unsynchronised link a monitor can
-# only time the gap between arrivals, which on the availability is an
-# omission detector tighter than the 500 ms the handler applies; see the
-# demo's phase 10 tier 3 (P5 held).
+# are the source. No `monitor:`, by decision (demo phase 10, P5 not
+# adopted): on an unsynchronised link a monitor can only time the gap
+# between arrivals, which on the availability would be an omission detector
+# at 100 + 56 ms, tighter than the handler's 500 ms, replacing hpc_loss's
+# detector and reaction with about 31 ms of margin over the gaps observed
+# (max 124.8 ms). `play_launch check --against <run>` holds the bounds
+# instead, where a run can measure them.
 links:
   # The gate's availability, the guard edge of both hazards (charged in
   # their routes). The gate's publish on the host to the handler's take,
