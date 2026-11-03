@@ -126,7 +126,8 @@ LIFECYCLE = [
 #                          test image only): 0xfffffffc the emergency
 #                          operate request dropped, 0xfffffffb the
 #                          emergency operator's tick stalled (0xfffffff9:
-#                          stalled after its handover), 0xfffffffa the
+#                          stalled after its handover; 0xfffffff8: stalled
+#                          at once, whatever its state), 0xfffffffa the
 #                          handler's speed held
 #   SUPERVISOR_DIRECT      phase11-S6: the reaction thread's direct
 #                          emergency publish: arg slot << 28 | seq (slot 0

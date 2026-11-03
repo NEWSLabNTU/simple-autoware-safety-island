@@ -7,7 +7,7 @@
   violations.py fault-overrun --elf <zephyr.elf> <ms>|stall          the same, on the fault tick
   violations.py spin-stall --elf <zephyr.elf>                        stall the spin (SWT0 bench)
   violations.py comfortable-inert --elf <zephyr.elf>                 the next comfortable stop brakes not
-  violations.py floor-inject --elf <zephyr.elf> drop|stall|stall-after|hold [mm/s]  the floor's failures (phase15-S4)
+  violations.py floor-inject --elf <zephyr.elf> drop|stall|stall-after|stall-now|hold [mm/s]  the floor's failures (phase15-S4)
   violations.py supervisor --elf <zephyr.elf> [--out <prefix>]       the supervisor record
   violations.py selftest [--elf <zephyr.elf>]                        decode a synthetic record; with
                                                                      --elf, check its size against the layout
@@ -96,7 +96,10 @@ FLOOR_WORDS = {"drop": "island_debug_floor_drop", "stall": "island_debug_floor_s
                "hold": "island_debug_floor_hold_mm_s"}
 # stall-after writes 2 into the stall word: the operator stalls only once it
 # has taken over from the supervisor's direct path
-FLOOR_VALUE = {"stall-after": ("stall", 2)}
+# stall-now writes 3: the operator's tick stops at once, whatever its state
+# (rtss-work-2026-demo phase 10 A1: the emergency rung's output is silent at
+# the detection, so the image's hazard-route-runtime judges a miss)
+FLOOR_VALUE = {"stall-after": ("stall", 2), "stall-now": ("stall", 3)}
 SUPERVISOR = "island_supervisor_record"
 STALL = 0xFFFFFFFF
 # island_supervisor.c's record, all u32: the header, then `routes` routes.
@@ -566,7 +569,7 @@ def main():
     if a.cmd == "floor-inject":
         kind = a.arg or ""
         if kind not in (*FLOOR_WORDS, *FLOOR_VALUE, "clear"):
-            sys.exit("violations: floor-inject takes drop, stall, stall-after, hold [mm/s] or clear")
+            sys.exit("violations: floor-inject takes drop, stall, stall-after, stall-now, hold [mm/s] or clear")
         if kind == "clear":
             writes = {w: 0 for w in FLOOR_WORDS.values()}
         elif kind in FLOOR_VALUE:
