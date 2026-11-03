@@ -111,7 +111,7 @@ version: 1
 # and jerk; phase10-A2).
 use:
   vehicle.braking: "^1"
-  # The severity profile (phase10-A4): ISO 26262's scale, by name and
+  # The integrity profile (phase10-A4): ISO 26262's scale, by name and
   # version; see the note above `acknowledged:`.
   iso26262: "^1"
 
@@ -229,7 +229,7 @@ let:
 #   window = 10 s.
 #     Decision 3 of the phase-8 doc (Drive Pilot's figure), bound to
 #     mrm_handler's `takeover_request_timeout: 10.0` in its parameter file;
-#     `window-param` refuses the file if the two ever differ.
+#     `dwell-param` refuses the file if the two ever differ.
 #     WHAT IT MEANS (phase8-W12, rlm v0.1.47): a LEAST time. The driver is
 #     guaranteed the whole 10 s: the request is never withdrawn, and no MRM
 #     starts, before 10 s after it went on (the handler compares against the
@@ -238,7 +238,7 @@ let:
 #     checker charges the window up to its deadline (request on + 10 s) and
 #     the rung below its own route from there, and that route's first hop is
 #     this handler's `call_mrm`, 149 ms on the board (above; 206 from
-#     phase8-W30 to phase9-W5, 110 until W30). `window-expiry` (play_launch
+#     phase8-W30 to phase9-W5, 110 until W30). `dwell-expiry` (play_launch
 #     phase 84) checks that the hop holds the tick of the timer that
 #     publishes the request (`on_timer`, 10 Hz, released up to `jitter:
 #     18ms` late), so the request ends within 10 000 to 10 149 ms of going
@@ -322,7 +322,7 @@ let:
 # `max_age: { duration: 500ms, param: timeout_operation_mode_availability }`
 # on the detector: `max-age-param` resolves the parameter from the launch
 # file's parameter files and refuses the file when the two disagree, as
-# `window-param` does for the window. A value typed here and not in the
+# `dwell-param` does for the dwell. A value typed here and not in the
 # parameter file used to check clean. Since play_launch 0.20.2 every timer
 # and every braking profile reads its value from the parameter instead of
 # restating it: `rate_hz: $(param update_rate) Hz`, `decel: $(param
@@ -439,13 +439,13 @@ let:
 # odd_exit's reaction walk, derives ASIL_B, the first time it derives
 # anything.
 
-# ISO 26262's scale is named by the severity profile `iso26262` in `use:`
+# ISO 26262's scale is named by the integrity profile `iso26262` in `use:`
 # above (phase10-A4, play_launch phase 91 E6), not restated here: the profile
 # states the scale (QM, ASIL_A..ASIL_D) and its criticality map, so
-# `severity: ASIL_D` below is a reference to a named, versioned scale. It is
+# `integrity: ASIL_D` below is a reference to a named, versioned scale. It is
 # also the checker's default scale, so no derived criticality moves; the
-# checker refuses a `severity_levels:` list beside a profile
-# (`severity-scale-conflict`), which is why the list this file carried until
+# checker refuses an `integrity_levels:` list beside a profile
+# (`integrity-scale-conflict`), which is why the list this file carried until
 # phase10 is gone.
 
 # The two reaction-unguarded warnings, kept on purpose (see "WHAT THE
@@ -573,7 +573,7 @@ functions:
 
 hazards:
   hpc_loss:
-    severity: ASIL_D
+    integrity: ASIL_D
     description: >-
       the operation-mode availability stream stops (the HPC is lost), so
       nothing upstream is still deciding whether the vehicle may drive; the
@@ -585,7 +585,7 @@ hazards:
     ftti: { duration: 10s, source: requirement }
     enters: l3_engaged
   odd_exit:
-    severity: ASIL_B        # illustrative; HARA-owned
+    integrity: ASIL_B       # illustrative; HARA-owned
     description: >-
       the vehicle leaves its operating domain (speed bound or weather) while
       the ADS drives; the driver must take over within the takeover window
@@ -606,7 +606,7 @@ modes:
     description: the driver is asked to take over; the ADS keeps driving
     requires: [hpc_alive]
     reaction: island.tor
-    window: { duration: 10s, param: mrm_handler.takeover_request_timeout, source: requirement }
+    min_dwell: { duration: 10s, param: mrm_handler.takeover_request_timeout, source: requirement }
     exit: { holds: driver_took_over, to: manual }
   comfortable_stop:
     description: in-lane stop by the HPC's planner at the operator's request
@@ -762,7 +762,7 @@ nodes:
             # 4484.33 + 136 + 2 + 39.33 + the resume gap 102 + 4484.33 =
             # 9992.33 of 10 s; odd_exit 10493.33 before + the same =
             # 19741.33 of 30 s. One `supervise:` clears both hazards'
-            # `call-unbounded-floor`: the emergency_stop/operate call has no
+            # `call-unbounded-mrc`: the emergency_stop/operate call has no
             # timeout, and needs none, since its effect is checked.
             # Two faults on odd_exit (phase15-S4) do not add a second settle:
             # once route 2 has latched, the direct path is already braking
@@ -927,7 +927,7 @@ nodes:
       # out-link delays, which neither term charges. Lowering would fail a
       # measured run, so 118 + 31 stay.
       # 118 + 31 = 149: the on-island part of the takeover route, and the
-      # first hop after the window's deadline (window-expiry), where no link
+      # first hop after the window's deadline (dwell-expiry), where no link
       # is crossed. Before W30 the board went over 110 in 6 of 13 runs (max
       # 145.35, w8-b1 = 42.18 link + 93.51 wait + 9.66 work; the link now
       # has its own term).
@@ -1108,9 +1108,9 @@ nodes:
 # its critical path is 100 (event segment, the tick) + 100 (period) + 18
 # (jitter) = 218 ms (`/mrm_handler = 218.00ms (100.00ms event-segment +
 # 118.00ms sampling_cost)`), and 218 is the smallest budget that passes
-# `scope-budget`. History: until phase8-W30 the fault route (110 ms) was
+# `chain-latency`. History: until phase8-W30 the fault route (110 ms) was
 # shorter than the 200 ms sampling + tick path, and declaring 110 here made
-# `scope-budget` reject the file. From phase8-W30 to phase9-W5 the board's
+# `chain-latency` reject the file. From phase8-W30 to phase9-W5 the board's
 # `call_mrm` (206 ms) was the critical path, and 210 held it; at 149 ms
 # (phase9-W5) the tick path is critical again, and play_launch 0.16.0 adds
 # the jitter to it (phase9-C1: 210 -> 218). It is the scope's own budget,

@@ -200,7 +200,7 @@ def declared(model=None):
     hazards, entry = {}, {}
     for name, hz in (c.get("hazards") or {}).items():
         hazards[name] = dict(on=hz.get("on"), ftti_ms=duration_ms(hz.get("ftti")),
-                             severity=hz.get("severity"), guards=hz.get("guards", []))
+                             severity=hz.get("integrity", hz.get("severity")), guards=hz.get("guards", []))
         if hz.get("entry_speed") is not None:
             entry[name] = speed_mps(let_value(hz["entry_speed"], c.get("let")))
         if hz.get("when"):
@@ -208,7 +208,8 @@ def declared(model=None):
                 preds.append(dict(name=name, kind="hazard", topic=t, **_pred(hz["when"])))
     windows, exits = {}, {}
     for name, m in (c.get("modes") or {}).items():
-        w = m.get("window")
+        # `min_dwell:` since rlm v0.3.3 (phase 98); `window:` before.
+        w = m.get("min_dwell", m.get("window"))
         if w is not None:
             windows[name] = dict(duration_ms=duration_ms(w["duration"] if isinstance(w, dict) else w),
                                  param=w.get("param") if isinstance(w, dict) else None)
