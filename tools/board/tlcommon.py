@@ -366,6 +366,9 @@ def _num(tok):
     return None if tok == "-" else float(tok)
 
 
+ROLE_SPELLING = {"mrc": "floor", "level": "rung", "dwell": "window"}
+
+
 def parse_explain(text):
     """The `-- Fault-reaction budgets (--explain, ms) --` table, as rows.
 
@@ -400,6 +403,11 @@ def parse_explain(text):
             if rows and (not tok or not line.startswith("  ")):
                 break
             continue
+        # play_launch 0.24.0 (rlm v0.3.3, phase 98) prints the standards'
+        # words: a rung is a degradation level (`level`), the floor the
+        # minimal risk condition (`mrc`), a window a dwell (`dwell`,
+        # `dwell >=`). Read both spellings; the rows keep the old names.
+        tok = [ROLE_SPELLING.get(t, t) for t in tok]
         hazard, rung, role = tok[0], tok[1], tok[2]
         rest = tok[3:]
         term = None
