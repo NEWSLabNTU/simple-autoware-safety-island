@@ -199,7 +199,7 @@ let:
 #   reaction route = link 56 + call_mrm 149 = 205 ms ON THE BOARD (phase9-C7;
 #     230 with link 81 from phase9-W5, 206 as one number from phase8-W30 to
 #     W5, 110 before W30). Two keys:
-#     the serial hop in is `max_transport: 56ms` on the guard subscriber,
+#     the serial hop in is the link `gate_availability` (56 ms, `links:`) on the guard subscriber,
 #     which play_launch 0.14.0 charges once on the reaction route (its F1)
 #     and not after the window's deadline; `call_mrm` holds the two
 #     on-island terms, tick 118 + work 31. W30's story: `update_rate: 10` gives a
@@ -423,7 +423,7 @@ let:
 #     link inside it), so island.tor's nominal critical path ran through
 #     `call_mrm` itself instead of the tick (206 > 100 sampling + 100).
 #     Since W5 `call_mrm` is 149 (tick 118 + work 31) and the link is the
-#     subscriber's `max_transport` (56 ms since phase9-C7), which this scope path does not
+#     subscriber's link (`gate_availability`, 56 ms since phase9-C7), which this scope path does not
 #     charge (the guarded topic's publisher is `external: pub`, outside this
 #     tree), so the critical path is the tick again, 218 ms (100 sampling +
 #     18 jitter + 100; play_launch 0.16.0 charges the handler's timer jitter
@@ -480,6 +480,73 @@ acknowledged:
 supervision:
   tick: 1ms
   switch: 1ms
+
+# THE SERIAL LINK, stated once per flow with where its number comes from
+# (play_launch phase 97, rlm `docs/design/links.md`; demo phase 10 tier 3).
+# Every hop below crosses the host's island gateway and the 921,600-baud
+# UART into this board. It is best effort: batching, flush timing and the
+# scheduling of the gateway and zenoh-pico decide it, so no derivation from
+# baud and frame size bounds it (one would be a lower bound beside the same
+# measured number). Each bound is the observed maximum + 20 %, measured on
+# the board's traces; the subscribers below name their link and state no
+# number of their own. The three flows were measured separately, from
+# different end points, and are kept apart: one number for all three would
+# raise kinematic_state's from 36 to 56 ms, which the hpc_loss overrun row
+# (7.67 ms of slack) does not have, without any run having observed it.
+# The clocks across the UART are not synchronised (the island's take is put
+# on the host clock by merge.py's alignment), so `check --against` reports
+# these links unmeasured and `measure` cannot propose them; the runs below
+# are the source. No `monitor:` yet: on an unsynchronised link a monitor can
+# only time the gap between arrivals, which on the availability is an
+# omission detector tighter than the 500 ms the handler applies; see the
+# demo's phase 10 tier 3 (P5 held).
+links:
+  # The gate's availability, the guard edge of both hazards (charged in
+  # their routes). The gate's publish on the host to the handler's take,
+  # 18.53-46.42 ms over the 12 edges of the phase9-C7 round (image
+  # df1bf38a1090bb46, main 4cb670c, nano-ros 43fc1c2f7); 46.42 x 1.2 =
+  # 55.70 -> 56. History: 81 (phase8-W31, pre-I14 image, max 67.02), 57
+  # (W30 to phase9-W5, max 47.43). Every takeover-route row measured since
+  # phase9-W5 fits 56 + 149 = 205 (max 126.56, d12-b3s).
+  gate_availability:
+    max_transport:
+      duration: 56ms
+      source:
+        measured:
+          max: 46.42ms
+          n: 12
+          margin: 0.2
+          run: "board, phase9-C7 fr-a1..3 and fr-b1..3 (max fr-a3), image df1bf38a1090bb46"
+  # The localization's kinematic_state, which the supervisor's standstill
+  # observation reads (period 100 + this = 136, CONFIG_ISLAND_SUPERVISOR_
+  # STANDSTILL_OBSERVE_MS). The publisher's stamp on the host to the take,
+  # 11.73-29.43 ms over 361 samples of 11 board runs; 29.43 x 1.2 = 35.32 ->
+  # 36. Takes held by an injected overrun of the handler's tick are not
+  # transport and are left out (2: 136.34 s6-ov6, 269.11 s7k-ov1).
+  localization_kinematic_state:
+    max_transport:
+      duration: 36ms
+      source:
+        measured:
+          max: 29.43ms
+          n: 361
+          margin: 0.2
+          run: "board, s7k-ov1,-ov2,-st1,-st2,-in1..3 (image cc14139c, max s7k-in1) and s6-ov6,-ov7,-st6,-st7 (image 74451cc2)"
+  # The vehicle's control_mode, downsampled 40 -> 10 Hz by the gateway
+  # (rtss-work-2026-demo:demo/l3/router/island-gateway.json5): the hop
+  # includes the wait for the next sample the downsampler passes. The host
+  # probe's receipt of MANUAL to the island's take, 63.65-118.78 ms in five
+  # a runs; 118.78 x 1.2 = 142.54 -> 143. Nothing in the fault arithmetic
+  # reads it (the driver's answer is bounded by the window, on the host).
+  gateway_control_mode:
+    max_transport:
+      duration: 143ms
+      source:
+        measured:
+          max: 118.78ms
+          n: 5
+          margin: 0.2
+          run: "board, five a runs (phase8-W30)"
 
 # What each rung needs from outside the island. A function is lost by
 # silence on its topics, and, with `when:`, also by value: `when:` names the
@@ -830,9 +897,9 @@ nodes:
       # plus 20 %, rounded up to the next ms. The 100 ms period is
       # `update_rate: 10` and takes no margin.
       #   (link, NOT here since phase9-W5: the serial hop in is
-      #     `max_transport: 56ms` on the subscriber below, charged by
+      #     the link `gate_availability` (56 ms) on the subscriber below, charged by
       #     play_launch 0.14.0 on the reaction route; its derivation is
-      #     there.)
+      #     under `links:`.)
       #   tick 118 ms: a take waits for the next tick. Consecutive ticks
       #     came 81.96-114.84 ms apart (1641 gaps; max w8-a1, whose ticks
       #     run on the 100 ms grid up to 14.84 ms late; 110.11 elsewhere).
@@ -951,28 +1018,12 @@ nodes:
           duration: 500ms
           param: timeout_operation_mode_availability
           source: requirement
-        # THE SERIAL LINK (phase8-W30). This subscriber sits behind the
-        # island gateway and the UART, so its transport is its own, not the
-        # topic's (a host subscriber of the same topic has none): the
-        # per-subscriber `max_transport` is rlm's key for exactly that.
-        # 56 ms = the measured hop in plus 20 %: the gate's publish on the
-        # host to this subscriber's take on the island (gateway, 921,600-baud
-        # UART, rx), 18.53-46.42 ms over the 12 edges of the phase9-C7 round
-        # on the current image (ELF sha256 df1bf38a1090bb46..., main 4cb670c,
-        # nano-ros 43fc1c2f7; fr-a1..3, fr-b1..3; max fr-a3). 46.42 x 1.2 =
-        # 55.70 -> 56. Before C7 it was 81, from the pre-I14 image (phase8-W31's
-        # 12 edges, 8.93-67.02 ms; 67.02 x 1.2 = 80.42 -> 81), and 57 from
-        # W30 to phase9-W5 (W8's 18 edges, 12.29-47.43). Every takeover-route
-        # row measured since phase9-W5 fits 56 + 149 = 205 (max 126.56,
-        # d12-b3s). Cross-clock: an
-        # island stamp moved onto the host clock by the smallest
-        # publish->receipt pair is never early, so the term is over-stated
-        # by the smallest out-link delay, never under-stated. play_launch
-        # 0.14.0 charges it once on the reaction route (F1), so it is no
-        # longer inside `call_mrm`.
-        max_transport:
-          duration: 56ms
-          source: { measured: { max: 46.42ms, n: 12, margin: 0.2 } }
+        # Behind the serial link (phase8-W30): its transport is its own, not
+        # the topic's (a host subscriber of the same topic has none), named
+        # once under `links:` with its measurement. play_launch 0.14.0
+        # charges it once on the reaction route (F1), so it is not inside
+        # `call_mrm`.
+        link: gate_availability
         qos: { depth: 1 }
         on_violation:
           # `reported` since phase8-W7: the handler also reacts to the VALUE
@@ -985,36 +1036,16 @@ nodes:
       # (`observes:` above): the handler notes the speed of every take, and
       # route 2 judges the latest at its due, so its observation delay
       # (CONFIG_ISLAND_SUPERVISOR_STANDSTILL_OBSERVE_MS 136) is one period
-      # 100 + this max_transport. 36 ms = the measured hop plus 20 %: the
-      # publisher's stamp on the host to this subscriber's take on the island
-      # (gateway, UART, rx), 11.73-29.43 ms over 361 samples of 11 board runs:
-      # image cc14139c (main 0a536a2's contract on nano-ros 392bd26330, the
-      # play_launch 0.18.1 resolver; s7k-ov1, -ov2, -st1, -st2, -in1..3) and
-      # image 74451cc2 (s6-ov6, -ov7, -st6, -st7); max s7k-in1. 29.43 x 1.2 =
-      # 35.32 -> 36. The island's take is put on the host clock by merge.py's
-      # alignment, as the availability's hop (over-stated by the smallest
-      # out-link delay, never under-stated); the stamp by the run's own
-      # REALTIME - MONOTONIC offset. Takes held by an injected overrun of the
-      # handler's tick are not transport and are left out (2: 136.34 s6-ov6,
-      # 269.11 s7k-ov1). Before it 56, the availability's, unmeasured here.
+      # 100 + this link's 36 (`links.localization_kinematic_state`).
       kinematic_state:
         min_rate_hz: 10
-        max_transport:
-          duration: 36ms
-          source: { measured: { max: 29.43ms, n: 361, margin: 0.2 } }
+        link: localization_kinematic_state
         qos: { depth: 1 }
-      # Behind the same link, and downsampled 40 -> 10 Hz by the gateway
-      # (rtss-work-2026-demo:demo/l3/router/island-gateway.json5), so a change of mode waits
-      # for the next sample the downsampler passes: the host probe's receipt
-      # of MANUAL to the island's take was 63.65-118.78 ms in the five a
-      # runs (cross-clock, as the link above). 118.78 x 1.2 = 142.54 -> 143.
-      # Nothing in the fault arithmetic reads it: the driver's answer is
-      # bounded by the window, on the host (phase8-W30).
+      # Behind the same UART, downsampled by the gateway
+      # (`links.gateway_control_mode`).
       control_mode:
         min_rate_hz: 10
-        max_transport:
-          duration: 143ms
-          source: { measured: { max: 118.78ms, n: 5, margin: 0.2 } }
+        link: gateway_control_mode
         qos: { depth: 1 }
       # What bounds the two statuses' arrivals (nano-ros RFC-0108 D1, rlm
       # v0.1.68): each is published by its operator's tick, 10 Hz and 30 Hz.
@@ -1081,7 +1112,7 @@ nodes:
 # (phase9-W5) the tick path is critical again, and play_launch 0.16.0 adds
 # the jitter to it (phase9-C1: 210 -> 218). It is the scope's own budget,
 # from the handler's take: the link in front of the take is not in it, and
-# the 56 ms `max_transport` on that subscriber is not charged here (the
+# the 56 ms link (`gate_availability`) on that subscriber is not charged here (the
 # guarded topic's publisher is `external: pub`, outside this tree).
 # island.emergency_stop keeps 210 ms: the checker reports no critical path
 # above it. island.comfortable_stop declares none: it crosses the operate
