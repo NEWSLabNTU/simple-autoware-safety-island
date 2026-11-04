@@ -968,7 +968,8 @@ address `0x0`. Nothing spawns a tier, so `-Wl,--gc-sections` drops the pool.
 
 `safety_island.system.posix.yaml` existed and was removed in commit `2535dd7`
 ("ENTITIES is gone; the contract states the whole image"). It carried three
-facts -- `target: posix`, `mapper: rate_monotonic`, and an RT priority band --
+facts -- `target: posix`, `mapper: rate_monotonic` (`priority_assignment:`
+since rlm v0.3.7), and an RT priority band --
 and its own comments already admitted the island "runs its four components on
 ONE Zephyr thread through the nano-ros executor, so no POSIX priority derived
 here is applied to anything today".

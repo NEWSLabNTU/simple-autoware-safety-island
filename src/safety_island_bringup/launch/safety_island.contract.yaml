@@ -384,7 +384,7 @@ let:
 # `use_comfortable_stop: false`, and a graded reaction the parameters disable
 # would have been a promise the image does not keep, so this file declared
 # one rung. The demo turns it on (`use_comfortable_stop: true`, which is also
-# the source default), so the rung is here and `ladder-rung-budget` checks it
+# the source default), so the rung is here and `degradation-level-time` checks it
 # in its own right, as this paragraph used to say it would. `use_pull_over`
 # stays false: there is no pull-over operator on the island.
 #
@@ -579,7 +579,7 @@ hazards:
       nothing upstream is still deciding whether the vehicle may drive; the
       island alone has to bring it to a stop before the silence becomes a
       hazardous event
-    guards: [/system/operation_mode/availability]
+    monitors: [/system/operation_mode/availability]
     on: omission
     entry_speed: $(let odd_speed_bound)
     ftti: { duration: 10s, source: requirement }
@@ -590,7 +590,7 @@ hazards:
       the vehicle leaves its operating domain (speed bound or weather) while
       the ADS drives; the driver must take over within the takeover window
       or the vehicle must be stopped in lane
-    guards: [/system/operation_mode/availability]
+    monitors: [/system/operation_mode/availability]
     on: reported
     when: { field: autonomous, equals: false }
     entry_speed: $(let odd_speed_bound)

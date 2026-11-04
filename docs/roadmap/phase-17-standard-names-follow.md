@@ -5,11 +5,11 @@ play_launch retires the names that phase 98 replaced with the standards'
 words, and they move to the new names while the old ones are still read,
 not after they are refused.
 
-**Status (2026-11-04): open, nothing started.** Raised by the play_launch
-side. The island pins play_launch 0.24.2 (CI `PLAY_LAUNCH_VERSION`, the
-justfile's `PLAY_LAUNCH_MIN`), which carries rlm v0.3.5. None of the
-changes below are in a published wheel yet. play_launch `main` builds
-against rlm v0.3.8, and the next release (0.25.0 or later) carries them.
+**Status (2026-11-04): S1-S5 done for rlm v0.3.8.** The island pins
+play_launch 0.25.0 (CI `PLAY_LAUNCH_VERSION`, the justfile's
+`PLAY_LAUNCH_MIN`), the release carrying rlm v0.3.8, and nano-ros at the
+merge of its phase-534 W1 pull request. The model's schema 4 (nano-ros
+phase-534 W3) is still to come; S3 already reads it.
 
 Design of record: rlm's
 [`docs/design/standard-names.md`](https://github.com/NEWSLabNTU/ros-launch-manifest/blob/v0.3.8/docs/design/standard-names.md),
@@ -128,3 +128,28 @@ pin follows, as it did for play_launch 0.24.2.
 Order: S3 and S4 can land now. S1 and S2 wait for the play_launch release
 and move with the pin. All of S1 must land before the island bumps to a
 play_launch carrying rlm's R+1 release.
+
+## Progress
+
+- **S1** (2026-11-04): `play_launch migrate --write` rewrote both
+  hazards' `guards:` to `monitors:`; the line-387 comment says
+  `degradation-level-time`. On 0.25.0 `check-contracts.sh` passes with no
+  `deprecated-spelling` warning: 0 errors, 6 warnings, 2 acknowledged, as
+  on 0.24.2. The `--explain` output differs from 0.24.2's only in
+  `fault-reaction-budget` printed as `fault-reaction-time` and the
+  `reaction-unguarded` message naming `monitors:`; every total is the
+  same.
+- **S2**: `parse_explain` matches the heading by `-- Fault-reaction`.
+  `testdata/explain.txt` is NOT recaptured: the tools do not read the rule
+  id, so the old capture still checks the parser, and a capture of today's
+  contract has 14 table rows (the selftest wants 10) and settle-derived
+  lines in the profile form (`settle = ... derived by vehicle.braking`),
+  which the evaluation's `analysis.py` settle-profile regex (the `rung
+  '<x>': settle from ...` form) does not read. Recapturing it is a change
+  to both selftests and to that regex, not a rename, so it is its own item.
+- **S3**: `tlcommon.py` (which reads the CONTRACT's hazards) and
+  `gen_markers.py` (the model's) read `monitors`, falling back to `guards`.
+- **S4**: `docs/tracing.md`, `gen_markers.py`'s comment and
+  `docs/nxp-deployment.md` say the new words.
+- **S5**: third-party/nano-ros at `c975001f9b`, nano-ros phase 534 W1 (rlm v0.3.8,
+  play_launch 0.25.0).

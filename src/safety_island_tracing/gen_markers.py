@@ -28,7 +28,7 @@ gets a RECORD POLICY, from the contract:
 
   every   a path that is not timer-triggered, a service call or callback, the
           take of a service request, and the take of a hazard-guarded input
-          (a topic in some hazard's `guards:`): its gaps are what the
+          (a topic in some hazard's `monitors:`): its gaps are what the
           detector measures;
   change  every other take and every publish: recorded when the arg changes;
   spin    a timer-triggered path's ENTRY/EXIT: recorded when the ENTRY arg
@@ -364,7 +364,9 @@ def guarded_inputs(model):
     topics = model["structure"].get("topics", {})
     out = set()
     for hz in (model["contracts"].get("hazards") or {}).values():
-        for g in hz.get("guards", []) or []:
+        # The model's field is `guards` until model schema 4 renames it
+        # `monitors` (nano-ros phase-534 W3); read both.
+        for g in hz.get("monitors", hz.get("guards", [])) or []:
             for t in g.get("members", []) or []:
                 out.update(topics.get(t, {}).get("sub", []))
     return out

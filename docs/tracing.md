@@ -472,7 +472,7 @@ Three parts, all in the one translation unit that carries the runtime:
   per record, some 50-70 of them, at the moment the island reacts.
 - **The trigger**, generated from the contract (`gen_markers.py`): the ENTRY
   of the detector path, the input-triggered path whose input is a topic in
-  some hazard's `guards:` (`/mrm_handler/call_mrm`, id 7), once the ARM
+  some hazard's `monitors:` (`/mrm_handler/call_mrm`, id 7), once the ARM
   marker, the take of that guarded input (`TAKE_..._OPERATION_MODE_AVAILABILITY`,
   id 15), has carried a non-zero arg: once the HPC has said "autonomous
   available". Without the arm the boot-time `call_mrm` ticks (availability

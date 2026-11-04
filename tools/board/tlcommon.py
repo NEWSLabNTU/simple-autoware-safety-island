@@ -200,11 +200,13 @@ def declared(model=None):
     hazards, entry = {}, {}
     for name, hz in (c.get("hazards") or {}).items():
         hazards[name] = dict(on=hz.get("on"), ftti_ms=duration_ms(hz.get("ftti")),
-                             severity=hz.get("integrity", hz.get("severity")), guards=hz.get("guards", []))
+                             severity=hz.get("integrity", hz.get("severity")),
+                             # `monitors` since rlm v0.3.7 (phase 98); `guards` before.
+                             guards=hz.get("monitors", hz.get("guards", [])))
         if hz.get("entry_speed") is not None:
             entry[name] = speed_mps(let_value(hz["entry_speed"], c.get("let")))
         if hz.get("when"):
-            for t in hz.get("guards", []):
+            for t in hz.get("monitors", hz.get("guards", [])):
                 preds.append(dict(name=name, kind="hazard", topic=t, **_pred(hz["when"])))
     windows, exits = {}, {}
     for name, m in (c.get("modes") or {}).items():
@@ -392,7 +394,9 @@ def parse_explain(text):
     ends = {(m.group(1), m.group(2)): float(m.group(4)) for m in re.finditer(
         r"^  (\w+)/(\w+): lasts at least ([0-9.]+)ms once on, and ends within ([0-9.]+)ms", text, re.M)}
     for line in text.splitlines():
-        if line.startswith("-- Fault-reaction budgets"):
+        # A prefix: under phase 98's "budget is CPU time" the heading may
+        # say "times" one day.
+        if line.startswith("-- Fault-reaction"):
             on = True
             continue
         if not on:
