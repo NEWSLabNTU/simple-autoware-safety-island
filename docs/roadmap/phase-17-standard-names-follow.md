@@ -5,11 +5,11 @@ play_launch retires the names that phase 98 replaced with the standards'
 words, and they move to the new names while the old ones are still read,
 not after they are refused.
 
-**Status (2026-11-04): S1-S5 done for rlm v0.3.8.** The island pins
-play_launch 0.25.0 (CI `PLAY_LAUNCH_VERSION`, the justfile's
-`PLAY_LAUNCH_MIN`), the release carrying rlm v0.3.8, and nano-ros at the
-merge of its phase-534 W1 pull request. The model's schema 4 (nano-ros
-phase-534 W3) is still to come; S3 already reads it.
+**Status (2026-11-05): S1-S6 done, through rlm v0.3.9.** The island pins
+play_launch 0.26.0 (CI `PLAY_LAUNCH_VERSION`, the justfile's
+`PLAY_LAUNCH_MIN`), the release carrying rlm v0.3.9 (the R+1 refusals and
+the model's schema 4), and nano-ros at the merge of its phase-534 W3 pull
+request.
 
 Design of record: rlm's
 [`docs/design/standard-names.md`](https://github.com/NEWSLabNTU/ros-launch-manifest/blob/v0.3.8/docs/design/standard-names.md),
@@ -153,3 +153,13 @@ play_launch carrying rlm's R+1 release.
   `docs/nxp-deployment.md` say the new words.
 - **S5**: third-party/nano-ros at `c975001f9b`, nano-ros phase 534 W1 (rlm v0.3.8,
   play_launch 0.25.0).
+- **S6** (2026-11-05, rlm v0.3.9 / play_launch 0.26.0): the old spellings
+  are refused now, and the island uses none (S1). The model is schema 4:
+  `monitors`, `arrival_curve`, `aperiodic`, which `gen_markers.py` and
+  `tlcommon.py` already read (S3). nano-ros at `3859d007f4`, the merge of
+  its phase 534 W3 (#3115), which also renamed its own copies -- the
+  generated hazard table's `nros_cpp_hazard_monitor_t` / `monitors` /
+  `n_monitors` and `rmw_subscription_options_t::arrival_rate_mhz`; no
+  island source names them, they reach the image only through the
+  generated entry. `check-contracts.sh` and `--explain`: verdicts and
+  totals unchanged against 0.25.0.
