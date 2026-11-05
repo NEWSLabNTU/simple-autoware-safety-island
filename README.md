@@ -41,7 +41,7 @@ NEWSLabNTU/rtss-work-2026-demo.
 - Topic contract: the `topics:` section of
   [safety_island.contract.yaml](src/safety_island_bringup/launch/safety_island.contract.yaml) (SSoT).
 - Safety contracts: nano-ros `[safety]` feature (E2E CRC-32 + sequence, EN 50159
-  black-channel model, nano-ros RFC-0028) + execution tiers for the control loop.
+  black-channel model, nano-ros RFC-0028) + execution tasks for the control loop.
 - Reaction: Autoware's availability heartbeat stops → the island detects the
   loss → MRM engages → the vehicle stops.
 
@@ -77,7 +77,7 @@ docs/
   Provides the `nros` CLI and the cmake package.
 - `just` (task runner), `direnv` (optional but assumed by `.envrc`).
 - play_launch — **installed by `just setup`**, not a manual prerequisite. It
-  checks the island's contract; >= 0.26.0 (the CI pin) is required. To install from a source
+  checks the island's contract; >= 0.27.0 (the CI pin) is required. To install from a source
   checkout instead of the package index: `PLAY_LAUNCH_REPO=<path> just setup`.
 
 `direnv allow` sources ROS 2, Autoware and nano-ros, and

@@ -18,7 +18,7 @@
  * with no route pending.
  *
  * Levels (nano-ros phase-509 I1, RFC-0108 D8). Every thread that spins an
- * executor is a level: a tier today, a preemption level once RFC-0108 lands.
+ * executor is a level: a task today, a preemption level once RFC-0108 lands.
  * Each spin checks its level in, and SWT0 is fed only once every level that
  * has spun has checked in since the last feed, so a level blocked behind a
  * stuck callback starves the watchdog even while another level spins on.
@@ -188,13 +188,13 @@
 
 /*
  * phase13-D4: the reaction thread's priority comes from the priority plan the
- * executor's tier was allocated from (nano-ros RFC-0079; the header is written
+ * executor's task was allocated from (nano-ros RFC-0079; the header is written
  * beside the generated entry by `nros codegen entry`). The contract supervises
  * mrm_handler/call_mrm, so nano-ros reserves a priority above the transport
  * band for the supervisor of that deadline:
  * NROS_PRIORITY_PLAN_SUPERVISOR_PRIORITY. A level goes above the transport
- * only when a tier names it (`above = "transport"`, nano-ros #1967); the
- * levels are derived (no tier table), so on this image: mrm_handler's level
+ * only when a task names it (`above = "transport"`, nano-ros #1967); the
+ * levels are derived (no task table), so on this image: mrm_handler's level
  * 5, the operators' 7 and 8 in pool.app, transport 4, reaction 3.
  */
 #include <nros_priority_plan.h>
@@ -215,14 +215,14 @@
 #error "mrm_handler is not on the most urgent level: prio_plan_tier would name another level"
 #endif
 #if NROS_ENTRY_TIER_COUNT < 1
-#error "the entry runs no tier: the executor's priority is not from the plan"
+#error "the entry runs no task: the executor's priority is not from the plan"
 #endif
 #ifndef NROS_PRIORITY_PLAN_SUPERVISOR_PRIORITY
 #error "the plan reserves no supervisor priority: no supervised deadline was allocated above the transport"
 #endif
 #define ISLAND_SUPERVISOR_PRIORITY NROS_PRIORITY_PLAN_SUPERVISOR_PRIORITY
 BUILD_ASSERT(ISLAND_SUPERVISOR_PRIORITY < NROS_ENTRY_TIERS_MOST_URGENT_PRIORITY,
-	     "the reaction thread must run above every executor tier");
+	     "the reaction thread must run above every executor task");
 BUILD_ASSERT(ISLAND_SUPERVISOR_PRIORITY < NROS_PRIORITY_PLAN_RESERVED_TRANSPORT_LO,
 	     "the reaction thread must run above the transport band");
 BUILD_ASSERT(ISLAND_SUPERVISOR_PRIORITY < CONFIG_MAIN_THREAD_PRIORITY,

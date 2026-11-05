@@ -85,7 +85,7 @@ BOARD_BUILD_DIR := "build-board"
 # `hazards.<name>`") without naming a version. Kept in step by hand with
 # .envrc and scripts/env.sh until phase9-W19 reads the pin.
 PLAY_LAUNCH := env("PLAY_LAUNCH", "play_launch")
-PLAY_LAUNCH_MIN := "0.26.0"
+PLAY_LAUNCH_MIN := "0.27.0"
 
 default:
     @just --list
@@ -741,10 +741,10 @@ board-build: sync
     just BOARD_BUILD_DIR={{BOARD_BUILD_DIR}} priority-check
 
 # phase13-D5: hold the board image to the priority plan nano-ros derived for
-# it (nano-ros RFC-0079): `nros codegen entry` records the plan and the tier
+# it (nano-ros RFC-0079): `nros codegen entry` records the plan and the task
 # priorities in <build>/nros_priority_plan.json; nano-ros's checker resolves
 # the band again from the image's .config and compares, and compares the
-# generated entry's tier table. With board=1 it also reads the supervisor
+# generated entry's task table. With board=1 it also reads the supervisor
 # record of the running board over SWD (the priorities the kernel gave the
 # spin thread, the reaction thread and zenoh-pico's tasks at the first spin)
 # and fails unless they agree with the plan.
@@ -763,7 +763,7 @@ priority-check board="0":
     p = r["plan"]
     print(f"  plan: transport {p['reserved'].get('transport')}, pool.app {p['app']} ({p['source']})")
     for t in r["tiers"]:
-        print(f"  tier {t['name']}: {t['priority']} ({t['origin']}; spin period {t['spin_period_us']} us)")
+        print(f"  task {t['name']}: {t['priority']} ({t['origin']}; spin period {t['spin_period_us']} us)")
     for n in r["ranks"]:
         print(f"  rank {n['node']}: {n['priority']} (period {n['period_us']} us, deadline {n['deadline_us']} us)")
     PY

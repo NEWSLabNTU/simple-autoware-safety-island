@@ -861,7 +861,7 @@ nros-orchestration-ir  mapper_input.rs:70-80   EffectiveTrigger::Timer
    v
 derive.rs:52  derive_tiers_from_contracts -> chain_aware_rank -> realize_rtos
    v
-[tiers.derived-<node>]  ->  entry_tiers.rs  ->  nros_zephyr_tier_task_create
+[tasks.derived-<node>]  ->  entry_tiers.rs  ->  nros_zephyr_tier_task_create
 ```
 
 `derive.rs:97-101` is the gate:
@@ -877,11 +877,11 @@ let Some(groups) = callback_groups.get(&node).filter(|g| !g.is_empty()) else {
 components. All four land in `groupless_notes`, the derived schedule comes out
 empty, and the generated entry
 (`build-board/zephyr_entry_nros_main_generated.cpp:182`) ends at
-`run_components(...)` -- **not `run_tiers`**. No tier is spawned.
+`run_components(...)` -- **not `run_tiers`**. No task is spawned.
 
 Four independent confirmations: empty `callback_groups` in the metadata, no
 `execution:` key in the resolved model, `run_components` in the generated
-entry, and the discarded tier sections in the map.
+entry, and the discarded task sections in the map.
 
 ### The trigger rate is dead data
 
@@ -897,7 +897,7 @@ the divergence is invisible here -- but only by coincidence.
 
 ### What the rates would buy, if callback groups existed
 
-Tier assignment is rate-monotonic and **per node, not per callback**. Budget is
+Task assignment is rate-monotonic and **per node, not per callback**. Budget is
 the period; the sort is ascending milliseconds
 (`chain_aware_mapper.rs:350-360`); the dense rank becomes the Zephyr priority
 verbatim, because Zephyr's caps are `low_number_is_high: true`
@@ -912,7 +912,7 @@ verbatim, because Zephyr's caps are `low_number_is_high: true`
 
 That is a projection of the code above, not a measurement -- the derivation
 never fires. No code anywhere assigns an individual subscription callback to a
-tier by its own rate; a callback reaches a tier only through the group its
+task by its own rate; a callback reaches a task only through the group its
 author declared.
 
 ### The threads that do exist
@@ -920,7 +920,7 @@ author declared.
 Not `k_thread_create`. nano-ros creates **POSIX pthreads with a caller-supplied
 stack** -- `pthread_attr_setstack(&attr, &nros_thread_stacks[slot], ...)` then
 `pthread_create` (`nros_platform_zephyr_shims.c:531-541`). `k_thread_create`
-appears only on the tier path, which is discarded here.
+appears only on the task path, which is discarded here.
 
 | thread | stack | priority |
 | --- | ---: | --- |
@@ -931,7 +931,7 @@ appears only on the tier path, which is discarded here.
 | system work queue | 4,096 | Zephyr default |
 
 **1 main thread + 3 zenoh pthreads. Two of the five stack slots are spare, and
-zero tier threads exist.** All 19 callbacks run on `main`, so the 30 Hz MRM
+zero task threads exist.** All 19 callbacks run on `main`, so the 30 Hz MRM
 control path is not isolated from 10 Hz telemetry.
 
 Priority 4 is derived, not written: `CONFIG_NROS_ZENOH_READ_PRIORITY=200` on a
@@ -944,7 +944,7 @@ returns -1 when slots run out, and nothing releases a slot when a task ends, so
 a workload that reconnects consumes them permanently -- a latent bring-up risk
 on a link that drops.
 
-### The tier pool costs nothing, and the comment about it is wrong
+### The task pool costs nothing, and the comment about it is wrong
 
 Two sources emit the same three tokens onto the command line, and last-wins
 does not go the way the island's comment claims:
@@ -958,10 +958,10 @@ does not go the way the island's comment claims:
 `src/zephyr_entry/CMakeLists.txt:70-73` says it keeps "one minimal slot". It
 gets four, at the island's 4096 each -- the map shows
 `.bss.nros_tier_threads` = `0x440` = 4 x `sizeof(struct k_thread)` and a
-`0x4000` tier stack array.
+`0x4000` task stack array.
 
 Both are moot: the map places them under **Discarded input sections** at
-address `0x0`. Nothing spawns a tier, so `-Wl,--gc-sections` drops the pool.
+address `0x0`. Nothing spawns a task, so `-Wl,--gc-sections` drops the pool.
 **0 bytes.** The comment should be corrected, not the build.
 
 ### The scheduling file was deleted, and reinstating it would change nothing
@@ -975,7 +975,7 @@ ONE Zephyr thread through the nano-ros executor, so no POSIX priority derived
 here is applied to anything today".
 
 Reinstating it as written would still change nothing, for two reasons:
-`target: posix` does not match this image (tier caps are looked up by exact
+`target: posix` does not match this image (task caps are looked up by exact
 key, and the board's key is `zephyr`, with different caps), and the derivation
 is gated on callback groups, not on the platform file.
 
@@ -1303,7 +1303,7 @@ Two things this did NOT do, which is the honest half:
 board was blocked on the MCU-Link probe; 13 + 9 board acts have run since
 (phase8-W8 to W31, rtss-work-2026-demo:docs/takeover-trace.md sections 9 and 11).
 
-**Scheduling is available and unused.** The tier derivation is complete and
+**Scheduling is available and unused.** The task derivation is complete and
 gated only on components declaring callback groups. Declaring them would put the
 two 30 Hz nodes at Zephyr priority 0 and the two 10 Hz nodes at priority 1,
 instead of all 19 callbacks sharing `main`. Whether a safety island wants its
@@ -1321,7 +1321,7 @@ answered.
 
 **Stale statements to correct in this tree:**
 
-- ~~`src/zephyr_entry/CMakeLists.txt:70-73` claims one minimal tier slot; the
+- ~~`src/zephyr_entry/CMakeLists.txt:70-73` claims one minimal task slot; the
   build gets four.~~ CORRECTED 2026-09-18. The three
   `zephyr_compile_definitions` are deleted; Kconfig is the only producer now.
   Worth recording why the old text was wrong in an unobvious way: both
@@ -1330,7 +1330,7 @@ answered.
   token. `MAX_TIERS=1` lost to `=4`, `MAX_THREADS=4` lost to `=5`, and
   `TIER_STACK_SIZE=16384` lost to `=4096` because "1" sorts before "4". The
   entry won one of three, by accident. It cost 0 bytes only because
-  `--gc-sections` drops the whole tier pool from a tierless image -- both tier
+  `--gc-sections` drops the whole task pool from a taskless image -- both task
   objects sit in the map's "Discarded input sections" list.
 - ~~`docs/board-facts.md` still describes `z_malloc -> k_malloc ->
   CONFIG_HEAP_MEM_POOL_SIZE`, which phase-391 W3 replaced.~~ CORRECTED

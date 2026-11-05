@@ -63,7 +63,7 @@ class = "autoware::mrm_handler::MrmHandler"
 name = "mrm_handler"
 
 # ── The executor's levels (phase 13, nano-ros phase-509) ──────────────────
-# No `[tiers.*]` table and no `group_tiers`: the levels are DERIVED by
+# No `[tasks.*]` table and no `group_tasks`: the levels are DERIVED by
 # nano-ros (RFC-0108) from the contract's ranks (launch/
 # safety_island.contract.yaml: the timer rates, the path deadlines, the
 # reaction chains), one preemption level per band of ranks, inside the

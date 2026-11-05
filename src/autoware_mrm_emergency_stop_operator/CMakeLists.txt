@@ -19,7 +19,7 @@ nros_components_register_node(mrm_emergency_stop_operator_lib
     EXECUTABLE mrm_emergency_stop_operator
     HEADER autoware/mrm_emergency_stop_operator/mrm_emergency_stop_operator_core.hpp
     # nano-ros phase-509: the node-level group `main` (every callback of the
-    # node). With no `[tiers.*]` or `group_tiers`, the build derives the
+    # node). With no `[tasks.*]` or `group_tasks`, the build derives the
     # image's preemption levels from the contract's ranks over these groups.
     CALLBACK_GROUPS main
     # phase-412 -- `ENTITIES` is retired. This node's subscriptions,

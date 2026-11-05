@@ -62,7 +62,7 @@ if(NOT COMMAND nano_ros_workspace_pkg_guard)
     endfunction()
 endif()
 
-# Platform thread/tier stack pools: NOT set here. Kconfig owns them.
+# Platform thread/task stack pools: NOT set here. Kconfig owns them.
 #
 # This block used to call zephyr_compile_definitions() with
 # NROS_ZEPHYR_MAX_TIERS=1, NROS_ZEPHYR_TIER_STACK_SIZE=4096 and
@@ -87,11 +87,11 @@ endif()
 #
 #   nros_thread_stacks    0xa000 = 5 x NROS_ZEPHYR_STACK_SIZE(8192)   LINKED
 #   nros_tier_threads     0x440  = 4 x sizeof(struct k_thread)        discarded
-#   the tier stack array  0x4000 = 4 x 4096                           discarded
+#   the task stack array  0x4000 = 4 x 4096                           discarded
 #
-# Both tier objects sit in the map's "Discarded input sections" list: this
-# entry's system model declares no tier and the generated entry contains no
-# tier spawn, so --gc-sections drops the pool whatever its size. That is why
+# Both task objects sit in the map's "Discarded input sections" list: this
+# entry's system model declares no task and the generated entry contains no
+# task spawn, so --gc-sections drops the pool whatever its size. That is why
 # the redefinition was harmless HERE and cost 0 bytes -- not because the
 # numbers agreed.
 #
