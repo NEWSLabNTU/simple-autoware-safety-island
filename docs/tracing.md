@@ -791,6 +791,14 @@ free. Section 8 of rtss-work-2026-demo:docs/roadmap/phase-9-rtss-demo-open-items
 the table and the runs; the buffer used 20,520 B (encore) and 32,623 B (b)
 on that image.
 
+**The serial link back in DTCM (2026-11-06).** The link now runs on DMA
+(docs/serial-link.md section 12), and the DMA's buffers must be out of the
+D-cache, so zenoh-pico's `uart_zephyr.c` .bss (the 4 KiB RX and TX rings,
+the two 256 B DMA RX buffers, the framing buffers) is relocated to DTCM by
+`src/zephyr_entry/CMakeLists.txt`, with the eDMA driver's TCD pool beside it:
+DTCM 102,492 -> 117,984 of 131,072 B on that image, 13,088 B free, still
+above the 8 KiB guard.
+
 The board round on this image (`build/timeline/c2-*`, ELF sha256
 `8d6b39a65ec1a90b...`, `L3_IMAGE=sai-l3-autoware:1.5.0-w24`):
 

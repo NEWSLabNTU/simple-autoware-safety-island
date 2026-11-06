@@ -170,12 +170,42 @@ if(CONFIG_CODE_DATA_RELOCATION AND CONFIG_TRACING_BACKEND_RAM)
     zephyr_code_relocate(FILES ${ZEPHYR_BASE}/subsys/tracing/tracing_backend_ram.c LOCATION DTCM_BSS)
 endif()
 
+# The serial link on DMA (CONFIG_NROS_ZENOH_SERIAL_UART_ASYNC, board conf):
+# the eDMA writes the two RX buffers and reads the TX ring, and the M7's
+# D-cache sits in front of SRAM, so those buffers must be in DTCM (the eDMA
+# reaches DTCM through its backdoor alias, dma_mcux_edma.c EDMA_MMAP_ADDR;
+# no cache maintenance). They are the static .bss of zenoh-pico's
+# src/link/transport/serial/uart_zephyr.c. nano-ros's
+# CONFIG_NROS_ZENOH_SERIAL_TCM relocates src/system/zephyr/network.c, where
+# that code lived before zenoh-pico split it out; at nano-ros 984c614585 it
+# moves nothing of the link's (the rings sat at 0x2042xxxx with it on). So
+# this relocates the file that holds them, found among the nros library's
+# sources (the zenoh-pico tree is the store's, not the submodule's).
+# Verify: `_z_serial_async_rx_buf`, `_z_serial_rx_storage` and
+# `_z_serial_tx_storage` at 0x2000xxxx/0x2001xxxx (nm).
+if(CONFIG_CODE_DATA_RELOCATION AND CONFIG_NROS_ZENOH_SERIAL_UART_ASYNC)
+    set(_island_uart_zephyr_c "")
+    if(TARGET nros)
+        get_target_property(_island_nros_srcs nros SOURCES)
+        foreach(_src ${_island_nros_srcs})
+            if(_src MATCHES "/link/transport/serial/uart_zephyr\\.c$")
+                set(_island_uart_zephyr_c "${_src}")
+            endif()
+        endforeach()
+    endif()
+    if(NOT _island_uart_zephyr_c)
+        message(FATAL_ERROR "island: CONFIG_NROS_ZENOH_SERIAL_UART_ASYNC, but zenoh-pico's link/transport/serial/uart_zephyr.c is not among the nros library's sources; its DMA buffers would stay behind the D-cache")
+    endif()
+    message(STATUS "island: serial DMA buffers to DTCM: ${_island_uart_zephyr_c}")
+    zephyr_code_relocate(FILES ${_island_uart_zephyr_c} LOCATION DTCM_BSS)
+endif()
+
 # phase9-C10: DTCM headroom. DTCM now holds the trace buffer (53,248 B) and
 # the app library's .bss (the executor storage, 53,776 B, and the component
-# buffers, 10,008 B); the serial link's buffers left it with
-# CONFIG_NROS_ZENOH_SERIAL_TCM off (board conf). Before that it stood at
-# 130,408 of 131,072 B, and the region report is only read when something
-# breaks. linker/dtcm-headroom.ld fails the link below 8 KiB free: room for
+# buffers, 10,008 B), and since 2026-11-06 the serial link's rings and DMA
+# buffers again (uart_zephyr.c above, about 15 KiB: 117,984 of 131,072 B).
+# At phase9-C5 it stood at 130,408 of 131,072 B, and the region report is
+# only read when something breaks. linker/dtcm-headroom.ld fails the link below 8 KiB free: room for
 # one more component buffer the size of the largest (5,104 B) plus a store
 # growth like C5's (+1,720 B), with change to spare. A change that needs more
 # moves something out of DTCM, or lowers the guard on purpose, in the same

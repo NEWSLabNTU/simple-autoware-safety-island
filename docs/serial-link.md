@@ -73,6 +73,11 @@ scripts that produced it and the flashed image are under
   rate, no false emergency, no RX ring overflow; two frames were lost in the
   80 min of soak (bad frames with no UART error, cause open).
   The island no longer has to join before the inputs flow.
+- **RX and TX by DMA (section 12).** On the interrupt path the LPUART's
+  4-byte RX FIFO overran now and then (8 of 37 acts lost a byte, ring never
+  full); on the eDMA (`CONFIG_NROS_ZENOH_SERIAL_UART_ASYNC`, buffers in
+  DTCM) 12 acts had 0 overruns and 0 bad frames, with about 15x less serial
+  ISR CPU.
 
 ## 1. The stall at 115200: what happens, with evidence
 
@@ -719,3 +724,84 @@ equals the gateway's keepalive period (keep_alive 6), so one late or lost
 keepalive expires the session; its fix (60 s, in the serial snippet, and
 nano-ros PR #1461) postdates these images. None of the runs here expired: the
 gateway opened exactly one board session per reset in every run.
+
+## 12. RX overruns in the 4-byte FIFO; the link on DMA (2026-11-06)
+
+**What was lost.** With the interrupt path and FIFO watermarks
+(`CONFIG_NROS_ZENOH_SERIAL_FIFO_WATERMARK`, RXWATER 1; nano-ros phase-474
+I14) the acts still lost a byte now and then: `overruns` (LPUART `STAT.OR`)
+went up by one with one bad frame in the act, while `ring_overflows` stayed 0
+and the RX ring peaked near 1.1 KiB of 4 KiB (CARLA act b `swb-b1`: overruns
+1, bad frames 1, ring high water 1111 B). So the byte was lost in the
+LPUART's 4-byte RX FIFO, not in the ring: the RX interrupt came later than
+the FIFO's margin, 33 us at RXWATER 1 (3 free slots plus the shift register
+at 10.85 us a character, 921,600 baud). The serial ISR itself costs about
+3.4 us a call, so it is the interrupt being held off (an `irq_lock` region,
+a higher-priority ISR) that runs the margin out, and no single region was
+pinned down. The trace backend's own locked write is not it: its measured
+cost (`island_trace_cost_max`) is 1,200-1,400 cycles (8 us) in the runs
+with an overrun.
+
+**The fix.** `CONFIG_NROS_ZENOH_SERIAL_UART_ASYNC` (nano-ros phase-474 I15/I16)
+runs both directions on the eDMA (lpuart2's `dmas`, eDMA channels 16/17 in
+the board dts). The FIFO is drained by a DMA request per character, so the
+interrupt latency no longer decides whether a byte survives; the
+interrupt-driven path stays built as the fallback. The DMA writes the RX
+buffers and reads the TX ring, which must be out of the M7's D-cache: the
+island relocates zenoh-pico's `src/link/transport/serial/uart_zephyr.c` .bss
+to DTCM (`src/zephyr_entry/CMakeLists.txt`). `CONFIG_NROS_ZENOH_SERIAL_TCM`
+does not do that on this pin: it relocates `src/system/zephyr/network.c`,
+where the link lived before zenoh-pico split it out, and with it on the rings
+still sat at 0x2042xxxx (SRAM). It is set only because UART_ASYNC depends on
+it when DCACHE is on. The Zephyr 4.4 TCM ALIGN backport that keeps the eDMA
+TCD pool 32-aligned in DTCM is in the pinned workspace (nano-ros
+`zephyr/patches/tcm-section-align-4.4.patch`).
+
+**Measured** on the board, island main f7c2b44 + this change, nano-ros
+984c614585. Both images carry `CONFIG_NROS_ZENOH_SERIAL_ISR_STATS` (two cycle
+reads per serial ISR or async callback), read over SWD after each act.
+"ISR" is `_z_zephyr_serial_isr_cycles` from boot to the readout, at 160 MHz;
+on the DMA image it counts the async callback (both directions, the idle
+flush on the system workqueue included) and not the eDMA and LPUART
+drivers' own ISR entry around it.
+
+| image | acts | overruns in act | bad frames in act | ISR per CARLA b boot | calls | per call |
+| --- | --- | --- | --- | --- | --- | --- |
+| FIFO_WATERMARK, RXWATER 1 (`basei-*`) | 7 CARLA b, 2 planning encore | 1 (basei-b7) | 1 | 4.3-5.5 s | 1.26-1.65 M | 3.3-3.4 us |
+| UART_ASYNC, DMA (`dmai-*`, `dma-b1`) | 10 CARLA b, 2 planning encore | 0 | 0 | 0.24-0.53 s | 39-79 k | 6.2-6.8 us |
+
+Planning encore boots: ISR 1.08 s (FIFO) against 0.06 s (DMA). The same
+gate image without ISR_STATS, in the board acts from 2026-10-28 to 11-04
+(the CARLA acts and the floor acts): 8 overruns in 28 acts, 7 acts with one
+or more. Over the 37 FIFO-watermark acts that is 8 with an overrun (22 %);
+12 DMA acts with none has a chance of about 5 % at that rate. On the DMA
+image `_z_zephyr_serial_async_stats` read active 1, tx_errors 0, rx_rearm
+failures 0 in every run; `rx_stopped` was 1 per boot (5 in dmai-b2) with
+no error bit set (no overrun, framing, noise or parity count), each re-armed
+at once, and no bad frame followed.
+
+Spin lateness: the spin diag image (`just board-build-diag`) does not build
+on this pin (`tools/diag/*.patch` no longer apply: spin.rs moved, and the
+link left network.c), so there is no late-spin count per 10k here. The
+supervisor record's longest SWT0 feed-to-feed gap was 98.9-100.2 ms on the
+FIFO image and 98.5-100.0 ms on the DMA image, against the 100 ms spin
+period: no late spin in either, as far as that gap shows. Every DMA act
+passed its verdict; the SUMMARY tables read PASS except `dma-b1`, whose
+merge had no anchor 1 because the gate withdrew availability 488 ms before
+odd_monitor stamped its ODD exit (host side, load 30), which put the
+`link into /mrm_handler/operation_mode_availability` row at 494.89 ms; the
+island raised the takeover request 59 ms after that availability sample, as
+in the other runs.
+
+Cost of the DMA image against the FIFO-watermark image: DTCM 102,492 ->
+117,984 of 131,072 B (13,088 B free, the 8 KiB guard of
+`linker/dtcm-headroom.ld` holds), SRAM 272,392 -> 262,976 B (the rings left
+it), flash +10,916 B (the eDMA and async LPUART drivers). `tx_busy_cycles`
+(time a sender spends in the send call, mostly queueing) is about twice the
+FIFO image's per boot (0.24-0.40 s against 0.19 s); TX is not the loss.
+
+**Open.** nano-ros: `CONFIG_NROS_ZENOH_SERIAL_TCM` should relocate
+`link/transport/serial/uart_zephyr.c` (the file that now holds the rings,
+the DMA buffers and the ISR) instead of, or as well as, `system/zephyr/network.c`;
+once it does, the island's own relocation of that file can go. The spin
+diag patches need a rebase onto this pin for a late-spin count.
