@@ -95,7 +95,7 @@ index c6531ebea..a369d84eb 100644
  
 @@ -10464,6 +10478,7 @@ impl<'s> Executor<'s> {
          // spin: the activations it reports were dropped by the dispatch
-         // that just happened, and a tier that is stalling should not have
+         // that just happened, and a sched task that is stalling should not have
          // to wait for the next spin to say so.
 +        diag_spin_phase(3, 0);
          self.check_timer_overruns();

@@ -1,5 +1,8 @@
 # Phase 5 - the island's units of the contract-chain program
 
+> Names: this page uses the scheduling names of island 84d6def (nano-ros
+> phase 536, play_launch phase 99): sched task, `[tasks.*]`, `group_tasks`.
+
 **Goal:** the island runs on the S32K344 with its four nodes on derived
 priorities, its entity counts reconciled against its own code, and every
 number in `docs/nxp-deployment.md` traceable to a gate.
@@ -40,20 +43,20 @@ and a pin bump is its own PR.
 ### island-W1 - the island declares its callback groups, and the derivation places them
 
 Depends on: nano-ros phase-459-W2 and phase-459-W4 (a cmake image reaches the
-tier derivation; priorities allocated from the board's plan).
+sched task derivation; priorities allocated from the board's plan).
 
 What it does: one `CALLBACK_GROUPS` keyword per component in the four
 `nano_ros_add_node` calls (the registration already accepts it); no
-`[tiers.*]` in `system.toml`, so the derivation runs; the two 30 Hz nodes
-(`mrm_emergency_stop_operator`, `stop_mode_operator`) come out on one tier
+`[tasks.*]` in `system.toml`, so the derivation runs; the two 30 Hz nodes
+(`mrm_emergency_stop_operator`, `stop_mode_operator`) come out on one sched task
 above the two 10 Hz nodes (`mrm_handler`, `mrm_comfortable_stop_operator`),
 at the priorities the board's plan allocates below the transport band
 (projected 5 and 6 on the MR-CANHUBK344 Kconfig; the earlier projection of
 0 and 1 predates the plan).
 
 Gate: `just zephyr-build` shows `run_tiers` in the generated entry with two
-derived tiers; `just demo-*` reaches `VERDICT: PASS`; the thread listing on
-native_sim shows the two tiers as separate threads; `docs/nxp-deployment.md`
+derived sched tasks; `just demo-*` reaches `VERDICT: PASS`; the thread listing on
+native_sim shows the two sched tasks as separate threads; `docs/nxp-deployment.md`
 section 7 is rewritten from "the contract sizes the image; it does not
 schedule it" to what is measured.
 

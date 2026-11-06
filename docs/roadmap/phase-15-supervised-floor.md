@@ -1,5 +1,8 @@
 # Phase 15 - the emergency-stop floor is supervised
 
+> Names: this page uses the scheduling names of island 84d6def (nano-ros
+> phase 536, play_launch phase 99): sched task, `[tasks.*]`, `group_tasks`.
+
 **Goal:** the island checks that its last rung, the emergency stop, actually
 brings the vehicle to standstill, and reacts when it does not. Today nothing
 watches it: `mrm_handler` calls `/system/mrm/emergency_stop/operate` async
@@ -42,7 +45,7 @@ settle; S7 reports the vehicle-side fault as MRM_FAILED.
   finds the output latched and a miss is `island_judge_floor`'s
   VEHICLE_FAULT: no second latch, no re-arm, no second direct-path settle
   (host test `two_faults`, tests/supervisor/test_judge.c). A common-cause
-  stall of the mrm tier (both operators on one executor thread) ends the
+  stall of the mrm sched task (both operators on one executor thread) ends the
   same way: the direct path runs on the supervisor's thread. The worst
   odd_exit chain is 26204.33 of 30000 ms (slack 3795.67); past it is a
   vehicle that does not decelerate under a braking command, which no
@@ -241,7 +244,7 @@ it; nothing below the floor is invented.
     needs the command to have run the span (4485 + 136 ms) from
     `brake_since`; younger, the due re-arms at `brake_since` + span
     (`floor_waits`, `SUPERVISOR_FLOOR_WAIT`), no latch, no fault. That is
-    the stall of the mrm tier that SWT0 latches ~300 ms in, just before
+    the stall of the mrm sched task that SWT0 latches ~300 ms in, just before
     route 3's operator due, and the resume after a stall. A resume also
     arms route 3 for the resumed direct path's settle if nothing has it
     armed. `island_judge_floor(standstill, latched, braked_ms, span_ms)`

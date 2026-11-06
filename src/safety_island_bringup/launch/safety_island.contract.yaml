@@ -482,7 +482,7 @@ supervision:
   switch: 1ms
 
 # THE SERIAL LINK, stated once per flow with where its number comes from
-# (play_launch phase 97, rlm `docs/design/links.md`; demo phase 10 tier 3).
+# (play_launch phase 97, rlm `docs/design/links.md`; demo phase 10, links).
 # Every hop below crosses the host's island gateway and the 921,600-baud
 # UART into this board. It is best effort: batching, flush timing and the
 # scheduling of the gateway and zenoh-pico decide it, so no derivation from

@@ -1,5 +1,8 @@
 # Phase 13 - thread priorities derived from the contract
 
+> Names: this page uses the scheduling names of island 84d6def (nano-ros
+> phase 536, play_launch phase 99): sched task, `[tasks.*]`, `group_tasks`.
+
 **Goal:** the island's thread priorities come from its contract through
 nano-ros's priority allocation (nano-ros RFC-0079), not from numbers written
 in Kconfig and C. The build prints and records the derived plan, and a check
@@ -15,14 +18,14 @@ below).
 | thread | before (main 12fd995) | derived now | from |
 |---|---|---|---|
 | main thread, registration | 5, `CONFIG_MAIN_THREAD_PRIORITY` | 5, unchanged | Kconfig (below the read task while the island registers, phase8-W10) |
-| executor (tier `mrm`: mrm_handler, both operators) | 3, `CONFIG_ISLAND_SPIN_THREAD_PRIORITY` set by `spin_priority.c` | **3** | allocated by nano-ros: the tier takes its most urgent member, `mrm_handler` (rank 5 in `pool.app`: 10 Hz, deadline 100 ms); its contract supervises `call_mrm` (`supervise:`), so the rank is allocated above the transport band, adjacent to it |
-| supervisor reaction thread | 2, `CONFIG_ISLAND_SUPERVISOR_THREAD_PRIORITY` | **2** | `NROS_PRIORITY_PLAN_SUPERVISOR_PRIORITY`: the priority the plan reserves above the supervised tier |
+| executor (sched task `mrm`: mrm_handler, both operators) | 3, `CONFIG_ISLAND_SPIN_THREAD_PRIORITY` set by `spin_priority.c` | **3** | allocated by nano-ros: the sched task takes its most urgent member, `mrm_handler` (rank 5 in `pool.app`: 10 Hz, deadline 100 ms); its contract supervises `call_mrm` (`supervise:`), so the rank is allocated above the transport band, adjacent to it |
+| supervisor reaction thread | 2, `CONFIG_ISLAND_SUPERVISOR_THREAD_PRIORITY` | **2** | `NROS_PRIORITY_PLAN_SUPERVISOR_PRIORITY`: the priority the plan reserves above the supervised sched task |
 | zenoh-pico read, lease, tx flush | 4 | 4, unchanged | `CONFIG_NROS_ZENOH_{READ,LEASE}_PRIORITY` 200 on the 0..255 band; the reserved transport band `[4, 4]` the plan is resolved around |
 
-The other ranks the contract gives (recorded, not run: one tier is one
+The other ranks the contract gives (recorded, not run: one sched task is one
 thread): `mrm_emergency_stop_operator` 7 (30 Hz, no deadline),
 `mrm_comfortable_stop_operator` 8 (10 Hz, no deadline). The build reports the
-split the single tier loses as a degradation.
+split the single sched task loses as a degradation.
 
 ## How it is derived
 
@@ -35,43 +38,43 @@ split the single tier loses as a degradation.
   section 6 in part): a node with a `supervise:`d path is allocated above the
   reserved transport band, keeping its relative rank, with one more priority
   above it reserved for the supervisor. The contract's `supervise:` is the
-  statement that names the crossing; a contract without one keeps every tier
+  statement that names the crossing; a contract without one keeps every sched task
   below the transport. Since nano-ros #1967 (rlm v0.1.67, #2414) only the
-  supervisor's priority crosses on `supervise:`; a tier crosses the band only
-  when its `[tiers.*]` table says `above = "transport"`. The island's does not
-  (see "The mrm tier above or below the transport" below), so the tier runs
+  supervisor's priority crosses on `supervise:`; a sched task crosses the band only
+  when its `[tasks.*]` table says `above = "transport"`. The island's does not
+  (see "The mrm sched task above or below the transport" below), so the sched task runs
   at 5 in `pool.app`, below the transport's 4, and the supervisor at 3.
-- **The tier** (`src/safety_island_bringup/system.toml`): `[tiers.mrm]` with
-  no platform sub-table, `group_tiers = { main = "mrm" }` on the three
-  components (issue 1426 rule 2: an authored, unplaced tier is ALLOCATED).
+- **The sched task** (`src/safety_island_bringup/system.toml`): `[tasks.mrm]` with
+  no platform sub-table, `group_tasks = { main = "mrm" }` on the three
+  components (issue 1426 rule 2: an authored, unplaced sched task is ALLOCATED).
   `spin_period = "10ms"` is the park timeout `run_components` used, so the
-  spin loop is unchanged. nano-ros derives a spin period from the tier's
+  spin loop is unchanged. nano-ros derives a spin period from the sched task's
   fastest release (33,333 us, the 30 Hz operator; #1968, #2399); the
   authored 10 ms is kept as an override and the build notes it.
 - **The runner.** `run_tiers` registers on the main thread at
-  `CONFIG_MAIN_THREAD_PRIORITY` and adopts the tier's priority before the
+  `CONFIG_MAIN_THREAD_PRIORITY` and adopts the sched task's priority before the
   first spin: what `spin_priority.c` did by hand. It is now `spin_hook.c`,
   the SWT0 feed only.
 - **The record** (nano-ros #2304): `build-board/nros_priority_plan.json` and
   `nros_priority_plan.h`; the supervisor includes the header and build-asserts
-  its thread above the tier and the tier above the transport.
+  its thread above the sched task and the sched task above the transport.
 
 ## Units
 
-### D1. The tier runner keeps the application's trace sink (nano-ros #2303)
+### D1. The sched task runner keeps the application's trace sink (nano-ros #2303)
 
 `run_tiers` replaced the island's trace sink (set from a `SYS_INIT` before
 `main()`) with `nros_zephyr_trace_marker`, and that shim's strong reference
-to the out-of-tree `sys_trace_app_marker` failed the island's first tier
+to the out-of-tree `sys_trace_app_marker` failed the island's first sched task
 build at link. Fixed: install-if-unset (`rclc_set_default_trace_sink`), a
 weak reference. Every act's trace below decodes the island's markers.
 
 ### D2. The entry records the derived plan (nano-ros #2304)
 
 The JSON record and C header beside the generated entry, a printed plan, and
-`check-tier-priority-plan-image.py --derived-plan <json> <.config> [<TU>]`.
+`check-sched-task-priority-plan-image.py --derived-plan <json> <.config> [<TU>]`.
 
-### D3. The island declares its tier (this repo)
+### D3. The island declares its sched task (this repo)
 
 As above. `CONFIG_ISLAND_SPIN_RAISE`, `CONFIG_ISLAND_SPIN_THREAD_PRIORITY`
 and `CONFIG_ISLAND_SUPERVISOR_THREAD_PRIORITY` are gone.
@@ -87,7 +90,7 @@ the plan and the priorities the kernel gave every thread at the first spin
 **SWT0 and a feed gap above its timeout.** The 300 ms overrun encore on
 the derived levels (p509-r4-ov, 2026-10-24) recorded a longest
 "feed-to-feed gap" of 365.13 ms against SWT0's 300 ms timeout, and SWT0 did
-not fire; the one-tier overrun rows above show 303-311 ms and no fire
+not fire; the one-sched-task overrun rows above show 303-311 ms and no fire
 either. This is the design, not a hole the watchdog leaves:
 
 - The timeout is 300 ms of real time. SWT0 is clocked by SIRC (32 kHz;
@@ -95,7 +98,7 @@ either. This is the design, not a hole the watchdog leaves:
   and the Zephyr driver programs `TO = rate / 1000 * window.max` =
   32 x 300 = 9,600 ticks (`wdt_nxp_s32.c`, `swt_nxp_s32_install_timeout`;
   `window.max = CONFIG_ISLAND_SUPERVISOR_SWT_MS` = 300, `min = 0`, no
-  window mode). Measured: the CARLA overrun rg-ov1 (2026-10-19, one tier,
+  window mode). Measured: the CARLA overrun rg-ov1 (2026-10-19, one sched task,
   no route latch before the stall) fired its first timeout at uptime
   115,471.988 ms, 299.1 ms after the last feed (the gap of 303.115 ms ended
   at the feed after the fire, uptime 115,476 ms); the stall test p11-swt1
@@ -134,11 +137,11 @@ record's "longest feed-to-feed gap" reads as the spin path's gap.
 ### D6. The board
 
 Pinned image e156e51d: RAM 280,672 B (main 280,632; +40), DTCM 117,584 B
-(+280 B: the record's thread table), FLASH 575,884 B (+8,160 B: the tier
+(+280 B: the record's thread table), FLASH 575,884 B (+8,160 B: the sched task
 runner and the six nano-ros commits since the old pin).
 
 Runs on two images of this branch, the nano-ros changes applied to the pin
-b285c0b654 before they merged: **derived 5** (#2303 and #2304 only: the tier
+b285c0b654 before they merged: **derived 5** (#2303 and #2304 only: the sched task
 in `pool.app`, below the transport; the "before" of the supervised rule) and
 **derived 3** (with #2312, then open as #2306: above the transport, supervisor 2). Run
 directories /mnt/mx500/aeon/worktrees/p13-island/build/timeline/p13-* and
@@ -218,7 +221,7 @@ entry on every run):
 | image | runs | dE (ms) when expiry is k+100 | dE (ms) when expiry is k+101 | late (k+101) |
 |---|---|---|---|---|
 | phase 11 (run_components): s6-b8-*, s7k-b8, s7k-in*, s6-in*, s6-g8i* | 22 | +0.005 .. +1.62 | -1.50 .. -0.004 | 10 of 22 |
-| phase 13 (tier runner): p13-b8*, p13-d3-b8*, p13-f-b8, p13-*in8* | 10 | +0.002 .. +1.00 | -1.53 .. -0.14 | 6 of 10 |
+| phase 13 (sched task runner): p13-b8*, p13-d3-b8*, p13-f-b8, p13-*in8* | 10 | +0.002 .. +1.00 | -1.53 .. -0.14 | 6 of 10 |
 
 The sign of dE decides every one of the 32 windows. dE is the difference
 of two tick latencies, and those are quantized by the 1 ms kernel tick
@@ -233,7 +236,7 @@ is phase-locked to its first release, whatever loop calls `spin_once`.
 Fitted over every handler tick in the act (260-313 ticks, 30-32 s), the
 period is 99.9995-100.0023 ms and the on-time phase moves -0.53 .. +0.14 ms
 end to end on the phase 11 runs, 99.9995-100.0015 ms and -0.08 .. +0.06 ms
-on the phase 13 runs. The tier runner's spin loop (the 10 ms park, the gap
+on the phase 13 runs. The sched task runner's spin loop (the 10 ms park, the gap
 step) does not shift it.
 
 Why the late tick stays: the window is a LEAST time (the contract's
@@ -251,10 +254,10 @@ another timer entity on the handler), worth ~100 ms in about half the runs;
 not done.
 
 
-### The mrm tier above or below the transport (after the phase)
+### The mrm sched task above or below the transport (after the phase)
 
-nano-ros #2398 (#1967) ended the implicit lift: a tier crosses the
-transport band only when its `[tiers.*]` table says `above =
+nano-ros #2398 (#1967) ended the implicit lift: a sched task crosses the
+transport band only when its `[tasks.*]` table says `above =
 "transport"`, and the supervisor's priority stays above the transport
 either way. Two gate images, the planning simulator, one fresh boot per
 act:
@@ -294,7 +297,7 @@ What it shows:
 - **Mrm above the transport starves the RX drain while a spin overruns.**
   In every A overrun act the 4,096 B RX ring fills and overflows
   962-1,615 times, costing one or two bad frames (and in two of the three
-  a UART overrun): for 300 ms the tier at 3 holds the CPU and zpico_read at 4
+  a UART overrun): for 300 ms the sched task at 3 holds the CPU and zpico_read at 4
   never drains. In B the same 300 ms busy-wait runs at 5, below
   zpico_read; the ring peaks at 1,212 B and never overflows. B-ov3's one
   UART overrun (one bad frame) came with no ring overflow, so it is the
@@ -312,8 +315,8 @@ What it shows:
 Recommendation: **B**, mrm below the transport, the plan nano-ros now
 derives without the key. It keeps the link draining through a spin
 overrun at no cost to the supervised path, and the supervisor, not the
-tier, is what has to preempt the transport. The island takes it on pin
-54a1146d67 (island_supervisor.c no longer asserts the tier above the
+sched task, is what has to preempt the transport. The island takes it on pin
+54a1146d67 (island_supervisor.c no longer asserts the sched task above the
 transport, and violations.py no longer requires it); that round, all
 PASS with priorities spin 5 / reaction 3 AGREE, is in
 rtss-work-2026-demo:docs/design/carla-island-demo.md, plus one overrun encore on the final
@@ -324,7 +327,7 @@ supervised 0.03 / 0.04 / 0.57 ms). Run directories:
 ### The executor's levels (after the phase, nano-ros phase-509)
 
 Since nano-ros 3f9c3571ce (phase-509 P9b and its fix, #2545) the island
-authors no tier: `[tiers.mrm]` and the three `group_tiers` are gone, and
+authors no sched task: `[tasks.mrm]` and the three `group_tasks` are gone, and
 each component declares its node-level group (`CALLBACK_GROUPS main`), so
 the build derives one preemption level per contract rank. All three levels
 are workers over the core's ONE executor (a recursive priority-inheriting
@@ -349,18 +352,18 @@ hold by a less urgent level, is 77.5 us. The board rows (encore, a, b, the
 
 ## Not in this phase
 
-- Two tiers (the 30 Hz emergency operator on a thread of its own, tier
+- Two sched tasks (the 30 Hz emergency operator on a thread of its own, sched task
   `estop` at 7): measured, not adopted (superseded by the derived levels
-  above). With per-tier executor sizing
+  above). With per-sched-task executor sizing
   (nano-ros #2404) and RFC-0107 steps 1-3 (#2421 arena floor only for
   unknown demand, #2423 launch remaps in flash, #2424 extra sessions sized
   from the backend count) the split builds at DTCM 110,320 B against
-  103,224 B for one tier, 20,752 B free, inside the 8 KiB guard. The second
-  tier costs 7,096 B: the two backings 11,112 + 28,176 B against 35,384 B,
-  one more executor value (5,360 against 2,680 B), the tier thread (272 B)
+  103,224 B for one sched task, 20,752 B free, inside the 8 KiB guard. The second
+  sched task costs 7,096 B: the two backings 11,112 + 28,176 B against 35,384 B,
+  one more executor value (5,360 against 2,680 B), the sched task thread (272 B)
   and its monitor rows (240 B). Its 16 KiB stack is in RAM.
 - The derived spin period: nano-ros derives one (#1968, #2399), 33,333 us
-  for the mrm tier (its fastest release). The island uses it since e600ab4
+  for the mrm sched task (its fastest release). The island uses it since e600ab4
   (island issue 8); the 10 ms override is gone. With derived levels each
   level has its own (100, 33.3 and 100 ms).
 - `above = "transport"`: nano-ros reads the key (#2398, rlm v0.1.67 in

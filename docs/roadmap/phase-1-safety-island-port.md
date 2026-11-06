@@ -1,5 +1,8 @@
 # Phase 1 — Autoware Safety Island example: port plan
 
+> Names: this page uses the scheduling names of island 84d6def (nano-ros
+> phase 536, play_launch phase 99): sched task, `[tasks.*]`, `group_tasks`.
+
 **Status (2026-07-24): P0-P5 core DONE (P4 = native_sim; P5 = bridged co-sim live; QEMU board + full driving scenario = follow-ups)** — all three operators ported +
 validated e2e on native/cyclonedds/domain 2. P1: emergency stop (OperateMrm
 round-trip, decel ramp v=5→0 @ a=-2.5). P2: comfortable stop (latched
@@ -89,8 +92,8 @@ bridge-config.yaml.
 
 ### P4 — Zephyr
 - `src/zephyr_entry` + west workflow; build the island for
-  `native_sim/native/64`; enable `[safety]` feature (E2E CRC) and a 2-tier
-  split (ctrl tier: handler+operators timer loop; telem tier: status pubs).
+  `native_sim/native/64`; enable `[safety]` feature (E2E CRC) and a 2-sched-task
+  split (ctrl sched task: handler+operators timer loop; telem sched task: status pubs).
 - Then QEMU board bring-up as its own item (candidate `qemu_cortex_a53`;
   networking + cyclonedds on Zephyr QEMU is the unproven part — expect nano-ros
   fixes; FVP AEMv8-R via the ASI board crate is the fallback).

@@ -1,5 +1,8 @@
 # Phase 11 - supervised budgets: a measured number is met, or its miss is caught in time
 
+> Names: this page uses the scheduling names of island 84d6def (nano-ros
+> phase 536, play_launch phase 99): sched task, `[tasks.*]`, `group_tasks`.
+
 **Goal:** every budget in a contract is either a bound (analysed) or a
 supervised expectation: the runtime catches an overrun and starts a
 fallback, and the checker shows that the overrun case still fits the
@@ -85,7 +88,7 @@ is never required.
   detection, the availability silence, is the application's own:
   mrm_handler polls `isInputLost()` on its 10 Hz tick
   (`mrm_handler_core.cpp:616-625`), independently of nano-ros's
-  `max_age` verdict. The tier `DeadlineAction::Fault` calls a fault hook
+  `max_age` verdict. The sched task `DeadlineAction::Fault` calls a fault hook
   that panics when none is set (`spin.rs:3394`), Rust-only.
 - **Executor.** One spin thread; timers fire on the first spin at or after
   their due time; the park ends at the earliest of the timers and the
