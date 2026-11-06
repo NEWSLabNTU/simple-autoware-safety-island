@@ -472,7 +472,8 @@ def selftest(path=os.path.join(HERE, "testdata/explain.txt")):
     window's `ends within` note; since phase8-W30 the pinned 0.13.0 on the
     board budget (the handler's hop 206 ms); since phase11-S7 play_launch
     0.18.1 on main's contract, with its overrun rows (the supervised settle's
-    among them). The timeline's declared bars are parse_explain()
+    among them); since island phase-17 (play_launch 0.29.0) with the
+    floor's supervised settle and its early response check, 8 overrun rows. The timeline's declared bars are parse_explain()
     of that table and its dashed stop curve is settle_s(); both must agree
     with the checker's own numbers, or every bar drawn is wrong.
 
@@ -489,7 +490,7 @@ def selftest(path=os.path.join(HERE, "testdata/explain.txt")):
         print(("ok   " if ok else "FAIL ") + what)
         if not ok:
             fails.append(what)
-    check(f"{len(rows)} budget rows parsed (want 10: 6 rungs + 4 overrun rows)", len(rows) == 10)
+    check(f"{len(rows)} budget rows parsed (want 14: 6 levels + 8 overrun rows)", len(rows) == 14)
     for r in rows:
         if r.get("role") == "overrun":
             s = r["detect"] + r["windows"] + r["route"] + r["settle"]

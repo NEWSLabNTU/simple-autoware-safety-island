@@ -163,3 +163,12 @@ play_launch carrying rlm's R+1 release.
   island source names them, they reach the image only through the
   generated entry. `check-contracts.sh` and `--explain`: verdicts and
   totals unchanged against 0.25.0.
+- **S7** (2026-11-06, play_launch 0.29.0): `testdata/explain.txt`
+  recaptured from today's contract (the S2 follow-up). The table has 14
+  rows: 6 levels and 8 overrun rows, the floor's supervised settle and its
+  early response check among them; `tlcommon.py selftest` wants 14. The
+  settle-derived lines are the extension's derivation block
+  (`degradation level 'x': settle = ... derived by vehicle.braking`, then
+  `entry_speed`, `decel`, `jerk`, `response` lines); the evaluation's
+  `analysis.py` reads that form beside the old one-line form
+  (rtss-work-2026-demo).
