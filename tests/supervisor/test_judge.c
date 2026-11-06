@@ -107,7 +107,7 @@ static void two_faults(void)
 	CHECK(at_due(24721u, 0u, 24000u, 1, 20000u) == ISLAND_FLOOR_VEHICLE_FAULT);
 }
 
-/* phase15-S6 (a): a real stall of the mrm tier. Route 3 is armed at the
+/* phase15-S6 (a): a real stall of the mrm sched task. Route 3 is armed at the
  * call (20000, due 24621); the operator level stalls, SWT0 latches 300 ms
  * later... at 24400 in the worst case, just before route 3's due. The
  * direct path has braked 221 ms at the due: no verdict, re-armed at

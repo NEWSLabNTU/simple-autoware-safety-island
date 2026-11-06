@@ -212,7 +212,7 @@
 /* The handler's level is the most urgent one (level 0), so the plan's most
  * urgent priority is the one the record checks its thread against. */
 #if NROS_ENTRY_LEVEL_OF_MRM_HANDLER != 0
-#error "mrm_handler is not on the most urgent level: prio_plan_tier would name another level"
+#error "mrm_handler is not on the most urgent level: prio_plan_sched_task would name another level"
 #endif
 #if NROS_ENTRY_SCHED_TASK_COUNT < 1
 #error "the entry runs no task: the executor's priority is not from the plan"
@@ -302,7 +302,7 @@ struct island_supervisor_record {
 	int32_t prio_plan_transport_hi;
 	int32_t prio_plan_app_lo;
 	int32_t prio_plan_app_hi;
-	int32_t prio_plan_tier;        /* mrm_handler's level, planned (the most urgent) */
+	int32_t prio_plan_sched_task;        /* mrm_handler's level, planned (the most urgent) */
 	int32_t prio_plan_reaction;    /* NROS_PRIORITY_PLAN_SUPERVISOR_PRIORITY */
 	int32_t prio_spin;             /* mrm_handler's level thread, observed */
 	int32_t prio_reaction;         /* the reaction thread, observed */
@@ -1068,7 +1068,7 @@ static void prio_take(void)
 	island_supervisor_record.prio_plan_transport_hi = NROS_PRIORITY_PLAN_RESERVED_TRANSPORT_HI;
 	island_supervisor_record.prio_plan_app_lo = NROS_PRIORITY_PLAN_APP_LO;
 	island_supervisor_record.prio_plan_app_hi = NROS_PRIORITY_PLAN_APP_HI;
-	island_supervisor_record.prio_plan_tier = NROS_ENTRY_SCHED_TASKS_MOST_URGENT_PRIORITY;
+	island_supervisor_record.prio_plan_sched_task = NROS_ENTRY_SCHED_TASKS_MOST_URGENT_PRIORITY;
 	island_supervisor_record.prio_plan_reaction = ISLAND_SUPERVISOR_PRIORITY;
 	island_supervisor_record.prio_spin = k_thread_priority_get(k_current_get());
 	island_supervisor_record.prio_reaction = k_thread_priority_get(island_supervisor_tid);

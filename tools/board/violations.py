@@ -118,7 +118,7 @@ SUP_TAIL = ["standstill_met", "speed_mm_s", "speed_at_ms"]
 # what the kernel gave the threads at the first spin (int32 but prio_taken
 # and prio_threads), then SUP_PRIO_THREADS x (name[16], int32 prio).
 SUP_PRIO = ["prio_taken", "prio_plan_transport_lo", "prio_plan_transport_hi", "prio_plan_app_lo",
-            "prio_plan_app_hi", "prio_plan_tier", "prio_plan_reaction", "prio_spin", "prio_reaction",
+            "prio_plan_app_hi", "prio_plan_sched_task", "prio_plan_reaction", "prio_spin", "prio_reaction",
             "prio_threads"]
 SUP_PRIO_THREADS = 12
 # The late notice (rtss-work-2026-demo:carla-island-demo.md), after the threads: route 1 judged at
@@ -416,8 +416,8 @@ def priority_findings(d):
     if not d.get("prio_taken"):
         return None
     out = []
-    if d["prio_spin"] != d["prio_plan_tier"]:
-        out.append(f"spin thread at {d['prio_spin']}, the plan's tier at {d['prio_plan_tier']}")
+    if d["prio_spin"] != d["prio_plan_sched_task"]:
+        out.append(f"spin thread at {d['prio_spin']}, the plan's sched task at {d['prio_plan_sched_task']}")
     if d["prio_reaction"] != d["prio_plan_reaction"]:
         out.append(f"reaction thread at {d['prio_reaction']}, planned {d['prio_plan_reaction']}")
     lo, hi = d["prio_plan_transport_lo"], d["prio_plan_transport_hi"]
@@ -430,7 +430,7 @@ def priority_findings(d):
             out.append(f"{name} at {seen[name]}, outside the transport band [{lo}, {hi}]")
     # The spin thread's side of the transport is the plan's (an authored
     # `above = "transport"` or not, nano-ros #1967), checked above as
-    # spin == tier; only the supervisor must be above both.
+    # spin == sched task; only the supervisor must be above both.
     if not d["prio_reaction"] < min(lo, d["prio_spin"]):
         out.append(f"reaction thread at {d['prio_reaction']} is not above the transport ({lo}) "
                    f"and the spin thread ({d['prio_spin']})")
@@ -532,7 +532,7 @@ def supervisor_report(blob):
     pf = priority_findings(d)
     if pf is not None:
         lines.append(f"  priority plan: transport [{d['prio_plan_transport_lo']}, {d['prio_plan_transport_hi']}], "
-                     f"pool.app [{d['prio_plan_app_lo']}, {d['prio_plan_app_hi']}], tier {d['prio_plan_tier']}, "
+                     f"pool.app [{d['prio_plan_app_lo']}, {d['prio_plan_app_hi']}], sched task {d['prio_plan_sched_task']}, "
                      f"reaction {d['prio_plan_reaction']}")
         lines.append(f"  priorities at the first spin: spin thread {d['prio_spin']}, reaction thread "
                      f"{d['prio_reaction']}; " + ", ".join(f"{n or '?'} {p}" for n, p in d["threads"]))
