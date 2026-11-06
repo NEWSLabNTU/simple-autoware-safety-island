@@ -17,7 +17,7 @@
 /* phase13-D4: threads listed in the record (the image has about eight). */
 #define ISLAND_SUPERVISOR_PRIO_THREADS 12
 /* nano-ros phase-509 I1: executor levels the supervisor tracks, one per
- * thread that spins an executor (a tier today, a preemption level once
+ * thread that spins an executor (a sched task today, a preemption level once
  * nano-ros RFC-0108 lands). The image runs one; four leave room for the
  * three-level split (I3) and a spare. */
 #define ISLAND_SUPERVISOR_LEVELS 4

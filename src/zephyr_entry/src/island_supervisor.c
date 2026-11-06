@@ -214,14 +214,14 @@
 #if NROS_ENTRY_LEVEL_OF_MRM_HANDLER != 0
 #error "mrm_handler is not on the most urgent level: prio_plan_tier would name another level"
 #endif
-#if NROS_ENTRY_TIER_COUNT < 1
+#if NROS_ENTRY_SCHED_TASK_COUNT < 1
 #error "the entry runs no task: the executor's priority is not from the plan"
 #endif
 #ifndef NROS_PRIORITY_PLAN_SUPERVISOR_PRIORITY
 #error "the plan reserves no supervisor priority: no supervised deadline was allocated above the transport"
 #endif
 #define ISLAND_SUPERVISOR_PRIORITY NROS_PRIORITY_PLAN_SUPERVISOR_PRIORITY
-BUILD_ASSERT(ISLAND_SUPERVISOR_PRIORITY < NROS_ENTRY_TIERS_MOST_URGENT_PRIORITY,
+BUILD_ASSERT(ISLAND_SUPERVISOR_PRIORITY < NROS_ENTRY_SCHED_TASKS_MOST_URGENT_PRIORITY,
 	     "the reaction thread must run above every executor task");
 BUILD_ASSERT(ISLAND_SUPERVISOR_PRIORITY < NROS_PRIORITY_PLAN_RESERVED_TRANSPORT_LO,
 	     "the reaction thread must run above the transport band");
@@ -1068,7 +1068,7 @@ static void prio_take(void)
 	island_supervisor_record.prio_plan_transport_hi = NROS_PRIORITY_PLAN_RESERVED_TRANSPORT_HI;
 	island_supervisor_record.prio_plan_app_lo = NROS_PRIORITY_PLAN_APP_LO;
 	island_supervisor_record.prio_plan_app_hi = NROS_PRIORITY_PLAN_APP_HI;
-	island_supervisor_record.prio_plan_tier = NROS_ENTRY_TIERS_MOST_URGENT_PRIORITY;
+	island_supervisor_record.prio_plan_tier = NROS_ENTRY_SCHED_TASKS_MOST_URGENT_PRIORITY;
 	island_supervisor_record.prio_plan_reaction = ISLAND_SUPERVISOR_PRIORITY;
 	island_supervisor_record.prio_spin = k_thread_priority_get(k_current_get());
 	island_supervisor_record.prio_reaction = k_thread_priority_get(island_supervisor_tid);
@@ -1341,7 +1341,7 @@ static int island_supervisor_init(void)
 	island_supervisor_record.routes = ISLAND_SUPERVISOR_RECORD_ROUTES;
 	island_supervisor_record.levels = ISLAND_SUPERVISOR_LEVELS;
 	island_supervisor_record.route_nros_level = NROS_ENTRY_LEVEL_OF_MRM_HANDLER;
-	island_supervisor_record.nros_level_count = NROS_ENTRY_TIER_COUNT;
+	island_supervisor_record.nros_level_count = NROS_ENTRY_SCHED_TASK_COUNT;
 	island_supervisor_record.resume_periods = CONFIG_ISLAND_SUPERVISOR_RESUME_PERIODS;
 	island_supervisor_record.response_within_ms = CONFIG_ISLAND_SUPERVISOR_EMERGENCY_RESPONSE_MS;
 	island_supervisor_record.response_drop_mm_s = CONFIG_ISLAND_SUPERVISOR_EMERGENCY_DROP_MM_S;

@@ -65,28 +65,28 @@ endif()
 # Platform thread/task stack pools: NOT set here. Kconfig owns them.
 #
 # This block used to call zephyr_compile_definitions() with
-# NROS_ZEPHYR_MAX_TIERS=1, NROS_ZEPHYR_TIER_STACK_SIZE=4096 and
+# NROS_ZEPHYR_MAX_SCHED_TASKS=1, NROS_ZEPHYR_SCHED_TASK_STACK_SIZE=4096 and
 # NROS_ZEPHYR_MAX_THREADS=4, and the comment claimed the entry kept "one
 # minimal slot". It did not. nano-ros emits the same three tokens from Kconfig
 # (third-party/nano-ros/zephyr/CMakeLists.txt:97-108), so BOTH landed on every
 # compile command and gcc warned three times per TU:
 #
-#   <command-line>: warning: "NROS_ZEPHYR_MAX_TIERS" redefined
+#   <command-line>: warning: "NROS_ZEPHYR_MAX_SCHED_TASKS" redefined
 #
 # CMake sorts and de-duplicates the -D list, so which copy survives was decided
 # by the lexicographic order of the whole token, not by call order. Measured in
 # build-board/compile_commands.json, in this order:
 #
 #   -DNROS_ZEPHYR_MAX_THREADS=4      (here)      -DNROS_ZEPHYR_MAX_THREADS=5     (Kconfig, wins)
-#   -DNROS_ZEPHYR_MAX_TIERS=1        (here)      -DNROS_ZEPHYR_MAX_TIERS=4       (Kconfig, wins)
-#   -DNROS_ZEPHYR_TIER_STACK_SIZE=16384 (Kconfig) -DNROS_ZEPHYR_TIER_STACK_SIZE=4096 (here, wins)
+#   -DNROS_ZEPHYR_MAX_SCHED_TASKS=1        (here)      -DNROS_ZEPHYR_MAX_SCHED_TASKS=4       (Kconfig, wins)
+#   -DNROS_ZEPHYR_SCHED_TASK_STACK_SIZE=16384 (Kconfig) -DNROS_ZEPHYR_SCHED_TASK_STACK_SIZE=4096 (here, wins)
 #
 # "16384" sorts before "4096", so the entry won exactly one of the three, by
 # accident. The effective build was MAX_THREADS=5, MAX_TIERS=4,
 # TIER_STACK_SIZE=4096, confirmed in build-board/zephyr/zephyr_pre0.map:
 #
 #   nros_thread_stacks    0xa000 = 5 x NROS_ZEPHYR_STACK_SIZE(8192)   LINKED
-#   nros_tier_threads     0x440  = 4 x sizeof(struct k_thread)        discarded
+#   nros_sched_task_threads     0x440  = 4 x sizeof(struct k_thread)        discarded
 #   the task stack array  0x4000 = 4 x 4096                           discarded
 #
 # Both task objects sit in the map's "Discarded input sections" list: this
@@ -97,7 +97,7 @@ endif()
 #
 # So the definitions are deleted rather than reconciled. Both knobs have
 # Kconfig rows with help text (nano-ros zephyr/Kconfig, NROS_ZEPHYR_TASK_SLOTS
-# / NROS_ZEPHYR_MAX_TIERS / NROS_ZEPHYR_TIER_STACK_SIZE), and the board conf
+# / NROS_ZEPHYR_MAX_SCHED_TASKS / NROS_ZEPHYR_SCHED_TASK_STACK_SIZE), and the board conf
 # already sets CONFIG_NROS_ZEPHYR_TASK_SLOTS=5 with its reasoning. Set these
 # from a .conf, next to the rest of this image's sizing; a value written here
 # would only re-enter the same coin toss.

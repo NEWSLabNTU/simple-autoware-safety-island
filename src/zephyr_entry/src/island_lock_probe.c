@@ -11,7 +11,7 @@
  *    empty measurement subtracted.
  *
  * 2. L_max: the runner installs the lock with nros_cpp_executor_set_lock
- *    (zephyr_run_tiers.c); that call is wrapped (-Wl,--wrap) and the lock and
+ *    (zephyr_run_sched_tasks.c); that call is wrapped (-Wl,--wrap) and the lock and
  *    unlock it installs are timed. Per holding thread: how many outermost
  *    holds, the longest (overall and from CONFIG_ISLAND_LOCK_PROBE_STEADY_MS
  *    on, past bring-up), a histogram, and the longest wait to acquire. The

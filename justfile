@@ -755,14 +755,14 @@ priority-check board="0":
     set -euo pipefail
     b="{{BOARD_BUILD_DIR}}"
     echo "priority-check: $b"
-    python3 "{{NROS_ROOT}}/scripts/check-tier-priority-plan-image.py" --derived-plan \
+    python3 "{{NROS_ROOT}}/scripts/check-sched-task-priority-plan-image.py" --derived-plan \
         "$b/nros_priority_plan.json" "$b/zephyr/.config" "$b/zephyr_entry_nros_main_generated.cpp"
     python3 - "$b/nros_priority_plan.json" <<'PY'
     import json, sys
     r = json.load(open(sys.argv[1]))
     p = r["plan"]
     print(f"  plan: transport {p['reserved'].get('transport')}, pool.app {p['app']} ({p['source']})")
-    for t in r["tiers"]:
+    for t in r["sched_tasks"]:
         print(f"  task {t['name']}: {t['priority']} ({t['origin']}; spin period {t['spin_period_us']} us)")
     for n in r["ranks"]:
         print(f"  rank {n['node']}: {n['priority']} (period {n['period_us']} us, deadline {n['deadline_us']} us)")

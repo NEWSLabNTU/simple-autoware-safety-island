@@ -61,7 +61,7 @@ a node.
 | --- | ---: | --- | --- |
 | `CONFIG_MAIN_STACK_SIZE` | 8192 | `justfile` `board-build` | the nros-zenoh snippet asks 16384. **Raise this first.** |
 | `CONFIG_SYSTEM_WORKQUEUE_STACK_SIZE` | 4096 | `justfile` `board-build` | |
-| `NROS_ZEPHYR_TIER_STACK_SIZE` | 4096 | entry `CMakeLists.txt` | only if something spawns a task; nothing should |
+| `NROS_ZEPHYR_SCHED_TASK_STACK_SIZE` | 4096 | entry `CMakeLists.txt` | only if something spawns a task; nothing should |
 
 The watchdog is enabled (`CONFIG_WATCHDOG=y`, FS26 SBC). A reset loop with no
 fault message may be the watchdog, not a crash.
