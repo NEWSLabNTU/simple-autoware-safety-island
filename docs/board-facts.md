@@ -193,6 +193,19 @@ project's board conf uses.
   and others were set successfully and silently never hit, while PC sampling
   proved those functions execute. **Trust PC sampling; do not trust breakpoints.**
 
+### The board build reads ROS 2 Humble's messages
+
+The image generates `builtin_interfaces`, `std_msgs` and `geometry_msgs` from
+`/opt/ros/humble` (AMENT_PREFIX_PATH); every other message package it uses is
+in `src/`. Since nano-ros issue 2278 (the pin ac23c0155b) a plain west
+configure no longer falls back to nano-ros's bundled copies of those three:
+with no ROS sourced it stops with "the message package `builtin_interfaces`
+is on neither NROS_INTERFACE_SEARCH_PATH nor AMENT_PREFIX_PATH".
+`scripts/board-env.sh` sources Humble, so `just board-build`, `board-flash`,
+`board-size` and `qemu-build` configure the same way from a bare shell
+(`env -i`) as from a ROS-sourced one; the two images were measured
+byte-identical (zephyr.bin) at that pin.
+
 ### Reading a board whose only UART is taken
 
 When a transport owns the wired UART, move the console to an unwired LPUART in

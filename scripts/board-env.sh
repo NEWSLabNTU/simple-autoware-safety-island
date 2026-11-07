@@ -98,6 +98,24 @@ _island_zephyr_env() {
         export PATH="$ws/.venv312/bin:$PATH"
     fi
     export ISLAND_ZEPHYR_WS="$ws"
+    # ROS 2 Humble, for the message packages the image generates that are not
+    # in src/ (builtin_interfaces, std_msgs, geometry_msgs: AMENT_PREFIX_PATH).
+    # nano-ros issue 2278 (pin ac23c0155b) stopped a plain west configure from
+    # falling back to nano-ros's bundled copies: with no ROS sourced it refuses
+    # ("the message package `builtin_interfaces` is on neither
+    # NROS_INTERFACE_SEARCH_PATH nor AMENT_PREFIX_PATH"). Sourced HERE, not in
+    # one recipe, because every west command of these recipes can configure:
+    # board-build, and also `west flash` and board-size, whose rebuild re-runs
+    # cmake when an input changed. setup.bash is not `set -u` clean.
+    if [ -f /opt/ros/humble/setup.bash ]; then
+        local had_u=0
+        case $- in *u*) had_u=1; set +u;; esac
+        # shellcheck disable=SC1091
+        source /opt/ros/humble/setup.bash
+        if [ "$had_u" = 1 ]; then set -u; fi
+    else
+        echo "board-env: no /opt/ros/humble/setup.bash; a configure will refuse the messages src/ does not hold (nano-ros issue 2278)" >&2
+    fi
 }
 
 _island_zephyr_env "$@"
