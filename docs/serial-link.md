@@ -747,13 +747,13 @@ runs both directions on the eDMA (lpuart2's `dmas`, eDMA channels 16/17 in
 the board dts). The FIFO is drained by a DMA request per character, so the
 interrupt latency no longer decides whether a byte survives; the
 interrupt-driven path stays built as the fallback. The DMA writes the RX
-buffers and reads the TX ring, which must be out of the M7's D-cache: the
-island relocates zenoh-pico's `src/link/transport/serial/uart_zephyr.c` .bss
-to DTCM (`src/zephyr_entry/CMakeLists.txt`). `CONFIG_NROS_ZENOH_SERIAL_TCM`
-does not do that on this pin: it relocates `src/system/zephyr/network.c`,
-where the link lived before zenoh-pico split it out, and with it on the rings
-still sat at 0x2042xxxx (SRAM). It is set only because UART_ASYNC depends on
-it when DCACHE is on. The Zephyr 4.4 TCM ALIGN backport that keeps the eDMA
+buffers and reads the TX ring, which must be out of the M7's D-cache:
+`CONFIG_NROS_ZENOH_SERIAL_TCM` relocates zenoh-pico's
+`src/link/transport/serial/uart_zephyr.c`, its .bss to DTCM and its code to
+ITCM. Up to nano-ros 984c614585 it relocated `src/system/zephyr/network.c`,
+where the link lived before zenoh-pico split it out, so the rings stayed at
+0x2042xxxx (SRAM) and the island relocated `uart_zephyr.c` itself; nano-ros
+issue 2303 (27d1c571da) fixed that and the island's relocation is gone. The Zephyr 4.4 TCM ALIGN backport that keeps the eDMA
 TCD pool 32-aligned in DTCM is in the pinned workspace (nano-ros
 `zephyr/patches/tcm-section-align-4.4.patch`).
 
@@ -800,8 +800,14 @@ it), flash +10,916 B (the eDMA and async LPUART drivers). `tx_busy_cycles`
 (time a sender spends in the send call, mostly queueing) is about twice the
 FIFO image's per boot (0.24-0.40 s against 0.19 s); TX is not the loss.
 
-**Open.** nano-ros: `CONFIG_NROS_ZENOH_SERIAL_TCM` should relocate
-`link/transport/serial/uart_zephyr.c` (the file that now holds the rings,
-the DMA buffers and the ISR) instead of, or as well as, `system/zephyr/network.c`;
-once it does, the island's own relocation of that file can go. The spin
-diag patches need a rebase onto this pin for a late-spin count.
+**On nano-ros 27d1c571da** (SERIAL_TCM moves `uart_zephyr.c`, island issue
+13): the buffers stay in DTCM (`_z_serial_async_rx_buf` 0x2000d591,
+`_z_serial_rx_storage` 0x2000dda5, `_z_serial_tx_storage` 0x2000f98c), DTCM
+117,984 B as before, and the link's code joins ITCM (`_z_serial_isr` at
+0x41b1; ITCM 18,108 of 65,536 B). Board act b (tcm-b6, CARLA, RTF
+1.000): PASS, table 16/16, serial 0 overruns / 0 bad frames, heap peak
+68,456 of 94,720 B. The acts before it (tcm-b2, b4, b5) stopped on the host:
+CARLA did not answer the bridge (v=None), as swb-e3 did on the old image.
+
+**Open.** The spin diag patches need a rebase onto this pin for a late-spin
+count (island issue 12).

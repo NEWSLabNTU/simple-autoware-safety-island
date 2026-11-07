@@ -795,7 +795,8 @@ on that image.
 (docs/serial-link.md section 12), and the DMA's buffers must be out of the
 D-cache, so zenoh-pico's `uart_zephyr.c` .bss (the 4 KiB RX and TX rings,
 the two 256 B DMA RX buffers, the framing buffers) is relocated to DTCM by
-`src/zephyr_entry/CMakeLists.txt`, with the eDMA driver's TCD pool beside it:
+nano-ros `CONFIG_NROS_ZENOH_SERIAL_TCM` (issue 2303; before nano-ros
+27d1c571da, by `src/zephyr_entry/CMakeLists.txt`), with the eDMA driver's TCD pool beside it:
 DTCM 102,492 -> 117,984 of 131,072 B on that image, 13,088 B free, still
 above the 8 KiB guard.
 
