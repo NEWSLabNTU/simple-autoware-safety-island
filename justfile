@@ -840,12 +840,31 @@ board-venv venv=".venv-board":
 # 0x00400000-0x007FFFFF, which INCLUDES the 176 KB reserved for sBAF and HSE
 # firmware. `west flash` sector-erases only what it writes, which is safe.
 #
-# Flash the island to the board (MCU-Link + pyocd).
+# It flashes the image the last `just board-build` produced and checked, and
+# never rebuilds (`--no-rebuild`). A plain `west flash` first runs
+# `cmake --build` on the build dir, and that rebuild is not board-build: it
+# skips board-build's `sync`, its forced configure and its checks (the knob
+# delivery refusal, priority-check, the size report). Measured 2026-11-07
+# (tools/diag/README.md, "board-flash after a diag build"): after a diag
+# build the rebuild re-ran cmake against metadata-probe sidecars keyed to the
+# patched nano-ros tree, the sizing descriptor priced every subscription at
+# the closure buffer, the levels backing grew 33,128 -> 64,544 B and the link
+# failed with "region `DTCM' overflowed by 18336 bytes". A failed link is the
+# lucky case; a smaller drift links and flashes an image nothing checked.
+# So: edit, `just board-build`, then this.
+#
+# Flash the island to the board (MCU-Link + pyocd), without rebuilding.
 board-flash:
     #!/usr/bin/env bash
     set -e
+    elf="{{BOARD_BUILD_DIR}}/zephyr/zephyr.elf"
+    if [ ! -f "$elf" ]; then
+        echo "board-flash: no image at $elf -- run: just board-build" >&2
+        exit 1
+    fi
+    echo "board-flash: $elf (sha256 $(sha256sum "$elf" | cut -c1-16)..., built $(date -r "$elf" '+%F %T'))"
     source scripts/board-env.sh "{{NROS_ROOT}}"
-    west flash -d {{BOARD_BUILD_DIR}} -r pyocd
+    west flash -d {{BOARD_BUILD_DIR}} -r pyocd --no-rebuild
 
 # 320 KiB SRAM total for .data + .bss + heap + every stack.
 #

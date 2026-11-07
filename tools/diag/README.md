@@ -11,7 +11,7 @@ not for merge, applied only for the length of one build.
 |---|---|
 | `nano-ros-diag.patch` | nano-ros: spin-phase events (event 40, `phase \| value << 8`) and the zenoh mutex-wait hook the diag reads |
 | `zenoh-pico-diag.patch` | zenoh-pico `src/link/transport/serial/uart_zephyr.c`: the serial TX-wait hook (the sender's sleep for ring room, one site for both the interrupt-driven and the `UART_ASYNC` DMA path) and the TX-lock wait hook, both reported through `island_diag_lock_wait` |
-| `build-diag.sh` | `just board-build-diag`: applies both patches, builds into `build-board-diag/` with `CONFIG_ISLAND_SPIN_DIAG=y` and `CONFIG_NROS_ZENOH_SERIAL_ISR_STATS=y` (as `-D`, through board-build's `ISLAND_BOARD_KCONFIG`; the tracked board conf is not edited), reverts both patches from an EXIT trap |
+| `build-diag.sh` | `just board-build-diag`: applies both patches, builds into `build-board-diag/` with `CONFIG_ISLAND_SPIN_DIAG=y` and `CONFIG_NROS_ZENOH_SERIAL_ISR_STATS=y` (as `-D`, through board-build's `ISLAND_BOARD_KCONFIG`; the tracked board conf is not edited), reverts both patches and re-runs `just sync` (the metadata sidecars back on the clean tree) from an EXIT trap |
 | `late_records.py` | one line per late interval of a decode (the shared ring of intervals at least 2 ms past their park bound, and each level's worst): level, segments, lock waits, longest callback, other threads |
 | `swd_where.py` | one SWD halt: PC, LR, SP, xPSR, the fault status registers, and whether the heartbeat moves after resume |
 | `swd_stackwalk.py` | halt, read 8 KiB above SP, name every word that looks like a Thumb return address (found the C4 assert recursion) |
@@ -21,7 +21,7 @@ not for merge, applied only for the length of one build.
 | `../eval/actseg.py` | `just diag-actseg`: late spins inside the act only (act read minus pre read) |
 | `../../scripts/ienv.sh` | runs a command in the checkout under `env -i` plus scripts/env.sh |
 
-## Where the hooks are (nano-ros pin 27d1c571da)
+## Where the hooks are (nano-ros pin ac23c0155b)
 
 The five phases, emitted from `Executor::pass`, its preludes and its two
 band returns in `packages/core/nros-node/src/executor/spin.rs` (one pass is
@@ -141,13 +141,57 @@ just board-build-diag                         # -> build-board-diag/zephyr/zephy
 just diag-run sl-x1                           # flashes the diag ELF, one encore -> build/timeline/sl-x1/
 just diag-actseg sl-x1 --survival             # the act segment, all levels summed, and the per-ms curve
 python3 tools/board/spin_diag.py segment build/timeline/sl-x1   # the act segment per level (from the demo checkout)
-just board-build && just board-flash         # the normal image back on the board
+just board-flash                              # the normal image (build-board) back on the board
 ```
 
-`board-build` before `board-flash`: the diag build patched and reverted
-the shared nano-ros sources, so `board-flash`'s own west rebuild of
-build-board runs, outside the recipe's arguments, and fails its DTCM link
-(seen: "region `DTCM' overflowed by 18336 bytes").
+### board-flash after a diag build
+
+`just board-flash` flashes `build-board/zephyr/zephyr.elf` as the last
+`just board-build` left it, and never rebuilds (`west flash --no-rebuild`).
+Before 2026-11-07 it was a plain `west flash`, which first runs
+`cmake --build build-board`, and after a diag build that rebuild failed:
+"region `DTCM' overflowed by 18336 bytes". The cause, measured at nano-ros
+ac23c0155b:
+
+1. `board-build-diag` runs `just board-build`, which starts with `nros sync`.
+   Sync re-probes the workspace's metadata sidecars
+   (`src/*/metadata/*.json`, gitignored, shared by every build dir) and
+   keys each to the nano-ros sources the probe compiles
+   (`provenance.inputs_digest`, last field the probe closure: `e1038fae...`
+   clean, `67208a3a...` with `nano-ros-diag.patch` applied, which edits
+   `nros-node`). The patches are then reverted; the sidecars keep the
+   patched key.
+2. build-board's last configure listed those sidecars as configure
+   dependencies (the sizing descriptor's `input <path>` lines, nano-ros
+   issue 1594), so the rewrite makes the next `west build` of build-board
+   re-run cmake, from ninja, with none of board-build's own steps.
+3. That configure's sizing-descriptor producer finds every sidecar stale
+   against the clean tree, joins no registration observation, and refuses
+   `registration_path` on each of the six subscriptions
+   (`build-board/nros/sizing/west-cargo.toml`: `[endpoint.refused]
+   registration_path = "... a stale or missing sidecar ..."`, where the good
+   descriptor has `registration_path = "in_place"`). nros-node then prices
+   each receive slot at the closure buffer (1,496 B, cargo warning
+   "sizing descriptor refused `endpoint.registration_path`").
+4. `NROS_CPP_LEVELS_BACKING_SIZE` (nros-cpp's generated config header) goes
+   from 33,128 to 64,544 B. `__nros_levels_backing` (the generated entry,
+   relocated to DTCM with the app library) grows by 31,416 B against 13,088 B
+   free: 31,416 - 13,088 = 18,328, plus alignment, is the 18,336 the linker
+   reports. The relocation list, compile commands, CMakeCache and `.config`
+   are byte-identical between the good and the failing build; only the
+   descriptor, the header and that one symbol differ.
+
+The bad state is also sticky. The stale configure lists no sidecar as an
+input, so re-running `just sync` afterwards does not make build-board
+reconfigure again: `cmake --build build-board` keeps failing until a
+`just board-build`, whose `west build ... -- <args>` always configures.
+
+Two changes close it. `build-diag.sh` runs `just sync` again after it reverts
+the patches (step 5 of its header; log `build-board-diag.resync.log`), so
+the sidecars carry the clean key and a configure triggered by their rewrite
+sizes the image as board-build does. And `board-flash` no longer rebuilds,
+so it flashes only an image `board-build` checked (knob delivery, priority
+plan, the DTCM guard). After a source edit, run `just board-build` first.
 
 `board-build-diag` takes extra Kconfig lines (`just board-build-diag
 CONFIG_NROS_ZENOH_SERIAL_FIFO_WATERMARK=1`) and the build dir from

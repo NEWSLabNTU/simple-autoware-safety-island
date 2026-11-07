@@ -89,8 +89,9 @@ constructor failure.
 
 A rebuild with the pool raised from the environment (`ZPICO_MAX_TL_PUBLISHERS=5`,
 `ZPICO_MAX_QUERYABLES=31`) went through `just board-build`, but it never ran:
-`just board-flash` is `west flash`, which rebuilt the image first in a shell
-without those variables. The flashed ELF has `TL_SLOTS` of 2,680 B, which is
+`just board-flash` was then a plain `west flash`, which rebuilt the image first
+in a shell without those variables (it has flashed with `--no-rebuild` since
+2026-11-07, tools/diag/README.md). The flashed ELF has `TL_SLOTS` of 2,680 B, which is
 2 x 1,340 B (two 1,024 B slots). The rebuild's own ELF has 2,860 B, which is
 5 x 572 B. So the silicon result above is the default pool, as W2's is. The
 contract fix (durability stated, pool derived) was taken over by the session

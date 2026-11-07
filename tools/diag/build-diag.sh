@@ -17,6 +17,15 @@
 #    this checkout's zenoh-pico submodule, not the nros store's copy)
 # 4. reverts both patches -- from an EXIT trap, so a failed build, Ctrl-C or
 #    a kill short of SIGKILL never leaves the submodules patched
+# 5. runs `just sync` again on the reverted tree, from the same trap. The
+#    board-build of step 2 began with `nros sync`, which re-probed the
+#    workspace's metadata sidecars (src/*/metadata/*.json, shared by every
+#    build dir) and keyed them to the PATCHED nano-ros sources. Left so, the
+#    next configure of build-board (any `west build`, or `west flash`'s own
+#    rebuild) reads them as stale, prices every subscription at the closure
+#    buffer, and the image no longer fits DTCM (tools/diag/README.md,
+#    "board-flash after a diag build"). The second sync keys them to the
+#    clean tree again, so the shared state is what it was before this ran.
 #
 # Which zenoh-pico is compiled: nano-ros resolves the tree at configure time
 # through `nros locate zenoh-pico` (RFC-0103 D5). A submodule at its pin and
@@ -64,7 +73,19 @@ revert() {
     applied=()
     return $rc
 }
-trap 'revert || exit 1' EXIT
+resync=0  # set once a patch is applied: the sidecars may then carry its key
+resync_sidecars() {
+    [ "$resync" = 1 ] || return 0
+    resync=0
+    if just sync > "$DIR.resync.log" 2>&1; then
+        echo "build-diag: re-keyed the metadata sidecars to the reverted tree (just sync, log $DIR.resync.log)"
+    else
+        echo "build-diag: FAILED to re-key the metadata sidecars (log $DIR.resync.log) -- run: just sync" >&2
+        echo "build-diag:   until it succeeds, a configure of build-board sizes from stale sidecars (DTCM overflow)" >&2
+        return 1
+    fi
+}
+trap 'revert || exit 1; resync_sidecars || exit 1' EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM HUP
 
@@ -81,6 +102,7 @@ for pair in "$NR $E/nano-ros-diag.patch" "$ZP $E/zenoh-pico-diag.patch"; do
     fi
     git -C "$tree" apply "$patch" || exit 1
     applied+=("$tree $patch")
+    resync=1
     echo "build-diag: applied $(basename "$patch") to $tree"
 done
 

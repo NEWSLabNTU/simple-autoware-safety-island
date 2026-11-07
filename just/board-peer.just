@@ -25,9 +25,11 @@
 #     and ROS_DOMAIN_ID must be 10, the image's CONFIG_NROS_DOMAIN_ID.
 #   * the router must be listening BEFORE the board dials: start this, then
 #     reset the board.
-#   * `just board-flash` is `west flash`, which REBUILDS first in its own
-#     environment: an image built with triage env vars (ZPICO_*) is flashed
-#     without them unless they are set for board-flash too (seen in W7).
+#   * `just board-flash` flashes the image `just board-build` left, with
+#     `west flash --no-rebuild` (since 2026-11-07). Before, it rebuilt first
+#     in its own environment: an image built with triage env vars (ZPICO_*)
+#     was flashed without them (seen in W7), and after a diag build the
+#     rebuild overflowed DTCM (tools/diag/README.md).
 #   * nothing else may hold /dev/ttyUSB0 (a console `cat` makes the router's
 #     open fail or split the bytes); checked with fuser.
 #   * `grep "transport opened"` on the log means nothing without
