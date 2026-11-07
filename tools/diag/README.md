@@ -10,7 +10,7 @@ not for merge, applied only for the length of one build.
 | file | what it is |
 |---|---|
 | `nano-ros-diag.patch` | nano-ros: spin-phase events (event 40, `phase \| value << 8`) and the zenoh mutex-wait hook the diag reads |
-| `zenoh-pico-diag.patch` | zenoh-pico: the serial ISR's time inside the longest callback, from zenoh-pico's own counters |
+| `zenoh-pico-diag.patch` | zenoh-pico `src/link/transport/serial/uart_zephyr.c`: the serial TX-wait hook (the sender's sleep for ring room, one site for both the interrupt-driven and the `UART_ASYNC` DMA path) and the TX-lock wait hook, both reported through `island_diag_lock_wait` |
 | `build-diag.sh` | `just board-build-diag`: applies both patches, builds into `build-board-diag/` with `CONFIG_ISLAND_SPIN_DIAG=y` and `CONFIG_NROS_ZENOH_SERIAL_ISR_STATS=y` (as `-D`, through board-build's `ISLAND_BOARD_KCONFIG`; the tracked board conf is not edited), reverts both patches from an EXIT trap |
 | `late_records.py` | one line per late interval of a decode (the ring of intervals at least 2 ms late): segments, lock waits, longest callback, other threads |
 | `swd_where.py` | one SWD halt: PC, LR, SP, xPSR, the fault status registers, and whether the heartbeat moves after resume |
@@ -19,6 +19,44 @@ not for merge, applied only for the length of one build.
 | `../eval/run-diag.sh` | `just diag-run`: one board act (default encore) with `spin_diag.py read` just before and just after the act |
 | `../eval/actseg.py` | `just diag-actseg`: late spins inside the act only (act read minus pre read) |
 | `../../scripts/ienv.sh` | runs a command in the checkout under `env -i` plus scripts/env.sh |
+
+## Where the hooks are (nano-ros pin 27d1c571da)
+
+The five phases, emitted from `Executor::pass` and its prelude in
+`packages/core/nros-node/src/executor/spin.rs` (one pass is one
+`spin_once`; a band pass of phase-509 emits none):
+
+| phase | value | where |
+|---|---|---|
+| 0 | 0 | `pass` entry, before `reap_deferred_releases` (owned and shared passes) |
+| 1 | the park bound, us | `owned_prelude`, after `park_can_be_woken`, before the handle park and the park primitive |
+| 2 | 0 | `owned_prelude`, after the primary and the extra sessions' drive |
+| 3 | 1 = idle, 0 = dispatched | idle return: before `flush_violation_reports`; dispatch path: before `check_timer_overruns` |
+| 4 | 1 = idle, 0 = dispatched | idle return: before `return`; dispatch path: after `tick_components`, before `result` |
+
+A yielded park (phase-521 W8, `park_yielded`) returns between phase 2 and 3
+and closes no interval cleanly; the island's levels are k_threads and do not
+yield.
+
+**Which zenoh-pico tree.** nano-ros resolves zenoh-pico at configure time
+(`nros locate zenoh-pico --why`): a clean submodule at its pin loses to the
+shared store copy `~/.nros/sources/zenoh-pico/<pin>`, which is what a normal
+build-board compiles, and a dirty submodule (the local-edit rung) outranks
+the store. `build-diag.sh` patches the checkout's submodule, so the store,
+shared by every checkout, is never edited; west reconfigures on every
+board-build, so the ladder is asked again with the patch applied, and the
+script fails the build unless `build-board-diag/compile_commands.json`
+names the submodule's `uart_zephyr.c` (and nano-ros's
+`zephyr/nros_zenoh_zephyr_system.c`).
+
+**Two limits at this pin.** The image now runs one executor per derived
+sched task (mrm_handler 100 ms, the emergency operator 33.3 ms, the
+comfortable operator 100 ms, `build-board/nros_priority_plan.json`); the
+diag follows the first thread that emits phase 0 and ignores the others.
+And lateness is still measured against a 10 ms spin (`SD_NOMINAL_US`,
+`spin_diag.py`), the period the B2 numbers below were taken at, so an idle
+interval of a 33.3 ms or 100 ms level reads as late. Both need a change to
+the diag itself before its numbers mean what they meant in B2.
 
 ## Use
 

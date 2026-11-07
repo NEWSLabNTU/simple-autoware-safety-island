@@ -13,8 +13,20 @@
 #    CONFIG_NROS_ZENOH_SERIAL_ISR_STATS=y <your CONFIG_X=value ...>" (passed as
 #    -D, the tracked board conf is not edited); once more if board-build asks
 #    for the second pass (a fresh build dir needs it)
-# 3. reverts both patches -- from an EXIT trap, so a failed build, Ctrl-C or
+# 3. checks the build compiled the patched trees (compile_commands.json names
+#    this checkout's zenoh-pico submodule, not the nros store's copy)
+# 4. reverts both patches -- from an EXIT trap, so a failed build, Ctrl-C or
 #    a kill short of SIGKILL never leaves the submodules patched
+#
+# Which zenoh-pico is compiled: nano-ros resolves the tree at configure time
+# through `nros locate zenoh-pico` (RFC-0103 D5). A submodule at its pin and
+# clean loses to the shared store copy (~/.nros/sources/zenoh-pico/<pin>),
+# which is what a normal build-board compiles; a DIRTY submodule (the
+# "local-edit" rung) outranks the store. Patching the submodule is therefore
+# the per-build override: the store, shared by every checkout, is never
+# touched, and west reconfigures on every board-build (the recipe passes
+# cmake args), so the ladder is asked again with the patch applied. Step 3
+# fails the build if it was not.
 #
 # <dir> is $BOARD_DIAG_BUILD_DIR, default build-board-diag; the ELF is
 # <dir>/zephyr/zephyr.elf, which rtss-work-2026-demo:tools/eval/run-diag.sh flashes by
@@ -30,6 +42,7 @@ E="$repo/tools/diag"
 # board-build-diag` passes the root the justfile resolved (its
 # NANO_ROS_ALLOW_EXTERNAL_ROOT override included) as ISLAND_NROS_ROOT.
 NR="${ISLAND_NROS_ROOT:-$repo/third-party/nano-ros}"
+NR="$(readlink -f "$NR")"  # compile_commands.json spells real paths
 ZP="$NR/packages/rmw/zenoh/zpico-sys/zenoh-pico"
 DIR="${BOARD_DIAG_BUILD_DIR:-build-board-diag}"
 [ "$DIR" = build-board ] && { echo "build-diag: BOARD_DIAG_BUILD_DIR must not be build-board" >&2; exit 2; }
@@ -81,6 +94,16 @@ for pass in 1 2; do
     [ $pass = 1 ] && echo "build-diag: board-build asked for its second pass; running it"
 done
 grep -E '^\s+(FLASH|RAM|DTCM|ITCM):' "$log" | tail -4
+if [ $rc = 0 ]; then
+    # A patch that applied to a tree the build did not compile is silently a
+    # no-op; refuse that image.
+    for src in "$ZP/src/link/transport/serial/uart_zephyr.c" "$NR/zephyr/nros_zenoh_zephyr_system.c"; do
+        if ! grep -qF "\"file\": \"$src\"" "$DIR/compile_commands.json" 2>/dev/null; then
+            echo "build-diag: $DIR did not compile $src (another tree resolved: see 'nros locate zenoh-pico --why'); the image lacks the hooks" >&2
+            rc=1
+        fi
+    done
+fi
 if [ $rc = 0 ]; then
     echo "build-diag: OK, $DIR/zephyr/zephyr.elf (sha256 $(sha256sum "$DIR/zephyr/zephyr.elf" | cut -c1-16)...)"
 else

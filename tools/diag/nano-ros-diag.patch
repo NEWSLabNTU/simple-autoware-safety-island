@@ -1,17 +1,17 @@
-From 032060200b4cefa5537e6b94f9bb85a5727f5666 Mon Sep 17 00:00:00 2001
+From 136389c4522c0827128c779f72f9ab3aea0fad00 Mon Sep 17 00:00:00 2001
 From: aeon <jerry73204@gmail.com>
-Date: Sat, 10 Oct 2026 04:34:53 +0800
+Date: Sat, 7 Nov 2026 09:35:15 +0800
 Subject: [PATCH] DIAG (spin latency): spin phase events, zenoh mutex wait hook
  (not for merge)
 
 ---
  .../nros-node/src/executor/callback_trace.rs  | 10 ++++++++++
- packages/core/nros-node/src/executor/spin.rs  | 16 ++++++++++++++++
+ packages/core/nros-node/src/executor/spin.rs  | 19 +++++++++++++++++++
  zephyr/nros_zenoh_zephyr_system.c             | 19 +++++++++++++++++--
- 3 files changed, 43 insertions(+), 2 deletions(-)
+ 3 files changed, 46 insertions(+), 2 deletions(-)
 
 diff --git a/packages/core/nros-node/src/executor/callback_trace.rs b/packages/core/nros-node/src/executor/callback_trace.rs
-index 3e187cff0..04b79b22a 100644
+index 6657cea2e6..f307484682 100644
 --- a/packages/core/nros-node/src/executor/callback_trace.rs
 +++ b/packages/core/nros-node/src/executor/callback_trace.rs
 @@ -145,6 +145,8 @@ pub use super::monitor::{
@@ -23,7 +23,7 @@ index 3e187cff0..04b79b22a 100644
  /// phase-474 I3 -- the taken sample's `stamp.sec`, after a [`MARKER_TAKE`].
  pub const MARKER_TAKE_STAMP_SEC: u32 = 26;
  /// phase-474 I3 -- the taken sample's `stamp.nanosec`, after a
-@@ -338,6 +340,14 @@ pub(crate) fn end(handle: u8) {
+@@ -355,6 +357,14 @@ pub(crate) fn end(handle: u8) {
      }
  }
  
@@ -39,14 +39,13 @@ index 3e187cff0..04b79b22a 100644
  /// module table). Pre-arm verdicts (phase-474 I2) are not stored and emit
  /// nothing.
 diff --git a/packages/core/nros-node/src/executor/spin.rs b/packages/core/nros-node/src/executor/spin.rs
-index c6531ebea..a369d84eb 100644
+index 8b4b60aafc..c0ec62f5b7 100644
 --- a/packages/core/nros-node/src/executor/spin.rs
 +++ b/packages/core/nros-node/src/executor/spin.rs
-@@ -160,6 +160,15 @@ fn trace_register(slot: usize, kind: EntryKind, name: TraceName<'_>) {
+@@ -168,6 +168,15 @@ fn trace_register(slot: usize, kind: EntryKind, name: TraceName<'_>) {
  #[inline]
  fn trace_register(_slot: usize, _kind: EntryKind, _name: TraceName<'_>) {}
  
-+
 +#[cfg(feature = "trace-callbacks")]
 +#[inline]
 +fn diag_spin_phase(phase: u8, value: u32) {
@@ -55,26 +54,57 @@ index c6531ebea..a369d84eb 100644
 +#[cfg(not(feature = "trace-callbacks"))]
 +#[inline]
 +fn diag_spin_phase(_phase: u8, _value: u32) {}
++
  // ============================================================================
  // Executor::open() factory method
  // ============================================================================
-@@ -9311,6 +9320,7 @@ impl<'s> Executor<'s> {
+@@ -11966,6 +11975,10 @@ impl<'s> Executor<'s> {
+         // SAFETY: the caller's contract; re-derived after every window.
+         #[allow(unused_mut)]
+         let mut s: &mut Self = unsafe { &mut *this };
++        // DIAG: the executor's own worker only (a band pass has no phase 1-4).
++        if !matches!(mode, PassMode::Band(_)) {
++            diag_spin_phase(0, 0);
++        }
          // Issue 1705 — releases deferred behind a dispatch that has since
-         // finished (an OS-priority worker's) are completed here, before this
-         // pass looks at the entries.
-+        diag_spin_phase(0, 0);
-         self.reap_deferred_releases();
-         // phase-436 W2 (issue 1193) — the budget is carried in MICROSECONDS.
-         // This was `as_millis()`, which truncates: `from_micros(500)` became
-@@ -9415,6 +9425,7 @@ impl<'s> Executor<'s> {
-         //
-         // Additive by construction: with no primitive installed this is a
-         // no-op and every existing port keeps the behaviour it has.
+         // finished are completed here, before this pass looks at the entries.
+         s.reap_deferred_releases();
+@@ -12333,8 +12346,10 @@ impl<'s> Executor<'s> {
+ 
+             // phase-474 I7 -- an idle spin is the natural slot for the queued
+             // reports.
++            diag_spin_phase(3, 1);
+             s.flush_violation_reports();
+ 
++            diag_spin_phase(4, 1);
+             return SpinOnceResult::new();
+         }
+ 
+@@ -12965,6 +12980,7 @@ impl<'s> Executor<'s> {
+         // spin: the activations it reports were dropped by the dispatch
+         // that just happened, and a sched task that is stalling should not have
+         // to wait for the next spin to say so.
++        diag_spin_phase(3, 0);
+         s.check_timer_overruns();
+         s.check_release_jitter_rule();
+         s.check_stack_headroom_rule();
+@@ -13031,6 +13047,7 @@ impl<'s> Executor<'s> {
+         // SAFETY: the pass's contract; `s` is not used after the call.
+         unsafe { Self::tick_components(this, None) };
+ 
++        diag_spin_phase(4, 0);
+         result
+     }
+ 
+@@ -13207,6 +13224,7 @@ impl<'s> Executor<'s> {
+         // drives). Those executors wait on the wake object below, on the short
+         // entry budget (`entry_spin_budget`).
+         let park_can_be_woken = s.park_can_be_woken();
 +        diag_spin_phase(1, park_achieved_us.min(0x00ff_ffff) as u32);
-         let parked = match self.park_primitive {
-             Some((park, ctx)) if park_achieved_us > 0 => {
-                 // SAFETY: `park` and `ctx` were supplied together by the port
-@@ -9621,6 +9632,7 @@ impl<'s> Executor<'s> {
+ 
+         // phase-521 W3 (RFC-0113 D3) -- a session whose readiness is a
+         // WAITABLE handle (a socket on POSIX / NuttX) is parked on: the port
+@@ -13493,6 +13511,7 @@ impl<'s> Executor<'s> {
              // invisible. It is now the only `let _ =` of the two.
              let _ = extra.drive_io(0);
          }
@@ -82,38 +112,11 @@ index c6531ebea..a369d84eb 100644
  
          // phase-359 W4 — ONE clock read per spin, shared by the delta below and
          // every consumer further down. Replaces the std/no_std delta pair AND
-@@ -9834,8 +9846,10 @@ impl<'s> Executor<'s> {
- 
-             // phase-474 I7 -- an idle spin is the natural slot for the queued
-             // reports.
-+            diag_spin_phase(3, 1);
-             self.flush_violation_reports();
- 
-+            diag_spin_phase(4, 1);
-             return SpinOnceResult::new();
-         }
- 
-@@ -10464,6 +10478,7 @@ impl<'s> Executor<'s> {
-         // spin: the activations it reports were dropped by the dispatch
-         // that just happened, and a sched task that is stalling should not have
-         // to wait for the next spin to say so.
-+        diag_spin_phase(3, 0);
-         self.check_timer_overruns();
-         self.check_release_jitter_rule();
-         self.check_stack_headroom_rule();
-@@ -10536,6 +10551,7 @@ impl<'s> Executor<'s> {
-             }
-         }
- 
-+        diag_spin_phase(4, 0);
-         result
-     }
- 
 diff --git a/zephyr/nros_zenoh_zephyr_system.c b/zephyr/nros_zenoh_zephyr_system.c
-index 4dbadbea4..58f09f64d 100644
+index 0489de1516..7e1fb7c41c 100644
 --- a/zephyr/nros_zenoh_zephyr_system.c
 +++ b/zephyr/nros_zenoh_zephyr_system.c
-@@ -193,8 +193,23 @@ z_result_t _z_mutex_drop(_z_mutex_t *m) {
+@@ -210,8 +210,23 @@ z_result_t _z_mutex_drop(_z_mutex_t *m) {
      return m == NULL || pthread_mutex_destroy(m) == 0 ? 0 : -1;
  }
  
@@ -138,7 +141,7 @@ index 4dbadbea4..58f09f64d 100644
  }
  
  z_result_t _z_mutex_try_lock(_z_mutex_t *m) {
-@@ -222,7 +237,7 @@ z_result_t _z_mutex_rec_drop(_z_mutex_rec_t *m) {
+@@ -239,7 +254,7 @@ z_result_t _z_mutex_rec_drop(_z_mutex_rec_t *m) {
  }
  
  z_result_t _z_mutex_rec_lock(_z_mutex_rec_t *m) {

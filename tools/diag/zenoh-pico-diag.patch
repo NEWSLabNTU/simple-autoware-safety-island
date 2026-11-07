@@ -1,18 +1,18 @@
-From 71c06469b49d8dfc6ee4ba4446f0d238b4f41098 Mon Sep 17 00:00:00 2001
+From d2917c865b943f87317b33f99ea385685fc78e02 Mon Sep 17 00:00:00 2001
 From: aeon <jerry73204@gmail.com>
-Date: Mon, 12 Oct 2026 02:48:00 +0800
+Date: Sat, 7 Nov 2026 09:35:15 +0800
 Subject: [PATCH] DIAG (spin latency): TX-wait and TX-lock hooks (not for
  merge)
 
 ---
- src/system/zephyr/network.c | 11 +++++++++++
+ src/link/transport/serial/uart_zephyr.c | 11 +++++++++++
  1 file changed, 11 insertions(+)
 
-diff --git a/src/system/zephyr/network.c b/src/system/zephyr/network.c
-index 1ca96446..7e7f00e4 100644
---- a/src/system/zephyr/network.c
-+++ b/src/system/zephyr/network.c
-@@ -1314,6 +1314,7 @@ static size_t _z_serial_rx_frame(uint8_t *buf, size_t cap, uint32_t timeout_ms,
+diff --git a/src/link/transport/serial/uart_zephyr.c b/src/link/transport/serial/uart_zephyr.c
+index 09ffe9b5..4e8c5096 100644
+--- a/src/link/transport/serial/uart_zephyr.c
++++ b/src/link/transport/serial/uart_zephyr.c
+@@ -969,6 +969,7 @@ static size_t _z_serial_rx_frame(uint8_t *buf, size_t cap, uint32_t timeout_ms,
     appeared for _Z_ZEPHYR_SERIAL_TX_TIMEOUT_MS (TX interrupts stopped).
     Returning with bytes still queued is correct: the next frame queues behind
     them, and COBS framing does not care when a byte leaves. */
@@ -20,7 +20,7 @@ index 1ca96446..7e7f00e4 100644
  static int _z_serial_tx_put(const struct device *dev, const uint8_t *data, size_t len) {
      size_t done = 0;
      if (len > _z_zephyr_serial_tx_stats.max_frame) {
-@@ -1341,7 +1342,12 @@ static int _z_serial_tx_put(const struct device *dev, const uint8_t *data, size_
+@@ -1003,7 +1004,12 @@ static int _z_serial_tx_put(const struct device *dev, const uint8_t *data, size_
              _z_serial_tx_waiting = true;
              int rc = 0;
              if (ring_buf_space_get(&_z_serial_tx_ring) < (uint32_t)(_Z_ZEPHYR_SERIAL_TX_RING_BYTES / 2)) {
@@ -33,7 +33,7 @@ index 1ca96446..7e7f00e4 100644
              }
              _z_serial_tx_waiting = false;
              if (rc != 0 && ring_buf_space_get(&_z_serial_tx_ring) == 0u) {
-@@ -1590,7 +1596,12 @@ static size_t _z_send_serial_frame_locked(const _z_sys_net_socket_t sock, uint8_
+@@ -1242,7 +1248,12 @@ static size_t _z_send_serial_frame_locked(const _z_sys_net_socket_t sock, uint8_
  }
  
  size_t _z_send_serial_internal(const _z_sys_net_socket_t sock, uint8_t header, const uint8_t *ptr, size_t len) {

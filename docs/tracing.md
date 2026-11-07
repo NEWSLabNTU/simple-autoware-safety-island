@@ -975,7 +975,8 @@ can be read whole (`w4-bringup2`: 17 in the trace, 8 in the record).
 
 **Spin-latency diagnostic (not in the image).** `CONFIG_ISLAND_SPIN_DIAG`
 (off) consumes a nano-ros event 40 (`phase | value << 8`, five spin phases)
-that exists only with `tools/diag/nano-ros-diag.patch`; the
+that exists only with `tools/diag/nano-ros-diag.patch` (the hook sites and
+the zenoh-pico tree the patch lands in: tools/diag/README.md); the
 sink never writes it to the trace. It fills `island_spin_diag` (lateness
 histogram, per-segment CPU of the late intervals), read over SWD by
 `tools/board/spin_diag.py` (nano-ros phase-474 I10). The tools are in
