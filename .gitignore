@@ -4,6 +4,7 @@ tmp/
 *.log
 .cache/
 __pycache__/
+.venv-board/
 .direnv/
 play_log/
 tmp_*.log

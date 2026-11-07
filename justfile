@@ -817,6 +817,23 @@ board-buttons elf="build-board-booth/zephyr/zephyr.elf":
 board-build-diag *conf:
     ISLAND_NROS_ROOT="{{NROS_ROOT}}" tools/diag/build-diag.sh {{conf}}
 
+# Issue #6: a Python venv for the board tooling (pyocd, pyelftools), in this
+# checkout, so the SWD tools import from this disk and not from ~/.local. On
+# the development host /home is a seek-bound HDD: under other jobs' I/O,
+# `pyocd list` took over 30 s and the re-arm helper's imports blocked 38 s
+# (once over 6 min). The venv keeps the system site-packages (ROS, numpy and
+# the rest still resolve as before); pyocd, pyelftools and their dependencies
+# are installed into it even where ~/.local has them (--ignore-installed).
+# rtss-work-2026-demo:tools/eval/run-board.sh puts <venv>/bin first on PATH
+# when <venv>/bin/pyocd exists (RB_VENV, default this checkout's
+# .venv-board). Versions match the host's: pyocd 0.44.0, pyelftools 0.32.
+board-venv venv=".venv-board":
+    #!/usr/bin/env bash
+    set -eu
+    python3 -m venv --system-site-packages "{{venv}}"
+    "{{venv}}/bin/python" -m pip install -q --disable-pip-version-check --ignore-installed "pyocd==0.44.0" "pyelftools==0.32"
+    "{{venv}}/bin/python" -c 'import pyocd, elftools; print("board-venv: pyocd", pyocd.__version__, "from", pyocd.__file__)'
+
 # Flash the island. pyocd via MCU-Link; the runner comes from the board itself.
 #
 # WARNING: never `pyocd erase --chip` on this part. pyocd's pflash region spans
