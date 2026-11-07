@@ -18,7 +18,7 @@ acts, the analysis, the run scripts) is `rtss-work-2026-demo:tools/eval/` and im
 | `board_buttons.py` | SW1/SW2 over SWD (CONFIG_ISLAND_BUTTONS): `watch` (`just board-buttons`) and `inject` |
 | `led_readout.py` | the island's LED state and its last transitions over SWD (CONFIG_ISLAND_LED) |
 | `lock_probe.py` | read and decode island_lock_probe_record (CONFIG_ISLAND_LOCK_PROBE, nano-ros RFC-0108) |
-| `spin_diag.py` | DIAG (spin latency, phase9-U3): read and decode `island_spin_diag` over SWD |
+| `spin_diag.py` | DIAG (spin latency, phase9-U3): read and decode `island_spin_diag` over SWD, per executor level, lateness against each interval's park bound (island #14); `segment` the act segment per level, `selftest` for CI |
 | `stamp.py` | host CLOCK_MONOTONIC stamps on the island's console lines (phase8-W29) |
 
 ## Selftest

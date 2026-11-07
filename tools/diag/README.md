@@ -12,10 +12,11 @@ not for merge, applied only for the length of one build.
 | `nano-ros-diag.patch` | nano-ros: spin-phase events (event 40, `phase \| value << 8`) and the zenoh mutex-wait hook the diag reads |
 | `zenoh-pico-diag.patch` | zenoh-pico `src/link/transport/serial/uart_zephyr.c`: the serial TX-wait hook (the sender's sleep for ring room, one site for both the interrupt-driven and the `UART_ASYNC` DMA path) and the TX-lock wait hook, both reported through `island_diag_lock_wait` |
 | `build-diag.sh` | `just board-build-diag`: applies both patches, builds into `build-board-diag/` with `CONFIG_ISLAND_SPIN_DIAG=y` and `CONFIG_NROS_ZENOH_SERIAL_ISR_STATS=y` (as `-D`, through board-build's `ISLAND_BOARD_KCONFIG`; the tracked board conf is not edited), reverts both patches from an EXIT trap |
-| `late_records.py` | one line per late interval of a decode (the ring of intervals at least 2 ms late): segments, lock waits, longest callback, other threads |
+| `late_records.py` | one line per late interval of a decode (the shared ring of intervals at least 2 ms past their park bound, and each level's worst): level, segments, lock waits, longest callback, other threads |
 | `swd_where.py` | one SWD halt: PC, LR, SP, xPSR, the fault status registers, and whether the heartbeat moves after resume |
 | `swd_stackwalk.py` | halt, read 8 KiB above SP, name every word that looks like a Thumb return address (found the C4 assert recursion) |
-| `../board/spin_diag.py` | reads and decodes `island_spin_diag` over SWD (attach, no halt) |
+| `../board/spin_diag.py` | reads and decodes `island_spin_diag` over SWD (attach, no halt); `segment <run dir>` prints the act segment per level; `selftest` checks it against the blob of `tests/spin_diag` |
+| `../../tests/spin_diag/` | the recorder (`island_spin_diag.h`) on the host against a fake clock and threads, two levels interleaved (`just supervisor-test`, CI) |
 | `../eval/run-diag.sh` | `just diag-run`: one board act (default encore) with `spin_diag.py read` just before and just after the act |
 | `../eval/actseg.py` | `just diag-actseg`: late spins inside the act only (act read minus pre read) |
 | `../../scripts/ienv.sh` | runs a command in the checkout under `env -i` plus scripts/env.sh |
@@ -49,21 +50,70 @@ script fails the build unless `build-board-diag/compile_commands.json`
 names the submodule's `uart_zephyr.c` (and nano-ros's
 `zephyr/nros_zenoh_zephyr_system.c`).
 
-**Two limits at this pin.** The image now runs one executor per derived
+## What is measured (island #14)
+
+**Every executor level, apart.** The image runs one executor per derived
 sched task (mrm_handler 100 ms, the emergency operator 33.3 ms, the
-comfortable operator 100 ms, `build-board/nros_priority_plan.json`); the
-diag follows the first thread that emits phase 0 and ignores the others.
-And lateness is still measured against a 10 ms spin (`SD_NOMINAL_US`,
-`spin_diag.py`), the period the B2 numbers below were taken at, so an idle
-interval of a 33.3 ms or 100 ms level reads as late. Both need a change to
-the diag itself before its numbers mean what they meant in B2.
+comfortable operator 100 ms, `build-board/nros_priority_plan.json`), each
+on its own thread. Every thread that emits phase 0 becomes a level, in the
+order the levels first spin, up to `SD_LEVELS` (4; one past that is counted
+in `lev_dropped` and not followed). Each level keeps its own spin count,
+lateness histogram (1 ms bins, 40), late count, worst lateness, park bound
+range, segment maxima and worst record; the ring of the latest 48 late
+records is shared and every record names its level. Callback, take and
+lock-wait events are charged to the level of the thread that emits them;
+a lock wait of a thread that is not a level goes to every level's interval
+under way ("other lock waits").
+
+**Lateness against the interval's own park bound.** An interval is one
+`spin_once` entry (phase 0) to the next of the same thread; phase 1 carries
+the bound the pass parked on (`park_achieved_us`: the time to its next wake,
+the release grid point, a timer or a session deadline). Then
+
+    late = interval - park_bound      (0 if the interval ran shorter)
+
+the time the interval ran past the wake it planned: the prelude before the
+park, the overshoot of the park itself, the dispatch, the rules and the
+caller's loop. An idle interval of a 100 ms level that parks 85 ms and
+returns 1 ms after its wake reads 1 ms late, as a 10 ms executor's idle
+spin did against 10 ms in B2. An interval woken early by an arrival runs
+shorter than its bound and reads 0. An interval with no phase 1 (a pass that
+returned before the park) has no bound: counted as `nobound`, not judged,
+not in the histogram. "Late" is still at least 2 ms (`SD_LATE_US`); the
+histogram, `>=1ms` included, is over the judged intervals.
+
+**Cost.** `island_spin_diag` is 11,124 B (was 9,412 B with one thread)
+and the per-level working state 4 x 488 B (was one ~600 B set), all in the
+app's DTCM .bss, about +3.2 KiB of DTCM in the diag image only; the
+numbers of the build are in the section below. Shared state (the thread
+table and the ring) is filed under `k_sched_lock`, so a level preempted
+while it files an interval cannot have its record torn by another level.
+
+**The readout.** `spin_diag.py decode` prints first the sum over the
+levels (the `spins=` and `lateness histogram` lines,
+`rtss-work-2026-demo:tools/eval/actseg.py` reads them, so its counts are
+all levels together), then one block per level:
+
+```
+level 1 derived-mrm_eme(p5): spins=... judged=... nobound=... late(>=2ms)=... max_late_us=... park_bound_us=min..max interval_max_us=...
+level 1 lateness (ms bin: count): 0:... 1:...
+level 1 segment max wall us: ...
+```
+
+then every level's `WORST` and the ring, each record tagged `lvl=<thread
+name>` (Zephyr keeps 15 characters of it). `spin_diag.py segment <run dir>`
+is the act segment per level (act read minus pre read: spins, judged,
+`>=1ms`, `>=2ms`, worst lateness inside the act, the bound range, the act's
+histogram). An SDG1 blob (before #14) is refused with the island commit that
+decodes it.
 
 ## Use
 
 ```
 just board-build-diag                         # -> build-board-diag/zephyr/zephyr.elf
 just diag-run sl-x1                           # flashes the diag ELF, one encore -> build/timeline/sl-x1/
-just diag-actseg sl-x1 --survival             # the act segment, and the per-ms curve
+just diag-actseg sl-x1 --survival             # the act segment, all levels summed, and the per-ms curve
+python3 tools/board/spin_diag.py segment build/timeline/sl-x1   # the act segment per level (from the demo checkout)
 just board-flash                              # the normal image back on the board
 ```
 
@@ -85,12 +135,14 @@ around it, and its exit status is the act's. Check `docker ps` and
 The whole-run counts mislead: the diagnostic counts from boot, a run idles
 for minutes before its act (`sl-rclcpp-prio` idled 10 min), and the same
 image varies 11-77 late spins per 10k run to run over whole runs. The act
-segment is the act read minus the pre read.
+segment is the act read minus the pre read (`spin_diag.py segment`, per
+level).
 
 ## The B2 numbers, regenerated
 
 The spin-latency comparison (per-byte interrupt against the FIFO
-watermark) is these two runs; from this tree:
+watermark) is these two runs, taken with the SDG1 recorder (one executor
+at a 10 ms spin, lateness against 10 ms); from this tree:
 
 ```
 $ just diag-actseg <runs>/sl-i13 <runs>/sl-i14w1 --survival

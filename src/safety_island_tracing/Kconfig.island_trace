@@ -60,10 +60,12 @@ config ISLAND_SPIN_DIAG
 	bool "Spin-latency diagnostic: per-interval breakdown, read over SWD"
 	depends on NROS_TRACE_CALLBACKS && THREAD_RUNTIME_STATS && SCHED_THREAD_USAGE_ALL
 	help
-	  DIAG (spin latency). Breaks each spin-to-spin interval into the
-	  segments nano-ros marks with event 40 and charges each to the spin
-	  thread, idle and the rest; keeps a lateness histogram and the late
-	  intervals in island_spin_diag (tools/board/spin_diag.py).
+	  DIAG (spin latency). Breaks each spin-to-spin interval of every
+	  executor level (thread) into the segments nano-ros marks with event
+	  40 and charges each to the level's thread, idle and the rest; keeps
+	  per level a histogram of the lateness against the interval's own
+	  park bound, and the late intervals, in island_spin_diag
+	  (tools/board/spin_diag.py).
 
 config ISLAND_DEBUG_OVERRUN
 	bool "Debug hook: one commanded busy-wait in the handler's tick"

@@ -949,12 +949,17 @@ alias l3-check := contract-check
 
 # phase15-S3: the supervisor's standstill verdicts on the host (route 2 and
 # route 3: met, missed, stale sample; src/zephyr_entry/src/
-# island_supervisor_judge.h) and the record decoder against its layout.
+# island_supervisor_judge.h) and the record decoder against its layout;
+# island #14: the spin diag's recorder on the host (per-level lateness against
+# each interval's park bound) and spin_diag.py against the blob it writes.
 supervisor-test:
     mkdir -p build/tests
     cc -std=c11 -Wall -Wextra -Werror -o build/tests/supervisor_judge tests/supervisor/test_judge.c
     build/tests/supervisor_judge
     python3 tools/board/violations.py selftest
+    cc -std=c11 -Wall -Wextra -Werror -Itests/spin_diag -o build/tests/spin_diag tests/spin_diag/test_spin_diag.c
+    build/tests/spin_diag build/tests/spin_diag.bin
+    python3 tools/board/spin_diag.py selftest build/tests/spin_diag.bin
 
 import 'just/emulation.just'
 import 'just/tracing.just'

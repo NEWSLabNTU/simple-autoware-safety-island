@@ -57,3 +57,8 @@ jobs:
           cc -std=c11 -Wall -Wextra -Werror -o build/tests/supervisor_judge tests/supervisor/test_judge.c
           build/tests/supervisor_judge
           python3 tools/board/violations.py selftest
+          # island #14: the spin diag's per-level lateness (recorder on the
+          # host, its decoder against the blob it writes).
+          cc -std=c11 -Wall -Wextra -Werror -Itests/spin_diag -o build/tests/spin_diag tests/spin_diag/test_spin_diag.c
+          build/tests/spin_diag build/tests/spin_diag.bin
+          python3 tools/board/spin_diag.py selftest build/tests/spin_diag.bin

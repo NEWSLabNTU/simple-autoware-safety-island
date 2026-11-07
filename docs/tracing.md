@@ -977,13 +977,22 @@ can be read whole (`w4-bringup2`: 17 in the trace, 8 in the record).
 (off) consumes a nano-ros event 40 (`phase | value << 8`, five spin phases)
 that exists only with `tools/diag/nano-ros-diag.patch` (the hook sites and
 the zenoh-pico tree the patch lands in: tools/diag/README.md); the
-sink never writes it to the trace. It fills `island_spin_diag` (lateness
-histogram, per-segment CPU of the late intervals), read over SWD by
-`tools/board/spin_diag.py` (nano-ros phase-474 I10). The tools are in
+sink never writes it to the trace. It fills `island_spin_diag`, read over
+SWD by `tools/board/spin_diag.py` (nano-ros phase-474 I10): every executor
+level (one executor thread per derived sched task, followed apart, up to
+four) has its own lateness histogram, late count, worst record and segment
+maxima, and the latest late intervals (per-segment CPU, lock waits, longest
+callback) share one ring that names each record's level. Lateness is
+measured against the interval's own park bound, the value phase 1 carries:
+late = interval - park bound, so a 33.3 ms or a 100 ms level is judged by
+how far it ran past the wake it planned, not against a fixed period; late
+is still at least 2 ms (island #14; tools/diag/README.md, "What is
+measured"). The tools are in
 the tree (phase9-U3; tools/diag/README.md): `just
 board-build-diag` builds the diag image into build-board-diag with both
 patches applied for the length of the build only (an EXIT trap reverts
 them; build-board is untouched), `just diag-run <id>` runs one act with the
 diag read just before and just after it (run-board.sh's own act, wrapped in
 RB_ACT), and `just diag-actseg <run>...` counts the late spins of the act
-segment, the numbers of the phase-9 roadmap's section 6.
+segment, all levels summed, the numbers of the phase-9 roadmap's section 6
+(`spin_diag.py segment <run dir>` gives them per level).
