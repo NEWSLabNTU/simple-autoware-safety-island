@@ -285,7 +285,7 @@ def main():
     ap.add_argument("arg", nargs="*")
     ap.add_argument("--elf")
     ap.add_argument("--out")
-    a = ap.parse_args()
+    a = ap.parse_intermixed_args()
     if a.cmd == "selftest":
         return selftest(a.arg[0] if a.arg else "build/tests/spin_diag.bin")
     if a.cmd == "decode":

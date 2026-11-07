@@ -4,11 +4,15 @@ Date: Sat, 7 Nov 2026 09:35:15 +0800
 Subject: [PATCH] DIAG (spin latency): spin phase events, zenoh mutex wait hook
  (not for merge)
 
+Island #14: phases 0-4 on band passes too (each band worker is one
+executor level on its own thread); a band pass's phase 1 is its park
+bound, 0 when it does not park.
+
 ---
- .../nros-node/src/executor/callback_trace.rs  | 10 ++++++++++
- packages/core/nros-node/src/executor/spin.rs  | 19 +++++++++++++++++++
- zephyr/nros_zenoh_zephyr_system.c             | 19 +++++++++++++++++--
- 3 files changed, 46 insertions(+), 2 deletions(-)
+ .../nros-node/src/executor/callback_trace.rs  | 10 +++++++
+ packages/core/nros-node/src/executor/spin.rs  | 28 ++++++++++++++++++-
+ zephyr/nros_zenoh_zephyr_system.c             | 19 +++++++++++--
+ 3 files changed, 54 insertions(+), 3 deletions(-)
 
 diff --git a/packages/core/nros-node/src/executor/callback_trace.rs b/packages/core/nros-node/src/executor/callback_trace.rs
 index 6657cea2e6..f307484682 100644
@@ -39,7 +43,7 @@ index 6657cea2e6..f307484682 100644
  /// module table). Pre-arm verdicts (phase-474 I2) are not stored and emit
  /// nothing.
 diff --git a/packages/core/nros-node/src/executor/spin.rs b/packages/core/nros-node/src/executor/spin.rs
-index 8b4b60aafc..c0ec62f5b7 100644
+index 8b4b60aafc..edd42c7ec9 100644
 --- a/packages/core/nros-node/src/executor/spin.rs
 +++ b/packages/core/nros-node/src/executor/spin.rs
 @@ -168,6 +168,15 @@ fn trace_register(slot: usize, kind: EntryKind, name: TraceName<'_>) {
@@ -58,18 +62,48 @@ index 8b4b60aafc..c0ec62f5b7 100644
  // ============================================================================
  // Executor::open() factory method
  // ============================================================================
-@@ -11966,6 +11975,10 @@ impl<'s> Executor<'s> {
+@@ -4304,7 +4313,10 @@ impl<'s> Executor<'s> {
+             let bound_us = s
+                 .next_timer_deadline_in_us(mask)
+                 .map_or(budget_us, |t| t.saturating_sub(since_us).min(budget_us));
+-            if bound_us > 0 && !s.band_has_arrivals(mask) {
++            let parks = bound_us > 0 && !s.band_has_arrivals(mask);
++            // DIAG: the band's park bound (0: it does not park this pass).
++            diag_spin_phase(1, if parks { bound_us.min(0x00ff_ffff) as u32 } else { 0 });
++            if parks {
+                 let window = window_lock.map(super::exec_lock::Window::open);
+                 waiter.wait_us(bound_us);
+                 drop(window);
+@@ -4312,6 +4324,7 @@ impl<'s> Executor<'s> {
+                 s = unsafe { &mut *this };
+             }
+         }
++        diag_spin_phase(2, 0);
+         let now = s.now_us();
+         super::level_liveness::LEVELS.check_in(w.level, now);
+         match now {
+@@ -11966,6 +11979,9 @@ impl<'s> Executor<'s> {
          // SAFETY: the caller's contract; re-derived after every window.
          #[allow(unused_mut)]
          let mut s: &mut Self = unsafe { &mut *this };
-+        // DIAG: the executor's own worker only (a band pass has no phase 1-4).
-+        if !matches!(mode, PassMode::Band(_)) {
-+            diag_spin_phase(0, 0);
-+        }
++        // DIAG: every pass, the executor's own worker's and each band
++        // worker's (one level per thread).
++        diag_spin_phase(0, 0);
          // Issue 1705 — releases deferred behind a dispatch that has since
          // finished are completed here, before this pass looks at the entries.
          s.reap_deferred_releases();
-@@ -12333,8 +12346,10 @@ impl<'s> Executor<'s> {
+@@ -12278,8 +12294,10 @@ impl<'s> Executor<'s> {
+             // executor's own worker's. Issue 2020 -- the band's own
+             // components' ticks are the band's.
+             if is_band_pass {
++                diag_spin_phase(3, 1);
+                 // SAFETY: the pass's contract; `s` is not used after it.
+                 unsafe { Self::tick_components(this, Some(level)) };
++                diag_spin_phase(4, 1);
+                 return SpinOnceResult::new();
+             }
+ 
+@@ -12333,8 +12351,10 @@ impl<'s> Executor<'s> {
  
              // phase-474 I7 -- an idle spin is the natural slot for the queued
              // reports.
@@ -80,7 +114,18 @@ index 8b4b60aafc..c0ec62f5b7 100644
              return SpinOnceResult::new();
          }
  
-@@ -12965,6 +12980,7 @@ impl<'s> Executor<'s> {
+@@ -12955,8 +12975,10 @@ impl<'s> Executor<'s> {
+         // below are the executor's own worker's. Issue 2020 -- the band's
+         // own components' ticks are the band's.
+         if is_band_pass {
++            diag_spin_phase(3, 0);
+             // SAFETY: the pass's contract; `s` is not used after it.
+             unsafe { Self::tick_components(this, Some(level)) };
++            diag_spin_phase(4, 0);
+             return result;
+         }
+ 
+@@ -12965,6 +12987,7 @@ impl<'s> Executor<'s> {
          // spin: the activations it reports were dropped by the dispatch
          // that just happened, and a sched task that is stalling should not have
          // to wait for the next spin to say so.
@@ -88,7 +133,7 @@ index 8b4b60aafc..c0ec62f5b7 100644
          s.check_timer_overruns();
          s.check_release_jitter_rule();
          s.check_stack_headroom_rule();
-@@ -13031,6 +13047,7 @@ impl<'s> Executor<'s> {
+@@ -13031,6 +13054,7 @@ impl<'s> Executor<'s> {
          // SAFETY: the pass's contract; `s` is not used after the call.
          unsafe { Self::tick_components(this, None) };
  
@@ -96,7 +141,7 @@ index 8b4b60aafc..c0ec62f5b7 100644
          result
      }
  
-@@ -13207,6 +13224,7 @@ impl<'s> Executor<'s> {
+@@ -13207,6 +13231,7 @@ impl<'s> Executor<'s> {
          // drives). Those executors wait on the wake object below, on the short
          // entry budget (`entry_spin_budget`).
          let park_can_be_woken = s.park_can_be_woken();
@@ -104,7 +149,7 @@ index 8b4b60aafc..c0ec62f5b7 100644
  
          // phase-521 W3 (RFC-0113 D3) -- a session whose readiness is a
          // WAITABLE handle (a socket on POSIX / NuttX) is parked on: the port
-@@ -13493,6 +13511,7 @@ impl<'s> Executor<'s> {
+@@ -13493,6 +13518,7 @@ impl<'s> Executor<'s> {
              // invisible. It is now the only `let _ =` of the two.
              let _ = extra.drive_io(0);
          }
@@ -152,4 +197,3 @@ index 0489de1516..7e1fb7c41c 100644
  z_result_t _z_mutex_rec_try_lock(_z_mutex_rec_t *m) {
 -- 
 2.34.1
-

@@ -23,17 +23,20 @@ not for merge, applied only for the length of one build.
 
 ## Where the hooks are (nano-ros pin 27d1c571da)
 
-The five phases, emitted from `Executor::pass` and its prelude in
-`packages/core/nros-node/src/executor/spin.rs` (one pass is one
-`spin_once`; a band pass of phase-509 emits none):
+The five phases, emitted from `Executor::pass`, its preludes and its two
+band returns in `packages/core/nros-node/src/executor/spin.rs` (one pass is
+one `spin_once`, `spin_once_shared` or, phase-509, `spin_band_once`: the
+image's mrm_handler and emergency operator levels are band workers on
+their own threads over the one executor, the comfortable operator's level
+is the executor's own worker on `main`):
 
 | phase | value | where |
 |---|---|---|
-| 0 | 0 | `pass` entry, before `reap_deferred_releases` (owned and shared passes) |
-| 1 | the park bound, us | `owned_prelude`, after `park_can_be_woken`, before the handle park and the park primitive |
-| 2 | 0 | `owned_prelude`, after the primary and the extra sessions' drive |
-| 3 | 1 = idle, 0 = dispatched | idle return: before `flush_violation_reports`; dispatch path: before `check_timer_overruns` |
-| 4 | 1 = idle, 0 = dispatched | idle return: before `return`; dispatch path: after `tick_components`, before `result` |
+| 0 | 0 | `pass` entry, before `reap_deferred_releases` (every pass: owned, shared, band) |
+| 1 | the park bound, us | owner: `owned_prelude`, after `park_can_be_woken`, before the handle park and the park primitive. Band: `band_prelude`, before the waiter's park; the band's bound (its next timer, at most the timeout), 0 when it does not park (an arrival is pending); a band with no waiter polls and emits no phase 1 |
+| 2 | 0 | owner: `owned_prelude`, after the primary and the extra sessions' drive. Band: `band_prelude`, after the park, before the level's check-in |
+| 3 | 1 = idle, 0 = dispatched | owner: idle return, before `flush_violation_reports`; dispatch path, before `check_timer_overruns`. Band: both band returns, before `tick_components` |
+| 4 | 1 = idle, 0 = dispatched | owner: idle return, before `return`; dispatch path, after `tick_components`, before `result`. Band: both band returns, after `tick_components` |
 
 A yielded park (phase-521 W8, `park_yielded`) returns between phase 2 and 3
 and closes no interval cleanly; the island's levels are k_threads and do not
@@ -55,9 +58,11 @@ names the submodule's `uart_zephyr.c` (and nano-ros's
 **Every executor level, apart.** The image runs one executor per derived
 sched task (mrm_handler 100 ms, the emergency operator 33.3 ms, the
 comfortable operator 100 ms, `build-board/nros_priority_plan.json`), each
-on its own thread. Every thread that emits phase 0 becomes a level, in the
-order the levels first spin, up to `SD_LEVELS` (4; one past that is counted
-in `lev_dropped` and not followed). Each level keeps its own spin count,
+on its own thread: the first two are phase-509 band workers
+(`derived-mrm_handler`, `derived-mrm_emergency_stop_operator`), the third
+is the executor's own worker on `main`. Every thread that emits phase 0 becomes a level, in the
+order the levels first spin, up to `SD_LEVELS` (4; a thread past that is
+counted in `lev_dropped` and not followed). Each level keeps its own spin count,
 lateness histogram (1 ms bins, 40), late count, worst lateness, park bound
 range, segment maxima and worst record; the ring of the latest 48 late
 records is shared and every record names its level. Callback, take and
@@ -80,14 +85,22 @@ spin did against 10 ms in B2. An interval woken early by an arrival runs
 shorter than its bound and reads 0. An interval with no phase 1 (a pass that
 returned before the park) has no bound: counted as `nobound`, not judged,
 not in the histogram. "Late" is still at least 2 ms (`SD_LATE_US`); the
-histogram, `>=1ms` included, is over the judged intervals.
+histogram, `>=1ms` included, is over the judged intervals. The 1 ms bin is
+expected to be full: the park rounds up to whole ms and a Zephyr timeout
+of N ticks (1000 Hz here) wakes on the tick after N, so an interval that
+ran no work past its wake still reads 0-1 ms (about half of every level's
+intervals in d14-e2 below); at least 2 ms is time the level lost past
+that.
 
-**Cost.** `island_spin_diag` is 11,124 B (was 9,412 B with one thread)
-and the per-level working state 4 x 488 B (was one ~600 B set), all in the
-app's DTCM .bss, about +3.2 KiB of DTCM in the diag image only; the
-numbers of the build are in the section below. Shared state (the thread
-table and the ring) is filed under `k_sched_lock`, so a level preempted
-while it files an interval cannot have its record torn by another level.
+**Cost.** `island_spin_diag` is 11,124 B (9,412 B with one thread) and
+the per-level working state `sd_lv` 4 x 488 B plus a 128 B scratch (one
+~600 B set before), all in SRAM .bss (0x2042xxxx, outside the DTCM
+relocation): the diag image's RAM is 276,184 of 327,680 B, about +3.2 KiB
+over the SDG1 recorder, and its DTCM line is the normal image's, 117,984 B
+(13,088 B free, the 8 KiB guard of linker/dtcm-headroom.ld untouched).
+Shared state (the thread table and the ring) is filed under
+`k_sched_lock`, so a level preempted while it files an interval cannot
+have its record torn by another level.
 
 **The readout.** `spin_diag.py decode` prints first the sum over the
 levels (the `spins=` and `lateness histogram` lines,
@@ -107,6 +120,20 @@ is the act segment per level (act read minus pre read: spins, judged,
 histogram). An SDG1 blob (before #14) is refused with the island commit that
 decodes it.
 
+**First numbers (d14-e2).** Planning-sim encore, PASS, the
+diag image of this tree, `spin_diag.py segment <run dir>`:
+
+```
+level                               spins judged  >=1ms  >=2ms   worst late park bound us (boot)  lateness ms bins (act)
+derived-mrm_eme(p7)                  1328   1328    697     25       3336us             0..33000  0:631 1:672 2:24 3:1
+main(p8)                              462    462    258     11       3470us          1000..86000  0:204 1:247 2:10 3:1
+derived-mrm_han(p5)                  1951   1951    229      8       2422us            0..100000  0:1722 1:221 2:8
+```
+
+(`main` is the comfortable operator's level.) The late intervals are the
+park overshooting while a higher level or zpico_exec runs (`S1` charged to
+other threads), and the emergency operator's 2.9 ms dispatch of slot 4.
+
 ## Use
 
 ```
@@ -114,8 +141,13 @@ just board-build-diag                         # -> build-board-diag/zephyr/zephy
 just diag-run sl-x1                           # flashes the diag ELF, one encore -> build/timeline/sl-x1/
 just diag-actseg sl-x1 --survival             # the act segment, all levels summed, and the per-ms curve
 python3 tools/board/spin_diag.py segment build/timeline/sl-x1   # the act segment per level (from the demo checkout)
-just board-flash                              # the normal image back on the board
+just board-build && just board-flash         # the normal image back on the board
 ```
+
+`board-build` before `board-flash`: the diag build patched and reverted
+the shared nano-ros sources, so `board-flash`'s own west rebuild of
+build-board runs, outside the recipe's arguments, and fails its DTCM link
+(seen: "region `DTCM' overflowed by 18336 bytes").
 
 `board-build-diag` takes extra Kconfig lines (`just board-build-diag
 CONFIG_NROS_ZENOH_SERIAL_FIFO_WATERMARK=1`) and the build dir from
