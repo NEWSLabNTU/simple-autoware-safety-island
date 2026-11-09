@@ -579,6 +579,9 @@ hazards:
       nothing upstream is still deciding whether the vehicle may drive; the
       island alone has to bring it to a stop before the silence becomes a
       hazardous event
+    # Illustrative ids, as `integrity` is: the HARA owns the real ones
+    # (play_launch phase 100 F3; rlm v0.3.13).
+    requirement: { id: SG-01, source: "island HARA (illustrative)" }
     monitors: [/system/operation_mode/availability]
     on: omission
     entry_speed: $(let odd_speed_bound)
@@ -590,6 +593,7 @@ hazards:
       the vehicle leaves its operating domain (speed bound or weather) while
       the ADS drives; the driver must take over within the takeover window
       or the vehicle must be stopped in lane
+    requirement: { id: SG-02, source: "island HARA (illustrative)" }
     monitors: [/system/operation_mode/availability]
     on: reported
     when: { field: autonomous, equals: false }
@@ -612,10 +616,22 @@ modes:
     description: in-lane stop by the HPC's planner at the operator's request
     requires: [hpc_alive]   # the HPC's planner executes the stop
     reaction: island.comfortable_stop
+    # What the level commands while it lasts (play_launch phase 100 F1;
+    # rlm v0.3.13): a velocity limit of zero to the HPC's planner.
+    commands:
+      /planning/scenario_planning/max_velocity_candidates:
+        - { field: max_velocity, equals: 0 }
   emergency_stop:
     description: the island brakes the vehicle itself
     requires: []
     reaction: island.emergency_stop
+    # The minimal risk condition: a zero velocity command and no positive
+    # acceleration. Not the final deceleration: the operator ramps it at a
+    # jerk, so the first messages carry less (rlm safety-functions.md U2).
+    commands:
+      /system/emergency/control_cmd:
+        - { field: longitudinal.velocity, equals: 0 }
+        - { field: longitudinal.acceleration, le: 0 }
   manual:
     description: the driver drives; the ADS no longer commands the vehicle
     requires: []
