@@ -554,6 +554,42 @@ board-build`, twice, the same table on both passes, not flashed; queryables
 Against W8's 323,112 B with the services on, the board's SRAM drops by
 34,320 B, leaving 38,888 B.
 
+**The parameter services on the board, re-measured** (nano-ros phase-512 H10
+and issue 2387, 2026-11-10; this island at 6b09fa7 with
+`features = ["params", "param_services"]`, nano-ros ac23c0155b plus the fix
+of nano-ros PR #3409; the demo's encore act, planning simulator). The
+services boot, join and pass on the board, but not within this image's own
+budgets, so they stay off:
+
+| the board | services off (shipped) | services on |
+| --- | ---: | ---: |
+| heap peak at FirstSpin / at the act's end | 41,232 / 68,272 B | 104,096 / 119,648 B |
+| heap the image needs (peak + 24,576 B floor) | 92,848 B | 144,224 B |
+| main stack peak | 13,552 of 16,384 B | 15,164 of 16,384 B |
+| DTCM, besides the trace buffer | 64,736 B | 80,032 B |
+| SRAM, besides the heap | 168,768 B | 197,008 B |
+| POSIX cond / mutex pools | 19 / 39 | 37 / 57 |
+
+The largest heap that links beside them is 129,536 B (SRAM 326,544 of
+327,680 B), 10,400 B under the floor at the act's peak, and with the 8 KiB
+DTCM guard the trace buffer drops from 53,248 to at most 40,960 B, under what
+the longest act needs to its readout (`CONFIG_RAM_TRACING_BUFFER_SIZE` in the
+board conf). The 18 services cost about 3.5 KiB of heap each at boot, most of
+it zenoh-pico's declarations (the first exhaustion was a 236 B
+`_z_slist_new` in `_z_cache_declaration`). Runs, in the demo's
+`build/timeline/`: `i2387-h2` (the board, heap 129,536 B, trace buffer
+36,864 B: VERDICT PASS) and `i2387-q1` (the QEMU island: VERDICT PASS).
+
+Two things the first measurement got wrong, for the next one. With the heap
+too small the board halts on `HEAP EXHAUSTED` while registering and SWT0
+(started at the first spin of a spawned level) resets it 600 ms later, so
+the gateway logs `Unexpected Init flag` every 1.4 s and a readout after the
+act reads a fresh boot with no gateway: stage 2, `ConnectionFailed`. Sample
+the boot report and `curr_tick` over SWD while the gateway runs instead.
+And a system reset after a fatal halt left the serial link's eDMA channel
+pending until nano-ros PR #3409; the demo's run-board resets by the reset
+pin for that reason.
+
 ## The demo image
 
 phase8-W8a, 2026-09-29. The island is sized for the RTSS@Work demo
