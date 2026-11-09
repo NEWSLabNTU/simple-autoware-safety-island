@@ -246,8 +246,26 @@ static void mrm_failed(void)
 	CHECK(!island_autoware_gate_emergency(1u /* NORMAL */, ISLAND_MRM_EMERGENCY_STOP));
 }
 
+/* Route 1 after a spin (the late-join act): a due reported before the
+ * executor's monitors arm is the handler's INIT, which publishes nothing, so
+ * the timer stays off; once armed every reported due arms it, a due already
+ * passed (0) included. */
+static void route1_arming(void)
+{
+	/* INIT: the first availability take is waiting, monitors not armed */
+	CHECK(!island_judge_route1_arms(true, 149000u, false));
+	CHECK(!island_judge_route1_arms(true, 0u, false));
+	/* armed: the next take's due arms the timer */
+	CHECK(island_judge_route1_arms(true, 149000u, true));
+	CHECK(island_judge_route1_arms(true, 0u, true));
+	/* nothing waiting, or the executor did not answer */
+	CHECK(!island_judge_route1_arms(true, UINT64_MAX, true));
+	CHECK(!island_judge_route1_arms(false, 149000u, true));
+}
+
 int main(void)
 {
+	route1_arming();
 	standstill();
 	floor_route();
 	floor_sequences();

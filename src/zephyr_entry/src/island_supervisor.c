@@ -109,6 +109,11 @@
  * and the timer's (at most 1 ms, the rounding up) reads as answered here, and
  * the executor judged it overdue at completion and called the reaction hook,
  * which latches.
+ * Route 1 is armed only once the executor's monitors are (phase-474 I2:
+ * the handler arms them at INIT_DONE or the INIT recovery, the executor at
+ * its next spin): a take before then is start-up, which the executor neither
+ * reacts to nor keeps past arming, and the handler's INIT ticks publish
+ * nothing to answer it (island_judge_route1_arms).
  *
  * Route 2 (phase11-S6, decision 4): the comfortable stop's standstill. Its
  * due is the comfortable call + settle + response at the entry speed + how
@@ -1165,7 +1170,19 @@ void island_supervisor_spin_after(void *executor, uint8_t nros_level)
 		route_watch_ok = true;
 		island_supervisor_record.watch_ok = 1u;
 	}
-	if (!reported || us == UINT64_MAX) {
+	/* Route 1 supervises RUN only, as the executor does: before its monitors
+	 * arm it requests no reaction for a late take, and arming drops a take
+	 * still waiting from start-up (nano-ros phase-474 I2, route_reset). A
+	 * due reported before then is the handler's INIT, which publishes
+	 * nothing until every input is established: with the island joining an
+	 * Autoware already up, the first availability take came 149 ms before
+	 * the INIT_DONE tick's publish, and the timer latched on it (island #15). */
+	struct nros_cpp_violation_counts_t counts = {0};
+	const bool armed = executor != NULL &&
+			   nros_cpp_executor_violation_counts(executor, &counts) == NROS_CPP_RET_OK &&
+			   counts.armed;
+
+	if (!island_judge_route1_arms(reported, us, armed)) {
 		island_supervisor_done(ISLAND_SUPERVISOR_ROUTE_EXECUTOR);
 		return;
 	}

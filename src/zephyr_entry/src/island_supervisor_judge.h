@@ -43,6 +43,17 @@ static inline bool island_judge_unseen(uint32_t at_ms)
 	return at_ms == 0u;
 }
 
+/* Route 1 after the owner level's spin: armed from the executor's next
+ * supervised due (`left_us`, UINT64_MAX when no take waits) only when the
+ * executor reported one and its contract monitors are armed. Before arming
+ * the executor requests no reaction for a late take and drops a take still
+ * waiting when it arms, and the handler's INIT ticks publish nothing: a due
+ * from then is start-up, not a miss. */
+static inline bool island_judge_route1_arms(bool reported, uint64_t left_us, bool monitors_armed)
+{
+	return reported && left_us != UINT64_MAX && monitors_armed;
+}
+
 /* Route 3's stage: what its armed due supervises. */
 #define ISLAND_FLOOR_IDLE 0u
 #define ISLAND_FLOOR_OPERATOR 1u /* the handler's emergency call: the operator's settle */
