@@ -52,10 +52,13 @@ CMakeLists.txt              nano-ros 3-role workspace root
 src/
   <vendored msg pkgs>/      verbatim rosidl packages (subset)
   autoware_mrm_*/           ported node pkgs (upstream file layout preserved)
-  safety_island_bringup/    system.toml + launch XML + params + resolved model
+  safety_island_bringup/    system.toml (the system, its components and every
+                            image: zephyr, qemu, native_sim) + launch XML +
+                            contract; the only system.toml in the tree
   native_entry/             native entry (fast dev loop)
-  native_sim_entry/         Zephyr native_sim entry, Cyclone
-  zephyr_entry/             Zephyr board entry, zenoh (MR-CANHUBK344)
+  native_sim_entry/         Zephyr native_sim entry, Cyclone ([image.native_sim])
+  qemu_entry/               Zephyr QEMU mps2/an385 entry, zenoh ([image.qemu])
+  zephyr_entry/             Zephyr board entry, zenoh, MR-CANHUBK344 ([image.zephyr])
 tools/board/                board tooling: SWD readout, violations, probe
 tools/diag/                 the spin-latency diagnostic image
 docs/

@@ -15,7 +15,12 @@ SUBDIRS; all node pkgs' interface calls then no-op idempotently.</description>
   <depend>nav_msgs</depend>
   <depend>autoware_control_msgs</depend>
   <depend>autoware_vehicle_msgs</depend>
-  <depend>autoware_planning_msgs</depend>
+  <!-- No autoware_planning_msgs: only autoware_stop_mode_operator reads it
+       (RouteState), and that node left the image in phase8-W8a. nano-ros
+       seeds an image's message-bound sizes from the interface closure its
+       node packages declare, and holds the configure to that seed, so an
+       interface package named here and by no image node made every Zephyr
+       configure refuse. -->
   <depend>autoware_internal_planning_msgs</depend>
   <depend>tier4_system_msgs</depend>
 

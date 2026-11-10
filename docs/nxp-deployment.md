@@ -573,7 +573,7 @@ is written by the CPU and read over SWD.
 
 Two knobs keep it at that size:
 
-- `max_param_description_len = 0` (`src/zephyr_entry/system.toml`). The
+- `max_param_description_len = 0` (`[image.zephyr.knobs.params]` in `src/safety_island_bringup/system.toml`). The
   parameter store pays the description capacity per slot whatever the slot
   holds, and the store is part of the executor storage: at the nano-ros
   default of 256 it was 22 x 256 = 5,632 B of DTCM, and no island node sets a

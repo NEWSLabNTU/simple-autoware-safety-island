@@ -69,6 +69,7 @@ qemu-build: sync
         -C "$caps" \
         -Dnano_ros_ROOT={{NROS_ROOT}} \
         -Dnano_ros_DIR={{NROS_ROOT}} \
+        -DNROS_IMAGE_SYSTEM_DIR=$PWD/src/safety_island_bringup -DNROS_IMAGE=qemu \
         -DZEPHYR_EXTRA_MODULES="$nros_module" \
         -DCMAKE_PREFIX_PATH={{NROS_ROOT}} "${EXTRA[@]}" 2>&1 | tee {{QEMU_LOG_DIR}}/{{QEMU_BUILD_DIR}}.build.log
     # Same refusal as board-build, for the same reason (see the note there):

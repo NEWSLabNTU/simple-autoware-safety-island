@@ -79,13 +79,14 @@ KNOB_FILES = [
     "src/zephyr_entry/boards/mr_canhubk3_s32k344.conf",
 ]
 # Since the nano-ros pin of phase10-B3 a nano-ros knob is not a Kconfig line
-# but a knob table in the entry's system.toml (`[image.<id>.knobs.<table>]
+# but a knob table in the image's block (`[image.<id>.knobs.<table>]
 # <name> = <value>`, RFC-0103 D2a), rendered into a Kconfig fragment at
 # configure time. Its integer values are read here too, and named by the
-# Kconfig symbol the pinned nano-ros registry maps them to.
+# Kconfig symbol the pinned nano-ros registry maps them to. Every image block
+# lives in the bringup since the nano-ros pin of 2026-11-10 (RFC-0121 D2;
+# each entry package carried its own system.toml before).
 KNOB_SYSTEMS = [
-    "src/native_sim_entry/system.toml",
-    "src/zephyr_entry/system.toml",
+    "src/safety_island_bringup/system.toml",
 ]
 KNOB_REGISTRY = "third-party/nano-ros/cmake/NanoRosKnobRegistry.cmake"
 
@@ -441,7 +442,8 @@ def system_knob_names():
     for rel in KNOB_SYSTEMS:
         p = os.path.join(ROOT, rel)
         if not os.path.exists(p):
-            continue
+            # A moved file must not shrink the knob set without a word.
+            sys.exit(f"gen_markers: {rel} is missing (KNOB_SYSTEMS)")
         with open(p, "rb") as f:
             doc = tomllib.load(f)
         for img_id, img in doc.get("image", {}).items():

@@ -174,7 +174,17 @@ sync:
     set -e
     source /opt/ros/humble/setup.bash
     source "{{NROS_ROOT}}/activate.sh"
-    nros sync
+    # The configure stamps of the layout before the nano-ros pin of
+    # 2026-11-10, when each entry package held its own system.toml: an image
+    # is now `safety_island_bringup:<id>`, and a stale `<entry>__<id>` stamp
+    # beside it makes the bare id the west builds pass (`-DNROS_IMAGE=zephyr`)
+    # name two stamps, which `nros locate configured` reads as "not
+    # configured". Gone once; a no-op after.
+    rm -rf build/nros/configured/zephyr_entry__zephyr \
+        build/nros/configured/qemu_entry__qemu \
+        build/nros/configured/native_sim_entry__native_sim
+    # `nros sync` is a deprecated alias of this (nano-ros phase-530).
+    nros configure
 
 # One-time workspace prep, in dependency order:
 #   play_launch (source build + wheel install) -> env check -> generated inputs.
@@ -243,12 +253,11 @@ setup-deps:
 # importable by this build's interpreter". The CycloneDDS_DIR pin above is what
 # keeps a sourced ROS from also supplying the wrong Cyclone.
 #
-# NROS_BRINGUP_DIR names the bringup this build is for. The workspace holds
-# four system.toml files (the bringup and the three Zephyr entries), and
-# since the nano-ros pin of phase10-B3 `nros ws board-facts` refuses to pick
-# one when the configure names none (nano-ros issue 1827: `nros build` passes
-# the same variable). The bringup declares no image, so the posix build has
-# no board facts to carry, as before.
+# NROS_BRINGUP_DIR names the bringup this build is for (nano-ros issue 1827:
+# `nros build` passes the same variable; `nros ws board-facts` refuses to
+# guess). The bringup is the workspace's one system.toml since the nano-ros
+# pin of 2026-11-10 (RFC-0121 D2); its images are all Zephyr ones, so the
+# posix build has no board facts to carry, as before.
 build: sync
     #!/usr/bin/env bash
     set -e
@@ -331,6 +340,7 @@ zephyr-build: sync
     west build -b native_sim/native/64 -d build-zephyr src/native_sim_entry -- \
         -C "$caps" \
         -DCONF_FILE="prj.conf;prj-cyclonedds.conf" \
+        -DNROS_IMAGE_SYSTEM_DIR=$PWD/src/{{BRINGUP}} -DNROS_IMAGE=native_sim \
         "$module_arg" \
         -Dnano_ros_ROOT={{NROS_ROOT}} -DCMAKE_PREFIX_PATH={{NROS_ROOT}}
 
@@ -494,8 +504,10 @@ board-doctor:
     # them must say the same number.
     conf_dom() { sed -n 's/^CONFIG_NROS_DOMAIN_ID=\([0-9]*\).*/\1/p' "$@" 2>/dev/null | tail -1; }
     doms=()
-    sys_dom="$(sed -n 's/^domain_id *= *\([0-9]*\).*/\1/p' src/zephyr_entry/system.toml | head -1)"
-    printf '  %-9s %-44s %s\n' domain "system.toml (src/zephyr_entry)" "${sys_dom:-not stated}"
+    # The board image's own block, [image.zephyr] in the bringup (nano-ros
+    # RFC-0121 D2) states its domain_id.
+    sys_dom="$(awk '/^\[/{s=($0=="[image.zephyr]")} s&&/^domain_id *=/{sub(/^domain_id *= */,"");sub(/[^0-9].*/,"");print;exit}' src/{{BRINGUP}}/system.toml)"
+    printf '  %-9s %-44s %s\n' domain "system.toml ([image.zephyr])" "${sys_dom:-not stated}"
     [ -n "$sys_dom" ] && doms+=("$sys_dom")
     board_dom="$(conf_dom src/zephyr_entry/boards/mr_canhubk3_s32k344.conf)"
     printf '  %-9s %-44s %s\n' domain "board conf" "${board_dom:-not stated}"
@@ -682,6 +694,7 @@ board-build: sync
     west build -b {{BOARD}} -S {{BOARD_RMW}} -S {{BOARD_LINK}} "${SNIP[@]}" -d {{BOARD_BUILD_DIR}} $PWD/src/zephyr_entry -- \
         -C "$caps" \
         -Dnano_ros_ROOT={{NROS_ROOT}} \
+        -DNROS_IMAGE_SYSTEM_DIR=$PWD/src/{{BRINGUP}} -DNROS_IMAGE=zephyr \
         -DZEPHYR_EXTRA_MODULES="$nros_module;$hal_nxp" \
         -DCMAKE_PREFIX_PATH={{NROS_ROOT}} "${EXTRA[@]}"
 

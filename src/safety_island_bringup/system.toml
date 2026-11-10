@@ -87,3 +87,109 @@ name = "mrm_handler"
 # entry (fast dev loop) and the zephyr entry. An explicit
 # `target = "x86_64-unknown-linux-gnu"` would pin every node to linux and
 # empty the zephyr slice ("places no nodes on board zephyr").
+
+# ── The images (nano-ros RFC-0121 D2) ─────────────────────────────────────
+# Each image's deployment lives HERE, in the bringup: nano-ros keeps a
+# `system.toml` only in a bringup package and refuses one beside a package's
+# code. Until the pin of 2026-11-10 each entry package (src/zephyr_entry,
+# src/native_sim_entry, src/qemu_entry) carried its own `system.toml` with one
+# `[image.*]` block; the blocks moved here unchanged, each naming its `entry`
+# package and stating the `rmw` and `domain_id` its old `[system]` table did.
+# The west builds name this bringup and the image
+# (`-DNROS_IMAGE_SYSTEM_DIR=src/safety_island_bringup -DNROS_IMAGE=<id>`), so
+# nano-ros configures the island workspace, not the entry directory.
+#
+# `rmw` is CHECKED against Kconfig (cmake/NanoRosImageAgreement.cmake): the
+# `-S nros-zenoh` snippet the board and QEMU recipes pass satisfies `zenoh`;
+# native_sim passes prj-cyclonedds.conf. An image is resolved by its `entry`,
+# so board-only policy (the S32K344's TCM relocation, its snippets, its board
+# conf) stays in src/zephyr_entry and never reaches the QEMU or native_sim
+# image.
+
+# The Zephyr family. The concrete board (the MR-CANHUBK344 the board-* recipes
+# pass) is west's `-b` argument, resolved through nano-ros's board catalog.
+[image.zephyr]
+rmw = "zenoh"
+domain_id = 10
+board = "zephyr"
+# RFC-0085 D4: a Zephyr image NAMES its entry package. Derivation from the
+# image id gives the same answer; naming it keeps src/native_sim_entry from
+# ever being a candidate for this block.
+entry = "zephyr_entry"
+# nano-ros knobs (RFC-0103 D2a, phase-484 W5b): these three were Kconfig lines
+# in boards/mr_canhubk3_s32k344.conf, which states why each has its value; the
+# pin of 2026-10-13 refuses them there. They were `env` rows of this block
+# until the pin of phase10-B3, which refuses an env row naming a knob
+# (nano-ros phase-484 W8) and takes them as knob tables. The values are
+# unchanged.
+
+[image.zephyr.knobs.zephyr]
+# 2026-10-25 memory trim: the boot record of p2618-pb (nano-ros 4f545011ff)
+# read peak 67,624 B and named 91,688 as the floor-keeping minimum
+# (peak + 24,576 floor - 512 slab); rounded up to 1 KiB.
+# 2026-11-06: the scenario-world-bridge CARLA acts (demo dc48871) read peak
+# 68,456 B (act b), which left 24,216 B spare at 92,160 and refused the
+# floor; 94,208 (+2 KiB) leaves 26,264 B, about 1.7 KB above it.
+heap_size = 94208
+
+[image.zephyr.knobs.zenoh]
+graph_cache_size = 4096
+# Off, as snippets/island-ethernet stated it until the same pin refused the
+# Kconfig line there (its reason is beside the old line). The serial image
+# derives off already, so the gate image's value does not change.
+graph_discovery = false
+
+[image.zephyr.knobs.executor]
+max_violations = 8
+
+# Parameter descriptions: none. No island node sets one, and the store pays
+# the capacity per slot whether a description is set or not (nano-ros Kconfig
+# NROS_MAX_PARAM_DESCRIPTION_LEN, default 256): 22 slots x 256 B = 5,632 B,
+# all of it in DTCM, because the parameter store is part of the executor
+# storage the entry relocates there (src/zephyr_entry/CMakeLists.txt).
+# `ros2 param describe` answers with an empty description.
+[image.zephyr.knobs.params]
+max_param_description_len = 0
+
+# The Zephyr family; the concrete board is west's `-b mps2/an385`
+# (`just qemu-build`), resolved through nano-ros's board catalog.
+[image.qemu]
+rmw = "zenoh"
+domain_id = 10
+board = "zephyr"
+# RFC-0085 D4: a Zephyr image NAMES its entry package, which keeps the two
+# other entries from ever being a candidate for this block.
+entry = "qemu_entry"
+
+# nano-ros knobs (RFC-0103 D2a, phase-484 W8): Kconfig lines in
+# boards/mps2_an385.conf (heap, graph cache), trace.conf (ring depth) and
+# snippets/qemu-ethernet (graph discovery) until the nano-ros pin of
+# phase10-B3 refused them there. Values unchanged; the reasons stay beside
+# the old lines. `just trace-qemu-build` still raises the heap to 1 MiB for
+# one build (-DNROS_OVERRIDE_ZEPHYR_HEAP_SIZE, just/emulation.just).
+[image.qemu.knobs.zephyr]
+heap_size = 106496
+
+[image.qemu.knobs.zenoh]
+graph_cache_size = 4096
+graph_discovery = false
+
+[image.qemu.knobs.executor]
+max_violations = 8
+
+# The Zephyr family; the concrete board is west's `-b native_sim/native/64`
+# (`just zephyr-build`), resolved through nano-ros's board catalog.
+[image.native_sim]
+rmw = "cyclonedds"
+domain_id = 10
+board = "zephyr"
+conf = ["prj-cyclonedds.conf"]
+# RFC-0085 D4: a Zephyr image NAMES its entry package. Derivation from the
+# image id gives the same answer; naming it keeps src/zephyr_entry from ever
+# being a candidate for this block.
+entry = "native_sim_entry"
+
+# phase10-B3: the violation ring depth, a Kconfig line in prj.conf until the
+# nano-ros pin of phase10-B3 refused it there (RFC-0103 D2a). Value unchanged.
+[image.native_sim.knobs.executor]
+max_violations = 8

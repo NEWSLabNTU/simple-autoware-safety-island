@@ -8,7 +8,9 @@
   <exec_depend>safety_island_bringup</exec_depend>
   <export>
     <build_type>cmake</build_type>
-    <!-- The deployment (board, rmw, domain) is in system.toml beside this
-         file, as for src/zephyr_entry and src/native_sim_entry. -->
+    <!-- The deployment (board, rmw, domain) is [image.qemu] in
+         src/safety_island_bringup/system.toml, which names this package as
+         its entry: nano-ros keeps system.toml only in a bringup package
+         (RFC-0121 D2). -->
   </export>
 </package>
