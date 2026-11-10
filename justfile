@@ -28,12 +28,16 @@
 # directory` and carried on. .envrc guards the interactive path; this guards
 # the ones that never source it -- CI, an agent's tool shell, a bare `just`.
 # An override now has to name itself, which cannot happen by inheritance.
+# source_directory(), not justfile_directory(): imported as a module (the
+# demo's `mod island`, `just island::board-build`) the latter names the
+# IMPORTING justfile's directory, so the submodule path missed and the root
+# fell to an inherited NANO_ROS_ROOT, or to nothing under `env -i`.
 NROS_ROOT := if env("NANO_ROS_ALLOW_EXTERNAL_ROOT", "") == "1" {
-    env("NANO_ROS_ROOT", env("NROS_REPO_DIR", justfile_directory() / "third-party/nano-ros"))
-} else if path_exists(justfile_directory() / "third-party/nano-ros/activate.sh") == "true" {
-    justfile_directory() / "third-party/nano-ros"
+    env("NANO_ROS_ROOT", env("NROS_REPO_DIR", source_directory() / "third-party/nano-ros"))
+} else if path_exists(source_directory() / "third-party/nano-ros/activate.sh") == "true" {
+    source_directory() / "third-party/nano-ros"
 } else {
-    env("NANO_ROS_ROOT", justfile_directory() / "third-party/nano-ros")
+    env("NANO_ROS_ROOT", source_directory() / "third-party/nano-ros")
 }
 # cmake's find_package(nano_ros) hint. Honoured OVER CMAKE_PREFIX_PATH, so a
 # stale value resolves the cmake package to a different tree than the CLI --
@@ -377,7 +381,7 @@ board-setup: (_zephyr-provision "4.4")
     # patches/zephyr/0001 (DTCM relocation), board-only. See board-doctor for
     # what its absence looks like.
     if ! grep -q 'trailing_match' "$ISLAND_ZEPHYR_WS/zephyr/scripts/build/gen_relocate_app.py"; then
-        git -C "$ISLAND_ZEPHYR_WS/zephyr" apply {{justfile_directory()}}/patches/zephyr/*.patch
+        git -C "$ISLAND_ZEPHYR_WS/zephyr" apply {{source_directory()}}/patches/zephyr/*.patch
     fi
     # hal_nxp — this board's vendor HAL. nano-ros's 4.4 allowlist omits it on
     # purpose and names this tree as the downstream that re-enables it; see the
@@ -492,7 +496,7 @@ board-doctor:
     else
         echo "  [MISSING] zephyr patch 0001 — DTCM relocation will silently no-op"
         echo "            and the build will overflow RAM. Re-apply:"
-        echo "            cd $ISLAND_ZEPHYR_WS/zephyr && git apply {{justfile_directory()}}/patches/zephyr/*.patch"
+        echo "            cd $ISLAND_ZEPHYR_WS/zephyr && git apply {{source_directory()}}/patches/zephyr/*.patch"
         fail=1
     fi
     # The ROS domain, from every place that states it (nano-ros issue 1550;
