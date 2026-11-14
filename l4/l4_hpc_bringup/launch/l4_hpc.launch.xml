@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<!-- The HPC side of the L4 island link (RFC_L4_SafetyIslandDesign V1.0,
+     section 7). Its contract is l4_hpc.contract.yaml beside this file; the
+     platform file l4_hpc.system.posix.yaml states the CPU placement.
+
+     The H-nodes carry the RFC's node names, each as a package of the same
+     name; none exists yet (docs/l4-island.md). velocity_smoother is the
+     Autoware 2.0.0 node that ends planning (autoware_velocity_smoother); the
+     rest of Autoware runs beside this tree and is not in it. Topic names are
+     wired by the contract's `topics:`. -->
+<launch>
+  <node pkg="autoware_velocity_smoother" exec="velocity_smoother_node" name="velocity_smoother"/>
+  <!-- H7, on its own isolated core at the top RT priority -->
+  <node pkg="hpc_heartbeat" exec="hpc_heartbeat" name="hpc_heartbeat"/>
+  <!-- H4, H5, H8: what the HPC sends the island -->
+  <node pkg="hpc_odd_reporter" exec="hpc_odd_reporter" name="hpc_odd_reporter"/>
+  <node pkg="hpc_trajectory_conditioner" exec="hpc_trajectory_conditioner" name="hpc_trajectory_conditioner"/>
+  <node pkg="hpc_refuge_publisher" exec="hpc_refuge_publisher" name="hpc_refuge_publisher"/>
+  <!-- H6: what the HPC reads from the island -->
+  <node pkg="hpc_island_state_client" exec="hpc_island_state_client" name="hpc_island_state_client"/>
+</launch>

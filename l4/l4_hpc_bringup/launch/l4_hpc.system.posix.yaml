@@ -1,0 +1,16 @@
+# The HPC's CPU placement (Linux, a real POSIX target): H7 on an isolated
+# core with the top RT priority (RFC section 7: "kept separate from H2 so
+# that it can be given the highest RT priority and the shortest code path"),
+# everything else on the shared cores. Illustrative core numbers.
+target: posix
+priority_assignment: chain_aware
+resources:
+  rt_priority_band: { min: 10, max: 80 }
+  isolated_cpus: [7]
+overrides:
+  hpc_heartbeat: { cpus: [7], priority: 80, sched_class: SCHED_FIFO }
+  velocity_smoother: { cpus: [0, 1, 2, 3, 4, 5] }
+  hpc_odd_reporter: { cpus: [0, 1, 2, 3, 4, 5] }
+  hpc_trajectory_conditioner: { cpus: [0, 1, 2, 3, 4, 5] }
+  hpc_refuge_publisher: { cpus: [0, 1, 2, 3, 4, 5] }
+  hpc_island_state_client: { cpus: [0, 1, 2, 3, 4, 5] }

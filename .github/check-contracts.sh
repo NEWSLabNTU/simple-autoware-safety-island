@@ -18,7 +18,8 @@
 # version can disagree (the island contract, below), so run it with the pin.
 #
 # A contract is `<stem>.contract.yaml`, the provider sidecar of
-# `<stem>.launch.xml` beside it. Only src/ is searched. Exit 0 when every
+# `<stem>.launch.xml` beside it. src/ (the island image) and l4/ (the L4
+# island and HPC contracts, island #17) are searched. Exit 0 when every
 # verdict matches its expectation.
 #
 # Every contract here is the island's own, under src/. The evaluation's
@@ -42,10 +43,10 @@ declare -A EXPECT_CORE=(
 )
 
 contracts() {
-    find ./src -name '*.contract.yaml' -print
+    find ./src ./l4 -name '*.contract.yaml' -print
 }
 
-echo "play_launch: $(command -v "$PL") ($("$PL" --version 2>/dev/null)); contracts: core"
+echo "play_launch: $(command -v "$PL") ($("$PL" --version 2>/dev/null)); contracts: src/, l4/"
 fail=0 n=0
 while read -r c; do
     [ -n "$c" ] || continue

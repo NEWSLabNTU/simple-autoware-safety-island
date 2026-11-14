@@ -1,0 +1,75 @@
+<?xml version="1.0"?>
+<!-- The L4 safety island (RFC_L4_SafetyIslandDesign V1.0): one S32Z280 image.
+     Its contract is l4_island.contract.yaml beside this file; the platform
+     file l4_island.system.posix.yaml states the core placement.
+
+     Package and executable names are the real ones: the Autoware 2.0.0
+     packages the RFC migrates (section 4.1, I-numbers; executables as 2.0.0
+     installs them) and the RFC's own node names for the new island nodes
+     (sections 6.1-6.4, N-numbers; each named as a package of the same name).
+     NONE of these nodes is built by this repository yet: docs/l4-island.md
+     lists what is real and what is still a placeholder. `play_launch check`
+     reads only this tree, the contract and the parameter values, so it does
+     not need the packages installed.
+
+     Every node runs in the one Zephyr image, as the island's current image
+     does (src/safety_island_bringup, the same <node> form nano-ros
+     consumes). The partitions of RFC section 9.1 are the CPU sets of the
+     platform file; separate address spaces (MPU domains per partition) are
+     not claimed (docs/l4-island.md).
+
+     Topic names are wired by the contract's `topics:` (nano-ros resolves
+     them in-source and does not route <remap>; porting-notes 07). Parameter
+     files are relative paths, as in safety_island.launch.xml: these packages
+     are built into the image, not installed into an ament share directory. -->
+<launch>
+  <!-- P0, T0 ASIL-D, lockstep R52 pair -->
+  <!-- I1: Autoware 2.0.0 parameters, `rate` raised to 100 Hz (see the file) -->
+  <node pkg="autoware_control_command_gate" exec="control_command_gate_node" name="control_command_gate">
+    <param from="$(dirname)/../config/control_command_gate.param.yaml"/>
+  </node>
+  <!-- I2, I3: the RFC replaces the plugins with a static table (section 4.1) -->
+  <node pkg="autoware_command_mode_decider" exec="command_mode_decider_node" name="command_mode_decider"/>
+  <node pkg="autoware_command_mode_switcher" exec="command_mode_switcher_node" name="command_mode_switcher"/>
+  <!-- B4's operator (Autoware 2.0.0), profile `moderate` -->
+  <node pkg="autoware_mrm_steering_hold_stop_operator" exec="autoware_mrm_steering_hold_stop_operator_node" name="mrm_steering_hold_stop_operator">
+    <param from="$(dirname)/../config/mrm_steering_hold_stop_operator.param.yaml"/>
+  </node>
+  <!-- I16: the vehicle interface is vehicle-specific (RFC section 4.1) -->
+  <node pkg="si_vehicle_interface" exec="si_vehicle_interface" name="vehicle_interface"/>
+  <node pkg="si_safety_gateway" exec="si_safety_gateway" name="si_safety_gateway">
+    <param name="trajectory_age_limit" value="0.3"/>
+  </node>
+  <node pkg="si_hpc_supervisor" exec="si_hpc_supervisor" name="si_hpc_supervisor">
+    <param name="heartbeat_timeout" value="0.03"/>
+  </node>
+  <node pkg="si_state_machine" exec="si_state_machine" name="si_state_machine">
+    <param name="t_odd" value="10.0"/>
+    <param name="t_hold" value="15.0"/>
+  </node>
+  <node pkg="si_vehicle_state_estimator" exec="si_vehicle_state_estimator" name="si_vehicle_state_estimator"/>
+  <node pkg="si_fault_manager" exec="si_fault_manager" name="si_fault_manager"/>
+
+  <!-- P1, T1 ASIL-B(D), lockstep R52 pair -->
+  <node pkg="autoware_pure_pursuit" exec="autoware_pure_pursuit_lateral_controller_exe" name="pure_pursuit"/>
+  <node pkg="si_corridor_monitor" exec="si_corridor_monitor" name="si_corridor_monitor"/>
+  <!-- N7: the RFC names the node si_mrm_profile (6.1) and si_mrm_planner (6.3) -->
+  <node pkg="si_mrm_planner" exec="si_mrm_planner" name="si_mrm_profile"/>
+  <node pkg="si_actuator_supervisor" exec="si_actuator_supervisor" name="si_actuator_supervisor">
+    <!-- ILLUSTRATIVE: the actuator gateway's own stop, assumed at the 2.0.0
+         steering-hold operator's `emergency` profile; a gateway fact to obtain -->
+    <param name="gateway_decel" value="-6.0"/>
+    <param name="gateway_jerk" value="-20.0"/>
+  </node>
+  <node pkg="si_envelope_monitor" exec="si_envelope_monitor" name="si_envelope_monitor"/>
+  <node pkg="si_pull_over_manager" exec="si_pull_over_manager" name="si_pull_over_manager"/>
+
+  <!-- P2, T1s ASIL-B(D), split R52 core A -->
+  <node pkg="si_vision_guard" exec="si_vision_guard" name="si_vision_guard"/>
+  <node pkg="si_radar_guard" exec="si_radar_guard" name="si_radar_guard"/>
+  <node pkg="si_safety_world_model" exec="si_safety_world_model" name="si_safety_world_model"/>
+  <node pkg="si_odd_monitor" exec="si_odd_monitor" name="si_odd_monitor"/>
+
+  <!-- P3, T2 QM, split R52 core B: I9-I12 (MPC lateral + PID longitudinal) -->
+  <node pkg="autoware_trajectory_follower_node" exec="controller_node_exe" name="trajectory_follower"/>
+</launch>

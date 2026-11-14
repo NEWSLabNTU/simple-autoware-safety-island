@@ -1,0 +1,1116 @@
+# L4 safety island contract: the RFC's behaviour ladder (B1-B4) as checkable
+# facts, in the rlm v0.3.15 grammar.
+#
+# Subject: autowarefoundation/RFC_L4_SafetyIslandDesign V1.0 (f529052),
+# docs/L4SafetyIsland_SoftwareDesign_GitHub.md. Section numbers below are the
+# RFC's. Node IDs (I*, N*, H*) are the RFC's.
+#
+# STATUS. A design contract over the island's launch tree
+# (l4_island.launch.xml): real package and executable names, but no node is
+# built by this repository yet (docs/l4-island.md says what is real and what
+# is a placeholder). Every message type is real: safety_island_msgs (the
+# RFC's section 8 messages) and the vendored Autoware subsets under src/, so
+# every `when:` and `commands` field is checked on the ament index. Every
+# number has a `source:`:
+#   requirement  = taken from the RFC, or allocated here inside an RFC budget
+#                  (said which in the comment);
+#   derived      = computed by the checker or an extension;
+#   measured     = none: nothing here has run. The serial-link numbers of the
+#                  S32K344 island (56 ms availability hop) are NOT valid for
+#                  the RFC's TSN link and are not used.
+# Integrity levels and requirement ids are ILLUSTRATIVE: the HARA owns them,
+# and the RFC defers it.
+#
+# Architecture decisions this file encodes:
+#   - Autoware 2.0.0 target path: control_command_gate (I1) + command mode
+#     decider/switcher (I2/I3), wired as 2.0.0 wires them (availability ->
+#     request topic -> source/select service); no mrm_handler (I7);
+#   - zenoh as the safety link (TSN on the S32Z280's NETC), with no shared
+#     clock: freshness is judged on the island's own clock;
+#   - P0/P1 on the lockstep R52 pair, P2 and P3 on split R52 cores;
+#   - the CANHUB (S32K344) as external supervisor, driving a safe-state line
+#     into the actuator gateway;
+#   - B5 deferred (not in this file); B6 not modelled.
+# The HPC side of the link is l4_hpc.contract.yaml (l4/l4_hpc_bringup).
+# Nothing checks the two files against each other; the places where they
+# must agree are marked "MUST MATCH".
+
+version: 1
+rlm: ">=v0.3.13"     # modes.commands, requirement, functions.m, independence, on_silence
+
+use:
+  vehicle.braking: "^1"
+  iso26262: "^1"
+
+let:
+  # B2's v_odd, highway class (section 3.1 B2: ~60 km/h highway, ~30 km/h
+  # city; the class table is open decision 13). The entry speed of every
+  # hazard whose ladder runs through B2's ramp.
+  v_odd: 16.67 m/s
+
+# ---------------------------------------------------------------------------
+# ACKNOWLEDGED: findings read and kept, each with its reason. Each is a fact
+# outside this model (the CANHUB and the actuator gateway are other models),
+# not a checker limit.
+acknowledged:
+  # The island's reactions end at operator outputs; what notices a stalled
+  # manoeuvre is N9 on the vehicle's response (the floor's settle
+  # supervision below) and, outside this image, the CANHUB and the actuator
+  # gateway's own timeout. Neither is a subscriber with an `on_violation`
+  # on these topics, and the CANHUB is another model.
+  - rule: reaction-unguarded
+    at: hazards.hpc_loss.enters
+    reason: &unguarded >-
+      a stalled reaction is caught by N9's supervision of the vehicle's
+      response and by the CANHUB outside this image, not by a subscriber of
+      the reaction's own output
+  - { rule: reaction-unguarded, at: hazards.hpc_link_integrity.enters, reason: *unguarded }
+  - { rule: reaction-unguarded, at: hazards.odd_unsatisfiable.enters, reason: *unguarded }
+  - { rule: reaction-unguarded, at: hazards.odd_sensing_loss.enters, reason: *unguarded }
+  - { rule: reaction-unguarded, at: hazards.camera_loss.enters, reason: *unguarded }
+  - { rule: reaction-unguarded, at: hazards.hpc_loss_authority.reaction, reason: *unguarded }
+  - { rule: reaction-unguarded, at: hazards.nominal_command_loss.reaction, reason: *unguarded }
+  # Autoware 2.0.0's switcher sends source/select with no timeout
+  # (ControlGateInterface::request: async_send_request, `requesting_` held
+  # until the response). Kept as the upstream fact; the island port has to
+  # bound it or supervise the gate's output (docs/l4-island.md, open items).
+  - rule: call-unbounded-mrc
+    at: nodes.command_mode_switcher.cli.source_select
+    reason: >-
+      the Autoware 2.0.0 command_mode_switcher's source/select call has no
+      timeout; bounding it is an open item of the island port, recorded in
+      docs/l4-island.md
+
+# ---------------------------------------------------------------------------
+# FUNCTIONS: what each rung needs from outside the safety core.
+# A function is lost by silence on its topics, and with `when:` also by the
+# value that `when:` names.
+functions:
+  # H7 hpc_heartbeat, 100 Hz (section 8.1). Lost by silence.
+  hpc_alive: [/si/in/heartbeat]
+  # H5's trajectory, after N1 has verified it (section 8.4). Lost by silence,
+  # or when N1 rejects it (the E2E hazard below).
+  hpc_commands: [/planning/scenario_planning/trajectory]
+  # N19's verdict on the HPC's declared domain (section 6.4). Lost when the
+  # island measures the domain as unsatisfiable: the B1 trigger.
+  hpc_in_odd:
+    of: [/si/out/odd_verdict]
+    when: { field: odd_satisfiable, equals: false }
+  # B1's acceptance test passed (section 3.1 B1, "Exit - upward"). Holds when
+  # N19 has accepted a domain the HPC declared.
+  odd_accepted:
+    of: [/si/out/odd_verdict]
+    when: { field: accepted, equals: false }
+  # N14's camera lane boundaries (section 6.2): the one sensor B2 and B3 may
+  # assume (D8). Lost by silence or by N14's own validity flag.
+  camera_lanes:
+    of: [/si/sensing/lane_boundaries]
+    when: { field: valid, equals: false }
+  # B1's visibility estimate needs BOTH the radar-vs-camera divergence test
+  # and the camera contrast test (section 3.1 B1, minimum sensor rung B):
+  # 2oo2 over radar and camera. Losing either is "N17 reports sensor
+  # degradation", a B1 trigger.
+  odd_measurable:
+    all_of: [/si/sensing/radar_tracks, /si/sensing/lane_boundaries]
+    m: 2
+  # N18's fallback availability (section 6.3): a refuge the island can
+  # verify, HPC-nominated (H8) or island-detected.
+  refuge:
+    of: [/si/out/fallback_availability]
+    when: { field: pull_over_available, equals: false }
+  # N2's recovery verdict during B2 (section 3.1 B2, "Exit - upward"): the
+  # heartbeat is back and the trajectories are valid over the confirmation
+  # window.
+  # N3 hands authority back (IslandState.authority = AUTHORITY_HPC) once N2
+  # has re-qualified the HPC; N7, which implements B2, takes the island
+  # state on its path trigger (mode-exit-unwired).
+  hpc_requalified:
+    of: [/si/out/state]
+    when: { field: authority, not_equals: AUTHORITY_HPC }
+
+# ---------------------------------------------------------------------------
+# MODES: the RFC's ladder (section 3.2). A rung is skipped when it requires a
+# function the hazard has lost; the last rung requires nothing.
+modes:
+  ads_active:
+    description: >-
+      the HPC drives inside a domain the island has accepted; the island
+      supervises and does not take control
+    requires: [hpc_alive, hpc_commands, hpc_in_odd, odd_measurable, camera_lanes]
+    fallback: [odd_degrade, lane_keep_hold, pull_over, blind_stop]
+
+  odd_degrade:          # B1
+    description: >-
+      the island constrains (speed cap) and demands an ODD switch; the HPC
+      executes; not an MRM
+    requires: [hpc_alive, hpc_commands]
+    reaction: island.b1_constrain
+    # T_odd = 10 s (section 3.1 B1 deadlines, open decision 17), bound to
+    # N3's parameter. A LEAST time in the grammar: the level below starts no
+    # sooner. The RFC's T_odd is a deadline that N19 may shorten per
+    # situation (T_odd < t_margin - t_pullover); the grammar has no deadline form.
+    min_dwell: { duration: 10s, param: si_state_machine.t_odd, source: requirement }
+    # The upward exit: the acceptance test holds, the ADS drives again.
+    exit: { holds: odd_accepted, to: ads_active }
+
+  lane_keep_hold:       # B2
+    description: >-
+      the HPC is lost; the island steers and brakes, holds the lane on the
+      camera corridor at v_hold, and waits T_hold for the HPC to return
+    requires: [camera_lanes]
+    reaction: island.b2_hold
+    # T_hold: the RFC says 8-15 s per ODD class (open decision 14). One value
+    # only: the longest, so the budget rows below are the worst case.
+    min_dwell: { duration: 15s, param: si_state_machine.t_hold, source: requirement }
+    # The only reversible authority transfer (section 3.1 B2). The RFC
+    # re-enters B1 at CONSTRAIN; `exit.to` may not name a rung of any
+    # ladder, so the target is ads_constrained, below.
+    exit: { holds: hpc_requalified, to: ads_constrained }
+    # Camera lost mid-B2: B4 at once (section 3.1 B2 "Failure"). The
+    # camera_loss hazard enters this mode; pull_over needs the camera too and
+    # is skipped.
+    fallback: [pull_over, blind_stop]
+    # While B2 holds, the island's command stays at or below v_odd (the
+    # highway class; one constant) and does not accelerate.
+    commands:
+      /vehicle/actuation/command:
+        - { field: longitudinal.velocity, le: 16.67 }
+
+  pull_over:            # B3
+    description: >-
+      leave the running lane into a verified refuge and stop there; terminal
+      for the drive cycle
+    requires: [camera_lanes, refuge]
+    reaction: island.b3_pull_over
+    commands:
+      /vehicle/actuation/command:
+        - { field: longitudinal.acceleration, le: 0 }
+
+  blind_stop:           # B4, the minimal risk condition
+    description: >-
+      the island is blind: brake to a standstill where the vehicle is, hold
+      the steering, no lane keeping and no refuge
+    requires: []
+    reaction: island.b4_blind_stop
+    # What the floor commands while it lasts. The steering is HELD (Autoware
+    # 2.0.0 mrm_steering_hold_stop_operator), stated as a zero
+    # steering rate. "Hold the angle it had" is a relational predicate (the
+    # value at entry), which the grammar does not state.
+    commands:
+      /vehicle/actuation/command:
+        - { field: longitudinal.velocity, equals: 0 }
+        - { field: longitudinal.acceleration, le: 0 }
+        - { field: lateral.steering_tire_rotation_rate, equals: 0 }
+
+  ads_constrained:
+    description: >-
+      the HPC drives again after a B2 hand-back, entered at CONSTRAIN (B1's
+      state), until the section 6.4 hysteresis releases it
+    requires: [hpc_alive, hpc_commands]
+    fallback: [lane_keep_hold, pull_over, blind_stop]
+
+# ---------------------------------------------------------------------------
+# HAZARDS. `enters:` names the mode the hazard TAKES AWAY (v0.3.15); its
+# reaction is that mode's fallback sequence, each rung by its own reaction.
+hazards:
+  # The RFC's 70 ms budget (section 9.2) is a reaction to TAKE AUTHORITY, not
+  # a time to a minimal risk condition. One rung: the chain to the gate.
+  hpc_loss_authority:
+    integrity: ASIL_D
+    description: >-
+      the HPC stops (heartbeat silent) while it drives; the island must take
+      lateral and longitudinal authority before the vehicle leaves its lane
+    requirement: { id: SG-L4-01a, source: "illustrative; RFC section 9.2 (70 ms island reaction); lateral FTTI to be derived" }
+    monitors: [/si/in/heartbeat]
+    on: omission
+    # Illustrative: time to a lane departure at v_odd with no reaction. The
+    # RFC derives none. What matters here is the ROUTE row.
+    ftti: { duration: 1s, source: requirement }
+    reaction: island.take_authority
+
+  # The same fault, judged on the whole ladder: B2 holds, B3 pulls over,
+  # B4 is the floor. Its interval is the MRM completion requirement, not an
+  # ISO 26262 FTTI in the lateral sense (that is the hazard above).
+  hpc_loss:
+    integrity: ASIL_D
+    description: >-
+      the HPC stays lost; the island must hold the lane, then reach a
+      minimal risk condition without it
+    requirement: { id: SG-L4-01b, source: "illustrative; RFC section 3.1 B2 (T_hold 8-15 s), B3 (T_refuge 5 s; complete within 60 s)" }
+    monitors: [/si/in/heartbeat]
+    on: omission
+    entry_speed: $(let v_odd)
+    ftti: { duration: 90s, source: requirement }
+    enters: ads_active
+
+  # B1's trigger: N19 measures the declared domain as unsatisfiable. A
+  # REPORTED value fault on the island's own verdict.
+  odd_unsatisfiable:
+    integrity: ASIL_B
+    description: >-
+      the vehicle is driven in a domain the island measures as
+      unsatisfiable; the HPC must move to one that is, or the island
+      escalates
+    requirement: { id: SG-L4-02, source: "illustrative; RFC section 3.1 B1, section 6.4" }
+    monitors: [/si/out/odd_verdict]
+    on: reported
+    when: { field: odd_satisfiable, equals: false }
+    entry_speed: $(let v_odd)
+    ftti: { duration: 120s, source: requirement }
+    enters: ads_active
+
+  # B1's other trigger: the island loses part of its own ODD measurement
+  # (radar; the 2oo2 group odd_measurable is lost).
+  odd_sensing_loss:
+    integrity: ASIL_B
+    description: >-
+      the forward radar stops; the island can no longer estimate visibility,
+      so the domain is unverified and B1 constrains
+    requirement: { id: SG-L4-03, source: "illustrative; RFC section 3.1 B1 trigger (N17 sensor degradation)" }
+    monitors: [/si/sensing/radar_tracks]
+    on: omission
+    entry_speed: $(let v_odd)
+    ftti: { duration: 120s, source: requirement }
+    enters: ads_active
+
+  # B2's failure row: the camera is lost while the island steers.
+  camera_loss:
+    integrity: ASIL_D
+    description: >-
+      the island camera or its lane lines are lost while the island holds
+      the lane; nothing may steer against a corridor no longer seen
+    requirement: { id: SG-L4-04, source: "illustrative; RFC section 3.1 B2 Failure, B4 Trigger" }
+    monitors: [/si/sensing/lane_boundaries]
+    on: [omission, reported]
+    when: { field: valid, equals: false }
+    entry_speed: $(let v_odd)
+    ftti: { duration: 10s, source: requirement }
+    enters: lane_keep_hold
+
+  # SI-E2E on the HPC link (section 8.4), the classes rlm can name: late
+  # (age limit), repetition, resequencing, insertion. Corruption and
+  # masquerade have no fault class in the grammar. A rejected trajectory is
+  # HPC_COMMAND_INVALID, a B2 trigger (section 3.1 B2 Trigger).
+  hpc_link_integrity:
+    integrity: ASIL_D
+    description: >-
+      a trajectory from the HPC arrives stale, repeated, out of order, or
+      from a publisher the contract does not name; N1 rejects it and the
+      island stops using the HPC's commands
+    requirement: { id: SG-L4-05, source: "illustrative; RFC section 8.4 threat table" }
+    monitors: [/planning/scenario_planning/trajectory]
+    on: [late, repetition, resequencing, insertion]
+    entry_speed: $(let v_odd)
+    ftti: { duration: 90s, source: requirement }
+    enters: ads_active
+
+  # The two-tier controller (section 4.2): the QM MPC's command stops or is
+  # late; the gate selects pure_pursuit within one cycle.
+  nominal_command_loss:
+    integrity: ASIL_B
+    description: >-
+      the QM MPC's control command stops or is late; the gate must switch
+      to the P1 fallback controller before the vehicle drifts
+    requirement: { id: SG-L4-06, source: "illustrative; RFC section 4.2, section 9.1 (P3 shed first)" }
+    monitors: [/control/trajectory_follower/control_cmd]
+    on: [omission, late]
+    ftti: { duration: 1s, source: requirement }
+    reaction: island.mpc_fallback
+
+# ---------------------------------------------------------------------------
+# INDEPENDENCE (section 2.2, 9.1). `cpus` is checked against the
+# platform file's CPU sets (here a POSIX proxy of the S32Z280 placement:
+# CPU 0 = the lockstep R52 pair, 2 = split core A, 3 = split core B).
+# `process` is NOT claimed: one Zephyr image is one address space. The
+# separation the RFC needs beyond cores is MPU domains per partition, which
+# is not a deployment fact this grammar has.
+independence:
+  # P0 arbiter, P2 sensing, P3 nominal control: three cores.
+  - of: [control_command_gate, si_safety_world_model, trajectory_follower]
+    not_sharing: [cpus]
+  # The fallback controller does not share the nominal controller's core
+  # (COM/MON-style separation of the two tiers).
+  - of: [pure_pursuit, trajectory_follower]
+    not_sharing: [cpus]
+  # The HPC supervisor is not on the core of what it would have to survive.
+  - of: [si_hpc_supervisor, trajectory_follower]
+    not_sharing: [cpus]
+
+# The supervision timer of the island (route deadlines on a k_timer and a
+# reaction thread above the executor). S32K344 values (tick 1 ms, switch
+# measured 0.04 ms, rounded up); NOT measured on the S32Z280.
+supervision:
+  tick: 1ms
+  switch: 1ms
+
+# The HPC link (section 8.1): TSN on NETC, zenoh. A REQUIREMENT, allocated:
+# the RFC states per-signal age limits, not a transport bound. Nothing has
+# been measured on TSN; the island's serial hop (56 ms, measured) is a
+# different link and is not used.
+#
+# The clock is UNSYNCED. The RFC's freshness check is a gPTP timestamp
+# against each signal's age limit (section 8.4), but Zephyr's S32 NETC
+# driver has no PTP clock, so the island has no time base shared with the
+# HPC. Every `max_age` on this link is therefore judged on the island's own
+# clock: the time since the last arrival, checked by the receiving node on
+# its own tick (`mechanism: application`), which needs no sender stamp.
+# gPTP, once available, is latency evidence, not a safety mechanism.
+links:
+  hpc_tsn:
+    max_transport: { duration: 1ms, source: requirement }
+    clock: unsynced
+  # The chassis bus (CAN FD) into N4 and N9: allocated, unmeasured.
+  chassis_can:
+    max_transport: { duration: 2ms, source: requirement }
+
+# ---------------------------------------------------------------------------
+# NODES
+nodes:
+  # --- P0 -------------------------------------------------------------------
+  # N1 si_safety_gateway: SI-E2E ingress (section 8.4). Rejects are safety
+  # events to N8, never middleware exceptions.
+  si_safety_gateway:
+    params:
+      trajectory_age_limit: { type: double }
+    paths:
+      verify_trajectory:
+        trigger: { input: [trajectory] }
+        output: [trajectory_verified, e2e_event]
+        max_latency: { duration: 1ms, source: requirement }
+    sub:
+      trajectory:
+        min_rate_hz: 10
+        link: hpc_tsn
+        qos: { depth: 1 }
+        max_age: { duration: 300ms, param: trajectory_age_limit, source: requirement }
+        on_violation:
+          on: [late, repetition, resequencing, insertion]
+          mechanism: application
+          reaction: verify_trajectory
+          within: { duration: 1ms, source: requirement }
+    pub:
+      trajectory_verified: { min_rate_hz: 10 }
+      e2e_event: { aperiodic: true }
+
+  # N2 si_hpc_supervisor: heartbeat supervision (section 6.1, 9.2). 3 missed
+  # 100 Hz heartbeats = 30 ms; evaluated on N2's own clock (application),
+  # not a DDS lease.
+  si_hpc_supervisor:
+    params:
+      heartbeat_timeout: { type: double }
+    paths:
+      declare_hpc_lost:
+        trigger: { input: [heartbeat] }
+        output: [hpc_liveness]
+        max_latency: { duration: 2ms, source: requirement }
+    sub:
+      heartbeat:
+        min_rate_hz: 100
+        link: hpc_tsn
+        qos: { depth: 1 }
+        max_age: { duration: 30ms, param: heartbeat_timeout, source: requirement }
+        on_violation:
+          on: [omission]
+          mechanism: application
+          reaction: declare_hpc_lost
+          within: { duration: 2ms, source: requirement }
+    pub:
+      hpc_liveness: { min_rate_hz: 100 }
+
+  # N8 si_fault_manager: static fault table (section 6.1). Event-driven
+  # here; also the island's heartbeat to the CANHUB.
+  si_fault_manager:
+    paths:
+      aggregate:
+        trigger: { input: [hpc_liveness, e2e_event, corridor_state, radar_state] }
+        output: [fault_verdict]
+        max_latency: { duration: 2ms, source: requirement }
+      alive:
+        trigger: { timer: { rate_hz: 100 } }
+        output: [island_alive]
+        max_latency: { duration: 1ms, source: requirement }
+    sub:
+      hpc_liveness: { min_rate_hz: 100, qos: { depth: 1 } }
+      e2e_event: { qos: { depth: 4 }, min_interarrival: 10ms }
+      corridor_state: { min_rate_hz: 20, qos: { depth: 1 } }
+      radar_state: { min_rate_hz: 20, qos: { depth: 1 } }
+    pub:
+      fault_verdict: { min_rate_hz: 100 }
+      island_alive: { min_rate_hz: 100 }
+
+  # N3 si_state_machine: single owner of the island mode (section 6.1). It
+  # owns T_odd and T_hold and notices their deadlines on a 100 Hz tick.
+  si_state_machine:
+    params:
+      t_odd: { type: double }
+      t_hold: { type: double }
+    paths:
+      # A fault verdict changes the mode at once: the island state and, on
+      # the HPC's loss, the command mode availability the decider acts on.
+      on_fault:
+        trigger: { input: [fault_verdict] }
+        output: [behaviour, command_mode_availability]
+        max_latency: { duration: 2ms, source: requirement }
+      # B4 on a lost corridor: the in-lane stop trigger at once.
+      on_corridor_lost:
+        trigger: { input: [corridor_state] }
+        output: [behaviour, in_lane_stop_trigger]
+        max_latency: { duration: 2ms, source: requirement }
+      on_odd_verdict:
+        trigger: { input: [odd_verdict] }
+        output: [behaviour, in_lane_stop_trigger]
+        max_latency: { duration: 2ms, source: requirement }
+      on_fallback:
+        trigger: { input: [fallback_availability] }
+        output: [behaviour, in_lane_stop_trigger]
+        max_latency: { duration: 2ms, source: requirement }
+      on_tick:
+        trigger: { timer: { rate_hz: 100 } }
+        output: [behaviour, in_lane_stop_trigger]
+        max_latency: { duration: 2ms, source: requirement }
+    sub:
+      fault_verdict: { min_rate_hz: 100, qos: { depth: 1 } }
+      # N5's corridor verdict, directly: B4 is entered from every state with
+      # no guard (section 6.1), so the blackout does not wait for N8's
+      # aggregation (N8 still records it).
+      corridor_state: { min_rate_hz: 20, qos: { depth: 1 } }
+      odd_verdict:
+        min_rate_hz: 5
+        qos: { depth: 1 }
+        on_violation:
+          on: [reported]
+          mechanism: application
+          reaction: on_odd_verdict
+          within: { duration: 2ms, source: requirement }
+      # The refuge function's detector (mode-requires-unguarded): N18's
+      # availability, by silence or by `pull_over_available: false`.
+      fallback_availability:
+        min_rate_hz: 2
+        qos: { depth: 1 }
+        max_age: { duration: 1500ms, source: requirement }
+        on_violation:
+          on: [omission, reported]
+          mechanism: application
+          reaction: on_fallback
+          within: { duration: 2ms, source: requirement }
+    pub:
+      behaviour: { min_rate_hz: 100 }
+      in_lane_stop_trigger: { min_rate_hz: 100 }
+      # Which command modes are available, the 2.0.0 decider's input: N3
+      # marks the HPC's mode unavailable and the island's mode available.
+      command_mode_availability: { aperiodic: true }
+
+  # I2 command_mode_decider (Autoware 2.0.0; the RFC replaces its plugin by
+  # a static table). In 2.0.0 the decider re-decides on every availability
+  # message (CommandModeDeciderBase::on_availability -> update) and publishes
+  # the request at once; its 10 Hz timer only repeats it.
+  command_mode_decider:
+    paths:
+      decide:
+        trigger: { input: [command_mode_availability] }
+        output: [command_mode_request]
+        max_latency: { duration: 2ms, source: requirement }
+    sub:
+      command_mode_availability: { qos: { depth: 1 }, min_interarrival: 10ms }
+    pub:
+      command_mode_request: { aperiodic: true }
+
+  # I3 command_mode_switcher (Autoware 2.0.0). On a request it calls the
+  # gate's source/select service (ControlGateInterface::request, an async
+  # call) and follows the gate's source status.
+  command_mode_switcher:
+    cli:
+      source_select: { call: async }
+    paths:
+      switch_source:
+        trigger: { input: [command_mode_request] }
+        output: [source_select]
+        max_latency: { duration: 2ms, source: requirement }
+    sub:
+      command_mode_request: { qos: { depth: 1 }, min_interarrival: 10ms }
+      source_status: { qos: { depth: 1, durability: transient_local }, state: true }
+
+  # I1 control_command_gate: R6's single actuation authority, structured as
+  # Autoware 2.0.0 builds it (src/control_command_gate.cpp,
+  # src/command/{selector,subscription}.cpp):
+  #   - a control command of the SELECTED source is forwarded on its own
+  #     arrival (one `forward_*` path per source);
+  #   - source/select changes the selection (a service);
+  #   - the `rate` timer checks the selected source for a timeout. In 2.0.0 a
+  #     timed-out source falls back to the built-in stop; the island selects
+  #     its fallback controller instead (the RFC's two-tier switch, section
+  #     4.2). `rate` is 100 Hz here; 2.0.0 ships 10.0
+  #     (config/control_command_gate.param.yaml).
+  control_command_gate:
+    params:
+      rate: { type: double }
+    srv:
+      # One client, the switcher, one request per mode change.
+      source_select: { min_interarrival: 10ms }
+    paths:
+      on_timer:
+        trigger: { timer: { rate_hz: $(param rate) Hz } }
+        output: [source_status]
+        max_latency: { duration: 2ms, source: requirement }
+      # A select switches the gate's output to the new source
+      # (CommandSelector::select_source). The first command it forwards is
+      # that source's next sample, so the budget is one period of the
+      # island's fallback controller (pure_pursuit, 50 Hz: 20 ms) + 1 ms,
+      # allocated.
+      select_source:
+        trigger: { input: [source_select] }
+        output: [source_status, control]
+        max_latency: { duration: 21ms, source: requirement }
+      forward_main:
+        trigger: { input: [main_control] }
+        output: [control]
+        max_latency: { duration: 1ms, source: requirement }
+      # The two-tier switch: the MPC's command stops or is late. The gate
+      # notices on its `rate` tick (Source::is_timeout) and selects the
+      # fallback source, whose next sample it forwards: one gate period (10
+      # ms at `rate` 100 Hz) + one pure_pursuit period (20 ms) + 1 ms,
+      # allocated. MUST MATCH `rate` (config/control_command_gate.param.yaml):
+      # at 2.0.0's 10 Hz the first term is 100 ms.
+      select_fallback:
+        trigger: { input: [main_control] }
+        output: [control, source_status]
+        max_latency: { duration: 31ms, source: requirement }
+        # Then I16's 100 Hz tick (10) + its work (2) + CAN FD (2), allocated,
+        # as on forward_fallback.
+        safe_state:
+          emits: control
+          settle: { duration: 14ms, source: requirement }
+      # The island's own command (pure_pursuit, I13): what the gate forwards
+      # once it has selected the island. Authority is then with the island
+      # as soon as I16 has sent it: I16's 100 Hz tick (10) + its work (2) +
+      # CAN FD (2), allocated.
+      forward_fallback:
+        trigger: { input: [fallback_control] }
+        output: [control]
+        max_latency: { duration: 1ms, source: requirement }
+        safe_state:
+          emits: control
+          settle: { duration: 14ms, source: requirement }
+      forward_in_lane_stop:
+        trigger: { input: [in_lane_stop_control] }
+        output: [control]
+        max_latency: { duration: 1ms, source: requirement }
+    sub:
+      main_control:
+        min_rate_hz: 30
+        qos: { depth: 1 }
+        # Two MPC periods (2 x 33.3 ms), allocated. Judged by the gate on its
+        # `rate` tick; that tick is in select_fallback's budget.
+        max_age: { duration: 67ms, source: requirement }
+        on_violation:
+          on: [omission, late]
+          mechanism: application
+          reaction: select_fallback
+          within: { duration: 31ms, source: requirement }
+      fallback_control: { min_rate_hz: 50, qos: { depth: 1 } }
+      in_lane_stop_control: { min_rate_hz: 30, qos: { depth: 1 } }
+    pub:
+      control: { min_rate_hz: 30 }
+      source_status: { aperiodic: true, qos: { depth: 1, durability: transient_local } }
+
+  # I16 vehicle interface: CAN FD TX to the actuator gateway (section 8.3,
+  # SI-E2E/B). The actuation command is the final element: its one
+  # publisher, every level's `commands`, and the gateway's own timeout
+  # (topics: on_silence).
+  # It sends at 100 Hz (RFC section 8.3) the latest command the gate
+  # forwarded.
+  vehicle_interface:
+    paths:
+      transmit:
+        trigger: { timer: { rate_hz: 100 } }
+        output: [actuation]
+        max_latency: { duration: 2ms, source: requirement }
+    sub:
+      control: { min_rate_hz: 30, qos: { depth: 1 }, state: true }
+    pub:
+      actuation: { min_rate_hz: 100 }
+
+  # B4's operator: Autoware 2.0.0 mrm_steering_hold_stop_operator, on a
+  # 33.3 Hz tick that reads the in-lane-stop trigger.
+  mrm_steering_hold_stop_operator:
+    params:
+      update_rate: { type: double }
+      profiles.moderate.target_acceleration: { type: double }
+      profiles.moderate.target_jerk: { type: double }
+    paths:
+      on_timer:
+        trigger: { timer: { rate_hz: $(param update_rate) Hz } }
+        output: [control]
+        max_latency: { duration: 2ms, source: requirement }
+        safe_state:
+          emits: control
+          settle:
+            decel: $(param profiles.moderate.target_acceleration) m/s^2
+            jerk: $(param profiles.moderate.target_jerk) m/s^3
+            # The command stage (gate tick 10 + I16 + CAN FD) and the
+            # vehicle's response: vehicle-specific (section 9.2), allocated.
+            response: { duration: 300ms, source: requirement }
+            # N9 (section 6.1): the floor is supervised. An early check
+            # (has the vehicle shed 1 m/s by 1.5 s?) and the whole settle;
+            # a miss drives the safe-state line to the actuator gateway (the
+            # gate's built-in stop and section 8.5's fault line; our CANHUB).
+            supervise:
+              reaction: island.actuator_line
+              mechanism: timer
+              observes: si_actuator_supervisor/velocity_status
+              early: { within: 1500ms, drop: 1 m/s }
+    sub:
+      trigger: { qos: { depth: 1 }, state: true }
+      kinematic_state: { min_rate_hz: 50, qos: { depth: 1 }, state: true }
+    pub:
+      control: { min_rate_hz: 30 }
+
+  # N4 si_vehicle_state_estimator: island-local odometry (R2), 100 Hz.
+  si_vehicle_state_estimator:
+    paths:
+      estimate:
+        trigger: { input: [velocity_status] }
+        output: [kinematic_state]
+        max_latency: { duration: 2ms, source: requirement }
+    sub:
+      velocity_status: { min_rate_hz: 50, link: chassis_can, qos: { depth: 1 } }
+    pub:
+      kinematic_state: { min_rate_hz: 50 }
+
+  # --- P1 -------------------------------------------------------------------
+  # N7 si_mrm_profile / si_mrm_planner (sections 6.1, 6.3): the v_odd /
+  # v_hold ramp for B2, and the bounded pull-over trajectory for B3, both
+  # tracked by I13.
+  si_mrm_profile:
+    paths:
+      hold:
+        trigger: { input: [behaviour] }
+        output: [hold_reference]
+        max_latency: { duration: 5ms, source: requirement }
+        # I13's 20 ms tick + 5 + the gate's 10 ms tick + 2 + I16 + CAN FD,
+        # allocated: the island is steering once its first command is out.
+        safe_state:
+          emits: hold_reference
+          settle: { duration: 50ms, source: requirement }
+      pull_over:
+        trigger: { input: [behaviour] }
+        output: [pullover_reference]
+        max_latency: { duration: 5ms, source: requirement }
+        # T_refuge = 5 s (section 3.1 B3 Deadlines) + "complete within 60 s"
+        # (section 6.4 MRM deadlines, once a refuge is accepted): 65 s,
+        # allocated.
+        safe_state:
+          emits: pullover_reference
+          settle: { duration: 65s, source: requirement }
+    sub:
+      behaviour: { min_rate_hz: 100, qos: { depth: 1 } }
+      safety_world: { min_rate_hz: 20, qos: { depth: 1 }, state: true }
+      refuge_plan: { min_rate_hz: 2, qos: { depth: 1 }, state: true }
+    pub:
+      hold_reference: { min_rate_hz: 50 }
+      pullover_reference: { min_rate_hz: 50 }
+
+  # N10 si_envelope_monitor (section 6.1): emits the constraint / veto
+  # vector to the HPC (section 8.2). B1's reaction ends here.
+  si_envelope_monitor:
+    paths:
+      constrain:
+        trigger: { input: [behaviour] }
+        output: [constraints]
+        max_latency: { duration: 5ms, source: requirement }
+        # B1: "comply with a restriction within 3 s" (section 3.1 B1
+        # Deadlines). The HPC's compliance is this level's settle.
+        safe_state:
+          emits: constraints
+          settle: { duration: 3s, source: requirement }
+      # B1's acceptance test, on N19's verdict (the exit of odd_degrade).
+      release:
+        trigger: { input: [odd_verdict] }
+        output: [constraints]
+        max_latency: { duration: 5ms, source: requirement }
+      on_tick:
+        trigger: { timer: { rate_hz: 50 } }
+        output: [constraints]
+        max_latency: { duration: 5ms, source: requirement }
+    sub:
+      behaviour: { min_rate_hz: 100, qos: { depth: 1 } }
+      odd_verdict: { min_rate_hz: 5, qos: { depth: 1 } }
+    pub:
+      constraints: { min_rate_hz: 50 }
+
+  # N18 si_pull_over_manager (section 6.3, "Two nodes carry it"): owns the
+  # refuge go/no-go and `pull_over_available`, evaluated continuously
+  # (during B2 too), 2 Hz. It does not read N3's selection; N7 executes.
+  si_pull_over_manager:
+    paths:
+      report:
+        trigger: { timer: { rate_hz: 2 } }
+        output: [fallback_availability, refuge_plan]
+        max_latency: { duration: 10ms, source: requirement }
+    sub:
+      refuge: { min_rate_hz: 2, link: hpc_tsn, qos: { depth: 1 }, state: true }
+      safety_world: { min_rate_hz: 20, qos: { depth: 1 }, state: true }
+    pub:
+      fallback_availability: { min_rate_hz: 2 }
+      refuge_plan: { min_rate_hz: 2 }
+
+  # I13 pure_pursuit: the P1 fallback controller (section 4.2), 50 Hz.
+  pure_pursuit:
+    paths:
+      on_timer:
+        trigger: { timer: { rate_hz: 50 } }
+        output: [control]
+        max_latency: { duration: 5ms, source: requirement }
+    sub:
+      trajectory: { min_rate_hz: 10, qos: { depth: 1 }, state: true }
+      hold_reference: { min_rate_hz: 50, qos: { depth: 1 }, state: true }
+      pullover_reference: { min_rate_hz: 10, qos: { depth: 1 }, state: true }
+      kinematic_state: { min_rate_hz: 50, qos: { depth: 1 }, state: true }
+    pub:
+      control: { min_rate_hz: 50 }
+
+  # N5 si_corridor_monitor: lateral containment; declares the corridor lost
+  # when the camera's lane lines are (section 6.1; B4 trigger).
+  si_corridor_monitor:
+    paths:
+      declare_corridor_lost:
+        trigger: { input: [lane_boundaries] }
+        output: [corridor_state]
+        max_latency: { duration: 5ms, source: requirement }
+    sub:
+      lane_boundaries:
+        min_rate_hz: 20
+        qos: { depth: 1 }
+        # N17's debounce (open decision 15; 60-150 ms is the plausible range):
+        # three camera periods.
+        max_age: { duration: 150ms, source: requirement }
+        on_violation:
+          on: [omission, reported]
+          mechanism: application
+          reaction: declare_corridor_lost
+          within: { duration: 5ms, source: requirement }
+    pub:
+      corridor_state: { min_rate_hz: 20 }
+
+  # N9 si_actuator_supervisor (section 6.1): commanded vs achieved. Its
+  # reaction drives the safe-state line (the CANHUB's input to the actuator
+  # gateway).
+  si_actuator_supervisor:
+    params:
+      gateway_decel: { type: double }
+      gateway_jerk: { type: double }
+    paths:
+      latch_line:
+        trigger: { input: [velocity_status] }
+        output: [safe_state_line]
+        max_latency: { duration: 2ms, source: requirement }
+        # The actuator gateway's own stop on the line. ILLUSTRATIVE: assumed
+        # at the 2.0.0 operator's `emergency` profile (-6.0 m/s^2, -20 m/s^3);
+        # a gateway fact to obtain.
+        safe_state:
+          emits: safe_state_line
+          settle:
+            decel: $(param gateway_decel) m/s^2
+            jerk: $(param gateway_jerk) m/s^3
+            response: { duration: 300ms, source: requirement }
+    sub:
+      velocity_status: { min_rate_hz: 50, link: chassis_can, qos: { depth: 1 } }
+    pub:
+      safe_state_line: { min_rate_hz: 100 }
+
+  # --- P2 -------------------------------------------------------------------
+  # N14 si_vision_guard: smart-camera lane boundaries (open decision 8b).
+  si_vision_guard:
+    paths:
+      on_frame:
+        trigger: { timer: { rate_hz: 20 } }
+        output: [lane_boundaries]
+        max_latency: { duration: 20ms, source: requirement }
+    sub:
+      camera: { min_rate_hz: 20, qos: { depth: 1 }, state: true }
+    pub:
+      lane_boundaries: { min_rate_hz: 20 }
+
+  # N6 si_radar_guard: radar tracks over CAN FD (section 6.2).
+  si_radar_guard:
+    paths:
+      declare_radar_lost:
+        trigger: { input: [radar_tracks] }
+        output: [radar_state]
+        max_latency: { duration: 5ms, source: requirement }
+    sub:
+      radar_tracks:
+        min_rate_hz: 20
+        qos: { depth: 1 }
+        max_age: { duration: 150ms, source: requirement }
+        on_violation:
+          on: [omission]
+          mechanism: application
+          reaction: declare_radar_lost
+          within: { duration: 5ms, source: requirement }
+    pub:
+      radar_state: { min_rate_hz: 20 }
+
+  # N16 si_safety_world_model: the age-checked snapshot P0/P1 read
+  # (section 2.2 staleness rule).
+  si_safety_world_model:
+    paths:
+      fuse:
+        trigger: { timer: { rate_hz: 20 } }
+        output: [safety_world]
+        max_latency: { duration: 20ms, source: requirement }
+    sub:
+      lane_boundaries: { min_rate_hz: 20, qos: { depth: 1 }, state: true }
+      radar_state: { min_rate_hz: 20, qos: { depth: 1 }, state: true }
+    pub:
+      safety_world: { min_rate_hz: 20 }
+
+  # N19 si_odd_monitor: the ODD verdict and B1's acceptance test
+  # (section 6.4), 5 Hz.
+  si_odd_monitor:
+    paths:
+      verdict:
+        trigger: { timer: { rate_hz: 5 } }
+        output: [odd_verdict]
+        max_latency: { duration: 20ms, source: requirement }
+    sub:
+      odd_status: { min_rate_hz: 10, link: hpc_tsn, qos: { depth: 1 }, state: true }
+      radar_state: { min_rate_hz: 20, qos: { depth: 1 }, state: true }
+      lane_boundaries: { min_rate_hz: 20, qos: { depth: 1 }, state: true }
+    pub:
+      odd_verdict: { min_rate_hz: 5 }
+
+  # --- P3 -------------------------------------------------------------------
+  # I9-I12 trajectory follower (ASI: MPC lateral + PID longitudinal), QM,
+  # 30 Hz. Its overrun is caught downstream, by the gate's age check on its
+  # command (hazard nominal_command_loss). A `supervise:` on this budget is
+  # refused (`supervised-unlowered`): the route monitor stamps the take of a
+  # path's first input, and a timer path has none.
+  trajectory_follower:
+    paths:
+      on_timer:
+        trigger: { timer: { rate_hz: 30 } }
+        output: [control]
+        max_latency: { duration: 25ms, source: requirement }
+    sub:
+      trajectory: { min_rate_hz: 10, qos: { depth: 1 }, state: true }
+      kinematic_state: { min_rate_hz: 50, qos: { depth: 1 }, state: true }
+    pub:
+      control: { min_rate_hz: 30 }
+
+# ---------------------------------------------------------------------------
+# EVENT CHAINS: each rung's reaction, from the guarded input to what commits
+# the rung. Nominal traversals; the fault routes are derived by the checker.
+paths:
+  # Ends at the gate's OUTPUT, so the walk charges what the gate does
+  # between the switcher's request and the island's first forwarded command;
+  # the settle is only what follows the gate (I16 and the CAN FD hop).
+  island.take_authority:
+    trigger: { input: [/si/in/heartbeat] }
+    output: [/control/command/control_cmd]
+  island.b1_constrain:
+    trigger: { input: [/si/out/odd_verdict] }
+    output: [/si/out/constraints]
+  island.b2_hold:
+    trigger: { input: [/si/in/heartbeat] }
+    output: [/si/internal/hold_reference]
+  island.b3_pull_over:
+    trigger: { input: [/si/in/heartbeat] }
+    output: [/si/internal/pullover_reference]
+  island.b4_blind_stop:
+    trigger: { input: [/si/sensing/lane_boundaries] }
+    output: [/control/control_command_gate/inputs/in_lane_stop/control]
+  island.mpc_fallback:
+    trigger: { input: [/control/trajectory_follower/control_cmd] }
+    output: [/control/command/control_cmd]
+  island.actuator_line:
+    trigger: { input: [/vehicle/status/velocity_status] }
+    output: [/si/hw/safe_state_line]
+
+# ---------------------------------------------------------------------------
+# TOPICS
+topics:
+  # --- HPC -> island (section 8.1), over the TSN link ---------------------
+  /si/in/heartbeat:
+    type: safety_island_msgs/msg/HpcHeartbeat
+    external: pub
+    pub: [/hpc_heartbeat/heartbeat]       # H7, in l4_hpc.contract.yaml
+    sub: [si_hpc_supervisor/heartbeat]
+    rate_hz: 100
+  /planning/scenario_planning/trajectory:
+    type: autoware_planning_msgs/msg/Trajectory
+    external: pub
+    pub: [/hpc_trajectory_conditioner/trajectory]   # H5
+    sub: [si_safety_gateway/trajectory]
+    rate_hz: 10
+  /si/in/odd_status:
+    type: safety_island_msgs/msg/OddStatus
+    external: pub
+    pub: [/hpc_odd_reporter/odd_status]   # H4
+    sub: [si_odd_monitor/odd_status]
+    rate_hz: 10
+  /si/in/refuge:
+    type: safety_island_msgs/msg/PullOverRefuge
+    external: pub
+    pub: [/hpc_refuge_publisher/refuge]   # H8
+    sub: [si_pull_over_manager/refuge]
+    rate_hz: 2
+
+  # --- island sensing and chassis (sections 6.2, 8.3) ------------------------
+  /si/sensing/camera:
+    type: safety_island_msgs/msg/LaneBoundaries
+    external: pub
+    sub: [si_vision_guard/camera]
+    rate_hz: 20
+  /si/sensing/radar_tracks:
+    type: safety_island_msgs/msg/RadarTracks
+    external: pub
+    sub: [si_radar_guard/radar_tracks]
+    rate_hz: 20
+  /vehicle/status/velocity_status:
+    type: autoware_vehicle_msgs/msg/VelocityReport
+    external: pub
+    sub: [si_vehicle_state_estimator/velocity_status, si_actuator_supervisor/velocity_status]
+    rate_hz: 50
+
+  # --- island internal ------------------------------------------------------
+  /si/sensing/lane_boundaries:
+    type: safety_island_msgs/msg/LaneBoundaries
+    pub: [si_vision_guard/lane_boundaries]
+    sub: [si_corridor_monitor/lane_boundaries, si_safety_world_model/lane_boundaries, si_odd_monitor/lane_boundaries]
+  /si/internal/radar_state:
+    type: safety_island_msgs/msg/SensorState
+    pub: [si_radar_guard/radar_state]
+    sub: [si_fault_manager/radar_state, si_safety_world_model/radar_state, si_odd_monitor/radar_state]
+  # N2's island-local operation mode availability (RFC section 6.1).
+  /si/internal/hpc_liveness:
+    type: tier4_system_msgs/msg/OperationModeAvailability
+    pub: [si_hpc_supervisor/hpc_liveness]
+    sub: [si_fault_manager/hpc_liveness]
+  /si/internal/e2e_event:
+    type: safety_island_msgs/msg/SafetyEvent
+    pub: [si_safety_gateway/e2e_event]
+    sub: [si_fault_manager/e2e_event]
+  /si/internal/corridor_state:
+    type: safety_island_msgs/msg/SensorState
+    pub: [si_corridor_monitor/corridor_state]
+    sub: [si_fault_manager/corridor_state, si_state_machine/corridor_state]
+  /si/internal/fault_verdict:
+    type: safety_island_msgs/msg/FaultVerdict
+    pub: [si_fault_manager/fault_verdict]
+    sub: [si_state_machine/fault_verdict]
+  # N3's island state (RFC section 8.2): the B2/B3 planner and the envelope
+  # monitor read it here, and H6 on the HPC watches it. H6 reacts to its
+  # silence (hazard island_loss in l4_hpc.contract.yaml).
+  # MUST MATCH l4_hpc.contract.yaml: hpc_island_state_client/island_state
+  # max_age 100ms.
+  /si/out/state:
+    type: safety_island_msgs/msg/IslandState
+    external: { side: sub, on_silence: { after: 100ms } }
+    pub: [si_state_machine/behaviour]
+    sub: [si_mrm_profile/behaviour, si_envelope_monitor/behaviour]
+  # The Autoware 2.0.0 command mode chain (topic names as in its launch
+  # files): availability -> decider -> request -> switcher -> the gate's
+  # source/select service (services: below) -> source status.
+  /system/command_mode/availability:
+    type: tier4_system_msgs/msg/CommandModeAvailability
+    pub: [si_state_machine/command_mode_availability]
+    sub: [command_mode_decider/command_mode_availability]
+  /system/command_mode/request:
+    type: tier4_system_msgs/msg/CommandModeRequest
+    pub: [command_mode_decider/command_mode_request]
+    sub: [command_mode_switcher/command_mode_request]
+  /control/control_command_gate/source/status:
+    type: tier4_system_msgs/msg/CommandSourceStatus
+    pub: [control_command_gate/source_status]
+    sub: [command_mode_switcher/source_status]
+  /system/in_lane_stop/trigger:
+    type: tier4_system_msgs/msg/InLaneStopTrigger
+    pub: [si_state_machine/in_lane_stop_trigger]
+    sub: [mrm_steering_hold_stop_operator/trigger]
+  # N7's MRM trajectory (RFC section 6.3: a bounded Trajectory), one topic
+  # per rung here so that each rung's reaction has its own end.
+  /si/internal/hold_reference:
+    type: autoware_planning_msgs/msg/Trajectory
+    pub: [si_mrm_profile/hold_reference]
+    sub: [pure_pursuit/hold_reference]
+  /si/internal/pullover_reference:
+    type: autoware_planning_msgs/msg/Trajectory
+    pub: [si_mrm_profile/pullover_reference]
+    sub: [pure_pursuit/pullover_reference]
+  /si/internal/refuge_plan:
+    type: safety_island_msgs/msg/PullOverRefuge
+    pub: [si_pull_over_manager/refuge_plan]
+    sub: [si_mrm_profile/refuge_plan]
+  /si/internal/trajectory_verified:
+    type: autoware_planning_msgs/msg/Trajectory
+    pub: [si_safety_gateway/trajectory_verified]
+    sub: [trajectory_follower/trajectory, pure_pursuit/trajectory]
+  /localization/kinematic_state:
+    type: nav_msgs/msg/Odometry
+    pub: [si_vehicle_state_estimator/kinematic_state]
+    sub: [trajectory_follower/kinematic_state, pure_pursuit/kinematic_state, mrm_steering_hold_stop_operator/kinematic_state]
+  /si/out/safety_world:
+    type: safety_island_msgs/msg/SafetyWorldState
+    pub: [si_safety_world_model/safety_world]
+    sub: [si_mrm_profile/safety_world, si_pull_over_manager/safety_world]
+  /control/trajectory_follower/control_cmd:
+    type: autoware_control_msgs/msg/Control
+    pub: [trajectory_follower/control]
+    sub: [control_command_gate/main_control]
+  /control/fallback/control_cmd:
+    type: autoware_control_msgs/msg/Control
+    pub: [pure_pursuit/control]
+    sub: [control_command_gate/fallback_control]
+  /control/control_command_gate/inputs/in_lane_stop/control:
+    type: autoware_control_msgs/msg/Control
+    pub: [mrm_steering_hold_stop_operator/control]
+    sub: [control_command_gate/in_lane_stop_control]
+  /control/command/control_cmd:
+    type: autoware_control_msgs/msg/Control
+    pub: [control_command_gate/control]
+    sub: [vehicle_interface/control]
+
+  # --- island -> HPC (section 8.2) ------------------------------------------
+  /si/out/odd_verdict:
+    type: safety_island_msgs/msg/OddVerdict
+    external: sub
+    pub: [si_odd_monitor/odd_verdict]
+    sub: [si_state_machine/odd_verdict, si_envelope_monitor/odd_verdict]
+  /si/out/constraints:
+    type: safety_island_msgs/msg/SafetyEnvelopeCommand
+    external: sub
+    pub: [si_envelope_monitor/constraints]
+  /si/out/fallback_availability:
+    type: safety_island_msgs/msg/FallbackAvailability
+    external: sub
+    pub: [si_pull_over_manager/fallback_availability]
+    sub: [si_state_machine/fallback_availability]
+
+  # --- island -> actuator gateway and CANHUB (section 8.3, 8.5) -------------
+  # The final element. The actuator gateway brakes by itself after 50 ms of
+  # silence (five 100 Hz frames; illustrative, a gateway fact to obtain).
+  /vehicle/actuation/command:
+    type: autoware_control_msgs/msg/Control
+    external: { side: sub, on_silence: { after: 50ms } }
+    pub: [vehicle_interface/actuation]
+  # The safe-state line N9 drives (de-energised = stop).
+  /si/hw/safe_state_line:
+    type: std_msgs/msg/Bool
+    external: { side: sub, on_silence: { after: 10ms } }
+    pub: [si_actuator_supervisor/safe_state_line]
+  # The island's heartbeat to the CANHUB (S32K344, external supervisor):
+  # after 30 ms of silence the CANHUB drives the safe-state line itself.
+  /si/out/island_alive:
+    type: std_msgs/msg/UInt32
+    external: { side: sub, on_silence: { after: 30ms } }
+    pub: [si_fault_manager/island_alive]
+
+# ---------------------------------------------------------------------------
+# SERVICES
+services:
+  # I3 asks I1 to select a command source (Autoware 2.0.0).
+  /control/control_command_gate/source/select:
+    type: tier4_system_msgs/srv/SelectCommandSource
+    server: [control_command_gate/source_select]
+    client: [command_mode_switcher/source_select]

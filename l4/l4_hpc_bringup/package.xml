@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>l4_hpc_bringup</name>
+  <version>0.1.0</version>
+  <description>HPC side of the L4 island link (RFC_L4_SafetyIslandDesign V1.0, section 7): launch tree, node interface contract and platform file. Contract only for now: the H-nodes it names are not built yet (docs/l4-island.md).</description>
+  <maintainer email="jerry73204@gmail.com">Hsiang-Jui Lin</maintainer>
+  <license>Apache-2.0</license>
+  <exec_depend>safety_island_msgs</exec_depend>
+  <exec_depend>tier4_system_msgs</exec_depend>
+  <exec_depend>autoware_planning_msgs</exec_depend>
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

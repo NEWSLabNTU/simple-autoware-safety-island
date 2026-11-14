@@ -1,0 +1,9 @@
+# rlm.lock: the extensions and profiles the contracts in this directory
+# resolved to. Written by `play_launch check --update-lock`; `check
+# --locked` refuses any other resolution. Commit it.
+version: 1
+resolved:
+  iso26262:
+    version: 1.1.0
+    sha256: 8cdb7e677892158e0a874aae6dce3605debd1a8ad2a2c6988e927674005adcdd
+    kind: profile

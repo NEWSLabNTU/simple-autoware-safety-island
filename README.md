@@ -65,6 +65,10 @@ src/
   native_sim_entry/         Zephyr native_sim entry, Cyclone ([image.native_sim])
   qemu_entry/               Zephyr QEMU mps2/an385 entry, zenoh ([image.qemu])
   zephyr_entry/             Zephyr board entry, zenoh, MR-CANHUBK344 ([image.zephyr])
+l4/
+  l4_island_bringup/        the L4 island (RFC_L4_SafetyIslandDesign): launch tree,
+                            contract, platform file; contract only, no node built yet
+  l4_hpc_bringup/           the HPC side of its link (docs/l4-island.md)
 tools/board/                board tooling: SWD readout, violations, probe
 tools/diag/                 the spin-latency diagnostic image
 docs/
@@ -72,6 +76,7 @@ docs/
   porting-notes.md          rclcpp→nano-ros friction log (deliverable!)
   demo-runbook.md           fresh-machine bring-up of the island and the board (start here)
   board-bringup-triage.md   MR-CANHUBK344 first-boot triage: symptom → knob
+  l4-island.md              the L4 island and HPC contracts: what is real, results
 ```
 
 ## Prerequisites

@@ -1,0 +1,208 @@
+# HPC side of the L4 island link: the H-nodes that feed the island and the
+# one that watches it (RFC_L4_SafetyIslandDesign V1.0, section 7), and what
+# the HPC promises on the link (section 8.1).
+#
+# STATUS. A design contract over the HPC's launch tree (l4_hpc.launch.xml):
+# real package and executable names, no node built by this repository yet
+# (docs/l4-island.md). It is checked ON ITS OWN. Nothing checks it against
+# l4_island.contract.yaml (l4/l4_island_bringup): each side marks the other
+# `external:`, and no rule compares the two. The places where the two files
+# must agree are marked "MUST MATCH". Integrity levels, requirement ids and
+# FTTIs are ILLUSTRATIVE: the HARA owns them.
+
+version: 1
+rlm: ">=v0.3.13"
+
+use:
+  iso26262: "^1"
+
+# ACKNOWLEDGED: a fact outside this model, with its reason.
+acknowledged:
+  # H6's reaction ends at the HPC's command mode decider, which is Autoware's
+  # and not in this contract; what notices a stalled HPC MRM is the
+  # vehicle's own stop on a silent command (outside this model).
+  - rule: reaction-unguarded
+    at: hazards.island_loss.reaction
+    reason: >-
+      the reaction ends at Autoware's command mode decider, outside this
+      contract; a stalled HPC MRM is caught outside this model
+
+# H7 must not share a process or a CPU with the planning stack whose loss it
+# reports (RFC R3, monitor independence). Checked against
+# l4_hpc.system.posix.yaml's CPU sets.
+independence:
+  - of: [hpc_heartbeat, velocity_smoother]
+    not_sharing: [process, cpus]
+
+# The island link seen from the HPC: TSN, zenoh, no clock shared with the
+# island (the island's S32 NETC Zephyr driver has no PTP clock). Every
+# max_age on it is judged on the HPC's own clock, by the time since the last
+# arrival. MUST MATCH l4_island.contract.yaml links.hpc_tsn.
+links:
+  island_tsn:
+    max_transport: { duration: 1ms, source: requirement }
+    clock: unsynced
+
+hazards:
+  # The island stops (its state stream is silent) while the HPC drives. The
+  # HPC has lost its safety supervisor and its fallback: it must stop
+  # driving on its own. H6 notices and withdraws the autonomous mode from
+  # the HPC's command mode decider, which then runs the HPC's own MRM.
+  island_loss:
+    integrity: ASIL_B
+    description: >-
+      the island's state stream stops while the HPC drives; the HPC has no
+      fallback and no supervisor left, and must leave autonomous driving by
+      itself
+    requirement: { id: SG-L4-07, source: "illustrative; RFC section 7 (H6), section 8.2 (/si/out/state, 50 Hz)" }
+    monitors: [/si/out/state]
+    on: omission
+    ftti: { duration: 10s, source: requirement }
+    reaction: hpc.island_lost
+
+nodes:
+  # The end of Autoware's planning: the velocity smoother's trajectory, which
+  # H5 conditions for the island. It is what H7 must stay independent of.
+  velocity_smoother:
+    paths:
+      smooth:
+        trigger: { input: [trajectory_in] }
+        output: [trajectory]
+        max_latency: { duration: 80ms, source: requirement }
+    sub:
+      trajectory_in: { min_rate_hz: 10, qos: { depth: 1 } }
+    pub:
+      trajectory: { min_rate_hz: 10 }
+
+  # H7 hpc_heartbeat: 100 Hz, minimal, highest RT priority (section 7).
+  hpc_heartbeat:
+    paths:
+      beat:
+        trigger: { timer: { rate_hz: 100 } }
+        output: [heartbeat]
+        max_latency: { duration: 1ms, source: requirement }
+    pub:
+      heartbeat: { min_rate_hz: 100 }
+
+  # H4 hpc_odd_reporter: the HPC's declared active domain (section 7, B1).
+  hpc_odd_reporter:
+    paths:
+      report:
+        trigger: { timer: { rate_hz: 10 } }
+        output: [odd_status]
+        max_latency: { duration: 10ms, source: requirement }
+    pub:
+      odd_status: { min_rate_hz: 10 }
+
+  # H5 hpc_trajectory_conditioner: 250 points, monotonic stamps (section 7).
+  hpc_trajectory_conditioner:
+    paths:
+      condition:
+        trigger: { input: [trajectory_in] }
+        output: [trajectory]
+        max_latency: { duration: 5ms, source: requirement }
+    sub:
+      trajectory_in: { min_rate_hz: 10, qos: { depth: 1 } }
+    pub:
+      trajectory: { min_rate_hz: 10 }
+
+  # H8 hpc_refuge_publisher: the rolling, law-checked refuge (section 6.3).
+  hpc_refuge_publisher:
+    paths:
+      publish:
+        trigger: { timer: { rate_hz: 2 } }
+        output: [refuge]
+        max_latency: { duration: 50ms, source: requirement }
+    pub:
+      refuge: { min_rate_hz: 2 }
+
+  # H6 hpc_island_state_client (section 7): reads the island's state and
+  # MRM verdict and republishes it to the HPC's own system (here: the
+  # command mode availability its decider reads, Autoware 2.0.0). Its
+  # silence check is the island_loss detector: 5 periods of the 50 Hz
+  # stream, evaluated by H6 on its own clock.
+  hpc_island_state_client:
+    paths:
+      relay:
+        trigger: { input: [island_state] }
+        output: [command_mode_availability]
+        max_latency: { duration: 2ms, source: requirement }
+        # The HPC's own MRM once autonomous is withdrawn: its decider,
+        # switcher, gate and the comfortable stop they select. ALLOCATED
+        # (the HPC's MRM is not in this contract): 8 s.
+        safe_state:
+          emits: command_mode_availability
+          settle: { duration: 8s, source: requirement }
+    sub:
+      island_state:
+        min_rate_hz: 50
+        link: island_tsn
+        qos: { depth: 1 }
+        # MUST MATCH l4_island.contract.yaml: /si/out/state on_silence 100ms.
+        max_age: { duration: 100ms, source: requirement }
+        on_violation:
+          on: [omission]
+          mechanism: application
+          reaction: relay
+          within: { duration: 2ms, source: requirement }
+    pub:
+      command_mode_availability: { aperiodic: true }
+
+paths:
+  hpc.island_lost:
+    trigger: { input: [/si/out/state] }
+    output: [/system/command_mode/availability]
+
+topics:
+  # The planning stack's input, outside this contract.
+  /planning/scenario_planning/scenario_selector/trajectory:
+    type: autoware_planning_msgs/msg/Trajectory
+    external: pub
+    sub: [velocity_smoother/trajectory_in]
+    rate_hz: 10
+  /planning/trajectory:
+    type: autoware_planning_msgs/msg/Trajectory
+    pub: [velocity_smoother/trajectory]
+    sub: [hpc_trajectory_conditioner/trajectory_in]
+
+  # --- HPC -> island, consumed by the island image ---------------------------
+  # The island takes authority (B2) after 30 ms of heartbeat silence.
+  # MUST MATCH l4_island.contract.yaml: si_hpc_supervisor/heartbeat max_age
+  # 30ms. Stated here as the external consumer's reaction to silence, which
+  # is what `on_silence` means; nothing compares the two numbers.
+  /si/in/heartbeat:
+    type: safety_island_msgs/msg/HpcHeartbeat
+    external: { side: sub, on_silence: { after: 30ms } }
+    pub: [hpc_heartbeat/heartbeat]
+  # MUST MATCH: si_safety_gateway/trajectory max_age 300ms (age limit,
+  # section 8.1).
+  /planning/scenario_planning/trajectory:
+    type: autoware_planning_msgs/msg/Trajectory
+    external: { side: sub, on_silence: { after: 300ms } }
+    pub: [hpc_trajectory_conditioner/trajectory]
+  /si/in/odd_status:
+    type: safety_island_msgs/msg/OddStatus
+    external: sub
+    pub: [hpc_odd_reporter/odd_status]
+  /si/in/refuge:
+    type: safety_island_msgs/msg/PullOverRefuge
+    external: sub
+    pub: [hpc_refuge_publisher/refuge]
+
+  # --- island -> HPC -------------------------------------------------------
+  # N3's island state (section 8.2), 50 Hz. MUST MATCH l4_island.contract.yaml
+  # /si/out/state.
+  /si/out/state:
+    type: safety_island_msgs/msg/IslandState
+    external: pub
+    pub: [/si_state_machine/behaviour]
+    sub: [hpc_island_state_client/island_state]
+    rate_hz: 50
+
+  # --- HPC system ------------------------------------------------------------
+  # The HPC's command mode decider (Autoware 2.0.0) reads it; it is outside
+  # this contract.
+  /system/command_mode/availability:
+    type: tier4_system_msgs/msg/CommandModeAvailability
+    external: sub
+    pub: [hpc_island_state_client/command_mode_availability]

@@ -1,0 +1,34 @@
+# The S32Z280 island's core placement, written as a POSIX platform file
+# because `play_launch check` types CPU sets only for `target: posix` (a
+# `zephyr` file is passed through untyped). A PROXY: CPU numbers are LOGICAL,
+# 0 = the lockstep R52 pair (P0 + P1), 2 = split R52 core A (P2), 3 = split
+# R52 core B (P3) (RFC section 9.1). It carries the CPU sets the contract's
+# `independence` is checked against. The priorities `check` derives from it
+# (and its `sched:` advisories) are not the image's Zephyr priorities, which
+# nano-ros derives from the contract and its executor levels.
+target: posix
+priority_assignment: chain_aware
+resources:
+  rt_priority_band: { min: 10, max: 80 }
+overrides:
+  control_command_gate: { cpus: [0] }
+  command_mode_decider: { cpus: [0] }
+  command_mode_switcher: { cpus: [0] }
+  mrm_steering_hold_stop_operator: { cpus: [0] }
+  vehicle_interface: { cpus: [0] }
+  si_safety_gateway: { cpus: [0] }
+  si_hpc_supervisor: { cpus: [0] }
+  si_state_machine: { cpus: [0] }
+  si_vehicle_state_estimator: { cpus: [0] }
+  si_fault_manager: { cpus: [0] }
+  pure_pursuit: { cpus: [0] }
+  si_corridor_monitor: { cpus: [0] }
+  si_mrm_profile: { cpus: [0] }
+  si_actuator_supervisor: { cpus: [0] }
+  si_envelope_monitor: { cpus: [0] }
+  si_pull_over_manager: { cpus: [0] }
+  si_vision_guard: { cpus: [2] }
+  si_radar_guard: { cpus: [2] }
+  si_safety_world_model: { cpus: [2] }
+  si_odd_monitor: { cpus: [2] }
+  trajectory_follower: { cpus: [3] }
