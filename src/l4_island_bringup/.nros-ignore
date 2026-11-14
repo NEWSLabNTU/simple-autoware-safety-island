@@ -1,0 +1,6 @@
+Kept out of `nros configure`: the contract states the RFC's 70 ms
+take-authority deadline and the design misses it (two `level-within`
+errors, docs/l4-island.md), so the resolver refuses the model and
+configure would fail the whole workspace. .github/check-contracts.sh still
+checks it, expecting those errors. Remove this file when the finding is
+resolved or an L4 image is built.

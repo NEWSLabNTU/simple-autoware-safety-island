@@ -65,7 +65,6 @@ src/
   native_sim_entry/         Zephyr native_sim entry, Cyclone ([image.native_sim])
   qemu_entry/               Zephyr QEMU mps2/an385 entry, zenoh ([image.qemu])
   zephyr_entry/             Zephyr board entry, zenoh, MR-CANHUBK344 ([image.zephyr])
-l4/
   l4_island_bringup/        the L4 island (RFC_L4_SafetyIslandDesign): launch tree,
                             contract, platform file; contract only, no node built yet
   l4_hpc_bringup/           the HPC side of its link (docs/l4-island.md)

@@ -18,8 +18,8 @@
 # version can disagree (the island contract, below), so run it with the pin.
 #
 # A contract is `<stem>.contract.yaml`, the provider sidecar of
-# `<stem>.launch.xml` beside it. src/ (the island image) and l4/ (the L4
-# island and HPC contracts, island #17) are searched. Exit 0 when every
+# `<stem>.launch.xml` beside it. src/ is searched: the island image and
+# the L4 island and HPC contracts (island #17). Exit 0 when every
 # verdict matches its expectation.
 #
 # Every contract here is the island's own, under src/. The evaluation's
@@ -43,14 +43,14 @@ declare -A EXPECT_CORE=(
     # The L4 island contract states the RFC's 70 ms take-authority deadline
     # (`within: 70ms` on B2) and the design misses it: 92 ms on heartbeat
     # loss, 361 ms on a late trajectory (docs/l4-island.md, Results).
-    [l4/l4_island_bringup/launch/l4_island]="1:level-within!"
+    [src/l4_island_bringup/launch/l4_island]="1:level-within!"
 )
 
 contracts() {
-    find ./src ./l4 -name '*.contract.yaml' -print
+    find ./src -name '*.contract.yaml' -print
 }
 
-echo "play_launch: $(command -v "$PL") ($("$PL" --version 2>/dev/null)); contracts: src/, l4/"
+echo "play_launch: $(command -v "$PL") ($("$PL" --version 2>/dev/null)); contracts: src/"
 fail=0 n=0
 while read -r c; do
     [ -n "$c" ] || continue

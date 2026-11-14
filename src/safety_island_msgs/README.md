@@ -3,7 +3,7 @@
 Messages of the L4 safety island's HPC interface, from
 RFC_L4_SafetyIslandDesign V1.0 (`docs/L4SafetyIsland_SoftwareDesign_GitHub.md`,
 commit f529052), section 8, plus the island-internal messages the L4 contract
-(`l4/l4_island_bringup`) names. One set of `.msg` sources serves both domains:
+(`src/l4_island_bringup`) names. One set of `.msg` sources serves both domains:
 
 - ROS 2: `rosidl_generate_interfaces()` in `CMakeLists.txt`, built by
   `scripts/build-host-msgs.sh` (`just host-msgs`, and CI).

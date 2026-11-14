@@ -31,7 +31,7 @@
 #   - the CANHUB (S32K344) as external supervisor, driving a safe-state line
 #     into the actuator gateway;
 #   - B5 deferred (not in this file); B6 not modelled.
-# The HPC side of the link is l4_hpc.contract.yaml (l4/l4_hpc_bringup).
+# The HPC side of the link is l4_hpc.contract.yaml (src/l4_hpc_bringup).
 # Nothing checks the two files against each other; the places where they
 # must agree are marked "MUST MATCH".
 

@@ -5,7 +5,7 @@
 # STATUS. A design contract over the HPC's launch tree (l4_hpc.launch.xml):
 # real package and executable names, no node built by this repository yet
 # (docs/l4-island.md). It is checked ON ITS OWN. Nothing checks it against
-# l4_island.contract.yaml (l4/l4_island_bringup): each side marks the other
+# l4_island.contract.yaml (src/l4_island_bringup): each side marks the other
 # `external:`, and no rule compares the two. The places where the two files
 # must agree are marked "MUST MATCH". Integrity levels, requirement ids and
 # FTTIs are ILLUSTRATIVE: the HARA owns them.

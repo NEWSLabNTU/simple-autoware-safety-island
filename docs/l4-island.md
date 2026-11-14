@@ -6,8 +6,8 @@ node interface contracts on launch trees, checked by `play_launch check`:
 
 | Package | Launch tree | Contract | Platform file |
 |---|---|---|---|
-| `l4/l4_island_bringup` | `l4_island.launch.xml` (21 nodes, one S32Z280 image) | `l4_island.contract.yaml`: the B1-B4 ladder, 7 hazards | `l4_island.system.posix.yaml` (core placement) |
-| `l4/l4_hpc_bringup` | `l4_hpc.launch.xml` (the H-nodes on the HPC) | `l4_hpc.contract.yaml`: what the HPC sends, `island_loss` | `l4_hpc.system.posix.yaml` |
+| `src/l4_island_bringup` | `l4_island.launch.xml` (21 nodes, one S32Z280 image) | `l4_island.contract.yaml`: the B1-B4 ladder, 7 hazards | `l4_island.system.posix.yaml` (core placement) |
+| `src/l4_hpc_bringup` | `l4_hpc.launch.xml` (the H-nodes on the HPC) | `l4_hpc.contract.yaml`: what the HPC sends, `island_loss` | `l4_hpc.system.posix.yaml` |
 
 Their messages are `src/safety_island_msgs` (RFC section 8) and the vendored
 Autoware subsets under `src/` (island #16). Check them the way CI does:
@@ -17,9 +17,10 @@ Autoware subsets under `src/` (island #16). Check them the way CI does:
 which builds the message packages as a ROS 2 overlay
 (`scripts/build-host-msgs.sh`), sources it, and runs
 `.github/check-contracts.sh` (`play_launch check --locked --strict` on every
-contract under `src/` and `l4/`, with the pinned play_launch). Both L4
-contracts are expected clean, with no `--expect` waiver, and every `when:`
-and `commands` field resolved on the ament index.
+contract under `src/`, with the pinned play_launch). `l4_hpc` is
+expected clean and `l4_island` is expected to fail with the two `level-within`
+errors in Results; every `when:` and `commands` field is resolved on the ament
+index.
 
 ## What is real and what is a placeholder
 
@@ -28,18 +29,19 @@ and `commands` field resolved on the ament index.
 | Message types | **Real.** Every topic's type exists: `safety_island_msgs` or a vendored Autoware `.msg`. Every `when:` / `commands` field is checked |
 | Autoware 2.0.0 node names | **Real** package, executable and node names, as Autoware 2.0.0 installs them: `autoware_control_command_gate`, `autoware_command_mode_decider`, `autoware_command_mode_switcher`, `autoware_mrm_steering_hold_stop_operator`, `autoware_pure_pursuit`, `autoware_trajectory_follower_node`, `autoware_velocity_smoother` |
 | Autoware 2.0.0 wiring | **Real**, read from the 2.0.0 sources: availability -> decider -> `/system/command_mode/request` -> switcher -> the gate's `source/select` service -> `source/status`; the gate forwards the selected source's commands on arrival |
-| Autoware 2.0.0 parameters | **Real** files (`l4/l4_island_bringup/config/`), verbatim from 2.0.0 except the gate's `rate` (see below) |
+| Autoware 2.0.0 parameters | **Real** files (`src/l4_island_bringup/config/`), verbatim from 2.0.0 except the gate's `rate` (see below) |
 | New island nodes (N1-N19, I16) and HPC nodes (H4-H8) | **Placeholders**: the RFC's node names, each as a package of the same name. No such package exists; their paths and budgets are the RFC's or allocated inside its budgets |
 | Any built node | **None.** This repository builds no L4 node. The contracts constrain code that does not exist yet |
 | Numbers | All `source: requirement` (RFC or allocated) or derived by the checker. Nothing is measured. Integrity levels, requirement ids and FTTIs are illustrative: the HARA owns them |
 | S32Z280 core placement | A POSIX proxy: `cpus` in the platform file stand for the lockstep R52 pair and the two split cores. Separate address spaces (MPU domains per partition) are not claimed; the grammar has no key for them |
 
-The L4 packages live in `l4/`, not `src/`: `nros configure` resolves every
-launch tree under `src/` with the resolver of the pinned nano-ros, and that
-resolver (rlm v0.3.14) still refuses this contract (`dwell-expiry` from a
-detector that is not the dwell's owner, fixed in later play_launch). Moving
-them under `src/` waits for a nano-ros pin whose resolver accepts them and
-for the nodes themselves.
+The L4 packages live under `src/` beside the island's own. `nros configure`
+resolves every launch tree under `src/`, and the pinned resolver gives
+`l4_island` the same verdict as play_launch (the two `level-within` errors
+below), so it would refuse the workspace. `src/l4_island_bringup/.nros-ignore`
+keeps that package out of configure (honoured since nano-ros 2067430eab,
+NEWSLabNTU/nano-ros#3871). `.github/check-contracts.sh` checks
+both packages.
 
 ## Results (play_launch 0.34.0, rlm v0.3.18)
 
