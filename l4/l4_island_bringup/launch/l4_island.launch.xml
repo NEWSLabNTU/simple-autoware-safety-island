@@ -46,6 +46,7 @@
   <node pkg="si_state_machine" exec="si_state_machine" name="si_state_machine">
     <param name="t_odd" value="10.0"/>
     <param name="t_hold" value="15.0"/>
+    <param name="v_odd" value="16.67"/>
   </node>
   <node pkg="si_vehicle_state_estimator" exec="si_vehicle_state_estimator" name="si_vehicle_state_estimator"/>
   <node pkg="si_fault_manager" exec="si_fault_manager" name="si_fault_manager"/>

@@ -40,6 +40,10 @@ PL="${PLAY_LAUNCH:-play_launch}"
 # CORE: the island's own contract passes (no entry); nothing core is
 # expected to fail. Kept as its own table so a core variant has a place.
 declare -A EXPECT_CORE=(
+    # The L4 island contract states the RFC's 70 ms take-authority deadline
+    # (`within: 70ms` on B2) and the design misses it: 92 ms on heartbeat
+    # loss, 361 ms on a late trajectory (docs/l4-island.md, Results).
+    [l4/l4_island_bringup/launch/l4_island]="1:level-within!"
 )
 
 contracts() {

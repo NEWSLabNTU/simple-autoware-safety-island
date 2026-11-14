@@ -41,41 +41,69 @@ detector that is not the dwell's owner, fixed in later play_launch). Moving
 them under `src/` waits for a nano-ros pin whose resolver accepts them and
 for the nodes themselves.
 
-## Results (play_launch 0.33.1)
+## Results (play_launch 0.34.0, rlm v0.3.18)
 
 | Contract | Verdict |
 |---|---|
-| `l4_island` | 0 errors, 0 warnings, 8 acknowledged |
+| `l4_island` | **2 errors (`level-within`, expected)**, 0 warnings, 6 acknowledged |
 | `l4_hpc` | 0 errors, 0 warnings, 1 acknowledged |
-| `safety_island` (the current image) | 0 errors, 6 warnings (`measured-unsupervised`), 2 acknowledged; its 3 `when` and 3 `commands` fields are now resolved |
+| `safety_island` (the current image) | 0 errors, 6 warnings (`measured-unsupervised`), 2 acknowledged |
 
-The `sched:` lines `check` prints are advisories on the POSIX proxy's derived
-priorities, which are not the image's (nano-ros derives those).
+`l4_island` is registered in `.github/check-contracts.sh` as expected to
+exit 1 with `level-within` as its only error: the contract states the RFC's
+70 ms take-authority deadline as written, and the design does not meet it
+(below). The `sched:` lines `check` prints are advisories on the POSIX
+proxy's derived priorities, which are not the image's (nano-ros derives
+those).
+
+The contract uses the fallback-sequence grammar of rlm v0.3.18:
+
+- B2 (`lane_keep_hold`) has `requires_lost: [hpc_alive, hpc_commands]`: a
+  hazard that leaves the HPC running goes from B1 to B3 without B2's dwell.
+- B2's T_hold is a range, `min_dwell: { duration: { min: 8s, max: 15s } }`:
+  8 s is promised, the levels below are charged 15 s.
+- B2's hand-back re-enters B1 (`exit.to: odd_degrade`); the twin mode
+  `ads_constrained` and the separate `hpc_loss_authority` hazard are gone.
+- The 70 ms take-authority deadline is `within: 70ms` on B2, judged from
+  the fault to B2's settle (its first command out).
+- B2's speed cap reads `$(param si_state_machine v_odd)` from the launch
+  tree (one parameter file per ODD class).
 
 Fault-reaction rows (`--explain`, ms), island:
 
-| Hazard | Rung | Detect | Dwells | Route | Settle | Total | FTTI |
+| Hazard | Level | Detect | Dwells | Route | Settle | Total | Limit |
 |---|---|---:|---:|---:|---:|---:|---:|
-| hpc_loss_authority | take authority | 30 | 0 | 38 | 14 | **82** | 1000 |
-| nominal_command_loss | MPC -> pure_pursuit | 67 | 0 | 31 | 14 | 112 | 1000 |
-| hpc_loss | B3 pull over | 30 | 15012 | 17 | 65000 | 80059 | 90000 |
-| hpc_loss | B4 floor | 30 | 15012 | 44.03 | 6156.67 | 21242.70 | 90000 |
-| camera_loss | B4 floor | 150 | 0 | 39.03 | 6156.67 | 6345.70 | 10000 |
-| camera_loss | B4 settle overrun | 150 | 0 | 6221.70 | 3228.33 | 9600.03 | 10000 |
-| hpc_link_integrity | B3 pull over | 300 | 15011 | 17 | 65000 | 80328 | 90000 |
-| odd_unsatisfiable | B3 pull over | 220 | 25024 | 17 | 65000 | 90261 | 120000 |
-| odd_sensing_loss | B3 pull over | 150 | 25609 | 17 | 65000 | 90776 | 120000 |
+| hpc_loss | B2 lane keep hold | 30 | 0 | 12 | 50 | **92** | within 70 |
+| hpc_link_integrity | B2 lane keep hold | 300 | 0 | 11 | 50 | **361** | within 70 |
+| hpc_loss | B3 pull over | 30 | 15012 | 17 | 65000 | 80059 | FTTI 90000 |
+| hpc_loss | B4 floor | 30 | 15012 | 44.03 | 6156.67 | 21242.70 | FTTI 90000 |
+| hpc_link_integrity | B3 pull over | 300 | 15011 | 17 | 65000 | 80328 | FTTI 90000 |
+| camera_loss | B4 floor | 150 | 0 | 39.03 | 6156.67 | 6345.70 | FTTI 10000 |
+| camera_loss | B4 settle overrun | 150 | 0 | 6221.70 | 3228.33 | 9600.03 | FTTI 10000 |
+| nominal_command_loss | MPC -> pure_pursuit | 67 | 0 | 31 | 14 | 112 | FTTI 1000 |
+| odd_unsatisfiable | B3 pull over (B2 skipped) | 220 | 10007 | 17 | 65000 | 75244 | FTTI 120000 |
+| odd_sensing_loss | B3 pull over (B2 skipped) | 150 | 10592 | 17 | 65000 | 75759 | FTTI 120000 |
+
+With `requires_lost`, the two ODD hazards no longer pass through B2: their
+B3 rows drop from 90261 and 90776 ms to 75244 and 75759 ms.
 
 HPC: `island_loss` 100 (H6's age check) + 3 (link 1 + H6) + 8000 (the HPC's
 own MRM, allocated) = 8103 of 10000.
 
-**Taking authority is 82 ms, above the RFC's 70 ms island budget
-(section 9.2).** The row now ends at the gate's output (island #17, G26): the
-longest route is N2 -> N8 -> N3 -> N7 (hold trajectory) -> pure_pursuit's
-next 50 Hz tick (20 ms sampling) -> the gate forwarding it, then I16's 100 Hz
-tick, its work and the CAN FD hop (14 ms). The command-mode branch (decider,
-switcher, `source/select`, the gate's next fallback sample) is 32 ms and
-shorter. The draft's 61 ms carried the gate stage as a 20 ms literal.
+**The RFC's 70 ms take-authority deadline (section 9.2) is not met.**
+
+- On HPC heartbeat loss, B2 is entered 92 ms after the fault: N2's 30 ms
+  silence timeout, a 12 ms route, and B2's 50 ms settle (first command out:
+  pure_pursuit's next 50 Hz sample, the gate, I16's 100 Hz tick and the
+  CAN FD hop). 22 ms over.
+- On a late HPC trajectory (`hpc_link_integrity`), B2 is entered 361 ms
+  after the fault: the gateway's 300 ms lateness window alone exceeds 70 ms.
+  The RFC does not say whether its 70 ms applies to this fault.
+
+This is a finding on the RFC's budget, not a checker limit; the numbers are
+allocations, not measurements. Levers: a shorter heartbeat timeout (which
+raises the false-trip risk; see play_launch #25), a faster fallback
+controller tick, I16's tick, and a separate deadline for the lateness case.
 
 ## The gate's `rate` in Autoware 2.0.0
 
@@ -132,10 +160,12 @@ and in the parameter file.
 ## Open items
 
 - The 2.0.0 switcher's `source/select` call has no timeout
-  (`ControlGateInterface::request`): acknowledged as `call-unbounded-mrc`.
-  The island port has to bound it or supervise the gate's output.
-- Take authority (82 ms) exceeds the RFC's 70 ms: the fallback controller's
-  period and I16's tick are the levers.
+  (`ControlGateInterface::request`). The island port has to bound it or
+  supervise the gate's output. play_launch 0.34.0 no longer draws
+  `call-unbounded-mrc` on this ladder, so the contract carries it as a
+  comment only.
+- Take authority misses the RFC's 70 ms (92 ms on heartbeat loss, 361 ms on
+  a late trajectory; above). To raise with the RFC working group.
 - The gate's `rate` is not derived into any row (above).
 - No rule compares the two contracts (each MUST MATCH pair is a comment).
 - The trajectory the island receives needs a nano-ros codegen cap of 250

@@ -36,7 +36,7 @@
 # must agree are marked "MUST MATCH".
 
 version: 1
-rlm: ">=v0.3.13"     # modes.commands, requirement, functions.m, independence, on_silence
+rlm: ">=v0.3.18"     # + requires_lost, dwell range, exit to a level, within, read predicate values
 
 use:
   vehicle.braking: "^1"
@@ -46,7 +46,8 @@ let:
   # B2's v_odd, highway class (section 3.1 B2: ~60 km/h highway, ~30 km/h
   # city; the class table is open decision 13). The entry speed of every
   # hazard whose ladder runs through B2's ramp.
-  v_odd: 16.67 m/s
+  # m1g: read from N3's parameter, so a per-class parameter file sets it.
+  v_odd: $(param si_state_machine v_odd) m/s
 
 # ---------------------------------------------------------------------------
 # ACKNOWLEDGED: findings read and kept, each with its reason. Each is a fact
@@ -68,18 +69,14 @@ acknowledged:
   - { rule: reaction-unguarded, at: hazards.odd_unsatisfiable.enters, reason: *unguarded }
   - { rule: reaction-unguarded, at: hazards.odd_sensing_loss.enters, reason: *unguarded }
   - { rule: reaction-unguarded, at: hazards.camera_loss.enters, reason: *unguarded }
-  - { rule: reaction-unguarded, at: hazards.hpc_loss_authority.reaction, reason: *unguarded }
   - { rule: reaction-unguarded, at: hazards.nominal_command_loss.reaction, reason: *unguarded }
   # Autoware 2.0.0's switcher sends source/select with no timeout
   # (ControlGateInterface::request: async_send_request, `requesting_` held
-  # until the response). Kept as the upstream fact; the island port has to
-  # bound it or supervise the gate's output (docs/l4-island.md, open items).
-  - rule: call-unbounded-mrc
-    at: nodes.command_mode_switcher.cli.source_select
-    reason: >-
-      the Autoware 2.0.0 command_mode_switcher's source/select call has no
-      timeout; bounding it is an open item of the island port, recorded in
-      docs/l4-island.md
+  # until the response). The island port has to bound it or supervise the
+  # gate's output (docs/l4-island.md, open items). play_launch 0.34.0 no
+  # longer draws `call-unbounded-mrc` on this ladder (no twin mode since the
+  # fallback-sequence grammar), so it is not acknowledged here; the upstream
+  # fact stands.
 
 # ---------------------------------------------------------------------------
 # FUNCTIONS: what each rung needs from outside the safety core.
@@ -158,23 +155,28 @@ modes:
       the HPC is lost; the island steers and brakes, holds the lane on the
       camera corridor at v_hold, and waits T_hold for the HPC to return
     requires: [camera_lanes]
+    # m1g: B2 exists only once the HPC is lost (heartbeat or commands): a
+    # hazard that leaves the HPC running goes from B1 to B3.
+    requires_lost: [hpc_alive, hpc_commands]
     reaction: island.b2_hold
-    # T_hold: the RFC says 8-15 s per ODD class (open decision 14). One value
-    # only: the longest, so the budget rows below are the worst case.
-    min_dwell: { duration: 15s, param: si_state_machine.t_hold, source: requirement }
-    # The only reversible authority transfer (section 3.1 B2). The RFC
-    # re-enters B1 at CONSTRAIN; `exit.to` may not name a rung of any
-    # ladder, so the target is ads_constrained, below.
-    exit: { holds: hpc_requalified, to: ads_constrained }
+    # T_hold: 8-15 s per ODD class (open decision 14). 8 s is promised; the
+    # levels below are charged 15 s.
+    min_dwell: { duration: { min: 8s, max: 15s }, param: si_state_machine.t_hold, source: requirement }
+    # The island takes authority within 70 ms of losing the HPC (section
+    # 9.2): fault to the island steering (B2's settle, its first command out).
+    within: { duration: 70ms, source: requirement }
+    # The only reversible authority transfer (section 3.1 B2): back to B1 at
+    # CONSTRAIN, a re-entry of the level above.
+    exit: { holds: hpc_requalified, to: odd_degrade }
     # Camera lost mid-B2: B4 at once (section 3.1 B2 "Failure"). The
     # camera_loss hazard enters this mode; pull_over needs the camera too and
     # is skipped.
     fallback: [pull_over, blind_stop]
-    # While B2 holds, the island's command stays at or below v_odd (the
-    # highway class; one constant) and does not accelerate.
+    # While B2 holds, the island's command stays at or below v_odd, read
+    # from the launch per class.
     commands:
       /vehicle/actuation/command:
-        - { field: longitudinal.velocity, le: 16.67 }
+        - { field: longitudinal.velocity, le: $(let v_odd) }
 
   pull_over:            # B3
     description: >-
@@ -202,32 +204,10 @@ modes:
         - { field: longitudinal.acceleration, le: 0 }
         - { field: lateral.steering_tire_rotation_rate, equals: 0 }
 
-  ads_constrained:
-    description: >-
-      the HPC drives again after a B2 hand-back, entered at CONSTRAIN (B1's
-      state), until the section 6.4 hysteresis releases it
-    requires: [hpc_alive, hpc_commands]
-    fallback: [lane_keep_hold, pull_over, blind_stop]
-
 # ---------------------------------------------------------------------------
 # HAZARDS. `enters:` names the mode the hazard TAKES AWAY (v0.3.15); its
 # reaction is that mode's fallback sequence, each rung by its own reaction.
 hazards:
-  # The RFC's 70 ms budget (section 9.2) is a reaction to TAKE AUTHORITY, not
-  # a time to a minimal risk condition. One rung: the chain to the gate.
-  hpc_loss_authority:
-    integrity: ASIL_D
-    description: >-
-      the HPC stops (heartbeat silent) while it drives; the island must take
-      lateral and longitudinal authority before the vehicle leaves its lane
-    requirement: { id: SG-L4-01a, source: "illustrative; RFC section 9.2 (70 ms island reaction); lateral FTTI to be derived" }
-    monitors: [/si/in/heartbeat]
-    on: omission
-    # Illustrative: time to a lane departure at v_odd with no reaction. The
-    # RFC derives none. What matters here is the ROUTE row.
-    ftti: { duration: 1s, source: requirement }
-    reaction: island.take_authority
-
   # The same fault, judged on the whole ladder: B2 holds, B3 pulls over,
   # B4 is the floor. Its interval is the MRM completion requirement, not an
   # ISO 26262 FTTI in the lateral sense (that is the hazard above).
@@ -444,6 +424,7 @@ nodes:
     params:
       t_odd: { type: double }
       t_hold: { type: double }
+      v_odd: { type: double }
     paths:
       # A fault verdict changes the mode at once: the island state and, on
       # the HPC's loss, the command mode availability the decider acts on.
