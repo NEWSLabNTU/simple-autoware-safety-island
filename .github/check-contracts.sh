@@ -6,6 +6,13 @@
 #   just contract-check                   # the pinned wheel, in build/l3-ci
 #   PLAY_LAUNCH=/path/to/play_launch .github/check-contracts.sh
 #
+# The island's message packages must be on the ament index (island #16):
+# `play_launch check` resolves every `when:` and `commands` field of a
+# contract through AMENT_PREFIX_PATH, and a field it cannot resolve is only a
+# `*-field-unknown` warning, i.e. UNCHECKED. This script FAILS a contract
+# whose output names one. Build and source the overlay first:
+#   scripts/build-host-msgs.sh build/msgs_ws && source build/msgs_ws/install/setup.bash
+#
 # The expectations below are the PINNED release's verdicts (check.yml,
 # PLAY_LAUNCH_VERSION). A source-built play_launch that calls itself the same
 # version can disagree (the island contract, below), so run it with the pin.
@@ -69,6 +76,10 @@ while read -r c; do
     elif [ "$only" = 1 ]; then
         others="$(printf '%s\n' "$out" | grep -oE 'error\[[a-z0-9-]+\]' | sort -u | grep -vxF "error[$rule]" | paste -sd' ' -)"
         [ -z "$others" ] || why="error[$rule] as expected, but also $others"
+    fi
+    if [ -z "$why" ]; then
+        unknown="$(printf '%s\n' "$out" | grep -oE '(when|commands)-field-unknown' | sort -u | paste -sd' ' -)"
+        [ -z "$unknown" ] || why="a message field is UNCHECKED ($unknown): is the msgs overlay sourced (scripts/build-host-msgs.sh)?"
     fi
     if [ -z "$why" ]; then
         echo "ok   $stem (exit $got${rule:+, error[$rule]}) $summary"

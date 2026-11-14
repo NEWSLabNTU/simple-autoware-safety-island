@@ -23,8 +23,13 @@ easiest → hardest:
 
 Message dependencies are vendored verbatim (subset of files) under `src/`:
 `autoware_control_msgs`, `autoware_vehicle_msgs`, `autoware_adapi_v1_msgs`,
-`autoware_common_msgs`, `autoware_internal_planning_msgs`, `tier4_system_msgs`.
-nano-ros consumes stock `rosidl_generate_interfaces()` + `package.xml` unchanged.
+`autoware_common_msgs`, `autoware_internal_planning_msgs`,
+`autoware_planning_msgs`, `tier4_system_msgs` (the 1.5.0 files this image
+uses, and the Autoware 2.0.0 command mode and trajectory messages the L4
+island names). `src/safety_island_msgs` holds the L4 island's own messages
+(RFC_L4_SafetyIslandDesign section 8; its README). nano-ros consumes stock
+`rosidl_generate_interfaces()` + `package.xml` unchanged; `just host-msgs`
+builds the same packages as a ROS 2 overlay.
 
 ## Topology
 
@@ -51,6 +56,7 @@ NEWSLabNTU/rtss-work-2026-demo.
 CMakeLists.txt              nano-ros 3-role workspace root
 src/
   <vendored msg pkgs>/      verbatim rosidl packages (subset)
+  safety_island_msgs/       the L4 island's messages (RFC section 8)
   autoware_mrm_*/           ported node pkgs (upstream file layout preserved)
   safety_island_bringup/    system.toml (the system, its components and every
                             image: zephyr, qemu, native_sim) + launch XML +

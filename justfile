@@ -280,18 +280,66 @@ run: build
         ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-10}" \
         ./{{BUILD_DIR}}/src/native_entry/native_entry
 
-# Build the vendored msg pkgs as a host colcon overlay so ros2 CLI tools can
-# echo/call the island's typed topics (also proves the pkgs build verbatim).
+# Build the island's msg pkgs (the vendored Autoware subsets and
+# safety_island_msgs) as a host colcon overlay: ros2 CLI tools can then echo
+# the island's typed topics, `contract-check` resolves every contract field
+# against it, and it proves the pkgs build verbatim under rosidl.
 #
-# Build the vendored msg pkgs as a host colcon overlay.
+# Build the island's msg pkgs as a host colcon overlay.
 host-msgs:
     #!/usr/bin/env bash
     set -e
     source /opt/ros/humble/setup.bash
-    mkdir -p tmp/host_msgs_ws/src && cd tmp/host_msgs_ws/src
-    ln -sfn ../../../src/autoware_common_msgs ../../../src/autoware_control_msgs ../../../src/tier4_system_msgs .
-    cd .. && colcon build --symlink-install
+    scripts/build-host-msgs.sh tmp/host_msgs_ws
     echo "source tmp/host_msgs_ws/install/setup.bash + RMW_IMPLEMENTATION=rmw_cyclonedds_cpp ROS_DOMAIN_ID=$ROS_DOMAIN_ID"
+
+# The L4 messages through nano-ros's own codegen (island #16): Rust, C and C++
+# bindings for safety_island_msgs and the Autoware 2.0.0 additions to the
+# vendored subsets, every type's derived size bound, and a `cargo check` of
+# the generated Rust crate. No image carries these messages yet (no L4 node
+# is built), so this is what shows that nano-ros generates them and that
+# every one is bounded.
+#
+# Generate and compile the L4 messages' nano-ros bindings.
+l4-msgs:
+    #!/usr/bin/env bash
+    set -e
+    source /opt/ros/humble/setup.bash
+    source "{{NROS_ROOT}}/activate.sh" >/dev/null
+    export NROS_INTERFACE_SEARCH_PATH=$PWD/src
+    out=$PWD/build/l4-msgs
+    mkdir -p "$out"
+    cat > "$out/package.xml" <<'XML'
+    <?xml version="1.0"?>
+    <package format="3">
+      <name>l4_msgs_probe</name>
+      <version>0.0.0</version>
+      <description>Codegen probe for the L4 messages (just l4-msgs).</description>
+      <maintainer email="noreply@example.com">island</maintainer>
+      <license>Apache-2.0</license>
+      <depend>safety_island_msgs</depend>
+      <depend>tier4_system_msgs</depend>
+      <depend>autoware_planning_msgs</depend>
+      <depend>autoware_control_msgs</depend>
+      <depend>autoware_vehicle_msgs</depend>
+    </package>
+    XML
+    "{{NROS_ROOT}}/packages/cli/target/release/nros" interface generate all \
+        --manifest "$out/package.xml" -o "$out/gen" \
+        --codegen-config "$PWD/nros-codegen.toml" --force
+    python3 - "$out/gen" <<'PY'
+    import json, pathlib, sys
+    bad = []
+    for f in sorted(pathlib.Path(sys.argv[1]).glob("*/nros_message_bounds.json")):
+        for t in json.loads(f.read_text())["types"]:
+            if t["state"] != "bounded":
+                bad.append(t["type_name"])
+    print("l4-msgs: every generated type is bounded" if not bad else "l4-msgs: UNBOUNDED: " + " ".join(bad))
+    sys.exit(1 if bad else 0)
+    PY
+    (cd "$out/gen/safety_island_msgs" && CARGO_TARGET_DIR="$out/target" cargo check --quiet)
+    (cd "$out/gen/tier4_system_msgs" && CARGO_TARGET_DIR="$out/target" cargo check --quiet)
+    echo "l4-msgs: safety_island_msgs and tier4_system_msgs bindings compile"
 
 # Remove the native build tree.
 clean:
@@ -978,8 +1026,13 @@ contract-check:
     wh="${PLAY_LAUNCH_WHEELHOUSE:-}"
     [ -n "$wh" ] && [ -d "$wh/play_launch-$ver" ] && links="$wh/play_launch-$ver"
     [ -x $venv/bin/play_launch ] || { python3 -m venv $venv && $venv/bin/pip install -q "play_launch[humble]==$ver" --find-links "$links"; }
-    env -i HOME="$HOME" USER="$USER" PATH=/usr/bin:/bin PLAY_LAUNCH="$PWD/$venv/bin/play_launch" \
-        bash -c 'source /opt/ros/humble/setup.bash && exec .github/check-contracts.sh'
+    # The msg pkgs on the ament index (island #16), as CI builds them: every
+    # contract field is then resolved, and check-contracts.sh fails one that
+    # is not. colcon may live outside /usr/bin (a pip install).
+    colcon_dir="$(dirname "$(command -v colcon)")"
+    env -i HOME="$HOME" USER="$USER" PATH="/usr/bin:/bin:$colcon_dir" PLAY_LAUNCH="$PWD/$venv/bin/play_launch" \
+        bash -c 'source /opt/ros/humble/setup.bash && scripts/build-host-msgs.sh build/msgs_ws >/dev/null \
+            && source build/msgs_ws/install/setup.bash && exec .github/check-contracts.sh'
 
 alias l3-check := contract-check
 
