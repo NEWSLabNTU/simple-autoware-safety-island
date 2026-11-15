@@ -32,3 +32,11 @@ overrides:
   si_safety_world_model: { cpus: [2] }
   si_odd_monitor: { cpus: [2] }
   trajectory_follower: { cpus: [3] }
+
+# The supervision timer of the island (route deadlines on a k_timer and a
+# reaction thread above the executor), a fact of the target since rlm
+# v0.3.22. S32K344 values (tick 1 ms, switch measured 0.04 ms, rounded up);
+# NOT measured on the S32Z280.
+supervision:
+  tick: 1ms
+  switch: 1ms

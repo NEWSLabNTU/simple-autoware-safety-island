@@ -454,18 +454,22 @@ let:
 # a stalled manoeuvre.
 acknowledged:
   - rule: reaction-unguarded
-    at: hazards.hpc_loss.enters
+    at: hazards.hpc_loss.leaves
     reason: >-
       the emergency stop ends at /system/emergency/control_cmd, an external
       topic; only Autoware or the vehicle outside this image could notice a
       stalled manoeuvre, and nothing there is declared yet
   - rule: reaction-unguarded
-    at: hazards.odd_exit.enters
+    at: hazards.odd_exit.leaves
     reason: >-
       the emergency stop ends at /system/emergency/control_cmd, an external
       topic; only Autoware or the vehicle outside this image could notice a
       stalled manoeuvre, and nothing there is declared yet
 
+# rlm v0.3.22 moved `supervision:` to the target's platform file. It stays
+# here for now (read for one release, with a deprecation warning): `nros
+# configure` resolves this contract without the image's target, so a
+# `safety_island.system.zephyr.yaml` would not be read by the image build.
 # phase11-S6: the platform terms of a supervision's detection delay (rlm
 # 0.1.61's `supervision:`). tick: the kernel tick the board's k_timer expires
 # on (CONFIG_SYS_CLOCK_TICKS_PER_SEC 1000). switch: the expiry ISR plus the
@@ -554,7 +558,7 @@ links:
 # What each rung needs from outside the island. A function is lost by
 # silence on its topics, and, with `when:`, also by value: `when:` names the
 # predicate that LOSES it (ros-launch-manifest v0.1.46).
-functions:
+capabilities:
   # Lost by silence: the HPC is alive while the stream arrives.
   hpc_alive: [/system/operation_mode/availability]
   # Lost by value OR by silence: the HPC says the vehicle is in its domain.
@@ -586,7 +590,7 @@ hazards:
     on: omission
     entry_speed: $(let odd_speed_bound)
     ftti: { duration: 10s, source: requirement }
-    enters: l3_engaged
+    leaves: l3_engaged
   odd_exit:
     integrity: ASIL_B       # illustrative; HARA-owned
     description: >-
@@ -599,7 +603,7 @@ hazards:
     when: { field: autonomous, equals: false }
     entry_speed: $(let odd_speed_bound)
     ftti: { duration: 30s, source: requirement }
-    enters: l3_engaged
+    leaves: l3_engaged
 
 modes:
   l3_engaged:
@@ -658,7 +662,7 @@ nodes:
       # tick, so listing them would claim a periodic output the node does not
       # produce.
       on_timer:
-        trigger: { timer: { rate_hz: $(param update_rate) Hz } }
+        trigger: { timer: { rate: $(param update_rate) Hz } }
         output: [status]
       # `onOperate` -> `publishVelocityLimit()` (phase8-W7): the service
       # callback publishes the limit itself, so the comfortable rung's walk
@@ -721,7 +725,7 @@ nodes:
       # for the same reason (phase9-W7).
       max_velocity_candidates: { qos: { depth: 1, durability: transient_local } }
       clear_velocity_limit: { qos: { depth: 1, durability: transient_local } }
-      status: { min_rate_hz: 9, qos: { durability: volatile } }
+      status: { min_rate: 9Hz, qos: { durability: volatile } }
 
   mrm_emergency_stop_operator:
     params:
@@ -737,7 +741,7 @@ nodes:
       on_timer:
         trigger:
           timer:
-            rate_hz: $(param update_rate) Hz
+            rate: $(param update_rate) Hz
             jitter:
               duration: 6ms
               source: { measured: { max: 4.34ms, n: 1073, margin: 0.2 } }
@@ -833,13 +837,13 @@ nodes:
       # read-latest input, not a trigger. `state: true` says so; without it
       # the checker's state-consistency rule warns that the subscriber is
       # neither a path trigger nor state.
-      control_cmd: { min_rate_hz: 30, qos: { depth: 1 }, state: true }
+      control_cmd: { min_rate: 30Hz, qos: { depth: 1 }, state: true }
     pub:
       # VOLATILE, stated: the source uses the default profile. See the note
       # on mrm_handler's pub block for why an unstated durability is not read
       # as volatile.
-      emergency_control_cmd: { min_rate_hz: 27, qos: { durability: volatile } }
-      status: { min_rate_hz: 27, qos: { durability: volatile } }
+      emergency_control_cmd: { min_rate: 27Hz, qos: { durability: volatile } }
+      status: { min_rate: 27Hz, qos: { durability: volatile } }
 
   # The arbiter. Six subscriptions since phase8-W8a dropped the gear
   # pass-through (seven before; `operation_mode_state` is the one the old
@@ -881,7 +885,7 @@ nodes:
       on_timer:
         trigger:
           timer:
-            rate_hz: $(param update_rate) Hz
+            rate: $(param update_rate) Hz
             jitter:
               duration: 18ms
               source: { measured: { max: 14.84ms, n: 1641, margin: 0.2 } }
@@ -1014,7 +1018,7 @@ nodes:
       # hazards above have nothing watching their guard, and the checker
       # says so.
       operation_mode_availability:
-        min_rate_hz: 10
+        min_rate: 10Hz
         # `timeout_operation_mode_availability: 0.5` is a STALENESS bound the
         # handler evaluates itself on its 10 Hz tick, not a DDS lease: so the
         # mechanism is `application`, and `max_age` is the same 500 ms; the
@@ -1057,13 +1061,13 @@ nodes:
       # (CONFIG_ISLAND_SUPERVISOR_STANDSTILL_OBSERVE_MS 136) is one period
       # 100 + this link's 36 (`links.localization_kinematic_state`).
       kinematic_state:
-        min_rate_hz: 10
+        min_rate: 10Hz
         link: localization_kinematic_state
         qos: { depth: 1 }
       # Behind the same UART, downsampled by the gateway
       # (`links.gateway_control_mode`).
       control_mode:
-        min_rate_hz: 10
+        min_rate: 10Hz
         link: gateway_control_mode
         qos: { depth: 1 }
       # What bounds the two statuses' arrivals (nano-ros RFC-0108 D1, rlm
@@ -1072,8 +1076,8 @@ nodes:
       # the least gap is stated, at half the tick's period: release jitter
       # (6 ms on the 30 Hz tick) and the transport can bunch two arrivals,
       # and no key bounds that.
-      comfortable_stop_status: { min_rate_hz: 9, min_interarrival: 50ms, qos: { depth: 1 } }
-      emergency_stop_status: { min_rate_hz: 9, min_interarrival: 15ms, qos: { depth: 1 } }
+      comfortable_stop_status: { min_rate: 9Hz, min_interarrival: 50ms, qos: { depth: 1 } }
+      emergency_stop_status: { min_rate: 9Hz, min_interarrival: 15ms, qos: { depth: 1 } }
       # Latched, published on CHANGE by default_adapi: no rate is claimed.
       # TRANSIENT_LOCAL as upstream since phase8-W14 (nano-ros phase-473 W2
       # serves a transient-local subscription from the publisher's cache), so
@@ -1107,11 +1111,11 @@ nodes:
       # streams (kinematic_state, control_mode, control_cmd, the detector)
       # keep their floors: they are requirements on Autoware. Budgets are
       # unchanged: they derive from `update_rate`, not from the floor.
-      mrm_state: { min_rate_hz: 9, qos: { durability: volatile } }
+      mrm_state: { min_rate: 9Hz, qos: { durability: volatile } }
       # phase8-W7: MrmBehaviorStatus reused. AVAILABLE = idle, OPERATING =
       # the request is on, NOT_AVAILABLE = use_takeover_request is false.
-      takeover_request_state: { min_rate_hz: 9, qos: { durability: volatile } }
-      hazard_lights_cmd: { min_rate_hz: 9, qos: { durability: volatile } }
+      takeover_request_state: { min_rate: 9Hz, qos: { durability: volatile } }
+      hazard_lights_cmd: { min_rate: 9Hz, qos: { durability: volatile } }
 
 # The reactions, as scope paths from the guarded input to the topic that
 # commits each rung. What each rung COSTS is the reaction walk the hazards
@@ -1136,7 +1140,7 @@ nodes:
 # island.emergency_stop keeps 210 ms: the checker reports no critical path
 # above it. island.comfortable_stop declares none: it crosses the operate
 # service, which the nominal graph does not walk.
-paths:
+event_chains:
   island.tor:
     trigger: { input: [/system/operation_mode/availability] }
     output: [/system/takeover_request/state]
@@ -1178,7 +1182,7 @@ topics:
     type: autoware_control_msgs/msg/Control
     external: pub
     sub: [mrm_emergency_stop_operator/control_cmd]
-    rate_hz: 30
+    rate: 30Hz
   # The guard. Its publisher is OUTSIDE this image and outside this launch
   # tree, and is named anyway (phase8-W7), by its absolute FQN so that it is
   # not qualified against this scope: odd_exit is a REPORTED fault, and the
@@ -1198,17 +1202,17 @@ topics:
     external: pub
     pub: [/availability_gate/availability]
     sub: [mrm_handler/operation_mode_availability]
-    rate_hz: 10
+    rate: 10Hz
   /localization/kinematic_state:
     type: nav_msgs/msg/Odometry
     external: pub
     sub: [mrm_handler/kinematic_state]
-    rate_hz: 10
+    rate: 10Hz
   /vehicle/status/control_mode:
     type: autoware_vehicle_msgs/msg/ControlModeReport
     external: pub
     sub: [mrm_handler/control_mode]
-    rate_hz: 10
+    rate: 10Hz
   /api/operation_mode/state:
     type: autoware_adapi_v1_msgs/msg/OperationModeState
     external: pub

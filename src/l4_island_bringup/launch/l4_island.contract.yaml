@@ -60,15 +60,15 @@ acknowledged:
   # gateway's own timeout. Neither is a subscriber with an `on_violation`
   # on these topics, and the CANHUB is another model.
   - rule: reaction-unguarded
-    at: hazards.hpc_loss.enters
+    at: hazards.hpc_loss.leaves
     reason: &unguarded >-
       a stalled reaction is caught by N9's supervision of the vehicle's
       response and by the CANHUB outside this image, not by a subscriber of
       the reaction's own output
-  - { rule: reaction-unguarded, at: hazards.hpc_link_integrity.enters, reason: *unguarded }
-  - { rule: reaction-unguarded, at: hazards.odd_unsatisfiable.enters, reason: *unguarded }
-  - { rule: reaction-unguarded, at: hazards.odd_sensing_loss.enters, reason: *unguarded }
-  - { rule: reaction-unguarded, at: hazards.camera_loss.enters, reason: *unguarded }
+  - { rule: reaction-unguarded, at: hazards.hpc_link_integrity.leaves, reason: *unguarded }
+  - { rule: reaction-unguarded, at: hazards.odd_unsatisfiable.leaves, reason: *unguarded }
+  - { rule: reaction-unguarded, at: hazards.odd_sensing_loss.leaves, reason: *unguarded }
+  - { rule: reaction-unguarded, at: hazards.camera_loss.leaves, reason: *unguarded }
   - { rule: reaction-unguarded, at: hazards.nominal_command_loss.reaction, reason: *unguarded }
   # Autoware 2.0.0's switcher sends source/select with no timeout
   # (ControlGateInterface::request: async_send_request, `requesting_` held
@@ -82,7 +82,7 @@ acknowledged:
 # FUNCTIONS: what each rung needs from outside the safety core.
 # A function is lost by silence on its topics, and with `when:` also by the
 # value that `when:` names.
-functions:
+capabilities:
   # H7 hpc_heartbeat, 100 Hz (section 8.1). Lost by silence.
   hpc_alive: [/si/in/heartbeat]
   # H5's trajectory, after N1 has verified it (section 8.4). Lost by silence,
@@ -221,7 +221,7 @@ hazards:
     on: omission
     entry_speed: $(let v_odd)
     ftti: { duration: 90s, source: requirement }
-    enters: ads_active
+    leaves: ads_active
 
   # B1's trigger: N19 measures the declared domain as unsatisfiable. A
   # REPORTED value fault on the island's own verdict.
@@ -237,7 +237,7 @@ hazards:
     when: { field: odd_satisfiable, equals: false }
     entry_speed: $(let v_odd)
     ftti: { duration: 120s, source: requirement }
-    enters: ads_active
+    leaves: ads_active
 
   # B1's other trigger: the island loses part of its own ODD measurement
   # (radar; the 2oo2 group odd_measurable is lost).
@@ -251,7 +251,7 @@ hazards:
     on: omission
     entry_speed: $(let v_odd)
     ftti: { duration: 120s, source: requirement }
-    enters: ads_active
+    leaves: ads_active
 
   # B2's failure row: the camera is lost while the island steers.
   camera_loss:
@@ -265,7 +265,7 @@ hazards:
     when: { field: valid, equals: false }
     entry_speed: $(let v_odd)
     ftti: { duration: 10s, source: requirement }
-    enters: lane_keep_hold
+    leaves: lane_keep_hold
 
   # SI-E2E on the HPC link (section 8.4), the classes rlm can name: late
   # (age limit), repetition, resequencing, insertion. Corruption and
@@ -282,7 +282,7 @@ hazards:
     on: [late, repetition, resequencing, insertion]
     entry_speed: $(let v_odd)
     ftti: { duration: 90s, source: requirement }
-    enters: ads_active
+    leaves: ads_active
 
   # The two-tier controller (section 4.2): the QM MPC's command stops or is
   # late; the gate selects pure_pursuit within one cycle.
@@ -316,12 +316,8 @@ independence:
   - of: [si_hpc_supervisor, trajectory_follower]
     not_sharing: [cpus]
 
-# The supervision timer of the island (route deadlines on a k_timer and a
-# reaction thread above the executor). S32K344 values (tick 1 ms, switch
-# measured 0.04 ms, rounded up); NOT measured on the S32Z280.
-supervision:
-  tick: 1ms
-  switch: 1ms
+# supervision: { tick, switch } is in l4_island.system.posix.yaml beside this file
+# (rlm v0.3.22: a fact of the target, not of the contract).
 
 # The HPC link (section 8.1): TSN on NETC, zenoh. A REQUIREMENT, allocated:
 # the RFC states per-signal age limits, not a transport bound. Nothing has
@@ -359,7 +355,7 @@ nodes:
         max_latency: { duration: 1ms, source: requirement }
     sub:
       trajectory:
-        min_rate_hz: 10
+        min_rate: 10Hz
         link: hpc_tsn
         qos: { depth: 1 }
         max_age: { duration: 300ms, param: trajectory_age_limit, source: requirement }
@@ -369,7 +365,7 @@ nodes:
           reaction: verify_trajectory
           within: { duration: 1ms, source: requirement }
     pub:
-      trajectory_verified: { min_rate_hz: 10 }
+      trajectory_verified: { min_rate: 10Hz }
       e2e_event: { aperiodic: true }
 
   # N2 si_hpc_supervisor: heartbeat supervision (section 6.1, 9.2). 3 missed
@@ -385,7 +381,7 @@ nodes:
         max_latency: { duration: 2ms, source: requirement }
     sub:
       heartbeat:
-        min_rate_hz: 100
+        min_rate: 100Hz
         link: hpc_tsn
         qos: { depth: 1 }
         max_age: { duration: 30ms, param: heartbeat_timeout, source: requirement }
@@ -395,7 +391,7 @@ nodes:
           reaction: declare_hpc_lost
           within: { duration: 2ms, source: requirement }
     pub:
-      hpc_liveness: { min_rate_hz: 100 }
+      hpc_liveness: { min_rate: 100Hz }
 
   # N8 si_fault_manager: static fault table (section 6.1). Event-driven
   # here; also the island's heartbeat to the CANHUB.
@@ -406,17 +402,17 @@ nodes:
         output: [fault_verdict]
         max_latency: { duration: 2ms, source: requirement }
       alive:
-        trigger: { timer: { rate_hz: 100 } }
+        trigger: { timer: { rate: 100Hz } }
         output: [island_alive]
         max_latency: { duration: 1ms, source: requirement }
     sub:
-      hpc_liveness: { min_rate_hz: 100, qos: { depth: 1 } }
+      hpc_liveness: { min_rate: 100Hz, qos: { depth: 1 } }
       e2e_event: { qos: { depth: 4 }, min_interarrival: 10ms }
-      corridor_state: { min_rate_hz: 20, qos: { depth: 1 } }
-      radar_state: { min_rate_hz: 20, qos: { depth: 1 } }
+      corridor_state: { min_rate: 20Hz, qos: { depth: 1 } }
+      radar_state: { min_rate: 20Hz, qos: { depth: 1 } }
     pub:
-      fault_verdict: { min_rate_hz: 100 }
-      island_alive: { min_rate_hz: 100 }
+      fault_verdict: { min_rate: 100Hz }
+      island_alive: { min_rate: 100Hz }
 
   # N3 si_state_machine: single owner of the island mode (section 6.1). It
   # owns T_odd and T_hold and notices their deadlines on a 100 Hz tick.
@@ -446,17 +442,17 @@ nodes:
         output: [behaviour, in_lane_stop_trigger]
         max_latency: { duration: 2ms, source: requirement }
       on_tick:
-        trigger: { timer: { rate_hz: 100 } }
+        trigger: { timer: { rate: 100Hz } }
         output: [behaviour, in_lane_stop_trigger]
         max_latency: { duration: 2ms, source: requirement }
     sub:
-      fault_verdict: { min_rate_hz: 100, qos: { depth: 1 } }
+      fault_verdict: { min_rate: 100Hz, qos: { depth: 1 } }
       # N5's corridor verdict, directly: B4 is entered from every state with
       # no guard (section 6.1), so the blackout does not wait for N8's
       # aggregation (N8 still records it).
-      corridor_state: { min_rate_hz: 20, qos: { depth: 1 } }
+      corridor_state: { min_rate: 20Hz, qos: { depth: 1 } }
       odd_verdict:
-        min_rate_hz: 5
+        min_rate: 5Hz
         qos: { depth: 1 }
         on_violation:
           on: [reported]
@@ -466,7 +462,7 @@ nodes:
       # The refuge function's detector (mode-requires-unguarded): N18's
       # availability, by silence or by `pull_over_available: false`.
       fallback_availability:
-        min_rate_hz: 2
+        min_rate: 2Hz
         qos: { depth: 1 }
         max_age: { duration: 1500ms, source: requirement }
         on_violation:
@@ -475,8 +471,8 @@ nodes:
           reaction: on_fallback
           within: { duration: 2ms, source: requirement }
     pub:
-      behaviour: { min_rate_hz: 100 }
-      in_lane_stop_trigger: { min_rate_hz: 100 }
+      behaviour: { min_rate: 100Hz }
+      in_lane_stop_trigger: { min_rate: 100Hz }
       # Which command modes are available, the 2.0.0 decider's input: N3
       # marks the HPC's mode unavailable and the island's mode available.
       command_mode_availability: { aperiodic: true }
@@ -530,7 +526,7 @@ nodes:
       source_select: { min_interarrival: 10ms }
     paths:
       on_timer:
-        trigger: { timer: { rate_hz: $(param rate) Hz } }
+        trigger: { timer: { rate: $(param rate) Hz } }
         output: [source_status]
         max_latency: { duration: 2ms, source: requirement }
       # A select switches the gate's output to the new source
@@ -578,7 +574,7 @@ nodes:
         max_latency: { duration: 1ms, source: requirement }
     sub:
       main_control:
-        min_rate_hz: 30
+        min_rate: 30Hz
         qos: { depth: 1 }
         # Two MPC periods (2 x 33.3 ms), allocated. Judged by the gate on its
         # `rate` tick; that tick is in select_fallback's budget.
@@ -588,10 +584,10 @@ nodes:
           mechanism: application
           reaction: select_fallback
           within: { duration: 31ms, source: requirement }
-      fallback_control: { min_rate_hz: 50, qos: { depth: 1 } }
-      in_lane_stop_control: { min_rate_hz: 30, qos: { depth: 1 } }
+      fallback_control: { min_rate: 50Hz, qos: { depth: 1 } }
+      in_lane_stop_control: { min_rate: 30Hz, qos: { depth: 1 } }
     pub:
-      control: { min_rate_hz: 30 }
+      control: { min_rate: 30Hz }
       source_status: { aperiodic: true, qos: { depth: 1, durability: transient_local } }
 
   # I16 vehicle interface: CAN FD TX to the actuator gateway (section 8.3,
@@ -603,13 +599,13 @@ nodes:
   vehicle_interface:
     paths:
       transmit:
-        trigger: { timer: { rate_hz: 100 } }
+        trigger: { timer: { rate: 100Hz } }
         output: [actuation]
         max_latency: { duration: 2ms, source: requirement }
     sub:
-      control: { min_rate_hz: 30, qos: { depth: 1 }, state: true }
+      control: { min_rate: 30Hz, qos: { depth: 1 }, state: true }
     pub:
-      actuation: { min_rate_hz: 100 }
+      actuation: { min_rate: 100Hz }
 
   # B4's operator: Autoware 2.0.0 mrm_steering_hold_stop_operator, on a
   # 33.3 Hz tick that reads the in-lane-stop trigger.
@@ -620,7 +616,7 @@ nodes:
       profiles.moderate.target_jerk: { type: double }
     paths:
       on_timer:
-        trigger: { timer: { rate_hz: $(param update_rate) Hz } }
+        trigger: { timer: { rate: $(param update_rate) Hz } }
         output: [control]
         max_latency: { duration: 2ms, source: requirement }
         safe_state:
@@ -642,9 +638,9 @@ nodes:
               early: { within: 1500ms, drop: 1 m/s }
     sub:
       trigger: { qos: { depth: 1 }, state: true }
-      kinematic_state: { min_rate_hz: 50, qos: { depth: 1 }, state: true }
+      kinematic_state: { min_rate: 50Hz, qos: { depth: 1 }, state: true }
     pub:
-      control: { min_rate_hz: 30 }
+      control: { min_rate: 30Hz }
 
   # N4 si_vehicle_state_estimator: island-local odometry (R2), 100 Hz.
   si_vehicle_state_estimator:
@@ -654,9 +650,9 @@ nodes:
         output: [kinematic_state]
         max_latency: { duration: 2ms, source: requirement }
     sub:
-      velocity_status: { min_rate_hz: 50, link: chassis_can, qos: { depth: 1 } }
+      velocity_status: { min_rate: 50Hz, link: chassis_can, qos: { depth: 1 } }
     pub:
-      kinematic_state: { min_rate_hz: 50 }
+      kinematic_state: { min_rate: 50Hz }
 
   # --- P1 -------------------------------------------------------------------
   # N7 si_mrm_profile / si_mrm_planner (sections 6.1, 6.3): the v_odd /
@@ -684,12 +680,12 @@ nodes:
           emits: pullover_reference
           settle: { duration: 65s, source: requirement }
     sub:
-      behaviour: { min_rate_hz: 100, qos: { depth: 1 } }
-      safety_world: { min_rate_hz: 20, qos: { depth: 1 }, state: true }
-      refuge_plan: { min_rate_hz: 2, qos: { depth: 1 }, state: true }
+      behaviour: { min_rate: 100Hz, qos: { depth: 1 } }
+      safety_world: { min_rate: 20Hz, qos: { depth: 1 }, state: true }
+      refuge_plan: { min_rate: 2Hz, qos: { depth: 1 }, state: true }
     pub:
-      hold_reference: { min_rate_hz: 50 }
-      pullover_reference: { min_rate_hz: 50 }
+      hold_reference: { min_rate: 50Hz }
+      pullover_reference: { min_rate: 50Hz }
 
   # N10 si_envelope_monitor (section 6.1): emits the constraint / veto
   # vector to the HPC (section 8.2). B1's reaction ends here.
@@ -710,14 +706,14 @@ nodes:
         output: [constraints]
         max_latency: { duration: 5ms, source: requirement }
       on_tick:
-        trigger: { timer: { rate_hz: 50 } }
+        trigger: { timer: { rate: 50Hz } }
         output: [constraints]
         max_latency: { duration: 5ms, source: requirement }
     sub:
-      behaviour: { min_rate_hz: 100, qos: { depth: 1 } }
-      odd_verdict: { min_rate_hz: 5, qos: { depth: 1 } }
+      behaviour: { min_rate: 100Hz, qos: { depth: 1 } }
+      odd_verdict: { min_rate: 5Hz, qos: { depth: 1 } }
     pub:
-      constraints: { min_rate_hz: 50 }
+      constraints: { min_rate: 50Hz }
 
   # N18 si_pull_over_manager (section 6.3, "Two nodes carry it"): owns the
   # refuge go/no-go and `pull_over_available`, evaluated continuously
@@ -725,30 +721,30 @@ nodes:
   si_pull_over_manager:
     paths:
       report:
-        trigger: { timer: { rate_hz: 2 } }
+        trigger: { timer: { rate: 2Hz } }
         output: [fallback_availability, refuge_plan]
         max_latency: { duration: 10ms, source: requirement }
     sub:
-      refuge: { min_rate_hz: 2, link: hpc_tsn, qos: { depth: 1 }, state: true }
-      safety_world: { min_rate_hz: 20, qos: { depth: 1 }, state: true }
+      refuge: { min_rate: 2Hz, link: hpc_tsn, qos: { depth: 1 }, state: true }
+      safety_world: { min_rate: 20Hz, qos: { depth: 1 }, state: true }
     pub:
-      fallback_availability: { min_rate_hz: 2 }
-      refuge_plan: { min_rate_hz: 2 }
+      fallback_availability: { min_rate: 2Hz }
+      refuge_plan: { min_rate: 2Hz }
 
   # I13 pure_pursuit: the P1 fallback controller (section 4.2), 50 Hz.
   pure_pursuit:
     paths:
       on_timer:
-        trigger: { timer: { rate_hz: 50 } }
+        trigger: { timer: { rate: 50Hz } }
         output: [control]
         max_latency: { duration: 5ms, source: requirement }
     sub:
-      trajectory: { min_rate_hz: 10, qos: { depth: 1 }, state: true }
-      hold_reference: { min_rate_hz: 50, qos: { depth: 1 }, state: true }
-      pullover_reference: { min_rate_hz: 10, qos: { depth: 1 }, state: true }
-      kinematic_state: { min_rate_hz: 50, qos: { depth: 1 }, state: true }
+      trajectory: { min_rate: 10Hz, qos: { depth: 1 }, state: true }
+      hold_reference: { min_rate: 50Hz, qos: { depth: 1 }, state: true }
+      pullover_reference: { min_rate: 10Hz, qos: { depth: 1 }, state: true }
+      kinematic_state: { min_rate: 50Hz, qos: { depth: 1 }, state: true }
     pub:
-      control: { min_rate_hz: 50 }
+      control: { min_rate: 50Hz }
 
   # N5 si_corridor_monitor: lateral containment; declares the corridor lost
   # when the camera's lane lines are (section 6.1; B4 trigger).
@@ -760,7 +756,7 @@ nodes:
         max_latency: { duration: 5ms, source: requirement }
     sub:
       lane_boundaries:
-        min_rate_hz: 20
+        min_rate: 20Hz
         qos: { depth: 1 }
         # N17's debounce (open decision 15; 60-150 ms is the plausible range):
         # three camera periods.
@@ -771,7 +767,7 @@ nodes:
           reaction: declare_corridor_lost
           within: { duration: 5ms, source: requirement }
     pub:
-      corridor_state: { min_rate_hz: 20 }
+      corridor_state: { min_rate: 20Hz }
 
   # N9 si_actuator_supervisor (section 6.1): commanded vs achieved. Its
   # reaction drives the safe-state line (the CANHUB's input to the actuator
@@ -795,22 +791,22 @@ nodes:
             jerk: $(param gateway_jerk) m/s^3
             response: { duration: 300ms, source: requirement }
     sub:
-      velocity_status: { min_rate_hz: 50, link: chassis_can, qos: { depth: 1 } }
+      velocity_status: { min_rate: 50Hz, link: chassis_can, qos: { depth: 1 } }
     pub:
-      safe_state_line: { min_rate_hz: 100 }
+      safe_state_line: { min_rate: 100Hz }
 
   # --- P2 -------------------------------------------------------------------
   # N14 si_vision_guard: smart-camera lane boundaries (open decision 8b).
   si_vision_guard:
     paths:
       on_frame:
-        trigger: { timer: { rate_hz: 20 } }
+        trigger: { timer: { rate: 20Hz } }
         output: [lane_boundaries]
         max_latency: { duration: 20ms, source: requirement }
     sub:
-      camera: { min_rate_hz: 20, qos: { depth: 1 }, state: true }
+      camera: { min_rate: 20Hz, qos: { depth: 1 }, state: true }
     pub:
-      lane_boundaries: { min_rate_hz: 20 }
+      lane_boundaries: { min_rate: 20Hz }
 
   # N6 si_radar_guard: radar tracks over CAN FD (section 6.2).
   si_radar_guard:
@@ -821,7 +817,7 @@ nodes:
         max_latency: { duration: 5ms, source: requirement }
     sub:
       radar_tracks:
-        min_rate_hz: 20
+        min_rate: 20Hz
         qos: { depth: 1 }
         max_age: { duration: 150ms, source: requirement }
         on_violation:
@@ -830,36 +826,36 @@ nodes:
           reaction: declare_radar_lost
           within: { duration: 5ms, source: requirement }
     pub:
-      radar_state: { min_rate_hz: 20 }
+      radar_state: { min_rate: 20Hz }
 
   # N16 si_safety_world_model: the age-checked snapshot P0/P1 read
   # (section 2.2 staleness rule).
   si_safety_world_model:
     paths:
       fuse:
-        trigger: { timer: { rate_hz: 20 } }
+        trigger: { timer: { rate: 20Hz } }
         output: [safety_world]
         max_latency: { duration: 20ms, source: requirement }
     sub:
-      lane_boundaries: { min_rate_hz: 20, qos: { depth: 1 }, state: true }
-      radar_state: { min_rate_hz: 20, qos: { depth: 1 }, state: true }
+      lane_boundaries: { min_rate: 20Hz, qos: { depth: 1 }, state: true }
+      radar_state: { min_rate: 20Hz, qos: { depth: 1 }, state: true }
     pub:
-      safety_world: { min_rate_hz: 20 }
+      safety_world: { min_rate: 20Hz }
 
   # N19 si_odd_monitor: the ODD verdict and B1's acceptance test
   # (section 6.4), 5 Hz.
   si_odd_monitor:
     paths:
       verdict:
-        trigger: { timer: { rate_hz: 5 } }
+        trigger: { timer: { rate: 5Hz } }
         output: [odd_verdict]
         max_latency: { duration: 20ms, source: requirement }
     sub:
-      odd_status: { min_rate_hz: 10, link: hpc_tsn, qos: { depth: 1 }, state: true }
-      radar_state: { min_rate_hz: 20, qos: { depth: 1 }, state: true }
-      lane_boundaries: { min_rate_hz: 20, qos: { depth: 1 }, state: true }
+      odd_status: { min_rate: 10Hz, link: hpc_tsn, qos: { depth: 1 }, state: true }
+      radar_state: { min_rate: 20Hz, qos: { depth: 1 }, state: true }
+      lane_boundaries: { min_rate: 20Hz, qos: { depth: 1 }, state: true }
     pub:
-      odd_verdict: { min_rate_hz: 5 }
+      odd_verdict: { min_rate: 5Hz }
 
   # --- P3 -------------------------------------------------------------------
   # I9-I12 trajectory follower (ASI: MPC lateral + PID longitudinal), QM,
@@ -870,19 +866,19 @@ nodes:
   trajectory_follower:
     paths:
       on_timer:
-        trigger: { timer: { rate_hz: 30 } }
+        trigger: { timer: { rate: 30Hz } }
         output: [control]
         max_latency: { duration: 25ms, source: requirement }
     sub:
-      trajectory: { min_rate_hz: 10, qos: { depth: 1 }, state: true }
-      kinematic_state: { min_rate_hz: 50, qos: { depth: 1 }, state: true }
+      trajectory: { min_rate: 10Hz, qos: { depth: 1 }, state: true }
+      kinematic_state: { min_rate: 50Hz, qos: { depth: 1 }, state: true }
     pub:
-      control: { min_rate_hz: 30 }
+      control: { min_rate: 30Hz }
 
 # ---------------------------------------------------------------------------
 # EVENT CHAINS: each rung's reaction, from the guarded input to what commits
 # the rung. Nominal traversals; the fault routes are derived by the checker.
-paths:
+event_chains:
   # Ends at the gate's OUTPUT, so the walk charges what the gate does
   # between the switcher's request and the island's first forwarded command;
   # the settle is only what follows the gate (I16 and the CAN FD hop).
@@ -917,42 +913,42 @@ topics:
     external: pub
     pub: [/hpc_heartbeat/heartbeat]       # H7, in l4_hpc.contract.yaml
     sub: [si_hpc_supervisor/heartbeat]
-    rate_hz: 100
+    rate: 100Hz
   /planning/scenario_planning/trajectory:
     type: autoware_planning_msgs/msg/Trajectory
     external: pub
     pub: [/hpc_trajectory_conditioner/trajectory]   # H5
     sub: [si_safety_gateway/trajectory]
-    rate_hz: 10
+    rate: 10Hz
   /si/in/odd_status:
     type: safety_island_msgs/msg/OddStatus
     external: pub
     pub: [/hpc_odd_reporter/odd_status]   # H4
     sub: [si_odd_monitor/odd_status]
-    rate_hz: 10
+    rate: 10Hz
   /si/in/refuge:
     type: safety_island_msgs/msg/PullOverRefuge
     external: pub
     pub: [/hpc_refuge_publisher/refuge]   # H8
     sub: [si_pull_over_manager/refuge]
-    rate_hz: 2
+    rate: 2Hz
 
   # --- island sensing and chassis (sections 6.2, 8.3) ------------------------
   /si/sensing/camera:
     type: safety_island_msgs/msg/LaneBoundaries
     external: pub
     sub: [si_vision_guard/camera]
-    rate_hz: 20
+    rate: 20Hz
   /si/sensing/radar_tracks:
     type: safety_island_msgs/msg/RadarTracks
     external: pub
     sub: [si_radar_guard/radar_tracks]
-    rate_hz: 20
+    rate: 20Hz
   /vehicle/status/velocity_status:
     type: autoware_vehicle_msgs/msg/VelocityReport
     external: pub
     sub: [si_vehicle_state_estimator/velocity_status, si_actuator_supervisor/velocity_status]
-    rate_hz: 50
+    rate: 50Hz
 
   # --- island internal ------------------------------------------------------
   /si/sensing/lane_boundaries:

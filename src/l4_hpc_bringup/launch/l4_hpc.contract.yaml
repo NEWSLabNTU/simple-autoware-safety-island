@@ -70,29 +70,29 @@ nodes:
         output: [trajectory]
         max_latency: { duration: 80ms, source: requirement }
     sub:
-      trajectory_in: { min_rate_hz: 10, qos: { depth: 1 } }
+      trajectory_in: { min_rate: 10Hz, qos: { depth: 1 } }
     pub:
-      trajectory: { min_rate_hz: 10 }
+      trajectory: { min_rate: 10Hz }
 
   # H7 hpc_heartbeat: 100 Hz, minimal, highest RT priority (section 7).
   hpc_heartbeat:
     paths:
       beat:
-        trigger: { timer: { rate_hz: 100 } }
+        trigger: { timer: { rate: 100Hz } }
         output: [heartbeat]
         max_latency: { duration: 1ms, source: requirement }
     pub:
-      heartbeat: { min_rate_hz: 100 }
+      heartbeat: { min_rate: 100Hz }
 
   # H4 hpc_odd_reporter: the HPC's declared active domain (section 7, B1).
   hpc_odd_reporter:
     paths:
       report:
-        trigger: { timer: { rate_hz: 10 } }
+        trigger: { timer: { rate: 10Hz } }
         output: [odd_status]
         max_latency: { duration: 10ms, source: requirement }
     pub:
-      odd_status: { min_rate_hz: 10 }
+      odd_status: { min_rate: 10Hz }
 
   # H5 hpc_trajectory_conditioner: 250 points, monotonic stamps (section 7).
   hpc_trajectory_conditioner:
@@ -102,19 +102,19 @@ nodes:
         output: [trajectory]
         max_latency: { duration: 5ms, source: requirement }
     sub:
-      trajectory_in: { min_rate_hz: 10, qos: { depth: 1 } }
+      trajectory_in: { min_rate: 10Hz, qos: { depth: 1 } }
     pub:
-      trajectory: { min_rate_hz: 10 }
+      trajectory: { min_rate: 10Hz }
 
   # H8 hpc_refuge_publisher: the rolling, law-checked refuge (section 6.3).
   hpc_refuge_publisher:
     paths:
       publish:
-        trigger: { timer: { rate_hz: 2 } }
+        trigger: { timer: { rate: 2Hz } }
         output: [refuge]
         max_latency: { duration: 50ms, source: requirement }
     pub:
-      refuge: { min_rate_hz: 2 }
+      refuge: { min_rate: 2Hz }
 
   # H6 hpc_island_state_client (section 7): reads the island's state and
   # MRM verdict and republishes it to the HPC's own system (here: the
@@ -135,7 +135,7 @@ nodes:
           settle: { duration: 8s, source: requirement }
     sub:
       island_state:
-        min_rate_hz: 50
+        min_rate: 50Hz
         link: island_tsn
         qos: { depth: 1 }
         # MUST MATCH l4_island.contract.yaml: /si/out/state on_silence 100ms.
@@ -148,7 +148,7 @@ nodes:
     pub:
       command_mode_availability: { aperiodic: true }
 
-paths:
+event_chains:
   hpc.island_lost:
     trigger: { input: [/si/out/state] }
     output: [/system/command_mode/availability]
@@ -159,7 +159,7 @@ topics:
     type: autoware_planning_msgs/msg/Trajectory
     external: pub
     sub: [velocity_smoother/trajectory_in]
-    rate_hz: 10
+    rate: 10Hz
   /planning/trajectory:
     type: autoware_planning_msgs/msg/Trajectory
     pub: [velocity_smoother/trajectory]
@@ -197,7 +197,7 @@ topics:
     external: pub
     pub: [/si_state_machine/behaviour]
     sub: [hpc_island_state_client/island_state]
-    rate_hz: 50
+    rate: 50Hz
 
   # --- HPC system ------------------------------------------------------------
   # The HPC's command mode decider (Autoware 2.0.0) reads it; it is outside
