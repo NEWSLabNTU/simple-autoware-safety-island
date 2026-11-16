@@ -68,7 +68,16 @@ while read -r c; do
     # rlm.lock beside the contract pins is `error[lock-mismatch]`; --strict
     # (phase10-A2): a worst-case claim the checker could not decide is an
     # error, not a warning.
-    out="$(timeout 120 "$PL" check --locked --strict "$launch" 2>&1)"; got=$?
+    # The target the contract runs on is its platform file's (rlm v0.3.22
+    # moved the supervision terms there): `<stem>.system.<target>.yaml`
+    # beside it, else posix. The island image's is zephyr, and checked as
+    # posix its supervised budgets find no tick or switch.
+    target=posix
+    for f in "$stem".system.*.yaml; do
+        [ -f "$f" ] || continue
+        t="${f##*.system.}"; target="${t%.yaml}"
+    done
+    out="$(timeout 120 "$PL" check --locked --strict --target "$target" "$launch" 2>&1)"; got=$?
     out="$(printf '%s\n' "$out" | sed 's/\x1b\[[0-9;]*m//g')"
     summary="$(printf '%s\n' "$out" | grep -E 'manifest\(s\) checked' | tail -1)"
     why=""
@@ -87,7 +96,7 @@ while read -r c; do
         [ -z "$unknown" ] || why="a message field is UNCHECKED ($unknown): is the msgs overlay sourced (scripts/build-host-msgs.sh)?"
     fi
     if [ -z "$why" ]; then
-        echo "ok   $stem (exit $got${rule:+, error[$rule]}) $summary"
+        echo "ok   $stem [$target] (exit $got${rule:+, error[$rule]}) $summary"
     else
         echo "FAIL $stem: $why $summary"
         printf '%s\n' "$out" | grep -E 'error\[|warning\[' | head -20 | sed 's/^/     /'

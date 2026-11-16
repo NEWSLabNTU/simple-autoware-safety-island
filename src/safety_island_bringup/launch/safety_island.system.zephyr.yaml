@@ -1,0 +1,21 @@
+# The Zephyr board's platform file for the island image (rlm v0.3.22):
+# the terms of a supervised budget's detection delay are facts of the
+# board's processor and kernel, not of the contract.
+#
+# phase11-S6: the platform terms of a supervision's detection delay (rlm
+# 0.1.61's `supervision:`). tick: the kernel tick the board's k_timer expires
+# on (CONFIG_SYS_CLOCK_TICKS_PER_SEC 1000). switch: the expiry ISR plus the
+# switch into the reaction thread (src/zephyr_entry/src/island_supervisor.c),
+# measured on the board: SUPERVISOR_SAFE_STATE after the due, 0.04 ms at
+# most (phase-11 S7), x 1.2 rounded up to the next ms.
+# One pair for the whole contract, and it holds because every `supervise:`
+# here is `mechanism: timer`. An `executor` supervision would be detected by
+# the executor's own check, which runs between callbacks: its tick is the
+# spin period plus the longest callback on that executor (the handler's
+# 10 Hz tick, so 100 ms + its work, not 1 ms), and no budget here uses it.
+target: zephyr
+priority_assignment: manual
+
+supervision:
+  tick: 1ms
+  switch: 1ms

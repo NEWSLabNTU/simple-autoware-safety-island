@@ -466,24 +466,9 @@ acknowledged:
       topic; only Autoware or the vehicle outside this image could notice a
       stalled manoeuvre, and nothing there is declared yet
 
-# rlm v0.3.22 moved `supervision:` to the target's platform file. It stays
-# here for now (read for one release, with a deprecation warning): `nros
-# configure` resolves this contract without the image's target, so a
-# `safety_island.system.zephyr.yaml` would not be read by the image build.
-# phase11-S6: the platform terms of a supervision's detection delay (rlm
-# 0.1.61's `supervision:`). tick: the kernel tick the board's k_timer expires
-# on (CONFIG_SYS_CLOCK_TICKS_PER_SEC 1000). switch: the expiry ISR plus the
-# switch into the reaction thread (src/zephyr_entry/src/island_supervisor.c),
-# measured on the board: SUPERVISOR_SAFE_STATE after the due, 0.04 ms at
-# most (phase-11 S7), x 1.2 rounded up to the next ms.
-# One pair for the whole contract, and it holds because every `supervise:`
-# here is `mechanism: timer`. An `executor` supervision would be detected by
-# the executor's own check, which runs between callbacks: its tick is the
-# spin period plus the longest callback on that executor (the handler's
-# 10 Hz tick, so 100 ms + its work, not 1 ms), and no budget here uses it.
-supervision:
-  tick: 1ms
-  switch: 1ms
+# The supervision terms (tick, switch) of every `supervise:` here are the
+# board's: `safety_island.system.zephyr.yaml` beside this file (rlm v0.3.22
+# moved them out of the contract; v0.3.27 refuses them here).
 
 # THE SERIAL LINK, stated once per flow with where its number comes from
 # (play_launch phase 97, rlm `docs/design/links.md`; demo phase 10, links).
@@ -709,7 +694,7 @@ nodes:
             supervise:
               enters: emergency_stop
               mechanism: timer
-              observes: mrm_handler/kinematic_state
+              observes: { input: mrm_handler/kinematic_state }
               resume: { after: 3 periods }
     pub:
       # Both are TRANSIENT_LOCAL in the source (QoS(1).transient_local()): a
@@ -829,8 +814,8 @@ nodes:
             supervise:
               reaction: island.floor_override
               mechanism: timer
-              observes: mrm_handler/kinematic_state
-              early: { within: 1319ms, drop: 0.25 m/s }
+              observes: { input: mrm_handler/kinematic_state }
+              early: { within: 1319ms, decrease: 0.25 m/s }
               resume: { after: 3 periods }
     sub:
       # Cached in onControlCommand and read on the timer as the ramp seed: a

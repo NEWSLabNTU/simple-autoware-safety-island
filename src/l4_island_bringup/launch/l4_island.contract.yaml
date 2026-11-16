@@ -634,8 +634,8 @@ nodes:
             supervise:
               reaction: island.actuator_line
               mechanism: timer
-              observes: si_actuator_supervisor/velocity_status
-              early: { within: 1500ms, drop: 1 m/s }
+              observes: { input: si_actuator_supervisor/velocity_status }
+              early: { within: 1500ms, decrease: 1 m/s }
     sub:
       trigger: { qos: { depth: 1 }, state: true }
       kinematic_state: { min_rate: 50Hz, qos: { depth: 1 }, state: true }
