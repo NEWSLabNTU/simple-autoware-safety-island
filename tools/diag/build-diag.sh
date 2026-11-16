@@ -112,7 +112,7 @@ echo "build-diag: just BOARD_BUILD_DIR=$DIR board-build, ISLAND_BOARD_KCONFIG=$I
 for pass in 1 2; do
     just BOARD_BUILD_DIR="$DIR" board-build > "$log" 2>&1; rc=$?
     [ $rc = 0 ] && break
-    grep -q 'the second pass converges' "$log" || break
+    grep -q 'a stale pass converges' "$log" || break
     [ $pass = 1 ] && echo "build-diag: board-build asked for its second pass; running it"
 done
 grep -E '^\s+(FLASH|RAM|DTCM|ITCM):' "$log" | tail -4

@@ -766,10 +766,14 @@ board-build: sync
     # the image ships a 70296-byte arena where 46272 is correct -- 24 KB, on a
     # part with 320 KB of RAM. It is silent because over-sized always is.
     #
-    # So the build refuses instead of flashing it. Running `just board-build`
-    # again is what converges it, which is why the message says so rather than
-    # this recipe looping: a build that quietly re-runs itself hides how many
-    # passes the chain actually needs, and that number is the bug.
+    # So the build refuses instead of flashing it. A stale pass converges when
+    # `just board-build` runs again; the recipe does not loop by itself, since
+    # a build that quietly re-runs hides how many passes the chain needs, and
+    # that number is the bug. One refusal cannot tell a stale pass from a real
+    # mismatch (a Kconfig or -D value that differs from the derived one never
+    # converges), so the recipe keeps the refused lines and compares them with
+    # the previous refusal in the same build dir: the same lines twice is a
+    # real mismatch, and the message says so instead of asking for a rerun.
     #
     # ONE line is tolerated, by name: NROS_DERIVED_SUBSCRIBED_TYPE_BOUNDS. It
     # is red on every build of this pin (phase6-W8b: "red only on the
@@ -784,17 +788,30 @@ board-build: sync
                 | grep -qv '^  - NROS_DERIVED_SUBSCRIBED_TYPE_BOUNDS='; then
             echo ""
             echo "board-build: REFUSING this image -- a resolved knob did not reach the compile."
-            echo "  The fragments on disk are correct and the delivered value is one pass behind."
-            # (single quotes: inside a double-quoted string the backticks were a
-            # command substitution, so every refusal RAN another full board build
-            # to print this line, recursively, until killed; found 2026-09-25)
-            echo '  Run `just board-build` again; the second pass converges.'
+            refused="$knob_log.refused"
+            grep '^  - ' "$knob_log" | sort > "$refused.new"
+            # (single quotes below: inside a double-quoted string the backticks
+            # were a command substitution, so every refusal RAN another full
+            # board build to print the line, recursively, until killed; found
+            # 2026-09-25)
+            if [ -f "$refused" ] && cmp -s "$refused" "$refused.new"; then
+                echo "  The same knobs were refused on the previous pass in this build dir, so a"
+                echo "  rerun will not converge them: the delivered value differs from the derived"
+                echo "  one for another reason (for example a Kconfig or -D value that overrides it)."
+            else
+                echo "  This may be a stale pass (the delivered value one configure behind) or a"
+                echo "  real mismatch; one pass cannot tell them apart."
+                echo '  Run `just board-build` again: a stale pass converges; if the same knobs are'
+                echo '  refused again, the next run reports a real mismatch.'
+            fi
+            mv "$refused.new" "$refused"
             exit 1
         fi
         echo "board-build: tolerating the known upstream SUBSCRIBED_TYPE_BOUNDS line (phase-412 W4); nothing else is red."
     else
         cat "$knob_log"
     fi
+    rm -f "$knob_log.refused"
     # Pass the build dir through: a nested `just` starts a FRESH invocation and
     # does NOT inherit a `BOARD_BUILD_DIR=` override from the outer one, so a
     # bare `just board-size` here reported on `build-board` no matter which

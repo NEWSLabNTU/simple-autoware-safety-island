@@ -87,13 +87,24 @@ qemu-build: sync
                 | grep -qv '^  - NROS_DERIVED_SUBSCRIBED_TYPE_BOUNDS='; then
             echo ""
             echo "qemu-build: REFUSING this image -- a resolved knob did not reach the compile."
-            echo '  Run `just qemu-build` again; the second pass converges.'
+            refused={{QEMU_LOG_DIR}}/{{QEMU_BUILD_DIR}}.knob-delivery.refused
+            grep '^  - ' {{QEMU_LOG_DIR}}/{{QEMU_BUILD_DIR}}.knob-delivery.log | sort > "$refused.new"
+            if [ -f "$refused" ] && cmp -s "$refused" "$refused.new"; then
+                echo "  The same knobs were refused on the previous pass, so a rerun will not"
+                echo "  converge them: a real mismatch (for example a Kconfig or -D override)."
+            else
+                echo "  This may be a stale pass or a real mismatch; one pass cannot tell them apart."
+                echo '  Run `just qemu-build` again: a stale pass converges; if the same knobs are'
+                echo '  refused again, the next run reports a real mismatch.'
+            fi
+            mv "$refused.new" "$refused"
             exit 1
         fi
         echo "qemu-build: tolerating the known upstream SUBSCRIBED_TYPE_BOUNDS line (phase-412 W4); nothing else is red."
     else
         cat {{QEMU_LOG_DIR}}/{{QEMU_BUILD_DIR}}.knob-delivery.log
     fi
+    rm -f {{QEMU_LOG_DIR}}/{{QEMU_BUILD_DIR}}.knob-delivery.refused
     just QEMU_BUILD_DIR={{QEMU_BUILD_DIR}} qemu-size
 
 # Region report of the QEMU image (compare: just board-size).

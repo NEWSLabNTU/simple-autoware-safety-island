@@ -140,8 +140,9 @@ scripts/ienv.sh 'just board-build'   # build-board/zephyr/zephyr.elf (runs sync 
   581,676 B, RAM 276,040 B (84.24 %), ITCM 12,800 B, DTCM 117,536 B (89.67 %,
   the 8 KiB headroom guard of phase9-C10 passes).
 - `board-build: REFUSING this image -- a resolved knob did not reach the
-  compile` on a first build: run it again, the second pass converges (the
-  recipe says so).
+  compile` on a first build: run it again. A stale pass converges; if the same
+  knobs are refused again, the recipe says the mismatch is real (for example a
+  Kconfig override of a derived limit) and a rerun will not fix it.
 
 ## 7. The host side and the acts
 
